@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Helmet } from 'react-helmet';
+import { Helmet } from 'react-helmet-async';
 import { Plus, Search, ChevronDown, Award, CalendarDays, ListFilter } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -79,25 +79,25 @@ const ExistingBankCard = ({ bank, onAction }) => {
         <h3 className="text-base font-semibold text-gray-800 mb-1">{bank.name}</h3>
         <p className="text-sm text-gray-500 mb-4 line-clamp-2 h-10">{bank.description}</p>
         <div className="flex flex-wrap gap-2 mb-4">
-          {bank.tags.map(tag => (
-            <span key={tag} className="px-2 py-1 text-xs font-medium text-purple-700 bg-purple-100 rounded">
+          {bank.tags.map((tag, index) => (
+            <span key={`${tag}-${index}`} className="px-2 py-1 text-xs font-medium text-purple-700 bg-purple-100 rounded">
               {tag}
             </span>
           ))}
         </div>
       </div>
       <div className="mt-auto pt-4 border-t border-gray-100">
-        <div className="flex items-center justify-between text-xs text-gray-500">
-          <div className="flex items-center">
-            <Award className="w-4 h-4 mr-1.5 text-yellow-500" />
-            {bank.questionCount} questões
+        <div className="flex items-center justify-between">
+          <div className="text-xs text-gray-500">
+            <div className="flex items-center">
+              <Award className="w-4 h-4 mr-1.5 text-yellow-500" />
+              <span>{bank.questionCount} questões</span>
+            </div>
+            <div className="mt-1">
+              <span>Criado em: {bank.createdAt}</span>
+            </div>
           </div>
-          <div className="flex items-center">
-            <span>Criado em: {bank.createdAt}</span>
-          </div>
-        </div>
-        <div className="mt-4">
-          <Button variant="outline" className="w-full border-gray-300 text-gray-700" onClick={() => onAction('view', bank.id)}>
+          <Button variant="outline" className="border-gray-300 text-gray-700" onClick={() => onAction('view', bank.id)}>
             Visualizar
           </Button>
         </div>
