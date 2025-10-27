@@ -1,14 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Helmet } from 'react-helmet-async';
-import { Plus, Search, ChevronDown, Award, CalendarDays, ListFilter } from 'lucide-react';
+import { Plus, Search, ChevronDown, Award, CalendarDays, ListFilter, X, Hash, Tag } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useToast } from '@/components/ui/use-toast';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { useToast } from '@/components/ui/use-toast';
+import questionBankService from '@/services/questionBankService';
 
 const mockQuestionBanks = [
   {
@@ -37,67 +38,63 @@ const mockQuestionBanks = [
   { id: 8, type: "create" },
 ];
 
-const FilterDropdown = ({ label, options }) => {
-  const { toast } = useToast();
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="outline" className="flex items-center gap-2 bg-white text-gray-500 border-gray-200 hover:bg-gray-50 text-sm font-normal">
-          <ListFilter className="w-4 h-4 text-gray-400" />
-          {label}
-          <ChevronDown className="w-4 h-4" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent>
-        {options.map((option) => (
-          <DropdownMenuItem key={option} onSelect={() => toast({ description: "🚧 This feature isn't implemented yet—but don't worry! You can request it in your next prompt! 🚀" })}>
-            {option}
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-};
+
 
 const BankCardIcon = () => (
-  <div className="relative w-20 h-20">
-    <svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 140 142" fill="none" className="w-full h-full">
-      <path d="M71.568 125.419C104.368 125.419 130.968 99.0189 130.968 66.4189C130.968 33.8189 104.368 7.41895 71.568 7.41895C38.768 7.41895 12.168 33.8189 12.168 66.4189C12.168 99.0189 38.768 125.419 71.568 125.419Z" fill="#EAEEF9"/>
-      <path d="M117.068 58.7191V94.8191C117.068 102.319 110.968 108.419 103.368 108.419H39.9676C32.4676 108.419 26.3676 102.419 26.2676 94.9191C26.2676 94.8191 26.2676 94.8191 26.2676 94.7191V58.7191C26.2676 58.6191 26.2676 58.6191 26.2676 58.5191C26.2676 58.3191 26.2676 58.1191 26.3676 57.9191C26.4676 57.6191 26.5676 57.4191 26.6676 57.1191L43.6676 24.6191C44.2676 23.3191 45.5676 22.6191 46.9676 22.6191H96.2676C97.6676 22.6191 98.8676 23.3191 99.5676 24.6191L116.568 57.1191C116.668 57.3191 116.768 57.6191 116.868 57.9191C117.068 58.1191 117.068 58.4191 117.068 58.7191Z" fill="#D5DDEA"/>
-      <path d="M117.068 58.7189V98.5189C117.068 104.019 112.668 108.419 107.068 108.419H36.2676C30.7676 108.419 26.2676 104.019 26.2676 98.5189V58.5189C26.2676 58.3189 26.2676 58.1189 26.3676 57.9189H49.1676C52.5676 57.9189 55.3676 60.6189 55.3676 64.1189C55.3676 65.8189 56.0676 67.4189 57.1676 68.5189C58.3676 69.7189 59.7676 70.3189 61.5676 70.3189H81.8676C85.2676 70.3189 88.0676 67.6189 88.0676 64.1189C88.0676 62.4189 88.7676 60.8189 89.8676 59.7189C91.0676 58.5189 92.4676 57.9189 94.1676 57.9189H116.868C117.068 58.1189 117.068 58.4189 117.068 58.7189Z" fill="white"/>
-    </svg>
-  </div>
+  <img src="/bank-icon.svg" alt="Ícone do banco" className="w-20 h-20" />
 );
 
 const ExistingBankCard = ({ bank, onAction }) => {
+  // Formatando a data para o formato brasileiro
+  const formatDate = (dateString) => {
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleDateString('pt-BR');
+    } catch {
+      return dateString;
+    }
+  };
+
+  // Garantindo que tags seja sempre um array
+  const tags = Array.isArray(bank.tags) ? bank.tags : [];
+  
   return (
-    <div className="bg-white p-5 rounded-lg border border-gray-200/80 shadow-sm flex flex-col justify-between h-[340px]">
+    <div className="bg-white p-5 rounded border border-gray-200/80 shadow-sm flex flex-col justify-between h-[295px] pb-[18px] w-[260px]">
       <div>
         <div className="flex justify-start mb-4">
           <BankCardIcon />
         </div>
-        <h3 className="text-base font-semibold text-gray-800 mb-1">{bank.name}</h3>
-        <p className="text-sm text-gray-500 mb-4 line-clamp-2 h-10">{bank.description}</p>
-        <div className="flex flex-wrap gap-2 mb-4">
-          {bank.tags.map((tag, index) => (
-            <span key={`${tag}-${index}`} className="px-2 py-1 text-xs font-medium text-purple-700 bg-purple-100 rounded">
+        <h3 className="text-base font-semibold text-gray-800 mb-1 break-words">{bank.name}</h3>
+        <p className="text-[12px] font-normal font-inter text-gray-500 mb-4 line-clamp-2 h-10" style={{color: '#9291A5'}}>{bank.description}</p>
+        <div className="flex flex-wrap gap-2 pb-[18px]" style={{height: 'fit-content'}}>
+          {tags.map((tag, index) => (
+            <span key={`${tag}-${index}`} className="px-2 py-1 text-xs font-medium text-purple-700 rounded flex items-center gap-1" style={{backgroundColor: '#AD89F71A'}}>
+              <div className="w-[10px] h-[10px]" style={{backgroundColor: '#AD89F7'}}></div>
               {tag}
             </span>
           ))}
         </div>
-      </div>
-      <div className="mt-auto pt-4 border-t border-gray-100">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between w-full pb-[18px]">
           <div className="text-xs text-gray-500">
             <div className="flex items-center">
-              <Award className="w-4 h-4 mr-1.5 text-yellow-500" />
-              <span>{bank.questionCount} questões</span>
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 14 14" fill="none" className="mr-1"> 
+                <rect width="14" height="14" rx="7" fill="#FFCC00"/> 
+                <g clipPath="url(#clip0_606_55740)"> 
+                  <path fillRule="evenodd" clipRule="evenodd" d="M7.00005 4.30078C6.45151 4.30078 5.91324 4.34541 5.3887 4.43129C5.27991 4.4491 5.20005 4.5431 5.20005 4.65334V4.7693C4.95207 4.81635 4.70745 4.87293 4.46659 4.93866C4.37151 4.96461 4.30439 5.04942 4.30097 5.14792C4.30036 5.16547 4.30005 5.1831 4.30005 5.20078C4.30005 5.97924 4.89298 6.61913 5.65196 6.69355C5.88277 6.95423 6.18836 7.14773 6.53552 7.24022C6.50667 7.47612 6.43572 7.69882 6.33044 7.90078H6.25005C6.00152 7.90078 5.80005 8.10225 5.80005 8.35078V9.10078H5.57505C5.36794 9.10078 5.20005 9.26867 5.20005 9.47578C5.20005 9.60004 5.30078 9.70078 5.42505 9.70078H8.57505C8.69931 9.70078 8.80005 9.60004 8.80005 9.47578C8.80005 9.26867 8.63216 9.10078 8.42505 9.10078H8.20005V8.35078C8.20005 8.10225 7.99858 7.90078 7.75005 7.90078H7.66966C7.56437 7.69882 7.49343 7.47612 7.46458 7.24022C7.81173 7.14773 8.11733 6.95423 8.34814 6.69355C9.10711 6.61913 9.70005 5.97924 9.70005 5.20078C9.70005 5.18309 9.69974 5.16547 9.69913 5.14792C9.69571 5.04942 9.62858 4.96461 9.5335 4.93866C9.29265 4.87293 9.04803 4.81635 8.80005 4.7693V4.65334C8.80005 4.5431 8.72019 4.4491 8.6114 4.43129C8.08686 4.34541 7.54858 4.30078 7.00005 4.30078ZM4.75762 5.32751C4.90373 5.29071 5.05123 5.25742 5.20005 5.22773V5.50078C5.20005 5.72263 5.24026 5.93526 5.31377 6.13165C5.01425 5.97484 4.79975 5.67768 4.75762 5.32751ZM9.24248 5.32751C9.20034 5.67768 8.98585 5.97485 8.68633 6.13165C8.75984 5.93526 8.80005 5.72263 8.80005 5.50078V5.22773C8.94886 5.25742 9.09637 5.29071 9.24248 5.32751Z" fill="#0F0627"/> 
+                </g> 
+                <defs> 
+                  <clipPath id="clip0_606_55740"> 
+                    <rect width="6" height="6" fill="white" transform="translate(4 4)"/> 
+                  </clipPath> 
+                </defs> 
+              </svg>
+              <span className="font-inter font-semibold text-[12px]" style={{color: '#1E1B39'}}>{bank.question_count || 0} questões</span>
             </div>
             <div className="mt-1">
-              <span>Criado em: {bank.createdAt}</span>
+              <span className="w-[111px] whitespace-nowrap overflow-visible text-[10px] font-inter font-normal" style={{color: '#9291A5'}}>Criado em: {formatDate(bank.created_at)}</span>
             </div>
           </div>
-          <Button variant="outline" className="border-gray-300 text-gray-700" onClick={() => onAction('view', bank.id)}>
+          <Button variant="outline" className="border-gray-300 text-gray-700 w-[71px] h-[31px] font-inter font-medium text-[10px] rounded-[4px]" style={{color: '#22252B'}} onClick={() => onAction('view', bank.id)}>
             Visualizar
           </Button>
         </div>
@@ -109,20 +106,21 @@ const ExistingBankCard = ({ bank, onAction }) => {
 const CreateNewBankCard = ({ onAction }) => {
   return (
     <div
-      className="bg-white p-6 rounded-lg border border-dashed border-gray-300 shadow-sm flex flex-col items-center justify-center h-[340px] cursor-pointer hover:bg-gray-50/50 hover:border-blue-500 transition-colors group"
+      className="p-6 rounded border shadow-sm flex flex-col items-center justify-center h-[295px] cursor-pointer hover:bg-gray-50/50 hover:border-blue-500 transition-colors group w-[260px]"
+      style={{backgroundColor: '#F9FAFB', borderColor: '#E3E4E5'}}
       onClick={() => onAction('create')}
     >
       <div className="w-16 h-16 rounded-full bg-gray-100 group-hover:bg-blue-100 flex items-center justify-center transition-colors mb-4">
         <Plus className="w-8 h-8 text-gray-400 group-hover:text-blue-600 transition-colors" />
       </div>
-      <p className="text-base font-medium text-gray-500 group-hover:text-blue-600 text-center transition-colors">Criar um novo banco de questões</p>
+      <p className="text-[14px] font-normal text-gray-500 group-hover:text-blue-600 text-center transition-colors font-inter">Criar um novo banco de questões</p>
     </div>
   );
 };
 
 const DecorativeIcons = () => (
-  <div className="absolute top-0 right-0 p-4 opacity-100">
-    <svg xmlns="http://www.w3.org/2000/svg" width="188" height="150" viewBox="0 0 188 150" fill="none" className="absolute top-8 right-32 w-[188px] h-[150px] transform -rotate-12">
+  <div className="absolute top-0 right-0 p-4 opacity-100 z-50">
+    <svg xmlns="http://www.w3.org/2000/svg" width="188" height="150" viewBox="0 0 188 150" fill="none" className="absolute -top-4 right-[42px] w-[188px] h-[150px] transform rotate-0 z-50">
       <path d="M122 77.7098C122 71.2427 127.243 66 133.71 66H175.691C182.158 66 187.4 71.2426 187.4 77.7098V119.691C187.4 126.158 182.158 131.4 175.691 131.4H133.71C127.243 131.4 122 126.158 122 119.691V77.7098Z" fill="#E051B3"/>
       <g clipPath="url(#clip0_93_850)">
       <path d="M168.189 85.2114H141.211C140.561 85.2114 139.937 85.4698 139.477 85.9298C139.017 86.3897 138.759 87.0135 138.759 87.6639V109.737C138.759 110.387 139.017 111.011 139.477 111.471C139.937 111.931 140.561 112.189 141.211 112.189H143.264C143.496 112.189 143.723 112.123 143.919 111.999C144.116 111.875 144.272 111.698 144.372 111.489C144.968 110.23 145.91 109.166 147.087 108.421C148.264 107.676 149.628 107.281 151.021 107.281C152.414 107.281 153.779 107.676 154.956 108.421C156.133 109.166 157.074 110.23 157.671 111.489C157.77 111.698 157.927 111.875 158.123 111.999C158.32 112.123 158.547 112.189 158.779 112.189H168.189C168.839 112.189 169.463 111.931 169.923 111.471C170.383 111.011 170.641 110.387 170.641 109.737V87.6639C170.641 87.0135 170.383 86.3897 169.923 85.9298C169.463 85.4698 168.839 85.2114 168.189 85.2114ZM151.021 104.832C150.051 104.832 149.103 104.544 148.296 104.005C147.49 103.466 146.861 102.7 146.49 101.804C146.118 100.907 146.021 99.9211 146.211 98.9696C146.4 98.0181 146.867 97.1441 147.553 96.4581C148.239 95.7722 149.113 95.305 150.064 95.1157C151.016 94.9265 152.002 95.0236 152.898 95.3949C153.795 95.7661 154.561 96.3948 155.1 97.2014C155.639 98.0081 155.926 98.9564 155.926 99.9265C155.926 101.227 155.41 102.475 154.49 103.395C153.57 104.315 152.322 104.832 151.021 104.832ZM168.189 109.737H159.518C158.983 108.815 158.302 107.986 157.501 107.284H164.51C164.835 107.284 165.147 107.155 165.377 106.925C165.607 106.695 165.736 106.383 165.736 106.058V91.3427C165.736 91.0175 165.607 90.7056 165.377 90.4756C165.147 90.2456 164.835 90.1165 164.51 90.1165H144.89C144.565 90.1165 144.253 90.2456 144.023 90.4756C143.793 90.7056 143.664 91.0175 143.664 91.3427V106.058C143.664 106.33 143.754 106.594 143.92 106.809C144.087 107.024 144.32 107.178 144.584 107.246C143.764 107.956 143.068 108.798 142.525 109.737H141.211V87.6639H168.189V109.737Z" fill="#E3E4E5"/>
@@ -158,23 +156,200 @@ const DecorativeIcons = () => (
 );
 
 const QuestionBankPage = () => {
-  const [searchTerm, setSearchTerm] = useState('');
   const { toast } = useToast();
+  const [questionBanks, setQuestionBanks] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [isPopupOpen, setIsPopupOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [activeFilters, setActiveFilters] = useState({
+    status: 'Todos'
+  });
+  const [formData, setFormData] = useState({
+    name: '',
+    description: '',
+    tags: [],
+    category: ''
+  });
+
+  useEffect(() => {
+    loadQuestionBanks();
+  }, []);
+
+  const loadQuestionBanks = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await questionBankService.getQuestionBanks();
+      if (error) {
+        toast({
+          description: "Erro ao carregar bancos de questões: " + error,
+          variant: "destructive"
+        });
+      } else {
+        setQuestionBanks(data || []);
+      }
+    } catch (err) {
+      console.error('Error loading question banks:', err);
+      toast({
+        description: "Erro ao conectar com o servidor",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleAction = (action, id = null) => {
-    toast({
-      description: "🚧 This feature isn't implemented yet—but don't worry! You can request it in your next prompt! 🚀",
+    if (action === 'create') {
+      setIsPopupOpen(true);
+      // Comunicar com a página pai (Bubble) para aplicar blur
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({ type: 'MODAL_OPENED' }, '*');
+      }
+    } else {
+      toast({
+        description: "🚧 This feature isn't implemented yet—but don't worry! You can request it in your next prompt! 🚀",
+      });
+    }
+  };
+
+  const handleClosePopup = () => {
+    setIsPopupOpen(false);
+    // Comunicar com a página pai (Bubble) para remover blur
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage({ type: 'MODAL_CLOSED' }, '*');
+    }
+    setFormData({
+      name: '',
+      description: '',
+      tags: [],
+      category: ''
     });
   };
 
-  const filteredBanks = mockQuestionBanks.filter(bank =>
-    bank.type === "existing" && bank.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const handleSave = async () => {
+    if (!formData.name.trim()) {
+      toast({
+        description: "Nome do banco de questões é obrigatório",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      const questionBankData = {
+        name: formData.name.trim(),
+        category: formData.category.trim(),
+        subcategory: formData.subcategory.trim(),
+        tags: formData.tags.split(',').map(tag => tag.trim()),
+        description: formData.description.trim()
+      };
+
+      const { data, error } = await questionBankService.createQuestionBank(questionBankData);
+      
+      if (error) {
+        toast({
+          description: "Erro ao criar banco de questões: " + error,
+          variant: "destructive"
+        });
+      } else {
+        handleClosePopup();
+        toast({
+          description: "Banco de questões criado com sucesso!",
+        });
+        // Recarregar a lista de bancos de questões
+        loadQuestionBanks();
+      }
+    } catch (err) {
+      console.error('Error creating question bank:', err);
+      toast({
+        description: "Erro ao conectar com o servidor",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleInputChange = (field, value) => {
+    setFormData(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
+  // Componente FilterDropdown
+  const FilterDropdown = ({ activeFilters, setActiveFilters }) => {
+    const statusOptions = ['Todos', 'Ativo', 'Inativo', 'Rascunho'];
+    
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline" className="w-[236px] h-[40px] border-[#E3E4E5] text-[#6B7280] hover:bg-gray-50 px-3 font-inter font-normal text-[14px] flex items-center justify-start" style={{ backgroundColor: '#F8FAFC' }}>
+            <div className="flex items-center gap-[5px]">
+              <ListFilter className="h-4 w-4" />
+              <span style={{ color: '#22252B' }}>
+                {activeFilters.status === 'Todos' ? 'Status' : activeFilters.status}
+              </span>
+            </div>
+            <div className="ml-[16px]">
+              <ChevronDown className="h-4 w-4" />
+            </div>
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-[236px]">
+          {statusOptions.map((option) => (
+            <DropdownMenuItem
+              key={option}
+              onClick={() => setActiveFilters(prev => ({ ...prev, status: option }))}
+              className="cursor-pointer"
+            >
+              {option}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+  };
+
+  // Criar cards de "criar novo" baseado no número de bancos existentes
+  // Garantir que sempre tenhamos pelo menos 4 cards de "criar novo" para preencher uma fileira completa
+  const createNewCards = Array.from({ length: Math.max(8 - questionBanks.length, 4) }, (_, index) => ({
+    id: `create-${index}`,
+    type: "create"
+  }));
+
+  const filteredBanks = questionBanks.filter(bank => {
+    // Filtro por termo de busca
+    const matchesSearch = bank.name.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    // Filtro por status (simulado - todos os bancos são considerados "Ativo" por padrão)
+    const matchesStatus = activeFilters.status === 'Todos' || 
+                         (activeFilters.status === 'Ativo' && true) || // Todos os bancos são ativos por padrão
+                         (activeFilters.status === 'Inativo' && false) ||
+                         (activeFilters.status === 'Rascunho' && false);
+    
+    return matchesSearch && matchesStatus;
+  });
 
   const displayBanks = [
-    ...filteredBanks,
-    ...mockQuestionBanks.filter(bank => bank.type === "create")
+    ...filteredBanks.map(bank => ({ ...bank, type: "existing" })),
+    ...createNewCards
   ];
+
+  if (loading) {
+    return (
+      <>
+        <Helmet>
+          <title>Banco de Questões – Connekt</title>
+          <meta name="description" content="Gerencie seu banco de questões para simulados." />
+        </Helmet>
+        <div className="flex flex-col min-h-screen bg-[#F8F9FB] items-center justify-center">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#0B57D0] mx-auto mb-4"></div>
+            <p className="text-gray-600">Carregando bancos de questões...</p>
+          </div>
+        </div>
+      </>
+    );
+  }
 
   return (
     <>
@@ -183,43 +358,199 @@ const QuestionBankPage = () => {
         <meta name="description" content="Gerencie seu banco de questões para simulados." />
       </Helmet>
       <div className="flex flex-col min-h-screen bg-[#F8F9FB]">
-        <header className="relative p-8 bg-[#0B57D0] text-white rounded-b-xl shadow-lg overflow-hidden">
-          <div className="max-w-7xl mx-auto relative z-10">
-            <h1 className="text-3xl font-bold mb-1">Banco de questões</h1>
-            <p className="text-base font-light text-blue-100 mb-6">Crie questões que podem ser usadas em seus simulados.</p>
-            <Button onClick={() => handleAction('create')} className="bg-white text-[#0B57D0] hover:bg-gray-100 font-semibold px-5 py-2.5 rounded-lg shadow-sm">
-              Criar banco de questões
-            </Button>
-          </div>
-          <DecorativeIcons />
-        </header>
-
-        <main className="flex-1 p-6 overflow-y-auto max-w-7xl mx-auto w-full">
-          <div className="bg-white p-4 rounded-xl shadow-sm mb-6 flex items-center justify-between">
-            <div className="relative flex-grow">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Buscar banco por nome"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border-none rounded-lg focus:ring-0 text-sm"
-              />
+        <div className="max-w-[1076px] mx-auto w-full mt-8 relative">
+          <header className="relative px-8 pt-8 pb-7 bg-[#0B57D0] text-white rounded-[10px] shadow-lg overflow-hidden">
+            <div className="relative z-10">
+              <h1 className="text-[18px] font-medium font-inter mb-1">Banco de questões</h1>
+              <p className="text-[16px] font-normal font-inter text-blue-100 mb-6">Crie questões que podem ser usadas em seus simulados.</p>
+              <Button onClick={() => handleAction('create')} className="bg-white text-[#0047BB] hover:bg-gray-100 font-semibold px-5 py-2.5 rounded-[4px] shadow-sm w-[210px] h-[30px] text-[14px] font-semibold font-inter flex items-center justify-center">
+                Criar banco de questões
+              </Button>
             </div>
-            <FilterDropdown label="Status" options={["Ativo", "Inativo", "Rascunho"]} />
-          </div>
+          </header>
+          <DecorativeIcons />
+        </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {displayBanks.map(bank => (
-              bank.type === "existing" ? (
-                <ExistingBankCard key={bank.id} bank={bank} onAction={handleAction} />
-              ) : (
-                <CreateNewBankCard key={bank.id} onAction={handleAction} />
-              )
-            ))}
+        <main className="flex-1 py-6 overflow-y-auto w-full">
+          <div className="max-w-[1076px] mx-auto">
+            {/* Main Content */}
+            <div className="flex-1">
+              <div className="mb-6 flex items-center justify-between">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Buscar banco por nome"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-[328px] h-[40px] pl-10 pr-4 py-2 border border-[#E3E4E5] bg-[#F8FAFC] rounded-lg focus:ring-0 text-[14px] font-normal font-inter text-[#ABADB3]"
+                  />
+                </div>
+                <FilterDropdown activeFilters={activeFilters} setActiveFilters={setActiveFilters} />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                {displayBanks.map(bank => (
+                  bank.type === "existing" ? (
+                    <ExistingBankCard key={bank.id} bank={bank} onAction={handleAction} />
+                  ) : (
+                    <CreateNewBankCard key={bank.id} onAction={handleAction} />
+                  )
+                ))}
+              </div>
+            </div>
           </div>
         </main>
       </div>
+
+      {/* Popup Modal */}
+      {isPopupOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl w-[800px] max-w-[95vw] max-h-[95vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+              <button
+                onClick={handleClosePopup}
+                className="p-1 hover:bg-gray-100 rounded transition-colors"
+              >
+                <X className="w-5 h-5 text-gray-500" />
+              </button>
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-blue-600 rounded flex items-center justify-center">
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="2" y="3" width="12" height="10" rx="1" stroke="white" strokeWidth="1.5" fill="none"/>
+                    <path d="M4 6h8M4 8h6M4 10h4" stroke="white" strokeWidth="1.5" strokeLinecap="round"/>
+                  </svg>
+                </div>
+                <h2 className="text-lg font-semibold text-gray-900">Criar novo banco de questões</h2>
+              </div>
+              <Button
+                onClick={handleSave}
+                className="px-6 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-md font-medium"
+                disabled
+              >
+                Criar banco
+              </Button>
+            </div>
+
+            {/* Content */}
+            <div className="p-8 space-y-8 max-w-[600px] mx-auto">
+              {/* Illustration */}
+              <div className="flex justify-start mb-8">
+                <img src="/bank-icon.svg" alt="Bank Icon" className="w-20 h-20 mb-6" />
+              </div>
+
+              {/* Form Fields */}
+              <div className="space-y-6">
+                {/* Nome do banco */}
+                <div>
+                  <input
+                    type="text"
+                    placeholder="Digite o nome do banco"
+                    value={formData.name}
+                    onChange={(e) => handleInputChange('name', e.target.value)}
+                    className="w-full border-none bg-transparent outline-none text-2xl font-medium placeholder-[#ABADB3]"
+                    style={{ 
+                      fontFamily: 'Inter', 
+                      fontWeight: 500, 
+                      fontSize: '24px', 
+                      color: '#ABADB3' 
+                    }}
+                  />
+                </div>
+
+                {/* Categoria */}
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2 text-gray-600">
+                    <svg width="14" height="14" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <rect x="3" y="3" width="14" height="14" rx="2" stroke="currentColor" strokeWidth="1.5" fill="none"/>
+                      <path d="M7 7h6M7 10h4M7 13h5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                    </svg>
+                    <span 
+                      className="text-sm font-normal"
+                      style={{ 
+                        fontFamily: 'Inter', 
+                        fontSize: '14px', 
+                        fontWeight: 400, 
+                        color: '#737780' 
+                      }}
+                    >
+                      Categoria:
+                    </span>
+                  </div>
+                  <button className="w-7 h-7 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors">
+                    <Plus className="w-4 h-4 text-gray-600" />
+                  </button>
+                </div>
+
+                {/* Subcategoria */}
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2 text-gray-600">
+                    <svg width="14" height="14" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M3 6h14M6 10h11M9 14h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                      <circle cx="4" cy="6" r="1" fill="currentColor"/>
+                      <circle cx="7" cy="10" r="1" fill="currentColor"/>
+                      <circle cx="10" cy="14" r="1" fill="currentColor"/>
+                    </svg>
+                    <span 
+                      className="text-sm font-normal"
+                      style={{ 
+                        fontFamily: 'Inter', 
+                        fontSize: '14px', 
+                        fontWeight: 400, 
+                        color: '#737780' 
+                      }}
+                    >
+                      Subcategoria:
+                    </span>
+                  </div>
+                  <button className="w-7 h-7 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors">
+                    <Plus className="w-4 h-4 text-gray-600" />
+                  </button>
+                </div>
+
+                {/* Tags */}
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2 text-gray-600">
+                    <svg width="14" height="14" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M2.5 10.5L9.5 3.5C9.77614 3.22386 10.1239 3.06694 10.4881 3.06694C10.8522 3.06694 11.2 3.22386 11.4762 3.5L16.5 8.5C16.7761 8.77614 16.9331 9.12386 16.9331 9.48809C16.9331 9.85232 16.7761 10.2 16.5 10.4762L9.5 17.5C9.22386 17.7761 8.87614 17.9331 8.51191 17.9331C8.14768 17.9331 7.8 17.7761 7.52381 17.5L2.5 12.5C2.22386 12.2239 2.06694 11.8761 2.06694 11.5119C2.06694 11.1478 2.22386 10.8 2.5 10.5Z" stroke="currentColor" strokeWidth="1.5" fill="none"/>
+                      <circle cx="12.5" cy="7.5" r="1.5" fill="currentColor"/>
+                    </svg>
+                    <span 
+                      className="text-sm font-normal"
+                      style={{ 
+                        fontFamily: 'Inter', 
+                        fontSize: '14px', 
+                        fontWeight: 400, 
+                        color: '#737780' 
+                      }}
+                    >
+                      Tags
+                    </span>
+                  </div>
+                  <button className="w-7 h-7 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors">
+                    <Plus className="w-4 h-4 text-gray-600" />
+                  </button>
+                </div>
+
+                {/* Descrição */}
+                <div>
+                  <textarea
+                    placeholder="Digite aqui uma descrição para o seu banco de questões"
+                    value={formData.description}
+                    onChange={(e) => handleInputChange('description', e.target.value)}
+                    rows={6}
+                    className="w-full px-4 py-4 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-gray-900 placeholder-gray-400 resize-none"
+                  />
+                  <div className="text-right text-sm text-gray-400 mt-2">
+                    {formData.description.length}/300
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };
