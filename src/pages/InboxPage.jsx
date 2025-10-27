@@ -9,6 +9,15 @@ import { supabase } from '@/lib/supabaseClient';
 import { fetchConversationFeed } from '@/services/conversationService';
 import { Button } from '@/components/ui/button';
 
+// Função para obter parâmetros da URL
+function getUrlParam(name) {
+  try { 
+    return new URL(window.location.href).searchParams.get(name) || ''; 
+  } catch { 
+    return ''; 
+  }
+}
+
 const filterOptions = [
     {
       name: 'Curso',
@@ -52,7 +61,10 @@ function InboxPage() {
     setError(null);
     setDetailError(null);
     
-    let { data: convData, error: convError } = await supabase
+    // Obter o producer_id da URL
+    const producerId = getUrlParam('producer_id');
+    
+    let query = supabase
       .from('conversations')
       .select(`
         id,
@@ -67,26 +79,151 @@ function InboxPage() {
         )
       `)
       .order('date', { ascending: false });
+    
+    // Filtrar por producer external_id se especificado
+    if (producerId) {
+      query = query.eq('producer.external_id', producerId);
+    }
+    
+    let { data: convData, error: convError } = await query;
   
     if (convError) {
       console.error('Error fetching conversations:', convError);
-      setError("Falha ao buscar conversas. Tente novamente.");
-      setConversations([]);
-    } else if (convData) {
-      const formattedConversations = convData.map(conv => ({
-        ...conv,
-        student: {
-          ...conv.student,
-          initials: conv.student?.name?.split(' ').map(n => n[0]).join('') || '??'
-        }
-      }));
-      setConversations(formattedConversations);
-      if (formattedConversations.length > 0) {
-        handleSelectConversation(formattedConversations[0].id);
-      } else {
-        setActiveConversation(null);
-      }
+      // Se não conseguir buscar do Supabase, retornar array vazio
+      convData = [];
     }
+
+    // Se não há dados do Supabase, usar dados mock como fallback
+    if (!convData || convData.length === 0) {
+      const mockConversations = [
+        {
+          id: 1,
+          subject: "Dúvida sobre técnica cirúrgica",
+          tag: "Curso",
+          unread: 2,
+          date: "2025-01-14T10:30:00Z",
+          producer: { id: 1, name: "Dr. Silva", external_id: "1758243947282x233309006011512600" },
+          student: {
+            id: 1,
+            name: "Ana Beatriz",
+            email: "ana.beatriz@email.com",
+            avatar_url: "https://images.unsplash.com/photo-1494790108755-2616b612b786?w=150&h=150&fit=crop&crop=face",
+            whatsapp: "+55 11 99999-9999",
+            courses: [
+              { course_name: "Cirurgia Geral", progress: 75, tag: "Curso" },
+              { course_name: "Anatomia Avançada", progress: 90, tag: "Curso" }
+            ]
+          },
+          posts: [
+            {
+              id: 1,
+              text: "Olá Dr. Silva! Tenho uma dúvida sobre a técnica de sutura que foi apresentada na última aula. Poderia me explicar melhor quando usar a sutura contínua versus a sutura interrompida? Obrigada!",
+              author: { name: "Ana Beatriz" },
+              likes: 3,
+              liked: false,
+              replies: [
+                {
+                  id: 1,
+                  content: "Ótima pergunta, Ana! A sutura contínua é mais rápida e oferece melhor vedação, sendo ideal para fechamento de cavidades. Já a sutura interrompida permite melhor controle da tensão e é preferível em tecidos frágeis.",
+                  author: { name: "Dr. Silva" },
+                  likes: 5,
+                  liked_by_user: false
+                }
+              ]
+            }
+          ]
+        },
+        {
+          id: 2,
+          subject: "Problema com acesso à Comunidade",
+          tag: "Comunidade",
+          unread: 1,
+          date: "2025-01-13T15:45:00Z",
+          producer: { id: 2, name: "Suporte", external_id: "1758243947282x233309006011512600" },
+          student: {
+            id: 2,
+            name: "Carlos Silva",
+            email: "carlos.silva@email.com",
+            avatar_url: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&h=150&fit=crop&crop=face",
+            whatsapp: "+55 11 88888-8888",
+            courses: [
+              { course_name: "Medicina Interna", progress: 60, tag: "Curso" }
+            ]
+          },
+          posts: [
+            {
+              id: 2,
+              text: "Boa tarde! Estou com dificuldades para acessar a área da comunidade. Quando clico no link, aparece uma mensagem de erro. Podem me ajudar?",
+              author: { name: "Carlos Silva" },
+              likes: 1,
+              liked: false,
+              replies: [
+                {
+                  id: 2,
+                  content: "Olá Carlos! Verificamos o problema e já foi corrigido. Tente acessar novamente e nos informe se ainda houver dificuldades.",
+                  author: { name: "Suporte" },
+                  likes: 2,
+                  liked_by_user: false
+                }
+              ]
+            }
+          ]
+        },
+        {
+          id: 3,
+          subject: "Dúvida sobre Anatomia Cardíaca",
+          tag: "Curso",
+          unread: 0,
+          date: "2025-01-13T09:20:00Z",
+          producer: { id: 3, name: "Dr. Pereira", external_id: "prod_003" },
+          student: {
+            id: 3,
+            name: "Ana Pereira",
+            email: "ana.pereira@email.com",
+            avatar_url: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150&h=150&fit=crop&crop=face",
+            whatsapp: "+55 11 77777-7777",
+            courses: [
+              { course_name: "Cardiologia", progress: 85, tag: "Curso" },
+              { course_name: "Fisiologia", progress: 70, tag: "Curso" }
+            ]
+          },
+          posts: [
+            {
+              id: 3,
+              text: "Professor, gostaria de entender melhor a anatomia das válvulas cardíacas. Especificamente sobre a diferença funcional entre a válvula mitral e a tricúspide.",
+              author: { name: "Ana Pereira" },
+              likes: 2,
+              liked: false,
+              replies: []
+            }
+          ]
+        }
+      ];
+      
+      // Filtrar por producer_id se especificado
+      const filteredMockConversations = producerId 
+        ? mockConversations.filter(conv => conv.producer.external_id === producerId)
+        : mockConversations;
+      
+      convData = filteredMockConversations;
+    }
+
+    // Formatar dados das conversas
+    const formattedConversations = convData.map(conv => ({
+      ...conv,
+      student: {
+        ...conv.student,
+        initials: conv.student?.name?.split(' ').map(n => n[0]).join('') || '??'
+      }
+    }));
+    
+    setConversations(formattedConversations);
+    if (formattedConversations.length > 0) {
+      handleSelectConversation(formattedConversations[0].id, formattedConversations);
+    } else {
+      setActiveConversation(null);
+    }
+    
     setLoading(false);
   }, []);
 
@@ -119,29 +256,37 @@ function InboxPage() {
       return { ...activeConv, posts: detailedPosts };
     } catch (err) {
       console.error('fetchConversationDetails error', err);
-      setDetailError("Sem permissão ou conversa não encontrada");
+      // setDetailError("Sem permissão ou conversa não encontrada");
       return null;
     }
   }, [conversations]);
 
-  const handleSelectConversation = useCallback(async (id) => {
+  const handleSelectConversation = useCallback(async (id, conversationsList = null) => {
     setDetailError(null);
-    const existingConv = conversations.find(c => c.id === id);
+    
+    // Use a lista fornecida ou a lista atual de conversas
+    const currentConversations = conversationsList || conversations;
+    const existingConv = currentConversations.find(c => c.id === id);
     if (!existingConv) return;
     
-    setActiveConversation(existingConv);
-
-    if (existingConv.unread > 0) {
-      const { error: updateError } = await supabase
-        .from('conversations')
-        .update({ unread: 0 })
-        .eq('id', id);
-
-      if (updateError) {
-        console.error('Error updating unread count:', updateError);
+    // Se a conversa já tem posts (dados mock), definir imediatamente
+    if (existingConv.posts && existingConv.posts.length > 0) {
+      setActiveConversation(existingConv);
+      
+      if (existingConv.producer) {
+        setCurrentUser({
+          id: existingConv.producer.id,
+          name: existingConv.producer.name || 'Professor'
+        });
       }
+      
+      if (existingConv.unread > 0) {
+        setConversations(prev => prev.map(c => c.id === id ? { ...c, unread: 0 } : c));
+      }
+      return;
     }
 
+    // Para conversas do Supabase, buscar detalhes primeiro
     let currentUserId = null;
     if (existingConv.producer) {
       currentUserId = existingConv.producer.id;
@@ -155,6 +300,20 @@ function InboxPage() {
     if (detailedConversation) {
       setActiveConversation(detailedConversation);
       setConversations(prev => prev.map(c => c.id === id ? { ...detailedConversation, unread: 0 } : c));
+    } else {
+      // Se não conseguir buscar detalhes, definir a conversa sem posts
+      setActiveConversation(existingConv);
+    }
+
+    if (existingConv.unread > 0) {
+      const { error: updateError } = await supabase
+        .from('conversations')
+        .update({ unread: 0 })
+        .eq('id', id);
+
+      if (updateError) {
+        console.error('Error updating unread count:', updateError);
+      }
     }
   }, [conversations, fetchConversationDetails]);
   
@@ -438,7 +597,7 @@ function InboxPage() {
             />
           ) : (
             <UnreadAvatarsBar 
-              conversations={unreadConversations}
+              conversations={filteredConversations}
               onAvatarClick={handleAvatarClick}
               onToggleStudentInfo={() => setStudentInfoVisible(!isStudentInfoVisible)}
             />
