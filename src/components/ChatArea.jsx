@@ -221,7 +221,7 @@ const ChatArea = ({ conversation, onAddReply, onLikePost, onLikeReply, onEditRep
                     <div className="w-full"></div>
                   ) : (
                     <div className="flex items-start gap-3">
-                        <img className="w-8 h-8 rounded-full object-cover" alt={reply.author.name} src="https://images.unsplash.com/photo-1644424235476-295f24d503d9" />
+                        <img className="w-8 h-8 rounded-full object-cover" alt={reply.author.name} src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHZpZXdCb3g9IjAgMCAzMiAzMiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iMTYiIGZpbGw9IiNGM0Y0RjYiLz4KPGNpcmNsZSBjeD0iMTYiIGN5PSIxMiIgcj0iNCIgZmlsbD0iIzlCOUI5OSIvPgo8cGF0aCBkPSJNOSAyNEM5IDIxIDEyIDE5IDE2IDE5UzIzIDIxIDIzIDI0SDI2QzI2IDIxIDIzIDE4IDE2IDE4UzYgMjEgNiAyNEg5WiIgZmlsbD0iIzlCOUI5OSIvPgo8L3N2Zz4K" />
                         <div className="flex-1">
                           <span className="font-semibold text-sm text-[#0f172a]">{reply.author.name}</span>
                           <div className="mt-1.5 mb-2 text-[#737780] font-normal text-[14px] leading-relaxed">{reply.content}</div>

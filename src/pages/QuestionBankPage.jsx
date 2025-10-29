@@ -59,14 +59,14 @@ const ExistingBankCard = ({ bank, onAction }) => {
   const tags = Array.isArray(bank.tags) ? bank.tags : [];
   
   return (
-    <div className="bg-white p-5 rounded border border-gray-200/80 shadow-sm flex flex-col justify-between h-[295px] pb-[18px] w-[260px]">
-      <div>
+    <div className="bg-white p-3 sm:p-4 lg:p-6 rounded border border-gray-200/80 shadow-sm flex flex-col justify-between min-h-[220px] sm:min-h-[250px] lg:min-h-[295px] w-full overflow-hidden compact-cards ultra-compact-cards">
+      <div className="flex-1">
         <div className="flex justify-start mb-4">
           <BankCardIcon />
         </div>
-        <h3 className="text-base font-semibold text-gray-800 mb-1 break-words">{bank.name}</h3>
-        <p className="text-[12px] font-normal font-inter text-gray-500 mb-4 line-clamp-2 h-10" style={{color: '#9291A5'}}>{bank.description}</p>
-        <div className="flex flex-wrap gap-2 pb-[18px]" style={{height: 'fit-content'}}>
+        <h3 className="text-base font-semibold text-gray-800 mb-1 break-words line-clamp-2 ultra-compact-text">{bank.name}</h3>
+        <p className="text-[12px] font-normal font-inter text-gray-500 mb-4 line-clamp-2 ultra-compact-text" style={{color: '#9291A5'}}>{bank.description}</p>
+        <div className="flex flex-wrap gap-2 mb-4 min-h-[24px]">
           {tags.map((tag, index) => (
             <span key={`${tag}-${index}`} className="px-2 py-1 text-xs font-medium text-purple-700 rounded flex items-center gap-1" style={{backgroundColor: '#AD89F71A'}}>
               <div className="w-[10px] h-[10px]" style={{backgroundColor: '#AD89F7'}}></div>
@@ -74,30 +74,30 @@ const ExistingBankCard = ({ bank, onAction }) => {
             </span>
           ))}
         </div>
-        <div className="flex items-center justify-between w-full pb-[18px]">
-          <div className="text-xs text-gray-500">
-            <div className="flex items-center">
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 14 14" fill="none" className="mr-1"> 
-                <rect width="14" height="14" rx="7" fill="#FFCC00"/> 
-                <g clipPath="url(#clip0_606_55740)"> 
-                  <path fillRule="evenodd" clipRule="evenodd" d="M7.00005 4.30078C6.45151 4.30078 5.91324 4.34541 5.3887 4.43129C5.27991 4.4491 5.20005 4.5431 5.20005 4.65334V4.7693C4.95207 4.81635 4.70745 4.87293 4.46659 4.93866C4.37151 4.96461 4.30439 5.04942 4.30097 5.14792C4.30036 5.16547 4.30005 5.1831 4.30005 5.20078C4.30005 5.97924 4.89298 6.61913 5.65196 6.69355C5.88277 6.95423 6.18836 7.14773 6.53552 7.24022C6.50667 7.47612 6.43572 7.69882 6.33044 7.90078H6.25005C6.00152 7.90078 5.80005 8.10225 5.80005 8.35078V9.10078H5.57505C5.36794 9.10078 5.20005 9.26867 5.20005 9.47578C5.20005 9.60004 5.30078 9.70078 5.42505 9.70078H8.57505C8.69931 9.70078 8.80005 9.60004 8.80005 9.47578C8.80005 9.26867 8.63216 9.10078 8.42505 9.10078H8.20005V8.35078C8.20005 8.10225 7.99858 7.90078 7.75005 7.90078H7.66966C7.56437 7.69882 7.49343 7.47612 7.46458 7.24022C7.81173 7.14773 8.11733 6.95423 8.34814 6.69355C9.10711 6.61913 9.70005 5.97924 9.70005 5.20078C9.70005 5.18309 9.69974 5.16547 9.69913 5.14792C9.69571 5.04942 9.62858 4.96461 9.5335 4.93866C9.29265 4.87293 9.04803 4.81635 8.80005 4.7693V4.65334C8.80005 4.5431 8.72019 4.4491 8.6114 4.43129C8.08686 4.34541 7.54858 4.30078 7.00005 4.30078ZM4.75762 5.32751C4.90373 5.29071 5.05123 5.25742 5.20005 5.22773V5.50078C5.20005 5.72263 5.24026 5.93526 5.31377 6.13165C5.01425 5.97484 4.79975 5.67768 4.75762 5.32751ZM9.24248 5.32751C9.20034 5.67768 8.98585 5.97485 8.68633 6.13165C8.75984 5.93526 8.80005 5.72263 8.80005 5.50078V5.22773C8.94886 5.25742 9.09637 5.29071 9.24248 5.32751Z" fill="#0F0627"/> 
-                </g> 
-                <defs> 
-                  <clipPath id="clip0_606_55740"> 
-                    <rect width="6" height="6" fill="white" transform="translate(4 4)"/> 
-                  </clipPath> 
-                </defs> 
-              </svg>
-              <span className="font-inter font-semibold text-[12px]" style={{color: '#1E1B39'}}>{bank.question_count || 0} questões</span>
-            </div>
-            <div className="mt-1">
-              <span className="w-[111px] whitespace-nowrap overflow-visible text-[10px] font-inter font-normal" style={{color: '#9291A5'}}>Criado em: {formatDate(bank.created_at)}</span>
-            </div>
+      </div>
+      <div className="flex items-center justify-between w-full mt-auto">
+        <div className="text-xs text-gray-500">
+          <div className="flex items-center">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 14 14" fill="none" className="mr-1"> 
+              <rect width="14" height="14" rx="7" fill="#FFCC00"/> 
+              <g clipPath="url(#clip0_606_55740)"> 
+                <path fillRule="evenodd" clipRule="evenodd" d="M7.00005 4.30078C6.45151 4.30078 5.91324 4.34541 5.3887 4.43129C5.27991 4.4491 5.20005 4.5431 5.20005 4.65334V4.7693C4.95207 4.81635 4.70745 4.87293 4.46659 4.93866C4.37151 4.96461 4.30439 5.04942 4.30097 5.14792C4.30036 5.16547 4.30005 5.1831 4.30005 5.20078C4.30005 5.97924 4.89298 6.61913 5.65196 6.69355C5.88277 6.95423 6.18836 7.14773 6.53552 7.24022C6.50667 7.47612 6.43572 7.69882 6.33044 7.90078H6.25005C6.00152 7.90078 5.80005 8.10225 5.80005 8.35078V9.10078H5.57505C5.36794 9.10078 5.20005 9.26867 5.20005 9.47578C5.20005 9.60004 5.30078 9.70078 5.42505 9.70078H8.57505C8.69931 9.70078 8.80005 9.60004 8.80005 9.47578C8.80005 9.26867 8.63216 9.10078 8.42505 9.10078H8.20005V8.35078C8.20005 8.10225 7.99858 7.90078 7.75005 7.90078H7.66966C7.56437 7.69882 7.49343 7.47612 7.46458 7.24022C7.81173 7.14773 8.11733 6.95423 8.34814 6.69355C9.10711 6.61913 9.70005 5.97924 9.70005 5.20078C9.70005 5.18309 9.69974 5.16547 9.69913 5.14792C9.69571 5.04942 9.62858 4.96461 9.5335 4.93866C9.29265 4.87293 9.04803 4.81635 8.80005 4.7693V4.65334C8.80005 4.5431 8.72019 4.4491 8.6114 4.43129C8.08686 4.34541 7.54858 4.30078 7.00005 4.30078ZM4.75762 5.32751C4.90373 5.29071 5.05123 5.25742 5.20005 5.22773V5.50078C5.20005 5.72263 5.24026 5.93526 5.31377 6.13165C5.01425 5.97484 4.79975 5.67768 4.75762 5.32751ZM9.24248 5.32751C9.20034 5.67768 8.98585 5.97485 8.68633 6.13165C8.75984 5.93526 8.80005 5.72263 8.80005 5.50078V5.22773C8.94886 5.25742 9.09637 5.29071 9.24248 5.32751Z" fill="#0F0627"/> 
+              </g> 
+              <defs> 
+                <clipPath id="clip0_606_55740"> 
+                  <rect width="6" height="6" fill="white" transform="translate(4 4)"/> 
+                </clipPath> 
+              </defs> 
+            </svg>
+            <span className="font-inter font-semibold text-[12px]" style={{color: '#1E1B39'}}>{bank.question_count || 0} questões</span>
           </div>
-          <Button variant="outline" className="border-gray-300 text-gray-700 w-[71px] h-[31px] font-inter font-medium text-[10px] rounded-[4px]" style={{color: '#22252B'}} onClick={() => onAction('view', bank.id)}>
-            Visualizar
-          </Button>
+          <div className="mt-1">
+            <span className="block text-[10px] font-inter font-normal truncate" style={{color: '#9291A5'}}>Criado em: {formatDate(bank.created_at)}</span>
+          </div>
         </div>
+        <Button variant="outline" className="border-gray-300 text-gray-700 w-[71px] h-[31px] font-inter font-medium text-[10px] rounded-[4px]" style={{color: '#22252B'}} onClick={() => onAction('view', bank.id)}>
+          Visualizar
+        </Button>
       </div>
     </div>
   );
@@ -106,14 +106,14 @@ const ExistingBankCard = ({ bank, onAction }) => {
 const CreateNewBankCard = ({ onAction }) => {
   return (
     <div
-      className="p-6 rounded border shadow-sm flex flex-col items-center justify-center h-[295px] cursor-pointer hover:bg-gray-50/50 hover:border-blue-500 transition-colors group w-[260px]"
+      className="p-3 sm:p-4 lg:p-6 rounded border shadow-sm flex flex-col items-center justify-center min-h-[220px] sm:min-h-[250px] lg:min-h-[295px] w-full overflow-hidden compact-cards ultra-compact-cards cursor-pointer hover:bg-gray-50/50 hover:border-blue-500 transition-colors group"
       style={{backgroundColor: '#F9FAFB', borderColor: '#E3E4E5'}}
       onClick={() => onAction('create')}
     >
       <div className="w-16 h-16 rounded-full bg-gray-100 group-hover:bg-blue-100 flex items-center justify-center transition-colors mb-4">
         <Plus className="w-8 h-8 text-gray-400 group-hover:text-blue-600 transition-colors" />
       </div>
-      <p className="text-[14px] font-normal text-gray-500 group-hover:text-blue-600 text-center transition-colors font-inter">Criar um novo banco de questões</p>
+      <p className="text-[14px] font-normal text-gray-500 group-hover:text-blue-600 text-center transition-colors font-inter ultra-compact-text">Criar um novo banco de questões</p>
     </div>
   );
 };
@@ -357,12 +357,60 @@ const QuestionBankPage = () => {
         <title>Banco de Questões – Connekt</title>
         <meta name="description" content="Gerencie seu banco de questões para simulados." />
       </Helmet>
-      <div className="flex flex-col min-h-screen bg-[#F8F9FB]">
-        <div className="max-w-[1076px] mx-auto w-full mt-8 relative">
-          <header className="relative px-8 pt-8 pb-7 bg-[#0B57D0] text-white rounded-[10px] shadow-lg overflow-hidden">
+      <div className="flex flex-col bg-[#F8F9FB] overflow-hidden" style={{ height: '950px', minHeight: '950px' }}>
+        <style dangerouslySetInnerHTML={{
+          __html: `
+            @media (max-height: 636px) {
+              .ultra-compact-layout {
+                margin-top: 0 !important;
+              }
+              .ultra-compact-header {
+                padding-top: 0.5rem !important;
+                padding-bottom: 0.5rem !important;
+              }
+              .ultra-compact-main {
+                padding-top: 0.25rem !important;
+                padding-bottom: 0.25rem !important;
+              }
+              .ultra-compact-cards {
+                min-height: 180px !important;
+                padding: 0.375rem !important;
+              }
+              .ultra-compact-spacing {
+                margin-bottom: 0.25rem !important;
+              }
+              .ultra-compact-text {
+                font-size: 0.75rem !important;
+                line-height: 1rem !important;
+              }
+            }
+            @media (max-height: 930px) {
+              .compact-layout {
+                margin-top: 0.25rem !important;
+              }
+              .compact-header {
+                padding-top: 0.75rem !important;
+                padding-bottom: 0.75rem !important;
+              }
+              .compact-main {
+                padding-top: 0.5rem !important;
+                padding-bottom: 0.5rem !important;
+              }
+              .compact-cards {
+                min-height: 200px !important;
+                padding: 0.5rem !important;
+              }
+              .compact-spacing {
+                margin-bottom: 0.5rem !important;
+              }
+            }
+          `
+        }} />
+        <div className="max-w-[1076px] mx-auto w-full mt-2 sm:mt-4 lg:mt-8 px-4 sm:px-6 relative flex-shrink-0 compact-layout ultra-compact-layout">
+          <header className="relative px-4 sm:px-8 pt-4 sm:pt-6 lg:pt-8 pb-4 sm:pb-5 lg:pb-7 bg-[#0B57D0] text-white rounded-[10px] shadow-lg overflow-hidden compact-header ultra-compact-header">
             <div className="relative z-10">
-              <h1 className="text-[18px] font-medium font-inter mb-1">Banco de questões</h1>
-              <p className="text-[16px] font-normal font-inter text-blue-100 mb-6">Crie questões que podem ser usadas em seus simulados.</p>
+              <h1 className="text-base sm:text-[18px] font-medium font-inter mb-1">Banco de questões</h1>
+              <p className="text-sm sm:text-[16px] font-normal font-inter text-blue-100 mb-3 sm:mb-4 lg:mb-6">Crie questões que podem ser usadas em seus simulados.</p>
               <Button onClick={() => handleAction('create')} className="bg-white text-[#0047BB] hover:bg-gray-100 font-semibold px-5 py-2.5 rounded-[4px] shadow-sm w-[210px] h-[30px] text-[14px] font-semibold font-inter flex items-center justify-center">
                 Criar banco de questões
               </Button>
@@ -371,11 +419,11 @@ const QuestionBankPage = () => {
           <DecorativeIcons />
         </div>
 
-        <main className="flex-1 py-6 overflow-y-auto w-full">
-          <div className="max-w-[1076px] mx-auto">
+        <main className="flex-1 py-2 sm:py-3 lg:py-6 w-full pb-3 sm:pb-4 lg:pb-8 compact-main ultra-compact-main" style={{ minHeight: 0, overflow: 'hidden' }}>
+          <div className="max-w-[1076px] mx-auto px-4 sm:px-6">
             {/* Main Content */}
             <div className="flex-1">
-              <div className="mb-6 flex items-center justify-between">
+              <div className="mb-3 sm:mb-4 lg:mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 compact-spacing ultra-compact-spacing">
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                   <input
@@ -383,13 +431,13 @@ const QuestionBankPage = () => {
                     placeholder="Buscar banco por nome"
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-[328px] h-[40px] pl-10 pr-4 py-2 border border-[#E3E4E5] bg-[#F8FAFC] rounded-lg focus:ring-0 text-[14px] font-normal font-inter text-[#ABADB3]"
+                    className="w-full sm:w-[328px] h-[40px] pl-10 pr-4 py-2 border border-[#E3E4E5] bg-[#F8FAFC] rounded-lg focus:ring-0 text-[14px] font-normal font-inter text-[#ABADB3]"
                   />
                 </div>
                 <FilterDropdown activeFilters={activeFilters} setActiveFilters={setActiveFilters} />
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {displayBanks.map(bank => (
                   bank.type === "existing" ? (
                     <ExistingBankCard key={bank.id} bank={bank} onAction={handleAction} />
