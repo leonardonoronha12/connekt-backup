@@ -70,7 +70,43 @@
   * {
     @apply border-border;
   }
+  
+  /* Layout base para 100% da viewport */
+  html, body, #root {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+  }
+  
+  html {
+    scroll-behavior: smooth;
+  }
+  
   body {
     @apply bg-background text-foreground;
+    min-height: 100dvh;
+    min-height: 100vh; /* fallback */
+  }
+  
+  /* Classe utilitária para áreas roláveis */
+  .scroll-area {
+    min-height: 0;
+    overflow: auto;
+  }
+}
+
+/* Scrollbar customization for sidebar */
+.scrollbar-hide {
+  -ms-overflow-style: none;  /* Internet Explorer 10+ */
+  scrollbar-width: none;  /* Firefox */
+}
+.scrollbar-hide::-webkit-scrollbar { 
+  display: none;  /* Safari and Chrome */
+}
+
+/* Responsive adjustments for CollapsibleSidebar */
+@media (max-width: 767px) {
+  .main-content-mobile {
+    margin-left: 0 !important;
   }
 }

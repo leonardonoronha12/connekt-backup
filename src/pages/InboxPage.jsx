@@ -107,7 +107,7 @@ function InboxPage() {
             id: 1,
             name: "Ana Beatriz",
             email: "ana.beatriz@email.com",
-            avatar_url: "https://images.unsplash.com/photo-1494790108755-2616b612b786?w=150&h=150&fit=crop&crop=face",
+            avatar_url: "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTUwIiBoZWlnaHQ9IjE1MCIgdmlld0JveD0iMCAwIDE1MCAxNTAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIxNTAiIGhlaWdodD0iMTUwIiBmaWxsPSIjRjNGNEY2Ii8+CjxjaXJjbGUgY3g9Ijc1IiBjeT0iNjAiIHI9IjIwIiBmaWxsPSIjOUI5Qjk5Ii8+CjxwYXRoIGQ9Ik00NSAxMjBDNDUgMTA1IDU4IDk1IDc1IDk1Uzk1IDEwNSA5NSAxMjBIMTIwQzEyMCAxMDUgMTEwIDkwIDc1IDkwUzMwIDEwNSAzMCAxMjBINDVaIiBmaWxsPSIjOUI5Qjk5Ii8+Cjwvc3ZnPgo=",
             whatsapp: "+55 11 99999-9999",
             courses: [
               { course_name: "Cirurgia Geral", progress: 75, tag: "Curso" },
@@ -144,7 +144,7 @@ function InboxPage() {
             id: 2,
             name: "Carlos Silva",
             email: "carlos.silva@email.com",
-            avatar_url: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&h=150&fit=crop&crop=face",
+            avatar_url: "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTUwIiBoZWlnaHQ9IjE1MCIgdmlld0JveD0iMCAwIDE1MCAxNTAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIxNTAiIGhlaWdodD0iMTUwIiBmaWxsPSIjRUZGNkZGIi8+CjxjaXJjbGUgY3g9Ijc1IiBjeT0iNjAiIHI9IjIwIiBmaWxsPSIjNjM2NkY3Ii8+CjxwYXRoIGQ9Ik00NSAxMjBDNDUgMTA1IDU4IDk1IDc1IDk1Uzk1IDEwNSA5NSAxMjBIMTIwQzEyMCAxMDUgMTEwIDkwIDc1IDkwUzMwIDEwNSAzMCAxMjBINDVaIiBmaWxsPSIjNjM2NkY3Ii8+Cjwvc3ZnPgo=",
             whatsapp: "+55 11 88888-8888",
             courses: [
               { course_name: "Medicina Interna", progress: 60, tag: "Curso" }
@@ -180,7 +180,7 @@ function InboxPage() {
             id: 3,
             name: "Ana Pereira",
             email: "ana.pereira@email.com",
-            avatar_url: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150&h=150&fit=crop&crop=face",
+            avatar_url: "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTUwIiBoZWlnaHQ9IjE1MCIgdmlld0JveD0iMCAwIDE1MCAxNTAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CjxyZWN0IHdpZHRoPSIxNTAiIGhlaWdodD0iMTUwIiBmaWxsPSIjRkVGM0Y0Ii8+CjxjaXJjbGUgY3g9Ijc1IiBjeT0iNjAiIHI9IjIwIiBmaWxsPSIjRUM0ODk5Ii8+CjxwYXRoIGQ9Ik00NSAxMjBDNDUgMTA1IDU4IDk1IDc1IDk1Uzk1IDEwNSA5NSAxMjBIMTIwQzEyMCAxMDUgMTEwIDkwIDc1IDkwUzMwIDEwNSAzMCAxMjBINDVaIiBmaWxsPSIjRUM0ODk5Ii8+Cjwvc3ZnPgo=",
             whatsapp: "+55 11 77777-7777",
             courses: [
               { course_name: "Cardiologia", progress: 85, tag: "Curso" },
@@ -536,7 +536,7 @@ function InboxPage() {
         <title>Inbox – Connekt</title>
         <meta name="description" content="Sistema de inbox para gerenciar conversas com alunos do curso" />
       </Helmet>
-      <main className={`grid h-screen max-w-full mx-auto ${mainGridCols}`}>
+      <main className={`grid max-w-full mx-auto ${mainGridCols}`} style={{ height: '900px' }}>
         {hasConversations && !loading && !error && (
           <Sidebar
             conversations={filteredConversations}
