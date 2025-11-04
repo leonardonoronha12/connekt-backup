@@ -1,0 +1,132 @@
+<div style={{width: '100%', height: '100%', paddingBottom: 32, left: 0, top: 0, position: 'absolute', background: 'white', boxShadow: '-12px 22px 33.5px rgba(0, 0, 0, 0.15)', overflow: 'hidden', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', gap: 32, display: 'inline-flex'}}>
+    <div style={{alignSelf: 'stretch', paddingLeft: 32, paddingRight: 32, paddingTop: 44, paddingBottom: 44, background: 'linear-gradient(137deg, #321A88 29%, #0D0439 100%), linear-gradient(141deg, #0047BB 0%, #023992 100%), linear-gradient(322deg, rgba(0, 71, 187, 0.20) 0%, #051134 100%)', boxShadow: '0px 1.4750956296920776px 4.425286769866943px rgba(13, 10, 44, 0.08)', overflow: 'hidden', flexDirection: 'column', justifyContent: 'center', alignItems: 'flex-start', gap: 22, display: 'flex'}}>
+        <div style={{alignSelf: 'stretch', flexDirection: 'column', justifyContent: 'center', alignItems: 'flex-start', gap: 12, display: 'flex'}}>
+            <div style={{alignSelf: 'stretch', height: 37, textBoxTrim: 'trim-both', textBoxEdge: 'cap alphabetic', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'var(--Miscellaneous-Segmented-Control---Selected-Fill, white)', fontSize: 20, fontFamily: 'Inter', fontWeight: '600', wordWrap: 'break-word'}}>Finalize seu cadastro! 🔥</div>
+            <div style={{alignSelf: 'stretch', justifyContent: 'flex-start', alignItems: 'center', gap: 8, display: 'inline-flex'}}>
+                <div style={{flex: '1 1 0'}}><span style="color: 'var(--Miscellaneous-Segmented-Control---Selected-Fill, white)', fontSize: 16, fontFamily: 'Inter', fontWeight: '400', lineHeight: 26, wordWrap: 'break-word'">Conclua todas as configurações para ativar sua conta da </span><span style="color: 'white', fontSize: 16, fontFamily: 'Inter', fontWeight: '600', lineHeight: 26, wordWrap: 'break-word'">Connekt. </span></div>
+            </div>
+        </div>
+    </div>
+    <div style={{alignSelf: 'stretch', height: 587, paddingLeft: 32, paddingRight: 32, flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', gap: 32, display: 'flex'}}>
+        <div style={{alignSelf: 'stretch', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', gap: 16, display: 'flex'}}>
+            <div style={{alignSelf: 'stretch', color: 'var(--Miscellaneous-Window-Grabber, black)', fontSize: 14, fontFamily: 'Inter', fontWeight: '400', lineHeight: 20, wordWrap: 'break-word'}}>Complete o onboarding (1 de 5 concluídas)</div>
+            <div data-orientation="Horizontal" data-state="Default" style={{alignSelf: 'stretch', height: 367, transform: 'rotate(-90deg)', transformOrigin: 'top left', background: '#EDEDED', borderRadius: 4, justifyContent: 'flex-start', alignItems: 'flex-start', gap: 10, display: 'inline-flex'}}>
+                <div style={{width: 89, height: 8, background: '#2D5BFF', borderRadius: 4}} />
+            </div>
+        </div>
+        <div style={{alignSelf: 'stretch', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', gap: 22, display: 'flex'}}>
+            <div style={{alignSelf: 'stretch', paddingLeft: 22, paddingRight: 22, paddingTop: 14, paddingBottom: 14, background: 'white', boxShadow: '0px 0px 4.425286769866943px 2px rgba(13, 10, 44, 0.08)', overflow: 'hidden', borderRadius: 10, justifyContent: 'flex-start', alignItems: 'center', gap: 12, display: 'inline-flex'}}>
+                <div style={{padding: 12, background: '#FFEDCE', overflow: 'hidden', borderRadius: 10, flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', gap: 1, display: 'inline-flex'}}>
+                    <div style={{width: 24, height: 24, position: 'relative', overflow: 'hidden'}}>
+                        <div style={{width: 19.20, height: 21.60, left: 2.40, top: 1.20, position: 'absolute', background: 'var(--Colors-Orange, #FF8D28)'}} />
+                    </div>
+                </div>
+                <div style={{flex: '1 1 0', justifyContent: 'flex-start', alignItems: 'center', display: 'flex'}}>
+                    <div style={{flex: '1 1 0', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex'}}>
+                        <div style={{color: '#1E1B39', fontSize: 12, fontFamily: 'Inter', fontWeight: '500', lineHeight: 24, wordWrap: 'break-word'}}>Perfil de usuário</div>
+                        <div style={{alignSelf: 'stretch', color: '#9291A5', fontSize: 12, fontFamily: 'Inter', fontWeight: '400', lineHeight: 16, wordWrap: 'break-word'}}>Preencha todas as informações do seu perfil de usuário </div>
+                    </div>
+                    <div style={{width: 24, height: 24, position: 'relative', overflow: 'hidden'}}>
+                        <div style={{width: 19.50, height: 19.50, left: 2.25, top: 2.25, position: 'absolute', background: 'var(--Colors-Green, #34C759)'}} />
+                    </div>
+                </div>
+            </div>
+            <div style={{alignSelf: 'stretch', paddingLeft: 22, paddingRight: 22, paddingTop: 14, paddingBottom: 14, background: 'white', boxShadow: '0px 0px 4.425286769866943px 2px rgba(13, 10, 44, 0.08)', overflow: 'hidden', borderRadius: 10, justifyContent: 'flex-start', alignItems: 'center', gap: 12, display: 'inline-flex'}}>
+                <div style={{padding: 12, background: '#E7EDFC', overflow: 'hidden', borderRadius: 10, flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', gap: 1, display: 'inline-flex'}}>
+                    <div style={{width: 24, height: 24, position: 'relative', overflow: 'hidden'}}>
+                        <div style={{width: 19.20, height: 21.60, left: 2.40, top: 1.20, position: 'absolute', background: 'var(--Miscellaneous-Tab-Bar-Selection-√, #0088FF)'}} />
+                    </div>
+                </div>
+                <div style={{flex: '1 1 0', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex'}}>
+                    <div style={{color: '#1E1B39', fontSize: 12, fontFamily: 'Inter', fontWeight: '500', lineHeight: 24, wordWrap: 'break-word'}}>Domínio / Subdomínio</div>
+                    <div style={{alignSelf: 'stretch', color: '#9291A5', fontSize: 12, fontFamily: 'Inter', fontWeight: '400', lineHeight: 16, wordWrap: 'break-word'}}>Configure a url da área de membros da sua plataforma Connekt</div>
+                </div>
+            </div>
+            <div style={{alignSelf: 'stretch', paddingLeft: 22, paddingRight: 22, paddingTop: 14, paddingBottom: 14, background: 'white', boxShadow: '0px 0px 4.425286769866943px 2px rgba(13, 10, 44, 0.08)', overflow: 'hidden', borderRadius: 10, justifyContent: 'flex-start', alignItems: 'center', gap: 12, display: 'inline-flex'}}>
+                <div style={{padding: 12, background: '#E4FFF3', overflow: 'hidden', borderRadius: 10, flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', gap: 1, display: 'inline-flex'}}>
+                    <div style={{width: 24, height: 24, position: 'relative', overflow: 'hidden'}}>
+                        <div style={{width: 19.20, height: 21.60, left: 2.40, top: 1.20, position: 'absolute', background: 'var(--Colors-Green, #34C759)'}} />
+                    </div>
+                </div>
+                <div style={{flex: '1 1 0', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex'}}>
+                    <div style={{color: '#1E1B39', fontSize: 12, fontFamily: 'Inter', fontWeight: '500', lineHeight: 24, wordWrap: 'break-word'}}>Pagamentos</div>
+                    <div style={{alignSelf: 'stretch', color: '#9291A5', fontSize: 12, fontFamily: 'Inter', fontWeight: '400', lineHeight: 16, wordWrap: 'break-word'}}>Preencha seus dados bancários para o recebimento de pagamentos. </div>
+                </div>
+            </div>
+            <div style={{alignSelf: 'stretch', paddingLeft: 22, paddingRight: 22, paddingTop: 14, paddingBottom: 14, background: 'white', boxShadow: '0px 0px 4.425286769866943px 2px rgba(13, 10, 44, 0.08)', overflow: 'hidden', borderRadius: 10, justifyContent: 'flex-start', alignItems: 'center', gap: 12, display: 'inline-flex'}}>
+                <div style={{padding: 12, background: 'rgba(139, 97, 255, 0.10)', overflow: 'hidden', borderRadius: 10, flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', gap: 1, display: 'inline-flex'}}>
+                    <div style={{width: 24, height: 24, position: 'relative', overflow: 'hidden'}}>
+                        <div style={{width: 19.20, height: 21.60, left: 2.40, top: 1.20, position: 'absolute', background: 'var(--Colors-Indigo, #6155F5)'}} />
+                    </div>
+                </div>
+                <div style={{flex: '1 1 0', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex'}}>
+                    <div style={{color: '#1E1B39', fontSize: 12, fontFamily: 'Inter', fontWeight: '500', lineHeight: 24, wordWrap: 'break-word'}}>Crie um curso</div>
+                    <div style={{alignSelf: 'stretch', color: '#9291A5', fontSize: 12, fontFamily: 'Inter', fontWeight: '400', lineHeight: 16, wordWrap: 'break-word'}}>Crie o seu primeiro curso online com a Connekt </div>
+                </div>
+            </div>
+            <div style={{alignSelf: 'stretch', paddingLeft: 22, paddingRight: 22, paddingTop: 14, paddingBottom: 14, background: 'white', boxShadow: '0px 0px 4.425286769866943px 2px rgba(13, 10, 44, 0.08)', overflow: 'hidden', borderRadius: 10, justifyContent: 'flex-start', alignItems: 'center', gap: 12, display: 'inline-flex'}}>
+                <div style={{padding: 12, background: '#FFFCDE', overflow: 'hidden', borderRadius: 10, flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', gap: 1, display: 'inline-flex'}}>
+                    <div style={{width: 24, height: 24, position: 'relative', overflow: 'hidden'}}>
+                        <div style={{width: 19.20, height: 21.60, left: 2.40, top: 1.20, position: 'absolute', background: 'var(--Miscellaneous-Window-Controls-Minimize, #FEBC2F)'}} />
+                    </div>
+                </div>
+                <div style={{flex: '1 1 0', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex'}}>
+                    <div style={{color: '#1E1B39', fontSize: 12, fontFamily: 'Inter', fontWeight: '500', lineHeight: 24, wordWrap: 'break-word'}}>Publique seu curso</div>
+                    <div style={{alignSelf: 'stretch', color: '#9291A5', fontSize: 12, fontFamily: 'Inter', fontWeight: '400', lineHeight: 16, wordWrap: 'break-word'}}>Publique a venda do seu curso online, publique seu primeiro curso. </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div style={{alignSelf: 'stretch', padding: 32, flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', gap: 1, display: 'flex'}}>
+        <div style={{alignSelf: 'stretch', justifyContent: 'flex-start', alignItems: 'flex-start', gap: 22, display: 'inline-flex'}}>
+            <div style={{flex: '1 1 0', height: 42, paddingLeft: 22, paddingRight: 22, paddingTop: 16, paddingBottom: 16, background: 'var(--secondary-500, #0047BB)', borderRadius: 4, justifyContent: 'center', alignItems: 'center', gap: 8, display: 'flex'}}>
+                <div style={{textBoxTrim: 'trim-both', textBoxEdge: 'cap alphabetic', color: 'var(--neutral-white, white)', fontSize: 14, fontFamily: 'Inter', fontWeight: '600', lineHeight: 42, wordWrap: 'break-word'}}>Ativar conta Connekt</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+// Finalize seu cadastro! 🔥
+color: 'var(--Miscellaneous-Segmented-Control---Selected-Fill, white)', fontSize: 20, fontFamily: 'Inter', fontWeight: '600', wordWrap: 'break-word'
+---
+// Conclua todas as configurações para ativar sua conta da 
+color: 'var(--Miscellaneous-Segmented-Control---Selected-Fill, white)', fontSize: 16, fontFamily: 'Inter', fontWeight: '400', lineHeight: 26, wordWrap: 'break-word'
+---
+// Connekt. 
+color: 'white', fontSize: 16, fontFamily: 'Inter', fontWeight: '600', lineHeight: 26, wordWrap: 'break-word'
+---
+// Complete o onboarding (1 de 5 concluídas)
+color: 'var(--Miscellaneous-Window-Grabber, black)', fontSize: 14, fontFamily: 'Inter', fontWeight: '400', lineHeight: 20, wordWrap: 'break-word'
+---
+// Perfil de usuário
+color: '#1E1B39', fontSize: 12, fontFamily: 'Inter', fontWeight: '500', lineHeight: 24, wordWrap: 'break-word'
+---
+// Preencha todas as informações do seu perfil de usuário 
+color: '#9291A5', fontSize: 12, fontFamily: 'Inter', fontWeight: '400', lineHeight: 16, wordWrap: 'break-word'
+---
+// Domínio / Subdomínio
+color: '#1E1B39', fontSize: 12, fontFamily: 'Inter', fontWeight: '500', lineHeight: 24, wordWrap: 'break-word'
+---
+// Configure a url da área de membros da sua plataforma Connekt
+color: '#9291A5', fontSize: 12, fontFamily: 'Inter', fontWeight: '400', lineHeight: 16, wordWrap: 'break-word'
+---
+// Pagamentos
+color: '#1E1B39', fontSize: 12, fontFamily: 'Inter', fontWeight: '500', lineHeight: 24, wordWrap: 'break-word'
+---
+// Preencha seus dados bancários para o recebimento de pagamentos. 
+color: '#9291A5', fontSize: 12, fontFamily: 'Inter', fontWeight: '400', lineHeight: 16, wordWrap: 'break-word'
+---
+// Crie um curso
+color: '#1E1B39', fontSize: 12, fontFamily: 'Inter', fontWeight: '500', lineHeight: 24, wordWrap: 'break-word'
+---
+// Crie o seu primeiro curso online com a Connekt 
+color: '#9291A5', fontSize: 12, fontFamily: 'Inter', fontWeight: '400', lineHeight: 16, wordWrap: 'break-word'
+---
+// Publique seu curso
+color: '#1E1B39', fontSize: 12, fontFamily: 'Inter', fontWeight: '500', lineHeight: 24, wordWrap: 'break-word'
+---
+// Publique a venda do seu curso online, publique seu primeiro curso. 
+color: '#9291A5', fontSize: 12, fontFamily: 'Inter', fontWeight: '400', lineHeight: 16, wordWrap: 'break-word'
+---
+// Ativar conta Connekt
+color: 'var(--neutral-white, white)', fontSize: 14, fontFamily: 'Inter', fontWeight: '600', lineHeight: 42, wordWrap: 'break-word'

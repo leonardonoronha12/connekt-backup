@@ -2,10 +2,8 @@ import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Heart, Edit2, Trash2, ChevronDown, Wand2, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useToast } from "@/components/ui/use-toast";
 
 const ChatArea = ({ conversation, onAddReply, onLikePost, onLikeReply, onEditReply, onDeleteReply, onToggleStudentInfo, activeFilterData, currentUser, error, onRetry }) => {
-  const { toast } = useToast();
   const [message, setMessage] = useState('');
   const [showReplies, setShowReplies] = useState(false);
   const [isComposerVisible, setComposerVisible] = useState(false);
@@ -305,7 +303,7 @@ const ChatArea = ({ conversation, onAddReply, onLikePost, onLikeReply, onEditRep
                       }}
                     />
                     <button className="absolute top-3 right-3 text-blue-600 hover:text-blue-800"
-                      onClick={() => toast({ title: "Funcionalidade em desenvolvimento", description: "🚧 This feature isn't implemented yet—but don't worry! You can request it in your next prompt! 🚀"})}
+                      onClick={() => console.log("Funcionalidade em desenvolvimento")}
                     >
                       <Wand2 size={16} />
                     </button>

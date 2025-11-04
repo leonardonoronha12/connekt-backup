@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Helmet } from 'react-helmet-async';
-import { Plus, Search, ChevronDown, Award, CalendarDays, ListFilter, X, Hash, Tag } from 'lucide-react';
+import { Plus, Search, ChevronDown, Award, CalendarDays, ListFilter, X, Hash, Tag, Hourglass, Pencil, Trash, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
 import {
@@ -16,7 +16,12 @@ const mockQuestionBanks = [
     id: 1,
     name: "Nome do banco de questões",
     description: "Descrição que foi adicionada no ato da criação do banco de questões",
-    tags: ["Categoria", "Categoria"],
+    tags: [
+      { id: 1, name: 'Tag', color: '#FFC107' },
+      { id: 2, name: 'Tag', color: '#2196F3' }
+    ],
+    category: 'Neurologia',
+    subcategory: 'Subcategoria A',
     questionCount: 50,
     createdAt: "20/08/2025",
     type: "existing",
@@ -25,7 +30,12 @@ const mockQuestionBanks = [
     id: 2,
     name: "Nome do banco de questões",
     description: "Descrição que foi adicionada no ato da criação do banco de questões",
-    tags: ["Categoria", "Categoria"],
+    tags: [
+      { id: 3, name: 'Tag', color: '#F44336' },
+      { id: 4, name: 'Tag Adicional', color: '#4CAF50' }
+    ],
+    category: 'Cardiologia',
+    subcategory: 'Subcategoria B',
     questionCount: 50,
     createdAt: "20/08/2025",
     type: "existing",
@@ -37,8 +47,6 @@ const mockQuestionBanks = [
   { id: 7, type: "create" },
   { id: 8, type: "create" },
 ];
-
-
 
 const BankCardIcon = () => (
   <img src="/bank-icon.svg" alt="Ícone do banco" className="w-20 h-20" />
@@ -59,7 +67,10 @@ const ExistingBankCard = ({ bank, onAction }) => {
   const tags = Array.isArray(bank.tags) ? bank.tags : [];
   
   return (
-    <div className="bg-white p-3 sm:p-4 lg:p-6 rounded border border-gray-200/80 shadow-sm flex flex-col justify-between min-h-[220px] sm:min-h-[250px] lg:min-h-[295px] w-full overflow-hidden compact-cards ultra-compact-cards">
+    <div 
+      className="bg-white p-3 sm:p-4 lg:p-6 rounded border border-gray-200/80 shadow-sm flex flex-col justify-between min-h-[220px] sm:min-h-[250px] lg:min-h-[295px] w-full overflow-hidden compact-cards ultra-compact-cards cursor-pointer hover:shadow-md transition-shadow"
+      onClick={() => onAction('edit', bank)}
+    >
       <div className="flex-1">
         <div className="flex justify-start mb-4">
           <BankCardIcon />
@@ -67,12 +78,13 @@ const ExistingBankCard = ({ bank, onAction }) => {
         <h3 className="text-base font-semibold text-gray-800 mb-1 break-words line-clamp-2 ultra-compact-text">{bank.name}</h3>
         <p className="text-[12px] font-normal font-inter text-gray-500 mb-4 line-clamp-2 ultra-compact-text" style={{color: '#9291A5'}}>{bank.description}</p>
         <div className="flex flex-wrap gap-2 mb-4 min-h-[24px]">
-          {tags.map((tag, index) => (
-            <span key={`${tag}-${index}`} className="px-2 py-1 text-xs font-medium text-purple-700 rounded flex items-center gap-1" style={{backgroundColor: '#AD89F71A'}}>
-              <div className="w-[10px] h-[10px]" style={{backgroundColor: '#AD89F7'}}></div>
-              {tag}
+          {/* Mostrar apenas categoria */}
+          {bank.category && (
+            <span className="px-2 py-1 text-xs font-medium text-blue-700 rounded flex items-center gap-1" style={{backgroundColor: '#2196F320'}}>
+              <div className="w-[10px] h-[10px]" style={{backgroundColor: '#2196F3'}}></div>
+              {bank.category}
             </span>
-          ))}
+          )}
         </div>
       </div>
       <div className="flex items-center justify-between w-full mt-auto">
@@ -95,7 +107,15 @@ const ExistingBankCard = ({ bank, onAction }) => {
             <span className="block text-[10px] font-inter font-normal truncate" style={{color: '#9291A5'}}>Criado em: {formatDate(bank.created_at)}</span>
           </div>
         </div>
-        <Button variant="outline" className="border-gray-300 text-gray-700 w-[71px] h-[31px] font-inter font-medium text-[10px] rounded-[4px]" style={{color: '#22252B'}} onClick={() => onAction('view', bank.id)}>
+        <Button 
+          variant="outline" 
+          className="border-gray-300 text-gray-700 w-[71px] h-[31px] font-inter font-medium text-[10px] rounded-[4px]" 
+          style={{color: '#22252B'}} 
+          onClick={(e) => {
+            e.stopPropagation();
+            onAction('view', bank.id);
+          }}
+        >
           Visualizar
         </Button>
       </div>
@@ -131,7 +151,7 @@ const DecorativeIcons = () => (
       </g>
       <path d="M38 108.063C38 103.058 42.0576 99 47.0629 99H79.5544C84.5597 99 88.6173 103.058 88.6173 108.063V140.554C88.6173 145.56 84.5597 149.617 79.5544 149.617H47.0629C42.0576 149.617 38 145.56 38 140.554V108.063Z" fill="#3BC5BD"/>
       <g clipPath="url(#clip2_93_850)">
-      <path d="M75.6466 114.818H68.054C67.0472 114.818 66.0816 115.218 65.3696 115.93C64.6577 116.642 64.2577 117.607 64.2577 118.614V129.022C64.261 129.267 64.1715 129.504 64.007 129.686C63.8426 129.867 63.6156 129.98 63.3715 130.001C63.2417 130.009 63.1115 129.991 62.989 129.947C62.8665 129.903 62.7543 129.835 62.6594 129.746C62.5645 129.657 62.4889 129.549 62.4373 129.43C62.3858 129.31 62.3593 129.182 62.3596 129.052V118.614C62.3596 117.607 61.9596 116.642 61.2477 115.93C60.5357 115.218 59.5701 114.818 58.5633 114.818H50.9707C50.719 114.818 50.4776 114.918 50.2996 115.096C50.1216 115.274 50.0216 115.515 50.0216 115.767V132.85C50.0216 133.102 50.1216 133.343 50.2996 133.521C50.4776 133.699 50.719 133.799 50.9707 133.799H59.5123C60.2662 133.799 60.9894 134.098 61.5231 134.631C62.0569 135.163 62.3577 135.886 62.3596 136.639C62.3558 136.833 62.4121 137.023 62.5209 137.184C62.6297 137.344 62.7855 137.467 62.967 137.535C63.111 137.591 63.2664 137.61 63.4197 137.592C63.5731 137.574 63.7197 137.519 63.8468 137.431C63.974 137.344 64.0779 137.227 64.1495 137.09C64.2211 136.953 64.2582 136.801 64.2577 136.647C64.2577 135.891 64.5577 135.167 65.0916 134.633C65.6256 134.099 66.3498 133.799 67.1049 133.799H75.6466C75.8983 133.799 76.1397 133.699 76.3177 133.521C76.4957 133.343 76.5957 133.102 76.5957 132.85V115.767C76.5957 115.515 76.4957 115.274 76.3177 115.096C76.1397 114.918 75.8983 114.818 75.6466 114.818ZM72.7994 129.054H68.086C67.8411 129.057 67.604 128.968 67.4224 128.803C67.2409 128.639 67.1283 128.412 67.1073 128.168C67.0987 128.038 67.1169 127.908 67.1607 127.785C67.2045 127.663 67.273 127.551 67.362 127.456C67.451 127.361 67.5586 127.285 67.6781 127.234C67.7975 127.182 67.9263 127.156 68.0564 127.156H72.7697C73.0147 127.153 73.2517 127.242 73.4333 127.407C73.6149 127.571 73.7275 127.798 73.7485 128.042C73.7571 128.172 73.7389 128.302 73.6951 128.425C73.6513 128.547 73.5827 128.659 73.4937 128.754C73.4047 128.849 73.2972 128.925 73.1777 128.976C73.0583 129.028 72.9295 129.054 72.7994 129.054ZM72.7994 125.258H68.086C67.8411 125.261 67.604 125.171 67.4224 125.007C67.2409 124.843 67.1283 124.616 67.1073 124.371C67.0987 124.242 67.1169 124.111 67.1607 123.989C67.2045 123.866 67.273 123.754 67.362 123.659C67.451 123.564 67.5586 123.489 67.6781 123.437C67.7975 123.386 67.9263 123.359 68.0564 123.36H72.7697C73.0147 123.356 73.2517 123.446 73.4333 123.61C73.6149 123.775 73.7275 124.002 73.7485 124.246C73.7571 124.376 73.7389 124.506 73.6951 124.628C73.6513 124.751 73.5827 124.863 73.4937 124.958C73.4047 125.053 73.2972 125.128 73.1777 125.18C73.0583 125.232 72.9295 125.258 72.7994 125.258ZM72.7994 121.461H68.086C67.8407 121.465 67.603 121.376 67.4209 121.212C67.2389 121.047 67.1259 120.82 67.1049 120.575C67.0963 120.445 67.1145 120.315 67.1583 120.193C67.2021 120.07 67.2707 119.958 67.3597 119.863C67.4487 119.768 67.5562 119.693 67.6757 119.641C67.7951 119.589 67.9239 119.563 68.054 119.563H72.7674C73.0127 119.559 73.2504 119.649 73.4325 119.813C73.6145 119.978 73.7275 120.205 73.7485 120.449C73.7571 120.579 73.7389 120.709 73.6951 120.832C73.6513 120.954 73.5827 121.067 73.4937 121.162C73.4047 121.256 73.2972 121.332 73.1777 121.384C73.0583 121.435 72.9295 121.462 72.7994 121.461Z" fill="#F9FAFB"/>
+      <path d="M75.6466 114.818H68.054C67.0472 114.818 66.0816 115.218 65.3696 115.93C64.6577 116.642 64.2577 117.607 64.2577 118.614V129.022C64.261 129.267 64.1715 129.504 64.007 129.686C63.8426 129.867 63.6156 129.98 63.3715 130.001C63.2417 130.009 63.1115 129.991 62.989 129.947C62.8665 129.903 62.7543 129.835 62.6594 129.746C62.5645 129.657 62.4889 129.549 62.4373 129.43C62.3858 129.31 62.3593 129.182 62.3596 129.052V118.614C62.3596 117.607 61.9596 116.642 61.2477 115.93C60.5357 115.218 59.5701 114.818 58.5633 114.818H50.9707C50.719 114.818 50.4776 114.918 50.2996 115.096C50.1216 115.274 50.0216 115.515 50.0216 115.767V132.85C50.0216 133.102 50.1216 133.343 50.2996 133.521C50.4776 133.699 50.719 133.799 50.9707 133.799H59.5123C60.2662 133.799 60.9894 134.098 61.5231 134.631C62.0569 135.163 62.3577 135.886 62.3596 136.639C62.3558 136.833 62.4121 137.023 62.5209 137.184C62.6297 137.344 62.7855 137.467 62.967 137.535C63.111 137.591 63.2664 137.61 63.4197 137.592C63.5731 137.574 63.7197 137.519 63.8468 137.431C63.974 137.344 64.0779 137.227 64.1495 137.09C64.2211 136.953 64.2582 136.801 64.2577 136.647C64.2577 135.891 64.5577 135.167 65.0916 134.633C65.6256 134.099 66.3498 133.799 67.1049 133.799H75.6466C75.8983 133.799 76.1397 133.699 76.3177 133.521C76.4957 133.343 76.5957 133.102 76.5957 132.85V115.767C76.5957 115.515 76.4957 115.274 76.3177 115.096C76.1397 114.918 75.8983 114.818 75.6466 114.818ZM72.7994 129.054H68.086C67.8411 129.057 67.604 128.968 67.4224 128.803C67.2409 128.639 67.1283 128.412 67.1073 128.168C67.0987 128.038 67.1169 127.908 67.1607 127.785C67.2045 127.663 67.273 127.551 67.362 127.456C67.451 127.361 67.5586 127.285 67.6781 127.234C67.7975 127.182 67.9263 127.156 68.0564 127.156H72.7697C73.0147 127.153 73.2517 127.242 73.4333 127.407C73.6149 127.571 73.7275 127.798 73.7485 128.042C73.7571 128.172 73.7389 128.302 73.6951 128.425C73.6513 128.547 73.5827 128.659 73.4937 128.754C73.4047 128.849 73.2972 128.925 73.1777 128.976C73.0583 129.028 72.9295 129.054 72.7994 129.054ZM72.7994 125.258H68.086C67.8411 125.261 67.604 125.171 67.4224 125.007C67.2409 124.843 67.1283 124.616 67.1073 124.371C67.0987 124.242 67.1169 124.111 67.1607 123.989C67.2045 123.866 67.273 123.754 67.362 123.659C67.451 123.564 67.5586 123.489 67.6781 123.437C67.7975 123.386 67.9263 123.359 68.0564 123.36H72.7697C73.0147 123.356 73.2517 123.446 73.4333 123.61C73.6149 123.775 73.7275 124.002 73.7485 124.246C73.7571 124.376 73.7389 124.506 73.6951 124.628C73.6513 124.751 73.5827 124.863 73.4937 124.958C73.4047 125.053 73.2972 125.128 73.1777 125.180C73.0583 125.232 72.9295 125.258 72.7994 125.258ZM72.7994 121.461H68.086C67.8407 121.465 67.603 121.376 67.4209 121.212C67.2389 121.047 67.1259 120.82 67.1049 120.575C67.0963 120.445 67.1145 120.315 67.1583 120.193C67.2021 120.07 67.2707 119.958 67.3597 119.863C67.4487 119.768 67.5562 119.693 67.6757 119.641C67.7951 119.589 67.9239 119.563 68.054 119.563H72.7674C73.0127 119.559 73.2504 119.649 73.4325 119.813C73.6145 119.978 73.7275 120.205 73.7485 120.449C73.7571 120.579 73.7389 120.709 73.6951 120.832C73.6513 120.954 73.5827 121.067 73.4937 121.162C73.4047 121.256 73.2972 121.332 73.1777 121.384C73.0583 121.435 72.9295 121.462 72.7994 121.461Z" fill="#F9FAFB"/>
       </g>
       <path d="M58 10.0267C58 4.48909 62.4891 0 68.0267 0H103.973C109.511 0 114 4.48909 114 10.0267V45.9733C114 51.5109 109.511 56 103.973 56H68.0267C62.4891 56 58 51.5109 58 45.9733V10.0267Z" fill="#E5B800"/>
       <g clipPath="url(#clip3_93_850)">
@@ -160,6 +180,7 @@ const QuestionBankPage = () => {
   const [questionBanks, setQuestionBanks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isPopupOpen, setIsPopupOpen] = useState(false);
+  const [isSetupModalOpen, setIsSetupModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeFilters, setActiveFilters] = useState({
     status: 'Todos'
@@ -168,12 +189,375 @@ const QuestionBankPage = () => {
     name: '',
     description: '',
     tags: [],
-    category: ''
+    category: '',
+    subcategory: ''
   });
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editingBank, setEditingBank] = useState(null);
+  const [isFormModified, setIsFormModified] = useState(false);
+  const [originalFormData, setOriginalFormData] = useState(null);
+
+  // Estados para controlar dropdowns
+  const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
+  const [showSubcategoryDropdown, setShowSubcategoryDropdown] = useState(false);
+  const [showTagsDropdown, setShowTagsDropdown] = useState(false);
+  
+  // Ref para o dropdown de categorias
+  const categoryDropdownRef = useRef(null);
+  // Ref para o dropdown de subcategorias
+  const subcategoryDropdownRef = useRef(null);
+  // Ref para o dropdown de tags
+  const tagsDropdownRef = useRef(null);
+  
+  // Estados para pesquisa e criação de categoria
+  const [categorySearchTerm, setCategorySearchTerm] = useState('');
+  const [isCreatingNewCategory, setIsCreatingNewCategory] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [newCategoryColor, setNewCategoryColor] = useState('#8B5CF6');
+  const [newCategoryDescription, setNewCategoryDescription] = useState('');
+
+  // Estados para edição de categoria
+  const [editingCategoryId, setEditingCategoryId] = useState(null);
+  const [editCategoryName, setEditCategoryName] = useState('');
+  const [editCategoryColor, setEditCategoryColor] = useState('#8B5CF6');
+  const [editCategoryDescription, setEditCategoryDescription] = useState('');
+  // Estado para confirmação de remoção inline
+  const [pendingDeleteCategoryId, setPendingDeleteCategoryId] = useState(null);
+
+  // Estados para subcategoria (busca, criação, edição e remoção)
+  const [subcategorySearchTerm, setSubcategorySearchTerm] = useState('');
+  const [isCreatingNewSubcategory, setIsCreatingNewSubcategory] = useState(false);
+  const [newSubcategoryName, setNewSubcategoryName] = useState('');
+  const [newSubcategoryColor, setNewSubcategoryColor] = useState('#22C55E');
+  const [newSubcategoryDescription, setNewSubcategoryDescription] = useState('');
+  const [editingSubcategoryId, setEditingSubcategoryId] = useState(null);
+  const [editSubcategoryName, setEditSubcategoryName] = useState('');
+  const [editSubcategoryColor, setEditSubcategoryColor] = useState('#22C55E');
+  const [editSubcategoryDescription, setEditSubcategoryDescription] = useState('');
+  const [pendingDeleteSubcategoryId, setPendingDeleteSubcategoryId] = useState(null);
+
+  // Estados para tags (busca, criação, edição e remoção)
+  const [tagsSearchTerm, setTagsSearchTerm] = useState('');
+  const [isCreatingNewTag, setIsCreatingNewTag] = useState(false);
+  const [newTagName, setNewTagName] = useState('');
+  const [newTagColor, setNewTagColor] = useState('#0EA5E9');
+  const [newTagDescription, setNewTagDescription] = useState('');
+  const [editingTagId, setEditingTagId] = useState(null);
+  const [editTagName, setEditTagName] = useState('');
+  const [editTagColor, setEditTagColor] = useState('#0EA5E9');
+  const [editTagDescription, setEditTagDescription] = useState('');
+  const [pendingDeleteTagId, setPendingDeleteTagId] = useState(null);
+
+  // Dados mockados para as opções
+  const [categories, setCategories] = useState([
+    { id: 1, name: 'Neurologia', color: '#8B5CF6', description: 'Especialidade médica que trata do sistema nervoso' },
+    { id: 2, name: 'Cardiologia', color: '#EF4444', description: 'Especialidade médica que trata do coração e sistema cardiovascular' },
+    { id: 3, name: 'Pediatria', color: '#10B981', description: 'Especialidade médica que cuida da saúde de crianças e adolescentes' },
+    { id: 4, name: 'Ortopedia', color: '#F59E0B', description: 'Especialidade médica que trata do sistema musculoesquelético' },
+    { id: 5, name: 'Dermatologia', color: '#06B6D4', description: 'Especialidade médica que trata da pele e seus anexos' }
+  ]);
+  const [subcategories, setSubcategories] = useState([
+    { id: 1, name: 'Subcategoria A', color: '#22C55E', description: 'Descrição da Subcategoria A' },
+    { id: 2, name: 'Subcategoria B', color: '#10B981', description: 'Descrição da Subcategoria B' },
+    { id: 3, name: 'Subcategoria C', color: '#34D399', description: 'Descrição da Subcategoria C' },
+    { id: 4, name: 'Subcategoria D', color: '#059669', description: 'Descrição da Subcategoria D' },
+  ]);
+  const [availableTags, setAvailableTags] = useState([
+    { id: 1, name: 'Tag', color: '#FFC107', description: 'Marcador genérico' },
+    { id: 2, name: 'Tag', color: '#2196F3', description: 'Etiqueta azul' },
+    { id: 3, name: 'Tag', color: '#F44336', description: 'Etiqueta vermelha' },
+    { id: 4, name: 'Tag Adicional', color: '#4CAF50', description: 'Etiqueta verde adicional' },
+    { id: 5, name: 'Outra Tag', color: '#9C27B0', description: 'Outra etiqueta roxa' }
+  ]);
 
   useEffect(() => {
     loadQuestionBanks();
   }, []);
+
+  // Detectar mudanças no formulário
+  useEffect(() => {
+    if (originalFormData) {
+      const hasChanges = 
+        formData.name !== originalFormData.name ||
+        formData.description !== originalFormData.description ||
+        formData.category !== originalFormData.category ||
+        formData.subcategory !== originalFormData.subcategory ||
+        JSON.stringify(formData.tags) !== JSON.stringify(originalFormData.tags);
+      
+      setIsFormModified(hasChanges);
+    }
+  }, [formData, originalFormData]);
+
+  // Fechar dropdowns ao clicar fora
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (!event.target.closest('.dropdown-container')) {
+        setShowCategoryDropdown(false);
+        setShowSubcategoryDropdown(false);
+        setShowTagsDropdown(false);
+        // Limpar estados de categoria
+        setCategorySearchTerm('');
+        setIsCreatingNewCategory(false);
+        setNewCategoryName('');
+        setNewCategoryColor('#8B5CF6');
+        setNewCategoryDescription('');
+        setPendingDeleteCategoryId(null);
+        // Limpar estados de subcategoria
+        setSubcategorySearchTerm('');
+        setIsCreatingNewSubcategory(false);
+        setNewSubcategoryName('');
+        setNewSubcategoryColor('#22C55E');
+        setNewSubcategoryDescription('');
+        setEditingSubcategoryId(null);
+        setPendingDeleteSubcategoryId(null);
+        // Limpar estados de tags
+        setTagsSearchTerm('');
+        setIsCreatingNewTag(false);
+        setNewTagName('');
+        setNewTagColor('#0EA5E9');
+        setNewTagDescription('');
+        setEditingTagId(null);
+        setPendingDeleteTagId(null);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  // Funções auxiliares para categorias
+  const filteredCategories = categories.filter(category =>
+    category.name.toLowerCase().includes(categorySearchTerm.toLowerCase())
+  );
+  const filteredSubcategories = subcategories.filter(subcategory =>
+    subcategory.name.toLowerCase().includes(subcategorySearchTerm.toLowerCase())
+  );
+  const filteredTags = availableTags.filter(tag =>
+    tag.name.toLowerCase().includes(tagsSearchTerm.toLowerCase())
+  );
+
+  const handleCreateNewCategory = () => {
+    if (newCategoryName.trim() && newCategoryDescription.trim() && 
+        !categories.some(cat => cat.name === newCategoryName.trim())) {
+      const newCategory = {
+        id: categories.length + 1,
+        name: newCategoryName.trim(),
+        color: newCategoryColor,
+        description: newCategoryDescription.trim()
+      };
+      setCategories(prev => [...prev, newCategory]);
+      setFormData(prev => ({ ...prev, category: newCategoryName.trim() }));
+      setNewCategoryName('');
+      setNewCategoryColor('#8B5CF6');
+      setNewCategoryDescription('');
+      setIsCreatingNewCategory(false);
+      setShowCategoryDropdown(false);
+      setCategorySearchTerm('');
+    }
+  };
+
+  const handleCancelNewCategory = () => {
+    setNewCategoryName('');
+    setNewCategoryColor('#8B5CF6');
+    setNewCategoryDescription('');
+    setIsCreatingNewCategory(false);
+    setCategorySearchTerm('');
+  };
+
+  const handleStartEditCategory = (category) => {
+    setEditingCategoryId(category.id);
+    setEditCategoryName(category.name);
+    setEditCategoryColor(category.color);
+    setEditCategoryDescription(category.description || '');
+  };
+
+  const handleCancelEditCategory = () => {
+    setEditingCategoryId(null);
+    setEditCategoryName('');
+    setEditCategoryColor('#8B5CF6');
+    setEditCategoryDescription('');
+  };
+
+  const handleSaveEditCategory = () => {
+    if (!editCategoryName.trim() || !editCategoryDescription.trim() || !editingCategoryId) return;
+    const oldName = categories.find(c => c.id === editingCategoryId)?.name;
+    setCategories(prev => prev.map(cat => (
+      cat.id === editingCategoryId
+        ? { ...cat, name: editCategoryName.trim(), color: editCategoryColor, description: editCategoryDescription.trim() }
+        : cat
+    )));
+    // Atualiza seleção se necessário
+    setFormData(prev => ({ ...prev, category: prev.category === oldName ? editCategoryName.trim() : prev.category }));
+    setEditingCategoryId(null);
+    setEditCategoryName('');
+    setEditCategoryColor('#8B5CF6');
+    setEditCategoryDescription('');
+    toast({ description: 'Categoria atualizada com sucesso!' });
+  };
+
+  const handleDeleteCategory = (id) => {
+    const cat = categories.find(c => c.id === id);
+    if (!cat) return;
+    setCategories(prev => prev.filter(c => c.id !== id));
+    setFormData(prev => ({ ...prev, category: prev.category === cat.name ? '' : prev.category }));
+    setPendingDeleteCategoryId(null);
+    toast({ description: 'Categoria removida com sucesso!' });
+  };
+
+  // Funções auxiliares para subcategorias
+  const handleCreateNewSubcategory = () => {
+    if (newSubcategoryName.trim() && newSubcategoryDescription.trim() &&
+        !subcategories.some(sub => sub.name === newSubcategoryName.trim())) {
+      const newSubcategory = {
+        id: subcategories.length + 1,
+        name: newSubcategoryName.trim(),
+        color: newSubcategoryColor,
+        description: newSubcategoryDescription.trim()
+      };
+      setSubcategories(prev => [...prev, newSubcategory]);
+      setFormData(prev => ({ ...prev, subcategory: newSubcategoryName.trim() }));
+      setNewSubcategoryName('');
+      setNewSubcategoryColor('#22C55E');
+      setNewSubcategoryDescription('');
+      setIsCreatingNewSubcategory(false);
+      setShowSubcategoryDropdown(false);
+      setSubcategorySearchTerm('');
+    }
+  };
+
+  const handleCancelNewSubcategory = () => {
+    setNewSubcategoryName('');
+    setNewSubcategoryColor('#22C55E');
+    setNewSubcategoryDescription('');
+    setIsCreatingNewSubcategory(false);
+    setSubcategorySearchTerm('');
+  };
+
+  const handleStartEditSubcategory = (subcategory) => {
+    setEditingSubcategoryId(subcategory.id);
+    setEditSubcategoryName(subcategory.name);
+    setEditSubcategoryColor(subcategory.color);
+    setEditSubcategoryDescription(subcategory.description || '');
+  };
+
+  const handleCancelEditSubcategory = () => {
+    setEditingSubcategoryId(null);
+    setEditSubcategoryName('');
+    setEditSubcategoryColor('#22C55E');
+    setEditSubcategoryDescription('');
+  };
+
+  const handleSaveEditSubcategory = () => {
+    if (!editSubcategoryName.trim() || !editSubcategoryDescription.trim() || !editingSubcategoryId) return;
+    const oldName = subcategories.find(s => s.id === editingSubcategoryId)?.name;
+    setSubcategories(prev => prev.map(sub => (
+      sub.id === editingSubcategoryId
+        ? { ...sub, name: editSubcategoryName.trim(), color: editSubcategoryColor, description: editSubcategoryDescription.trim() }
+        : sub
+    )));
+    // Atualiza seleção se necessário
+    setFormData(prev => ({ ...prev, subcategory: prev.subcategory === oldName ? editSubcategoryName.trim() : prev.subcategory }));
+    setEditingSubcategoryId(null);
+    setEditSubcategoryName('');
+    setEditSubcategoryColor('#22C55E');
+    setEditSubcategoryDescription('');
+    toast({ description: 'Subcategoria atualizada com sucesso!' });
+  };
+
+  const handleDeleteSubcategory = (id) => {
+    const sub = subcategories.find(s => s.id === id);
+    if (!sub) return;
+    setSubcategories(prev => prev.filter(s => s.id !== id));
+    setFormData(prev => ({ ...prev, subcategory: prev.subcategory === sub.name ? '' : prev.subcategory }));
+    setPendingDeleteSubcategoryId(null);
+    toast({ description: 'Subcategoria removida com sucesso!' });
+  };
+
+  // Funções auxiliares para tags
+  const handleCreateNewTag = () => {
+    if (newTagName.trim() && newTagDescription.trim() &&
+        !availableTags.some(t => t.name === newTagName.trim())) {
+      const newTag = {
+        id: availableTags.length + 1,
+        name: newTagName.trim(),
+        color: newTagColor,
+        description: newTagDescription.trim()
+      };
+      setAvailableTags(prev => [...prev, newTag]);
+      setFormData(prev => ({ ...prev, tags: [...prev.tags, newTag] }));
+      setNewTagName('');
+      setNewTagColor('#0EA5E9');
+      setNewTagDescription('');
+      setIsCreatingNewTag(false);
+      setShowTagsDropdown(false);
+      setTagsSearchTerm('');
+    }
+  };
+
+  const handleCancelNewTag = () => {
+    setNewTagName('');
+    setNewTagColor('#0EA5E9');
+    setNewTagDescription('');
+    setIsCreatingNewTag(false);
+    setTagsSearchTerm('');
+  };
+
+  const handleStartEditTag = (tag) => {
+    setEditingTagId(tag.id);
+    setEditTagName(tag.name);
+    setEditTagColor(tag.color);
+    setEditTagDescription(tag.description || '');
+  };
+
+  const handleCancelEditTag = () => {
+    setEditingTagId(null);
+    setEditTagName('');
+    setEditTagColor('#0EA5E9');
+    setEditTagDescription('');
+  };
+
+  const handleSaveEditTag = () => {
+    if (!editTagName.trim() || !editTagDescription.trim() || !editingTagId) return;
+    const updatedTag = {
+      id: editingTagId,
+      name: editTagName.trim(),
+      color: editTagColor,
+      description: editTagDescription.trim()
+    };
+    setAvailableTags(prev => prev.map(t => (t.id === editingTagId ? updatedTag : t)));
+    // Atualiza seleção se necessário
+    setFormData(prev => ({
+      ...prev,
+      tags: prev.tags.map(t => (t.id === editingTagId ? updatedTag : t))
+    }));
+    setEditingTagId(null);
+    setEditTagName('');
+    setEditTagColor('#0EA5E9');
+    setEditTagDescription('');
+    toast({ description: 'Tag atualizada com sucesso!' });
+  };
+
+  const handleDeleteTag = (id) => {
+    const tag = availableTags.find(t => t.id === id);
+    if (!tag) return;
+    setAvailableTags(prev => prev.filter(t => t.id !== id));
+    setFormData(prev => ({ ...prev, tags: prev.tags.filter(t => t.id !== id) }));
+    setPendingDeleteTagId(null);
+    toast({ description: 'Tag removida com sucesso!' });
+  };
+
+  // Função para scroll automático quando criar nova categoria
+  const handleStartCreatingCategory = () => {
+    setIsCreatingNewCategory(true);
+    // Aguarda um pouco para o DOM atualizar e depois faz o scroll
+    setTimeout(() => {
+      if (categoryDropdownRef.current) {
+        categoryDropdownRef.current.scrollTop = categoryDropdownRef.current.scrollHeight;
+      }
+    }, 100);
+  };
 
   const loadQuestionBanks = async () => {
     setLoading(true);
@@ -198,8 +582,42 @@ const QuestionBankPage = () => {
     }
   };
 
-  const handleAction = (action, id = null) => {
+  const handleAction = (action, data = null) => {
     if (action === 'create') {
+      setIsEditMode(false);
+      setEditingBank(null);
+      const initialData = {
+        name: '',
+        description: '',
+        tags: [],
+        category: '',
+        subcategory: ''
+      };
+      setFormData(initialData);
+      setOriginalFormData(initialData);
+      setIsFormModified(false);
+      // Abrir diretamente o formulário de criação
+      setIsPopupOpen(true);
+      // Comunicar com a página pai (Bubble) para aplicar blur
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({ type: 'MODAL_OPENED' }, '*');
+      }
+    } else if (action === 'edit') {
+      setIsEditMode(true);
+      setEditingBank(data);
+      
+      // Preencher o formulário com os dados do banco
+      const editData = {
+        name: data.name || '',
+        description: data.description || '',
+        tags: data.tags || [],
+        category: data.category || '',
+        subcategory: data.subcategory || ''
+      };
+      setFormData(editData);
+      setOriginalFormData(JSON.parse(JSON.stringify(editData))); // Deep copy
+      setIsFormModified(false);
+      
       setIsPopupOpen(true);
       // Comunicar com a página pai (Bubble) para aplicar blur
       if (window.parent && window.parent !== window) {
@@ -222,8 +640,13 @@ const QuestionBankPage = () => {
       name: '',
       description: '',
       tags: [],
-      category: ''
+      category: '',
+      subcategory: ''
     });
+    setIsEditMode(false);
+    setEditingBank(null);
+    setOriginalFormData(null);
+    setIsFormModified(false);
   };
 
   const handleSave = async () => {
@@ -234,6 +657,9 @@ const QuestionBankPage = () => {
       });
       return;
     }
+
+    // Mostrar popup de configuração após clicar no botão dentro do modal
+    setIsSetupModalOpen(true);
 
     try {
       const questionBankData = {
@@ -252,6 +678,11 @@ const QuestionBankPage = () => {
           variant: "destructive"
         });
       } else {
+        // Resetar estado de modificação após salvar com sucesso
+        setOriginalFormData(JSON.parse(JSON.stringify(formData)));
+        setIsFormModified(false);
+        // Fechar popup de configuração e o formulário principal
+        setIsSetupModalOpen(false);
         handleClosePopup();
         toast({
           description: "Banco de questões criado com sucesso!",
@@ -265,6 +696,7 @@ const QuestionBankPage = () => {
         description: "Erro ao conectar com o servidor",
         variant: "destructive"
       });
+      setIsSetupModalOpen(false);
     }
   };
 
@@ -451,6 +883,20 @@ const QuestionBankPage = () => {
         </main>
       </div>
 
+      {/* Setup Modal */}
+      {isSetupModalOpen && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center">
+          <div className="absolute inset-0 bg-[#F8F9FB] opacity-95"></div>
+          <div className="relative z-[61] flex flex-col items-center text-center">
+            <Hourglass className="w-14 h-14 text-[#0B57D0]" strokeWidth={3} />
+            <h3 className="mt-6 text-[18px] font-medium text-gray-900 font-inter">Configurando banco...</h3>
+            <p className="mt-2 text-[14px] font-normal text-gray-500 font-inter max-w-[420px]">
+              Aguarde, estamos criando toda a estrutura do seu banco de questões.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Popup Modal */}
       {isPopupOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -464,20 +910,29 @@ const QuestionBankPage = () => {
                 <X className="w-5 h-5 text-gray-500" />
               </button>
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-blue-600 rounded flex items-center justify-center">
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <rect x="2" y="3" width="12" height="10" rx="1" stroke="white" strokeWidth="1.5" fill="none"/>
-                    <path d="M4 6h8M4 8h6M4 10h4" stroke="white" strokeWidth="1.5" strokeLinecap="round"/>
+                <div className="w-8 h-8 rounded flex items-center justify-center">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none">
+                    <path d="M0 4C0 1.79086 1.79086 0 4 0H16C18.2091 0 20 1.79086 20 4V16C20 18.2091 18.2091 20 16 20H4C1.79086 20 0 18.2091 0 16V4Z" fill="#0063F7"/>
+                    <g clipPath="url(#clip0_606_55854)">
+                      <path d="M13.75 5.5H6.25C6.05109 5.5 5.86032 5.57902 5.71967 5.71967C5.57902 5.86032 5.5 6.05109 5.5 6.25V13.75C5.5 13.9489 5.57902 14.1397 5.71967 14.2803C5.86032 14.421 6.05109 14.5 6.25 14.5H13.75C13.9489 14.5 14.1397 14.421 14.2803 14.2803C14.421 14.1397 14.5 13.9489 14.5 13.75V6.25C14.5 6.05109 14.421 5.86032 14.2803 5.71967C14.1397 5.57902 13.9489 5.5 13.75 5.5ZM9.51531 11.0153L8.01531 12.5153C7.98049 12.5502 7.93913 12.5778 7.8936 12.5967C7.84808 12.6156 7.79928 12.6253 7.75 12.6253C7.70072 12.6253 7.65192 12.6156 7.6064 12.5967C7.56087 12.5778 7.51951 12.5502 7.48469 12.5153L6.73469 11.7653C6.66432 11.6949 6.62479 11.5995 6.62479 11.5C6.62479 11.4005 6.66432 11.3051 6.73469 11.2347C6.80505 11.1643 6.90049 11.1248 7 11.1248C7.09951 11.1248 7.19495 11.1643 7.26531 11.2347L7.75 11.7198L8.98469 10.4847C9.05505 10.4143 9.15049 10.3748 9.25 10.3748C9.34951 10.3748 9.44495 10.4143 9.51531 10.4847C9.58568 10.5551 9.62521 10.6505 9.62521 10.75C9.62521 10.8495 9.58568 10.9449 9.51531 11.0153ZM9.51531 8.01531L8.01531 9.51531C7.98049 9.55018 7.93913 9.57784 7.8936 9.59671C7.84808 9.61558 7.79928 9.6253 7.75 9.6253C7.70072 9.6253 7.65192 9.61558 7.6064 9.59671C7.56087 9.57784 7.51951 9.55018 7.48469 9.51531L6.73469 8.76531C6.69985 8.73047 6.67221 8.68911 6.65335 8.64359C6.6345 8.59806 6.62479 8.54927 6.62479 8.5C6.62479 8.40049 6.66432 8.30505 6.73469 8.23469C6.80505 8.16432 6.90049 8.12479 7 8.12479C7.09951 8.12479 7.19495 8.16432 7.26531 8.23469L7.75 8.71984L8.98469 7.48469C9.05505 7.41432 9.15049 7.37479 9.25 7.37479C9.34951 7.37479 9.44495 7.41432 9.51531 7.48469C9.58568 7.55505 9.62521 7.65049 9.62521 7.75C9.62521 7.84951 9.58568 7.94495 9.51531 8.01531ZM13 11.875H10.75C10.6505 11.875 10.5552 11.8355 10.4848 11.7652C10.4145 11.6948 10.375 11.5995 10.375 11.5C10.375 11.4005 10.4145 11.3052 10.4848 11.2348C10.5552 11.1645 10.6505 11.125 10.75 11.125H13C13.0995 11.125 13.1948 11.1645 13.2652 11.2348C13.3355 11.3052 13.375 11.4005 13.375 11.5C13.375 11.5995 13.3355 11.6948 13.2652 11.7652C13.1948 11.8355 13.0995 11.875 13 11.875ZM13 8.875H10.75C10.6505 8.875 10.5552 8.83549 10.4848 8.76516C10.4145 8.69484 10.375 8.59946 10.375 8.5C10.375 8.40054 10.4145 8.30516 10.4848 8.23484C10.5552 8.16451 10.6505 8.125 10.75 8.125H13C13.0995 8.125 13.1948 8.16451 13.2652 8.23484C13.3355 8.30516 13.375 8.40054 13.375 8.5C13.375 8.59946 13.3355 8.69484 13.2652 8.76516C13.1948 8.83549 13.0995 8.875 13 8.875Z" fill="#F9FAFB"/>
+                    </g>
+                    <defs>
+                      <clipPath id="clip0_606_55854">
+                        <rect width="12" height="12" fill="white" transform="translate(4 4)"/>
+                      </clipPath>
+                    </defs>
                   </svg>
                 </div>
-                <h2 className="text-lg font-semibold text-gray-900">Criar novo banco de questões</h2>
+                <h2 className="text-lg font-semibold text-gray-900">
+                  {isEditMode ? 'Editar banco de questões' : 'Criar novo banco de questões'}
+                </h2>
               </div>
               <Button
                 onClick={handleSave}
-                className="px-6 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-md font-medium"
-                disabled
+                className="px-6 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-md font-medium disabled:bg-gray-300 disabled:cursor-not-allowed"
+                disabled={!isFormModified}
               >
-                Criar banco
+                {isEditMode ? 'Salvar' : 'Criar banco'}
               </Button>
             </div>
 
@@ -508,14 +963,10 @@ const QuestionBankPage = () => {
                 </div>
 
                 {/* Categoria */}
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center gap-2 text-gray-600">
-                    <svg width="14" height="14" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <rect x="3" y="3" width="14" height="14" rx="2" stroke="currentColor" strokeWidth="1.5" fill="none"/>
-                      <path d="M7 7h6M7 10h4M7 13h5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                    </svg>
+                <div className="flex items-center gap-4 mb-6">
+                  <div className="flex-shrink-0 flex items-center gap-2">
+                    <img src="/icons/categorias-popup.svg" alt="Categoria" width="14" height="14" className="text-gray-600" />
                     <span 
-                      className="text-sm font-normal"
                       style={{ 
                         fontFamily: 'Inter', 
                         fontSize: '14px', 
@@ -526,22 +977,311 @@ const QuestionBankPage = () => {
                       Categoria:
                     </span>
                   </div>
-                  <button className="w-7 h-7 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors">
-                    <Plus className="w-4 h-4 text-gray-600" />
-                  </button>
+                  
+                  <div className="flex-1 flex items-center" style={{ width: 'fit-content', height: 'fit-content' }}>
+                    {/* Categoria selecionada ou botão de adicionar */}
+                    {formData.category ? (
+                      <div className="flex items-center gap-2">
+                      <span 
+                        className="px-2 py-1 text-xs font-medium rounded flex items-center gap-1"
+                        style={{ 
+                          backgroundColor: 'rgba(173, 137, 247, 0.1)',
+                          color: '#AD89F7',
+                          fontFamily: 'Inter',
+                          fontSize: '12px',
+                          fontWeight: 500
+                        }}
+                      >
+                        <div 
+                          className="w-[10px] h-[10px]"
+                          style={{ backgroundColor: '#AD89F7' }}
+                        ></div>
+                        {formData.category}
+                        <button 
+                          onClick={() => setFormData(prev => ({ ...prev, category: '' }))}
+                          className="w-4 h-4 rounded-full flex items-center justify-center hover:bg-black hover:bg-opacity-10 transition-colors ml-1"
+                          style={{ color: '#AD89F7' }}
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="relative dropdown-container">
+                      <button 
+                        onClick={() => setShowCategoryDropdown(!showCategoryDropdown)}
+                        className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors" 
+                        style={{ background: 'none' }}
+                      >
+                        <Plus className="w-4 h-4 text-gray-600" />
+                      </button>
+                      
+                      {/* Dropdown de categorias */}
+                      {showCategoryDropdown && (
+                        <div 
+                          ref={categoryDropdownRef}
+                          className="absolute top-8 left-0 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[250px] max-h-80 overflow-y-auto"
+                        >
+                          <div className="p-3">
+                            {/* Campo de pesquisa */}
+                            <div className="mb-3">
+                              <input
+                                type="text"
+                                placeholder="Pesquisar categorias..."
+                                value={categorySearchTerm}
+                                onChange={(e) => setCategorySearchTerm(e.target.value)}
+                                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                style={{ 
+                                  fontFamily: 'Inter',
+                                  fontSize: '14px'
+                                }}
+                                autoFocus
+                              />
+                            </div>
+                            
+                            {/* Lista de categorias filtradas */}
+                            <div className="max-h-40 overflow-y-auto">
+                              {filteredCategories.map((category) => (
+                                <div key={category.id} className="px-3 py-2 rounded-md transition-colors">
+                                  {editingCategoryId === category.id ? (
+                                    <div className="space-y-2">
+                                      <input
+                                        type="text"
+                                        placeholder="Nome da categoria"
+                                        value={editCategoryName}
+                                        onChange={(e) => setEditCategoryName(e.target.value)}
+                                        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                        style={{ fontFamily: 'Inter', fontSize: '14px' }}
+                                      />
+                                      <div className="flex items-center gap-2">
+                                        <label className="text-sm text-gray-600 font-medium" style={{ fontFamily: 'Inter', fontSize: '12px' }}>
+                                          Cor:
+                                        </label>
+                                        <input
+                                          type="color"
+                                          value={editCategoryColor}
+                                          onChange={(e) => setEditCategoryColor(e.target.value)}
+                                          className="w-8 h-8 border border-gray-200 rounded cursor-pointer"
+                                        />
+                                        <div
+                                          className="w-4 h-4 rounded-full border border-gray-200"
+                                          style={{ backgroundColor: editCategoryColor }}
+                                        ></div>
+                                      </div>
+                                      <textarea
+                                        placeholder="Descrição da categoria"
+                                        value={editCategoryDescription}
+                                        onChange={(e) => setEditCategoryDescription(e.target.value)}
+                                        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                                        style={{ fontFamily: 'Inter', fontSize: '14px' }}
+                                        rows="2"
+                                      />
+                                      <div className="flex gap-2">
+                                        <button
+                                          onClick={handleSaveEditCategory}
+                                          disabled={!editCategoryName.trim() || !editCategoryDescription.trim()}
+                                          className="flex-1 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                                          style={{ fontFamily: 'Inter', fontSize: '12px' }}
+                                        >
+                                          Salvar
+                                        </button>
+                                        <button
+                                          onClick={handleCancelEditCategory}
+                                          className="flex-1 px-3 py-1.5 text-sm bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors"
+                                          style={{ fontFamily: 'Inter', fontSize: '12px' }}
+                                        >
+                                          Cancelar
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    pendingDeleteCategoryId === category.id ? (
+                                      <div className="flex items-center gap-2 rounded-md">
+                                        <div
+                                          className="flex items-center gap-2 flex-1 text-left px-3 py-2 text-sm"
+                                          style={{ fontFamily: 'Inter', fontSize: '14px', color: '#374151' }}
+                                        >
+                                          <div
+                                            className="w-3 h-3 rounded-full flex-shrink-0"
+                                            style={{ backgroundColor: category.color }}
+                                          ></div>
+                                          <div className="flex-1">
+                                            <div className="font-medium">{category.name}</div>
+                                            <div className="text-xs text-gray-500 mt-0.5">{category.description}</div>
+                                          </div>
+                                        </div>
+                                        <div className="flex items-center gap-1 pr-2">
+                                          <span className="text-xs text-gray-500 mr-1" style={{ fontFamily: 'Inter' }}>
+                                            Remover?
+                                          </span>
+                                          <button
+                                            onClick={() => handleDeleteCategory(category.id)}
+                                            className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-black hover:bg-opacity-10 transition-colors"
+                                            title="Confirmar remoção"
+                                            aria-label="Confirmar remoção"
+                                          >
+                                            <Check className="w-3 h-3 text-red-600" />
+                                          </button>
+                                          <button
+                                            onClick={() => setPendingDeleteCategoryId(null)}
+                                            className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-black hover:bg-opacity-10 transition-colors"
+                                            title="Cancelar"
+                                            aria-label="Cancelar"
+                                          >
+                                            <X className="w-3 h-3 text-gray-600" />
+                                          </button>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div className="flex items-center gap-2 hover:bg-gray-100 rounded-md">
+                                        <button
+                                          onClick={() => {
+                                            setFormData(prev => ({ ...prev, category: category.name }));
+                                            setShowCategoryDropdown(false);
+                                            setCategorySearchTerm('');
+                                          }}
+                                          className="flex items-center gap-2 flex-1 text-left px-3 py-2 text-sm"
+                                          style={{ fontFamily: 'Inter', fontSize: '14px', color: '#374151' }}
+                                        >
+                                          <div
+                                            className="w-3 h-3 rounded-full flex-shrink-0"
+                                            style={{ backgroundColor: category.color }}
+                                          ></div>
+                                          <div className="flex-1">
+                                            <div className="font-medium">{category.name}</div>
+                                            <div className="text-xs text-gray-500 mt-0.5">{category.description}</div>
+                                          </div>
+                                        </button>
+                                        <div className="flex items-center gap-1 pr-2">
+                                          <button
+                                            onClick={() => handleStartEditCategory(category)}
+                                            className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-black hover:bg-opacity-10 transition-colors"
+                                            title="Editar"
+                                          >
+                                            <Pencil className="w-3 h-3 text-gray-600" />
+                                          </button>
+                                          <button
+                                            onClick={() => setPendingDeleteCategoryId(category.id)}
+                                            className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-black hover:bg-opacity-10 transition-colors"
+                                            title="Remover"
+                                          >
+                                            <Trash className="w-3 h-3 text-red-600" />
+                                          </button>
+                                        </div>
+                                      </div>
+                                    )
+                                  )}
+                                </div>
+                              ))}
+                              
+                              {/* Mensagem quando não há categorias */}
+                              {filteredCategories.length === 0 && categorySearchTerm && (
+                                <div className="px-3 py-2 text-sm text-gray-500 text-center">
+                                  Nenhuma categoria encontrada
+                                </div>
+                              )}
+                            </div>
+                            
+                            {/* Separador */}
+                            {filteredCategories.length > 0 && (
+                              <div className="border-t border-gray-200 my-2"></div>
+                            )}
+                            
+                            {/* Opção para criar nova categoria */}
+                            {!isCreatingNewCategory ? (
+                              <button
+                                onClick={handleStartCreatingCategory}
+                                className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 rounded-md transition-colors flex items-center gap-2"
+                                style={{ 
+                                  fontFamily: 'Inter',
+                                  fontSize: '14px',
+                                  color: '#2563eb'
+                                }}
+                              >
+                                <Plus className="w-4 h-4" />
+                                Criar nova categoria
+                              </button>
+                            ) : (
+                              <div className="space-y-3">
+                                <input
+                                  type="text"
+                                  placeholder="Nome da nova categoria"
+                                  value={newCategoryName}
+                                  onChange={(e) => setNewCategoryName(e.target.value)}
+                                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                  style={{ 
+                                    fontFamily: 'Inter',
+                                    fontSize: '14px'
+                                  }}
+                                  autoFocus
+                                />
+                                
+                                <div className="flex items-center gap-2">
+                                  <label className="text-sm text-gray-600 font-medium" style={{ fontFamily: 'Inter', fontSize: '12px' }}>
+                                    Cor:
+                                  </label>
+                                  <input
+                                    type="color"
+                                    value={newCategoryColor}
+                                    onChange={(e) => setNewCategoryColor(e.target.value)}
+                                    className="w-8 h-8 border border-gray-200 rounded cursor-pointer"
+                                  />
+                                  <div 
+                                    className="w-4 h-4 rounded-full border border-gray-200"
+                                    style={{ backgroundColor: newCategoryColor }}
+                                  ></div>
+                                </div>
+                                
+                                <textarea
+                                  placeholder="Descrição da categoria"
+                                  value={newCategoryDescription}
+                                  onChange={(e) => setNewCategoryDescription(e.target.value)}
+                                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                                  style={{ 
+                                    fontFamily: 'Inter',
+                                    fontSize: '14px'
+                                  }}
+                                  rows="2"
+                                />
+                                
+                                <div className="flex gap-2">
+                                  <button
+                                    onClick={handleCreateNewCategory}
+                                    disabled={!newCategoryName.trim() || !newCategoryDescription.trim()}
+                                    className="flex-1 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                                    style={{ 
+                                      fontFamily: 'Inter',
+                                      fontSize: '12px'
+                                    }}
+                                  >
+                                    Criar
+                                  </button>
+                                  <button
+                                    onClick={handleCancelNewCategory}
+                                    className="flex-1 px-3 py-1.5 text-sm bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors"
+                                    style={{ 
+                                      fontFamily: 'Inter',
+                                      fontSize: '12px'
+                                    }}
+                                  >
+                                    Cancelar
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  </div>
                 </div>
 
                 {/* Subcategoria */}
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center gap-2 text-gray-600">
-                    <svg width="14" height="14" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <path d="M3 6h14M6 10h11M9 14h8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-                      <circle cx="4" cy="6" r="1" fill="currentColor"/>
-                      <circle cx="7" cy="10" r="1" fill="currentColor"/>
-                      <circle cx="10" cy="14" r="1" fill="currentColor"/>
-                    </svg>
+                <div className="flex items-center gap-4 mb-6">
+                  <div className="flex-shrink-0 flex items-center gap-2" style={{ width: 'fit-content', height: 'fit-content' }}>
+                    <img src="/icons/subcategoria-popup.svg" alt="Subcategoria" width="14" height="14" className="text-gray-600" />
                     <span 
-                      className="text-sm font-normal"
                       style={{ 
                         fontFamily: 'Inter', 
                         fontSize: '14px', 
@@ -552,20 +1292,268 @@ const QuestionBankPage = () => {
                       Subcategoria:
                     </span>
                   </div>
-                  <button className="w-7 h-7 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors">
-                    <Plus className="w-4 h-4 text-gray-600" />
-                  </button>
+                  
+                  <div className="flex-1 flex flex-row items-center" style={{ width: 'fit-content', height: 'fit-content' }}>
+                    {/* Subcategoria selecionada ou botão de adicionar */}
+                    {formData.subcategory ? (
+                      <div className="flex items-center gap-2">
+                      <span 
+                        className="px-2 py-1 text-xs font-medium rounded flex items-center gap-1"
+                        style={{ 
+                          backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                          color: '#22C55E',
+                          fontFamily: 'Inter',
+                          fontSize: '12px',
+                          fontWeight: 500
+                        }}
+                      >
+                        <div 
+                          className="w-[10px] h-[10px]"
+                          style={{ backgroundColor: '#22C55E' }}
+                        ></div>
+                        {formData.subcategory}
+                        <button 
+                          onClick={() => setFormData(prev => ({ ...prev, subcategory: '' }))}
+                          className="w-4 h-4 rounded-full flex items-center justify-center hover:bg-black hover:bg-opacity-10 transition-colors ml-1"
+                          style={{ color: '#22C55E' }}
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="relative dropdown-container">
+                      <button 
+                        onClick={() => setShowSubcategoryDropdown(!showSubcategoryDropdown)}
+                        className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors" 
+                        style={{ background: 'none' }}
+                      >
+                        <Plus className="w-4 h-4 text-gray-600" />
+                      </button>
+                      
+                      {/* Dropdown de subcategorias */}
+                      {showSubcategoryDropdown && (
+                        <div className="absolute top-8 left-0 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[260px]">
+                          <div className="p-2">
+                            {/* Busca */}
+                            <div className="mb-2">
+                              <input
+                                type="text"
+                                placeholder="Buscar subcategoria"
+                                value={subcategorySearchTerm}
+                                onChange={(e) => setSubcategorySearchTerm(e.target.value)}
+                                className="w-full h-[32px] px-3 py-2 border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                                style={{ fontFamily: 'Inter', fontSize: '14px' }}
+                              />
+                            </div>
+
+                            {/* Lista */}
+                            <div ref={subcategoryDropdownRef} className="max-h-[220px] overflow-y-auto">
+                              {filteredSubcategories.map((subcategory) => (
+                                <div key={subcategory.id} className="px-1 py-1">
+                                  {editingSubcategoryId === subcategory.id ? (
+                                    <div className="p-2 border border-gray-200 rounded-md bg-gray-50">
+                                      <div className="flex items-center gap-2 mb-2">
+                                        <input
+                                          type="text"
+                                          placeholder="Nome da subcategoria"
+                                          value={editSubcategoryName}
+                                          onChange={(e) => setEditSubcategoryName(e.target.value)}
+                                          className="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                          style={{ fontFamily: 'Inter', fontSize: '14px' }}
+                                        />
+                                        <div
+                                          className="w-4 h-4 rounded-full border border-gray-200"
+                                          style={{ backgroundColor: editSubcategoryColor }}
+                                        ></div>
+                                      </div>
+                                      <textarea
+                                        placeholder="Descrição da subcategoria"
+                                        value={editSubcategoryDescription}
+                                        onChange={(e) => setEditSubcategoryDescription(e.target.value)}
+                                        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                                        style={{ fontFamily: 'Inter', fontSize: '14px' }}
+                                        rows="2"
+                                      />
+                                      <div className="flex gap-2 mt-2">
+                                        <button
+                                          onClick={handleSaveEditSubcategory}
+                                          disabled={!editSubcategoryName.trim() || !editSubcategoryDescription.trim()}
+                                          className="flex-1 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                                          style={{ fontFamily: 'Inter', fontSize: '12px' }}
+                                        >
+                                          Salvar
+                                        </button>
+                                        <button
+                                          onClick={handleCancelEditSubcategory}
+                                          className="flex-1 px-3 py-1.5 text-sm bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors"
+                                          style={{ fontFamily: 'Inter', fontSize: '12px' }}
+                                        >
+                                          Cancelar
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    pendingDeleteSubcategoryId === subcategory.id ? (
+                                      <div className="flex items-center gap-2 rounded-md">
+                                        <button
+                                          onClick={() => {
+                                            setFormData(prev => ({ ...prev, subcategory: subcategory.name }));
+                                            setShowSubcategoryDropdown(false);
+                                            setSubcategorySearchTerm('');
+                                          }}
+                                          className="flex items-center gap-2 flex-1 text-left px-3 py-2 text-sm"
+                                          style={{ fontFamily: 'Inter', fontSize: '14px', color: '#374151' }}
+                                        >
+                                          <div
+                                            className="w-3 h-3 rounded-full flex-shrink-0"
+                                            style={{ backgroundColor: subcategory.color }}
+                                          ></div>
+                                          <div className="flex-1">
+                                            <div className="font-medium">{subcategory.name}</div>
+                                            <div className="text-xs text-gray-500 mt-0.5">{subcategory.description}</div>
+                                          </div>
+                                        </button>
+                                        <div className="flex items-center gap-1 pr-2">
+                                          <span className="text-xs text-gray-500 mr-1" style={{ fontFamily: 'Inter' }}>
+                                            Remover?
+                                          </span>
+                                          <button
+                                            onClick={() => handleDeleteSubcategory(subcategory.id)}
+                                            className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-black hover:bg-opacity-10 transition-colors"
+                                            title="Confirmar remoção"
+                                            aria-label="Confirmar remoção"
+                                          >
+                                            <Check className="w-3 h-3 text-red-600" />
+                                          </button>
+                                          <button
+                                            onClick={() => setPendingDeleteSubcategoryId(null)}
+                                            className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-black hover:bg-opacity-10 transition-colors"
+                                            title="Cancelar"
+                                            aria-label="Cancelar"
+                                          >
+                                            <X className="w-3 h-3 text-gray-600" />
+                                          </button>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div className="flex items-center gap-2 hover:bg-gray-100 rounded-md">
+                                        <button
+                                          onClick={() => {
+                                            setFormData(prev => ({ ...prev, subcategory: subcategory.name }));
+                                            setShowSubcategoryDropdown(false);
+                                            setSubcategorySearchTerm('');
+                                          }}
+                                          className="flex items-center gap-2 flex-1 text-left px-3 py-2 text-sm"
+                                          style={{ fontFamily: 'Inter', fontSize: '14px', color: '#374151' }}
+                                        >
+                                          <div
+                                            className="w-3 h-3 rounded-full flex-shrink-0"
+                                            style={{ backgroundColor: subcategory.color }}
+                                          ></div>
+                                          <div className="flex-1">
+                                            <div className="font-medium">{subcategory.name}</div>
+                                            <div className="text-xs text-gray-500 mt-0.5">{subcategory.description}</div>
+                                          </div>
+                                        </button>
+                                        <div className="flex items-center gap-1 pr-2">
+                                          <button
+                                            onClick={() => handleStartEditSubcategory(subcategory)}
+                                            className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-black hover:bg-opacity-10 transition-colors"
+                                            title="Editar"
+                                          >
+                                            <Pencil className="w-3 h-3 text-gray-600" />
+                                          </button>
+                                          <button
+                                            onClick={() => setPendingDeleteSubcategoryId(subcategory.id)}
+                                            className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-black hover:bg-opacity-10 transition-colors"
+                                            title="Remover"
+                                          >
+                                            <Trash className="w-3 h-3 text-red-600" />
+                                          </button>
+                                        </div>
+                                      </div>
+                                    )
+                                  )}
+                                </div>
+                              ))}
+
+                              {/* Mensagem quando não há subcategorias */}
+                              {filteredSubcategories.length === 0 && subcategorySearchTerm && (
+                                <div className="px-3 py-2 text-sm text-gray-500 text-center">
+                                  Nenhuma subcategoria encontrada
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Separador */}
+                            <div className="border-t border-gray-200 mt-2 mb-2"></div>
+
+                            {/* Criar nova subcategoria */}
+                            {isCreatingNewSubcategory ? (
+                              <div className="p-2 bg-gray-50 rounded-md">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <input
+                                    type="text"
+                                    placeholder="Nome da subcategoria"
+                                    value={newSubcategoryName}
+                                    onChange={(e) => setNewSubcategoryName(e.target.value)}
+                                    className="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                    style={{ fontFamily: 'Inter', fontSize: '14px' }}
+                                  />
+                                  <div
+                                    className="w-4 h-4 rounded-full border border-gray-200"
+                                    style={{ backgroundColor: newSubcategoryColor }}
+                                  ></div>
+                                </div>
+                                <textarea
+                                  placeholder="Descrição da subcategoria"
+                                  value={newSubcategoryDescription}
+                                  onChange={(e) => setNewSubcategoryDescription(e.target.value)}
+                                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                                  style={{ fontFamily: 'Inter', fontSize: '14px' }}
+                                  rows="2"
+                                />
+                                <div className="flex gap-2 mt-2">
+                                  <button
+                                    onClick={handleCreateNewSubcategory}
+                                    disabled={!newSubcategoryName.trim() || !newSubcategoryDescription.trim()}
+                                    className="flex-1 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                                    style={{ fontFamily: 'Inter', fontSize: '12px' }}
+                                  >
+                                    Criar
+                                  </button>
+                                  <button
+                                    onClick={handleCancelNewSubcategory}
+                                    className="flex-1 px-3 py-1.5 text-sm bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors"
+                                    style={{ fontFamily: 'Inter', fontSize: '12px' }}
+                                  >
+                                    Cancelar
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => setIsCreatingNewSubcategory(true)}
+                                className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded-md transition-colors"
+                                style={{ fontFamily: 'Inter', fontSize: '14px', color: '#374151' }}
+                              >
+                                + Criar nova subcategoria
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  </div>
                 </div>
 
-                {/* Tags */}
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center gap-2 text-gray-600">
-                    <svg width="14" height="14" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <path d="M2.5 10.5L9.5 3.5C9.77614 3.22386 10.1239 3.06694 10.4881 3.06694C10.8522 3.06694 11.2 3.22386 11.4762 3.5L16.5 8.5C16.7761 8.77614 16.9331 9.12386 16.9331 9.48809C16.9331 9.85232 16.7761 10.2 16.5 10.4762L9.5 17.5C9.22386 17.7761 8.87614 17.9331 8.51191 17.9331C8.14768 17.9331 7.8 17.7761 7.52381 17.5L2.5 12.5C2.22386 12.2239 2.06694 11.8761 2.06694 11.5119C2.06694 11.1478 2.22386 10.8 2.5 10.5Z" stroke="currentColor" strokeWidth="1.5" fill="none"/>
-                      <circle cx="12.5" cy="7.5" r="1.5" fill="currentColor"/>
-                    </svg>
+                {/* Seção de Tags */}
+                <div className="flex items-center gap-2 mb-6 mt-2">
+                  <div className="flex-shrink-0 flex items-center gap-2" style={{ width: 'fit-content' }}>
+                    <img src="/icons/tag-popup.svg" alt="Tags" width="14" height="14" className="text-gray-600" />
                     <span 
-                      className="text-sm font-normal"
                       style={{ 
                         fontFamily: 'Inter', 
                         fontSize: '14px', 
@@ -573,12 +1561,311 @@ const QuestionBankPage = () => {
                         color: '#737780' 
                       }}
                     >
-                      Tags
+                      Tags:
                     </span>
                   </div>
-                  <button className="w-7 h-7 bg-gray-100 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors">
-                    <Plus className="w-4 h-4 text-gray-600" />
-                  </button>
+                  
+                  <div className="flex-1 flex flex-row items-center" style={{ width: 'fit-content', height: 'fit-content' }}>
+                    {/* Botão de adicionar tags - só aparece quando há tags disponíveis para selecionar */}
+                    {(() => {
+                      const unselectedTags = availableTags.filter(tag => 
+                        !formData.tags.some(selectedTag => selectedTag.id === tag.id)
+                      );
+                      return unselectedTags.length > 0;
+                    })() && (
+                      <div className="relative dropdown-container">
+                        <button 
+                          onClick={() => setShowTagsDropdown(!showTagsDropdown)}
+                          className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors" 
+                          style={{ background: 'none' }}
+                        >
+                          <Plus className="w-4 h-4 text-gray-600" />
+                        </button>
+                        
+                        {/* Dropdown de tags */}
+                        {showTagsDropdown && (
+                          <div className="absolute top-8 left-0 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[260px]">
+                            <div className="p-2">
+                              {/* Busca */}
+                              <div className="mb-2">
+                                <input
+                                  type="text"
+                                  placeholder="Buscar tag"
+                                  value={tagsSearchTerm}
+                                  onChange={(e) => setTagsSearchTerm(e.target.value)}
+                                  className="w-full h-[32px] px-3 py-2 border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                                  style={{ fontFamily: 'Inter', fontSize: '14px' }}
+                                />
+                              </div>
+
+                              {/* Lista */}
+                              <div ref={tagsDropdownRef} className="max-h-[220px] overflow-y-auto">
+                                {filteredTags
+                                  .filter(tag => !formData.tags.some(selectedTag => selectedTag.id === tag.id))
+                                  .map((tag) => (
+                                    <div key={tag.id} className="px-1 py-1">
+                                      {editingTagId === tag.id ? (
+                                        <div className="p-2 border border-gray-200 rounded-md bg-gray-50">
+                                          <div className="flex items-center gap-2 mb-2">
+                                            <input
+                                              type="text"
+                                              placeholder="Nome da tag"
+                                              value={editTagName}
+                                              onChange={(e) => setEditTagName(e.target.value)}
+                                              className="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                              style={{ fontFamily: 'Inter', fontSize: '14px' }}
+                                            />
+                                            <div
+                                              className="w-4 h-4 rounded-full border border-gray-200"
+                                              style={{ backgroundColor: editTagColor }}
+                                            ></div>
+                                          </div>
+                                          <textarea
+                                            placeholder="Descrição da tag"
+                                            value={editTagDescription}
+                                            onChange={(e) => setEditTagDescription(e.target.value)}
+                                            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                                            style={{ fontFamily: 'Inter', fontSize: '14px' }}
+                                            rows="2"
+                                          />
+                                          <div className="flex gap-2 mt-2">
+                                            <button
+                                              onClick={handleSaveEditTag}
+                                              disabled={!editTagName.trim() || !editTagDescription.trim()}
+                                              className="flex-1 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                                              style={{ fontFamily: 'Inter', fontSize: '12px' }}
+                                            >
+                                              Salvar
+                                            </button>
+                                            <button
+                                              onClick={handleCancelEditTag}
+                                              className="flex-1 px-3 py-1.5 text-sm bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors"
+                                              style={{ fontFamily: 'Inter', fontSize: '12px' }}
+                                            >
+                                              Cancelar
+                                            </button>
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        pendingDeleteTagId === tag.id ? (
+                                          <div className="flex items-center gap-2 rounded-md">
+                                            <button
+                                              onClick={() => {
+                                                const isAlreadySelected = formData.tags.some(selectedTag => selectedTag.id === tag.id);
+                                                if (!isAlreadySelected) {
+                                                  setFormData(prev => ({ ...prev, tags: [...prev.tags, tag] }));
+                                                }
+                                                setShowTagsDropdown(false);
+                                                setTagsSearchTerm('');
+                                              }}
+                                              className="flex items-center gap-2 flex-1 text-left px-3 py-2 text-sm"
+                                              style={{ fontFamily: 'Inter', fontSize: '14px', color: '#374151' }}
+                                            >
+                                              <div
+                                                className="w-3 h-3 rounded-full flex-shrink-0"
+                                                style={{ backgroundColor: tag.color }}
+                                              ></div>
+                                              <div className="flex-1">
+                                                <div className="font-medium">{tag.name}</div>
+                                                <div className="text-xs text-gray-500 mt-0.5">{tag.description}</div>
+                                              </div>
+                                            </button>
+                                            <div className="flex items-center gap-1 pr-2">
+                                              <span className="text-xs text-gray-500 mr-1" style={{ fontFamily: 'Inter' }}>
+                                                Remover?
+                                              </span>
+                                              <button
+                                                onClick={() => handleDeleteTag(tag.id)}
+                                                className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-black hover:bg-opacity-10 transition-colors"
+                                                title="Confirmar remoção"
+                                                aria-label="Confirmar remoção"
+                                              >
+                                                <Check className="w-3 h-3 text-red-600" />
+                                              </button>
+                                              <button
+                                                onClick={() => setPendingDeleteTagId(null)}
+                                                className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-black hover:bg-opacity-10 transition-colors"
+                                                title="Cancelar"
+                                                aria-label="Cancelar"
+                                              >
+                                                <X className="w-3 h-3 text-gray-600" />
+                                              </button>
+                                            </div>
+                                          </div>
+                                        ) : (
+                                          <div className="flex items-center gap-2 hover:bg-gray-100 rounded-md">
+                                            <button
+                                              onClick={() => {
+                                                const isAlreadySelected = formData.tags.some(selectedTag => selectedTag.id === tag.id);
+                                                if (!isAlreadySelected) {
+                                                  setFormData(prev => ({ ...prev, tags: [...prev.tags, tag] }));
+                                                }
+                                                setShowTagsDropdown(false);
+                                                setTagsSearchTerm('');
+                                              }}
+                                              className="flex items-center gap-2 flex-1 text-left px-3 py-2 text-sm"
+                                              style={{ fontFamily: 'Inter', fontSize: '14px', color: '#374151' }}
+                                            >
+                                              <div
+                                                className="w-3 h-3 rounded-full flex-shrink-0"
+                                                style={{ backgroundColor: tag.color }}
+                                              ></div>
+                                              <div className="flex-1">
+                                                <div className="font-medium">{tag.name}</div>
+                                                <div className="text-xs text-gray-500 mt-0.5">{tag.description}</div>
+                                              </div>
+                                            </button>
+                                            <div className="flex items-center gap-1 pr-2">
+                                              <button
+                                                onClick={() => handleStartEditTag(tag)}
+                                                className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-black hover:bg-opacity-10 transition-colors"
+                                                title="Editar"
+                                              >
+                                                <Pencil className="w-3 h-3 text-gray-600" />
+                                              </button>
+                                              <button
+                                                onClick={() => setPendingDeleteTagId(tag.id)}
+                                                className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-black hover:bg-opacity-10 transition-colors"
+                                                title="Remover"
+                                              >
+                                                <Trash className="w-3 h-3 text-red-600" />
+                                              </button>
+                                            </div>
+                                          </div>
+                                        )
+                                      )}
+                                    </div>
+                                  ))}
+
+                                {/* Mensagem quando não há tags */}
+                                {filteredTags.filter(tag => !formData.tags.some(selectedTag => selectedTag.id === tag.id)).length === 0 && tagsSearchTerm && (
+                                  <div className="px-3 py-2 text-sm text-gray-500 text-center">
+                                    Nenhuma tag encontrada
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Separador */}
+                              <div className="border-t border-gray-200 mt-2 mb-2"></div>
+
+                              {/* Criar nova tag */}
+                              {isCreatingNewTag ? (
+                                <div className="p-2 bg-gray-50 rounded-md">
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <input
+                                      type="text"
+                                      placeholder="Nome da tag"
+                                      value={newTagName}
+                                      onChange={(e) => setNewTagName(e.target.value)}
+                                      className="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                      style={{ fontFamily: 'Inter', fontSize: '14px' }}
+                                    />
+                                    <div
+                                      className="w-4 h-4 rounded-full border border-gray-200"
+                                      style={{ backgroundColor: newTagColor }}
+                                    ></div>
+                                  </div>
+                                  <textarea
+                                    placeholder="Descrição da tag"
+                                    value={newTagDescription}
+                                    onChange={(e) => setNewTagDescription(e.target.value)}
+                                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                                    style={{ fontFamily: 'Inter', fontSize: '14px' }}
+                                    rows="2"
+                                  />
+                                  <div className="flex gap-2 mt-2">
+                                    <button
+                                      onClick={handleCreateNewTag}
+                                      disabled={!newTagName.trim() || !newTagDescription.trim()}
+                                      className="flex-1 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                                      style={{ fontFamily: 'Inter', fontSize: '12px' }}
+                                    >
+                                      Criar
+                                    </button>
+                                    <button
+                                      onClick={handleCancelNewTag}
+                                      className="flex-1 px-3 py-1.5 text-sm bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors"
+                                      style={{ fontFamily: 'Inter', fontSize: '12px' }}
+                                    >
+                                      Cancelar
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={() => setIsCreatingNewTag(true)}
+                                  className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded-md transition-colors"
+                                  style={{ fontFamily: 'Inter', fontSize: '14px', color: '#374151' }}
+                                >
+                                  + Criar nova tag
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Tags selecionadas */}
+                    <div className="flex flex-wrap items-center gap-2">
+                      {Array.isArray(formData.tags) && formData.tags.map((tag, index) => (
+                        <span 
+                          key={tag.id || index}
+                          className="px-3 py-1 text-sm flex items-center gap-2"
+                          style={{ 
+                            backgroundColor: (tag.color || '#AD89F7') + '20', 
+                            color: tag.color || '#AD89F7',
+                            fontFamily: 'Inter',
+                            fontSize: '12px',
+                            fontWeight: 500,
+                            borderRadius: '4px'
+                          }}
+                        >
+                          <svg 
+                            xmlns="http://www.w3.org/2000/svg" 
+                            width="12" 
+                            height="12" 
+                            viewBox="0 0 24 24" 
+                            fill="none" 
+                            stroke="currentColor" 
+                            strokeWidth="2" 
+                            strokeLinecap="round" 
+                            strokeLinejoin="round"
+                          >
+                            <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
+                            <line x1="7" y1="7" x2="7.01" y2="7"/>
+                          </svg>
+                          {tag.name || tag}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setFormData(prev => ({
+                                ...prev,
+                                tags: prev.tags.filter((_, i) => i !== index)
+                              }));
+                            }}
+                            className="ml-1 hover:bg-red-100 rounded-full p-0.5 transition-colors"
+                            style={{ color: tag.color || '#AD89F7' }}
+                          >
+                            <svg 
+                              xmlns="http://www.w3.org/2000/svg" 
+                              width="10" 
+                              height="10" 
+                              viewBox="0 0 24 24" 
+                              fill="none" 
+                              stroke="currentColor" 
+                              strokeWidth="2" 
+                              strokeLinecap="round" 
+                              strokeLinejoin="round"
+                            >
+                              <line x1="18" y1="6" x2="6" y2="18"/>
+                              <line x1="6" y1="6" x2="18" y2="18"/>
+                            </svg>
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
                 </div>
 
                 {/* Descrição */}

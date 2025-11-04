@@ -3,9 +3,12 @@ const mockQuestionBanks = [
   {
     id: 1,
     name: 'Nome do banco de questões',
-    category: 'Categoria',
-    subcategory: 'Subcategoria',
-    tags: ['categoria1', 'categoria2'],
+    category: 'Neurologia',
+    subcategory: 'Subcategoria A',
+    tags: [
+      { id: 1, name: 'Tag', color: '#FFC107' },
+      { id: 2, name: 'Tag', color: '#2196F3' }
+    ],
     description: 'Descrição que foi adicionada no ato da criação do banco de questões',
     question_count: 50,
     created_at: '2025-08-20T10:00:00Z',
@@ -14,9 +17,12 @@ const mockQuestionBanks = [
   {
     id: 2,
     name: 'Nome do banco de questões',
-    category: 'Categoria',
-    subcategory: 'Subcategoria',
-    tags: ['categoria1', 'categoria2'],
+    category: 'Cardiologia',
+    subcategory: 'Subcategoria B',
+    tags: [
+      { id: 3, name: 'Tag', color: '#F44336' },
+      { id: 4, name: 'Tag Adicional', color: '#4CAF50' }
+    ],
     description: 'Descrição que foi adicionada no ato da criação do banco de questões',
     question_count: 50,
     created_at: '2025-08-20T10:00:00Z',

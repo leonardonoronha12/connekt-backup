@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Preview - Email de Recuperação - Connekt</title>
+    <style>
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f8fafc;
+            line-height: 1.6;
+        }
+        .preview-header {
+            background: linear-gradient(135deg, #FF6B35 0%, #F7931E 100%);
+            color: white;
+            padding: 15px;
+            text-align: center;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            font-weight: 600;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: white;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        }
+        .header {
+            background: linear-gradient(135deg, #0047BB 0%, #321A88 100%);
+            padding: 40px 20px;
+            text-align: center;
+            color: white;
+        }
+        .logo {
+            font-size: 36px;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        .header-subtitle {
+            font-size: 18px;
+            opacity: 0.9;
+        }
+        .content {
+            padding: 40px 30px;
+        }
+        .greeting {
+            font-size: 24px;
+            font-weight: 600;
+            color: #1E1B39;
+            margin-bottom: 20px;
+        }
+        .message {
+            font-size: 16px;
+            color: #404040;
+            margin-bottom: 30px;
+        }
+        .security-notice {
+            background-color: #E7EDFC;
+            border-left: 4px solid #0047BB;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 25px 0;
+        }
+        .warning {
+            background-color: #FEE2E2;
+            border: 1px solid #DC2626;
+            color: #991B1B;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            font-size: 14px;
+        }
+        .footer {
+            background-color: #f8fafc;
+            padding: 30px;
+            text-align: center;
+            border-top: 1px solid #e3e4e5;
+        }
+        .footer-text {
+            color: #9291A5;
+            font-size: 14px;
+            margin-bottom: 10px;
+        }
+        @media (max-width: 600px) {
+            .container {
+                margin: 0;
+                border-radius: 0;
+            }
+            .content {
+                padding: 30px 20px;
+            }
+            .header {
+                padding: 30px 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="preview-header">
+        📧 PREVIEW - Email de Recuperação de Senha (Código: 123456)
+    </div>
+    
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <div class="logo">🎓 Connekt</div>
+            <div class="header-subtitle">🔐 Redefinição de Senha</div>
+        </div>
+        
+        <!-- Content -->
+        <div class="content">
+            <h1 class="greeting">Seu código de recuperação 🔑</h1>
+            
+            <p class="message">
+                Recebemos uma solicitação para redefinir a senha da sua conta na <strong>Connekt</strong>.
+            </p>
+            
+            <p class="message">
+                Use o código abaixo para verificar sua identidade e redefinir sua senha:
+            </p>
+            
+            <div style="text-align: center; margin: 30px 0;">
+                <div style="display: inline-block; background: linear-gradient(135deg, #E7EDFC 0%, #F8FAFC 100%); border: 2px solid #0047BB; border-radius: 12px; padding: 20px 30px; font-size: 32px; font-weight: bold; color: #0047BB; letter-spacing: 8px; font-family: 'Courier New', monospace;">
+                    123456
+                </div>
+            </div>
+            
+            <div class="security-notice">
+                <p style="margin: 0; font-weight: 600; color: #0047BB;">
+                    🛡️ <strong>Informações de Segurança:</strong>
+                </p>
+                <ul style="margin: 10px 0 0 0; padding-left: 20px; color: #0047BB;">
+                    <li>Este código expira em 10 minutos por motivos de segurança</li>
+                    <li>Você pode usar este código apenas uma vez</li>
+                    <li>Digite o código na página de verificação</li>
+                    <li>Após verificar, você poderá criar uma nova senha</li>
+                </ul>
+            </div>
+            
+            <div class="warning">
+                <strong>⚠️ Não foi você?</strong><br>
+                Se você não solicitou a redefinição de senha, pode ignorar este email com segurança. Sua senha atual permanecerá inalterada.
+                <br><br>
+                <strong>Dica de segurança:</strong> Se você suspeita que alguém está tentando acessar sua conta, recomendamos que você faça login e altere sua senha imediatamente.
+            </div>
+            
+            <p class="message">
+                <strong>Como usar o código:</strong><br>
+                1. Volte para a página de verificação<br>
+                2. Digite o código de 6 dígitos nos campos indicados<br>
+                3. Clique em "Verificar" para continuar<br>
+                4. Crie sua nova senha quando solicitado
+            </p>
+        </div>
+        
+        <!-- Footer -->
+        <div class="footer">
+            <p class="footer-text">
+                <strong>Connekt - Plataforma de Cursos Online</strong><br>
+                Sua segurança é nossa prioridade
+            </p>
+            
+            <p class="footer-text">
+                Precisa de ajuda? Entre em contato conosco:<br>
+                📧 <a href="mailto:suporte@appconnekt.com.br" style="color: #0047BB;">suporte@appconnekt.com.br</a><br>
+                🌐 <a href="https://appconnekt.com.br" style="color: #0047BB;">appconnekt.com.br</a>
+            </p>
+            
+            <p class="footer-text" style="margin-top: 20px;">
+                © 2024 Connekt. Todos os direitos reservados.
+            </p>
+        </div>
+    </div>
+</body>
+</html>
