@@ -1,0 +1,90 @@
+[project]
+# Configurações do projeto Connekt
+name = "connekt-platform"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 15
+
+[studio]
+enabled = true
+port = 54323
+api_url = "http://localhost:54321"
+
+[inbucket]
+enabled = true
+port = 54324
+smtp_port = 54325
+pop3_port = 54326
+
+[storage]
+enabled = true
+port = 54327
+image_transformation = true
+duplicate_functions = false
+
+[auth]
+enabled = true
+# Configurações de email personalizadas para Connekt
+site_url = "https://appconnekt.com.br"
+additional_redirect_urls = ["http://localhost:3000", "https://appconnekt.com.br"]
+jwt_expiry = 3600
+refresh_token_rotation_enabled = true
+security_refresh_token_reuse_interval = 10
+security_captcha_enabled = false
+
+[auth.email]
+# Configurações de email da Connekt
+enable_signup = true
+double_confirm_changes = true
+enable_confirmations = true
+secure_email_change_enabled = true
+enable_reauthentication = true
+
+# Templates de email personalizados
+[auth.email.template.invite]
+subject = "Você foi convidado para a Connekt"
+content_path = "./supabase/templates/invite.html"
+
+[auth.email.template.confirmation]
+subject = "Confirme seu cadastro na Connekt"
+content_path = "./supabase/templates/confirmation.html"
+
+[auth.email.template.recovery]
+subject = "Redefinir senha - Connekt"
+content_path = "./supabase/templates/recovery.html"
+
+[auth.email.template.email_change]
+subject = "Confirmar mudança de email - Connekt"
+content_path = "./supabase/templates/email_change.html"
+
+# Configurações SMTP personalizadas (para usar com appconnekt.com.br)
+[auth.email.smtp]
+host = "smtp.gmail.com"  # Substitua pelo seu provedor SMTP
+port = 587
+user = "noreply@appconnekt.com.br"  # Email personalizado
+pass = "sua_senha_smtp"  # Configurar nas variáveis de ambiente
+admin_email = "admin@appconnekt.com.br"
+max_frequency = "1s"
+
+[edge_runtime]
+enabled = true
+policy = "per_request"
+
+[functions]
+verify_jwt = false
+
+[realtime]
+enabled = true
+ip_version = "ipv4"
+
+[analytics]
+enabled = false
