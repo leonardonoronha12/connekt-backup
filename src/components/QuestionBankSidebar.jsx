@@ -13,7 +13,10 @@ const QuestionBankSidebar = ({ activeFilters, onFilterChange, onClearFilters, qu
 
   // Estatísticas calculadas
   const totalBanks = questionBanks.length;
-  const totalQuestions = questionBanks.reduce((sum, bank) => sum + (bank.question_count || 0), 0);
+const totalQuestions = questionBanks.reduce((sum, bank) => {
+  const count = bank.questionCount ?? bank.question_count ?? 0;
+  return sum + (typeof count === 'number' ? count : 0);
+}, 0);
   const activeBanks = questionBanks.filter(bank => bank.status !== 'inactive').length;
 
   // Extrair categorias únicas dos bancos

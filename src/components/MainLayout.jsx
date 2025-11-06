@@ -8,6 +8,7 @@ const MainLayout = ({ children }) => {
     const saved = localStorage.getItem('sidebarOpen');
     return saved !== null ? JSON.parse(saved) : true;
   });
+  const [currentPath, setCurrentPath] = useState(window.location.pathname);
 
   useEffect(() => {
     const handleResize = () => {
@@ -21,12 +22,19 @@ const MainLayout = ({ children }) => {
 
     window.addEventListener('resize', handleResize);
     window.addEventListener('storage', handleStorageChange);
+    const handleLocationChange = () => {
+      setCurrentPath(window.location.pathname);
+    };
+    window.addEventListener('popstate', handleLocationChange);
     
     return () => {
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('popstate', handleLocationChange);
     };
   }, []);
+
+  const isAproveitamento = currentPath === '/simulados-aproveitamento';
 
   return (
     <div className="flex bg-gray-50" style={{ height: '100dvh', minHeight: '100vh' }}>
@@ -41,7 +49,7 @@ const MainLayout = ({ children }) => {
         {/* Main content - área rolável */}
         <main 
           className={`flex-1 scroll-area ${isMobile ? 'main-content-mobile' : ''}`}
-          style={{ minHeight: 0, overflow: 'auto' }}
+          style={{ minHeight: 0, overflow: 'auto', backgroundColor: isAproveitamento ? '#FFFFFF' : undefined }}
         >
           <div className="w-full flex justify-center">
             <div className="w-full" style={{ maxWidth: '1348px', maxHeight: '900px' }}>

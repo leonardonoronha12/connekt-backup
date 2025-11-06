@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -109,4 +110,14 @@
   .main-content-mobile {
     margin-left: 0 !important;
   }
+}
+
+/* Slide animation for inline elements like percentage span */
+@keyframes slide {
+  0% { transform: translateX(-6px); }
+  100% { transform: translateX(6px); }
+}
+
+.animate-slide {
+  animation: slide 1.2s ease-in-out infinite alternate;
 }

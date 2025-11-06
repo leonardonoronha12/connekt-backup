@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 const Header = () => {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [currentPath, setCurrentPath] = useState(window.location.pathname);
 
   const toggleDropdown = () => {
     setIsDropdownOpen(!isDropdownOpen);
@@ -14,17 +15,57 @@ const Header = () => {
     }
   };
 
+  useEffect(() => {
+    const handleLocationChange = () => {
+      setCurrentPath(window.location.pathname);
+    };
+    window.addEventListener('popstate', handleLocationChange);
+    return () => window.removeEventListener('popstate', handleLocationChange);
+  }, []);
+
+  const isAproveitamento = currentPath === '/simulados-aproveitamento';
+  const goToSimulados = () => {
+    window.history.pushState({}, '', '/simulados');
+    setCurrentPath(window.location.pathname);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  };
+
   return (
     <header 
-      className="sticky top-0 w-full flex items-center justify-end"
+      className={`sticky top-0 w-full flex items-center ${isAproveitamento ? 'justify-between' : 'justify-end'}`}
       style={{
         height: '60px',
         backgroundColor: 'rgb(255, 255, 255)',
         border: '1px solid rgb(227, 228, 229)',
         paddingRight: '22px',
+        paddingLeft: isAproveitamento ? '22px' : undefined,
         zIndex: 2
       }}
     >
+      {/* Bloco à esquerda (apenas na página de aproveitamento) */}
+      {isAproveitamento && (
+        <div className="flex items-center" style={{ width: '173px', height: '30px' }}>
+          <button 
+            type="button" 
+            onClick={goToSimulados}
+            className="inline-flex items-center gap-2 text-[14px] text-[#737780] font-semibold hover:underline font-sans"
+            aria-label="Voltar aos simulados"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              className="w-[24px] h-[24px]"
+              aria-hidden="true"
+            >
+              <path d="M5 12H19" stroke="#737780" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M10 7L5 12" stroke="#737780" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M10 17L5 12" stroke="#737780" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            Voltar aos simulados
+          </button>
+        </div>
+      )}
       {/* Bloco de ações à direita */}
       <div 
         className="flex items-center"
