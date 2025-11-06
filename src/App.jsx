@@ -7,46 +7,57 @@ import QuestionBankPage from '@/pages/QuestionBankPage';
 import CursosPage from '@/pages/CursosPage';
 import AlunosPage from '@/pages/AlunosPage';
 import SimuladosPage from '@/pages/SimuladosPage';
+import SimuladosAproveitamentoPage from '@/pages/SimuladosAproveitamentoPage';
 import VendasPage from '@/pages/VendasPage';
 import DashboardPage from '@/pages/DashboardPage';
 import LoginPage from '@/pages/LoginPage';
 import HeroPage from '@/pages/HeroPage';
 import EmailVerificationPage from '@/pages/EmailVerificationPage';
+import QuestoesPage from '@/pages/QuestoesPage';
 
 const ADMIN_VIEW_PARAM = 'dev-admin';
 const QUESTION_BANK_PATH = '/banco-de-questoes';
 
+// Deriva a view inicial com base na URL para evitar montar o layout global
+// desnecessariamente e prevenir logs de requisições abortadas ao trocar de rota.
+const getViewFromLocation = () => {
+  const searchParams = new URLSearchParams(window.location.search);
+  const path = window.location.pathname;
+
+  if (searchParams.get('view') === ADMIN_VIEW_PARAM) {
+    return 'admin';
+  } else if (path === QUESTION_BANK_PATH) {
+    return 'questionBank';
+  } else if (path === '/questoes') {
+    return 'questoes';
+  } else if (path === '/cursos') {
+    return 'cursos';
+  } else if (path === '/alunos') {
+    return 'alunos';
+  } else if (path === '/simulados') {
+    return 'simulados';
+  } else if (path === '/simulados-aproveitamento') {
+    return 'simuladosAproveitamento';
+  } else if (path === '/vendas') {
+    return 'vendas';
+  } else if (path === '/dashboard') {
+    return 'dashboard';
+  } else if (path === '/login') {
+    return 'login';
+  } else if (path === '/verify-email') {
+    return 'verifyEmail';
+  } else if (path === '/hero') {
+    return 'hero';
+  }
+  return 'inbox';
+};
+
 function App() {
-  const [currentView, setCurrentView] = useState('inbox');
+  const [currentView, setCurrentView] = useState(getViewFromLocation());
 
   useEffect(() => {
     const handleLocationChange = () => {
-      const searchParams = new URLSearchParams(window.location.search);
-      const path = window.location.pathname;
-
-      if (searchParams.get('view') === ADMIN_VIEW_PARAM) {
-        setCurrentView('admin');
-      } else if (path === QUESTION_BANK_PATH) {
-        setCurrentView('questionBank');
-      } else if (path === '/cursos') {
-        setCurrentView('cursos');
-      } else if (path === '/alunos') {
-        setCurrentView('alunos');
-      } else if (path === '/simulados') {
-        setCurrentView('simulados');
-      } else if (path === '/vendas') {
-        setCurrentView('vendas');
-      } else if (path === '/dashboard') {
-        setCurrentView('dashboard');
-      } else if (path === '/login') {
-        setCurrentView('login');
-      } else if (path === '/verify-email') {
-        setCurrentView('verifyEmail');
-      } else if (path === '/hero') {
-        setCurrentView('hero');
-      } else {
-        setCurrentView('inbox');
-      }
+      setCurrentView(getViewFromLocation());
     };
 
     // Initial load
@@ -71,12 +82,16 @@ function App() {
         );
       case 'questionBank':
         return <QuestionBankPage />;
+      case 'questoes':
+        return <QuestoesPage />;
       case 'cursos':
         return <CursosPage />;
       case 'alunos':
         return <AlunosPage />;
       case 'simulados':
         return <SimuladosPage />;
+      case 'simuladosAproveitamento':
+        return <SimuladosAproveitamentoPage />;
       case 'vendas':
         return <VendasPage />;
       case 'dashboard':
@@ -95,8 +110,12 @@ function App() {
 
   return (
     <AuthProvider>
-      {(currentView === 'login' || currentView === 'verifyEmail') ? (
-        currentView === 'login' ? <LoginPage /> : <EmailVerificationPage />
+      {(currentView === 'login' || currentView === 'verifyEmail' || currentView === 'questoes') ? (
+        currentView === 'login' 
+          ? <LoginPage /> 
+          : currentView === 'verifyEmail' 
+            ? <EmailVerificationPage /> 
+            : <QuestoesPage />
       ) : (
         <MainLayout>
           {renderContent()}

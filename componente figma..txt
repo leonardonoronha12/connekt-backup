@@ -1,132 +1,123 @@
-<div style={{width: '100%', height: '100%', paddingBottom: 32, left: 0, top: 0, position: 'absolute', background: 'white', boxShadow: '-12px 22px 33.5px rgba(0, 0, 0, 0.15)', overflow: 'hidden', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', gap: 32, display: 'inline-flex'}}>
-    <div style={{alignSelf: 'stretch', paddingLeft: 32, paddingRight: 32, paddingTop: 44, paddingBottom: 44, background: 'linear-gradient(137deg, #321A88 29%, #0D0439 100%), linear-gradient(141deg, #0047BB 0%, #023992 100%), linear-gradient(322deg, rgba(0, 71, 187, 0.20) 0%, #051134 100%)', boxShadow: '0px 1.4750956296920776px 4.425286769866943px rgba(13, 10, 44, 0.08)', overflow: 'hidden', flexDirection: 'column', justifyContent: 'center', alignItems: 'flex-start', gap: 22, display: 'flex'}}>
-        <div style={{alignSelf: 'stretch', flexDirection: 'column', justifyContent: 'center', alignItems: 'flex-start', gap: 12, display: 'flex'}}>
-            <div style={{alignSelf: 'stretch', height: 37, textBoxTrim: 'trim-both', textBoxEdge: 'cap alphabetic', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: 'var(--Miscellaneous-Segmented-Control---Selected-Fill, white)', fontSize: 20, fontFamily: 'Inter', fontWeight: '600', wordWrap: 'break-word'}}>Finalize seu cadastro! 🔥</div>
-            <div style={{alignSelf: 'stretch', justifyContent: 'flex-start', alignItems: 'center', gap: 8, display: 'inline-flex'}}>
-                <div style={{flex: '1 1 0'}}><span style="color: 'var(--Miscellaneous-Segmented-Control---Selected-Fill, white)', fontSize: 16, fontFamily: 'Inter', fontWeight: '400', lineHeight: 26, wordWrap: 'break-word'">Conclua todas as configurações para ativar sua conta da </span><span style="color: 'white', fontSize: 16, fontFamily: 'Inter', fontWeight: '600', lineHeight: 26, wordWrap: 'break-word'">Connekt. </span></div>
-            </div>
-        </div>
-    </div>
-    <div style={{alignSelf: 'stretch', height: 587, paddingLeft: 32, paddingRight: 32, flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', gap: 32, display: 'flex'}}>
-        <div style={{alignSelf: 'stretch', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', gap: 16, display: 'flex'}}>
-            <div style={{alignSelf: 'stretch', color: 'var(--Miscellaneous-Window-Grabber, black)', fontSize: 14, fontFamily: 'Inter', fontWeight: '400', lineHeight: 20, wordWrap: 'break-word'}}>Complete o onboarding (1 de 5 concluídas)</div>
-            <div data-orientation="Horizontal" data-state="Default" style={{alignSelf: 'stretch', height: 367, transform: 'rotate(-90deg)', transformOrigin: 'top left', background: '#EDEDED', borderRadius: 4, justifyContent: 'flex-start', alignItems: 'flex-start', gap: 10, display: 'inline-flex'}}>
-                <div style={{width: 89, height: 8, background: '#2D5BFF', borderRadius: 4}} />
-            </div>
-        </div>
-        <div style={{alignSelf: 'stretch', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', gap: 22, display: 'flex'}}>
-            <div style={{alignSelf: 'stretch', paddingLeft: 22, paddingRight: 22, paddingTop: 14, paddingBottom: 14, background: 'white', boxShadow: '0px 0px 4.425286769866943px 2px rgba(13, 10, 44, 0.08)', overflow: 'hidden', borderRadius: 10, justifyContent: 'flex-start', alignItems: 'center', gap: 12, display: 'inline-flex'}}>
-                <div style={{padding: 12, background: '#FFEDCE', overflow: 'hidden', borderRadius: 10, flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', gap: 1, display: 'inline-flex'}}>
-                    <div style={{width: 24, height: 24, position: 'relative', overflow: 'hidden'}}>
-                        <div style={{width: 19.20, height: 21.60, left: 2.40, top: 1.20, position: 'absolute', background: 'var(--Colors-Orange, #FF8D28)'}} />
+<div style="width: 100%; height: 100%; background: white; box-shadow: 0px 0px 0px rgba(0, 0, 0, 0.25); overflow: hidden; justify-content: flex-start; align-items: flex-start; display: inline-flex">
+    <div style="flex: 1 1 0; height: 960px; background: var(--neutral-white, white); overflow: hidden; justify-content: flex-start; align-items: flex-start; display: flex">
+        <div style="flex: 1 1 0; align-self: stretch; flex-direction: column; justify-content: flex-start; align-items: flex-start; display: inline-flex">
+            <div style="align-self: stretch; padding-left: 22px; padding-right: 22px; padding-top: 12px; padding-bottom: 12px; background: white; overflow: hidden; border-bottom: 1px var(--Stroke-Default, #E3E4E5) solid; justify-content: flex-start; align-items: center; gap: 1px; display: inline-flex">
+                <div style="flex: 1 1 0; justify-content: space-between; align-items: center; display: flex">
+                    <div style="justify-content: flex-start; align-items: center; gap: 12px; display: flex">
+                        <div data-houver="off" data-tipo="Fechar" style="padding: 8px; background: var(--Background-Content, #F6F5FA); border-radius: 4px; justify-content: flex-start; align-items: center; gap: 12px; display: flex; flex-wrap: wrap; align-content: center">
+                            <div style="width: 16px; height: 16px; position: relative; overflow: hidden">
+                                <div style="width: 16px; height: 16px; left: 0px; top: 0px; position: absolute"></div>
+                                <div style="width: 9px; height: 9px; left: 3.50px; top: 3.50px; position: absolute; outline: 1.50px var(--Icon-Default, #6B7588) solid; outline-offset: -0.75px"></div>
+                                <div style="width: 9px; height: 9px; left: 3.50px; top: 3.50px; position: absolute; outline: 1.50px var(--Icon-Default, #6B7588) solid; outline-offset: -0.75px"></div>
+                            </div>
+                        </div>
+                        <div style="justify-content: flex-start; align-items: center; gap: 8px; display: flex">
+                            <div style="justify-content: flex-start; align-items: center; gap: 6px; display: flex">
+                                <div style="width: 14px; height: 14px; position: relative; overflow: hidden">
+                                    <div style="width: 14px; height: 14px; left: 0px; top: 0px; position: absolute"></div>
+                                    <div style="width: 2.62px; height: 1.75px; left: 2.19px; top: 2.62px; position: absolute; outline: 1.40px var(--Stroke-Hover, #0047BB) solid; outline-offset: -0.70px"></div>
+                                    <div style="width: 2.62px; height: 1.75px; left: 2.19px; top: 6.12px; position: absolute; outline: 1.40px var(--Stroke-Hover, #0047BB) solid; outline-offset: -0.70px"></div>
+                                    <div style="width: 2.62px; height: 1.75px; left: 2.19px; top: 9.62px; position: absolute; outline: 1.40px var(--Stroke-Hover, #0047BB) solid; outline-offset: -0.70px"></div>
+                                </div>
+                                <div style="color: var(--Miscellaneous-Window-Grabber, black); font-size: 14px; font-family: Inter; font-weight: 600; line-height: 30px; word-wrap: break-word">Questões</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div style="justify-content: flex-end; align-items: center; gap: 12px; display: flex">
+                        <div style="width: 35px; align-self: stretch; transform: rotate(90deg); transform-origin: top left; outline: 1px var(--Stroke-Default, #E3E4E5) solid; outline-offset: -0.50px"></div>
+                        <div data-estado="Disabled" data-icon="no" data-tamanho="Small" data-tipo="Primary" style="height: 35px; padding-left: 18px; padding-right: 18px; padding-top: 10px; padding-bottom: 10px; background: var(--Button-Disabled, #EBEBEB); border-radius: 4px; justify-content: center; align-items: center; gap: 8px; display: flex">
+                            <div style="height: 24px; justify-content: center; align-items: center; gap: 10px; display: flex">
+                                <div style="text-align: center; justify-content: center; display: flex; flex-direction: column; color: var(--Typography-Placeholder, #ABADB3); font-size: 14px; font-family: Inter; font-weight: 600; line-height: 30px; word-wrap: break-word">Criar banco</div>
+                            </div>
+                        </div>
                     </div>
                 </div>
-                <div style={{flex: '1 1 0', justifyContent: 'flex-start', alignItems: 'center', display: 'flex'}}>
-                    <div style={{flex: '1 1 0', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex'}}>
-                        <div style={{color: '#1E1B39', fontSize: 12, fontFamily: 'Inter', fontWeight: '500', lineHeight: 24, wordWrap: 'break-word'}}>Perfil de usuário</div>
-                        <div style={{alignSelf: 'stretch', color: '#9291A5', fontSize: 12, fontFamily: 'Inter', fontWeight: '400', lineHeight: 16, wordWrap: 'break-word'}}>Preencha todas as informações do seu perfil de usuário </div>
-                    </div>
-                    <div style={{width: 24, height: 24, position: 'relative', overflow: 'hidden'}}>
-                        <div style={{width: 19.50, height: 19.50, left: 2.25, top: 2.25, position: 'absolute', background: 'var(--Colors-Green, #34C759)'}} />
-                    </div>
-                </div>
             </div>
-            <div style={{alignSelf: 'stretch', paddingLeft: 22, paddingRight: 22, paddingTop: 14, paddingBottom: 14, background: 'white', boxShadow: '0px 0px 4.425286769866943px 2px rgba(13, 10, 44, 0.08)', overflow: 'hidden', borderRadius: 10, justifyContent: 'flex-start', alignItems: 'center', gap: 12, display: 'inline-flex'}}>
-                <div style={{padding: 12, background: '#E7EDFC', overflow: 'hidden', borderRadius: 10, flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', gap: 1, display: 'inline-flex'}}>
-                    <div style={{width: 24, height: 24, position: 'relative', overflow: 'hidden'}}>
-                        <div style={{width: 19.20, height: 21.60, left: 2.40, top: 1.20, position: 'absolute', background: 'var(--Miscellaneous-Tab-Bar-Selection-√, #0088FF)'}} />
+            <div style="align-self: stretch; flex: 1 1 0; background: var(--Background-Default, #F9FAFB); justify-content: flex-start; align-items: flex-start; display: inline-flex">
+                <div style="width: 340px; align-self: stretch; padding-top: 22px; padding-bottom: 44px; padding-left: 22px; padding-right: 22px; background: rgba(246, 245, 250, 0.96); overflow: hidden; border-right: 1px var(--Stroke-Default, #E3E4E5) solid; flex-direction: column; justify-content: flex-start; align-items: flex-start; gap: 22px; display: inline-flex">
+                    <div style="align-self: stretch; justify-content: space-between; align-items: center; display: inline-flex">
+                        <div style="color: var(--Miscellaneous-Window-Grabber, black); font-size: 14px; font-family: Inter; font-weight: 600; line-height: 30px; word-wrap: break-word">QUESTÕES</div>
+                        <div data-status="Default" data-tipo-btn="Adicionar" style="padding: 4px; background: var(--Background-Default, #F9FAFB); border-radius: 4px; outline: 1px var(--Stroke-Default, #E3E4E5) solid; outline-offset: -1px; justify-content: flex-start; align-items: center; gap: 12px; display: flex; flex-wrap: wrap; align-content: center">
+                            <div style="width: 16px; height: 16px; position: relative; overflow: hidden">
+                                <div style="width: 16px; height: 16px; left: 0px; top: 0px; position: absolute"></div>
+                            </div>
+                        </div>
                     </div>
                 </div>
-                <div style={{flex: '1 1 0', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex'}}>
-                    <div style={{color: '#1E1B39', fontSize: 12, fontFamily: 'Inter', fontWeight: '500', lineHeight: 24, wordWrap: 'break-word'}}>Domínio / Subdomínio</div>
-                    <div style={{alignSelf: 'stretch', color: '#9291A5', fontSize: 12, fontFamily: 'Inter', fontWeight: '400', lineHeight: 16, wordWrap: 'break-word'}}>Configure a url da área de membros da sua plataforma Connekt</div>
-                </div>
-            </div>
-            <div style={{alignSelf: 'stretch', paddingLeft: 22, paddingRight: 22, paddingTop: 14, paddingBottom: 14, background: 'white', boxShadow: '0px 0px 4.425286769866943px 2px rgba(13, 10, 44, 0.08)', overflow: 'hidden', borderRadius: 10, justifyContent: 'flex-start', alignItems: 'center', gap: 12, display: 'inline-flex'}}>
-                <div style={{padding: 12, background: '#E4FFF3', overflow: 'hidden', borderRadius: 10, flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', gap: 1, display: 'inline-flex'}}>
-                    <div style={{width: 24, height: 24, position: 'relative', overflow: 'hidden'}}>
-                        <div style={{width: 19.20, height: 21.60, left: 2.40, top: 1.20, position: 'absolute', background: 'var(--Colors-Green, #34C759)'}} />
+                <div style="flex: 1 1 0; align-self: stretch; flex-direction: column; justify-content: center; align-items: flex-end; gap: 1px; display: inline-flex">
+                    <div style="align-self: stretch; flex: 1 1 0; justify-content: flex-end; align-items: flex-start; gap: 1px; display: inline-flex">
+                        <div style="flex: 1 1 0; align-self: stretch; padding: 52px; flex-direction: column; justify-content: center; align-items: center; gap: 44px; display: inline-flex">
+                            <div style="flex-direction: column; justify-content: center; align-items: center; gap: 22px; display: flex">
+                                <div style="width: 93.55px; height: 93.55px; background: #EAEEF9"></div>
+                                <div style="width: 64.59px; height: 43.73px; background: linear-gradient(180deg, #B0BACC 0%, #969EAE 100%)"></div>
+                                <div style="width: 7.13px; height: 7.10px; background: #EAEEF9"></div>
+                                <div style="width: 3px; height: 3.04px; background: #EAEEF9"></div>
+                                <div style="width: 2.04px; height: 2.04px; background: #EAEEF9"></div>
+                                <div style="width: 41.45px; height: 49.54px; background: #F2F6FA; box-shadow: 0px 11px 22px rgba(101.42, 121.76, 146.62, 0.27)"></div>
+                                <div style="width: 7.03px; height: 13.02px; background: #D5DAE5"></div>
+                                <div style="width: 13.63px; height: 16.88px; background: #CED6E2"></div>
+                                <div style="width: 39.84px; height: 35.43px; background: #F2F6FA; box-shadow: 0px 11px 22px rgba(101.42, 121.76, 146.62, 0.27)"></div>
+                                <div style="width: 10.91px; height: 5.14px; background: #D5DAE5"></div>
+                                <div style="width: 12.60px; height: 13px; background: #CED6E2"></div>
+                                <div style="width: 30.80px; height: 38.09px; background: #F2F6FA; box-shadow: 0px 11px 22px rgba(101.42, 121.76, 146.62, 0.27)"></div>
+                                <div style="width: 6.80px; height: 9.90px; background: #D5DAE5"></div>
+                                <div style="width: 9.26px; height: 14.58px; background: #CED6E2"></div>
+                                <div style="width: 36.78px; height: 36.92px; background: #F2F6FA; box-shadow: 0px 11px 22px rgba(101.42, 121.76, 146.62, 0.27)"></div>
+                                <div style="width: 6.58px; height: 10.27px; background: #D5DAE5"></div>
+                                <div style="width: 14.28px; height: 10.06px; background: #CED6E2"></div>
+                                <div style="width: 66.39px; height: 23.19px; outline: 3px #1676EE solid; outline-offset: -1.50px"></div>
+                                <div style="width: 66.75px; height: 38.12px; background: white"></div>
+                                <div style="width: 79.68px; height: 46.06px; background: linear-gradient(180deg, #FDFEFF 0%, #ECF0F5 100%); box-shadow: 0px 11px 22px rgba(101.42, 121.76, 146.62, 0.27)"></div>
+                                <div style="width: 5.08px; height: 5.08px; background: #989FB0"></div>
+                                <div style="width: 5.08px; height: 5.08px; background: #989FB0"></div>
+                                <div style="width: 11.01px; height: 3.88px; background: #989FB0"></div>
+                                <div style="width: 5.72px; height: 3.07px; outline: 1.50px #989FB0 solid; outline-offset: -0.75px"></div>
+                                <div style="width: 5.72px; height: 3.18px; outline: 1.50px #989FB0 solid; outline-offset: -0.75px"></div>
+                                <div style="flex-direction: column; justify-content: center; align-items: center; gap: 12px; display: flex">
+                                    <div style="color: var(--Typography-Title, #22252B); font-size: 16px; font-family: Inter; font-weight: 600; line-height: 30px; word-wrap: break-word">Banco vazio!</div>
+                                    <div style="text-align: center; color: var(--Typography-Subtitle, #737780); font-size: 14px; font-family: Inter; font-weight: 500; line-height: 18px; word-wrap: break-word">Você não possui nenhuma questão neste banco de<br/>questões, adicione agora sua primeira questão</div>
+                                </div>
+                                <div style="justify-content: flex-start; align-items: flex-start; gap: 22px; display: inline-flex">
+                                    <div style="height: 35px; padding-left: 18px; padding-right: 18px; padding-top: 10px; padding-bottom: 10px; border-radius: 4px; outline: 1px var(--Stroke-Hover, #0047BB) solid; outline-offset: -1px; justify-content: center; align-items: center; gap: 6px; display: flex">
+                                        <div style="width: 16px; height: 16px; position: relative; overflow: hidden">
+                                            <div style="width: 16px; height: 16px; left: 0px; top: 0px; position: absolute"></div>
+                                            <div style="width: 11.50px; height: 11.50px; left: 2.50px; top: 2px; position: absolute; outline: 1.60px var(--Stroke-Hover, #0047BB) solid; outline-offset: -0.80px"></div>
+                                            <div style="width: 3.50px; height: 3.50px; left: 8.50px; top: 4px; position: absolute; outline: 1.60px var(--Stroke-Hover, #0047BB) solid; outline-offset: -0.80px"></div>
+                                        </div>
+                                        <div style="height: 24px; justify-content: center; align-items: center; gap: 10px; display: flex">
+                                            <div style="text-align: center; justify-content: center; display: flex; flex-direction: column; color: var(--Typography-Title-Color, #0047BB); font-size: 14px; font-family: Inter; font-weight: 600; line-height: 30px; word-wrap: break-word">Criar do zero</div>
+                                        </div>
+                                    </div>
+                                    <div style="height: 35px; padding-left: 18px; padding-right: 18px; padding-top: 10px; padding-bottom: 10px; background: var(--Button-Default, #0047BB); border-radius: 4px; justify-content: center; align-items: center; display: flex">
+                                        <div style="width: 16px; height: 16px; position: relative; overflow: hidden">
+                                            <div style="width: 16px; height: 16px; left: 0px; top: 0px; position: absolute"></div>
+                                            <div style="width: 2px; height: 2px; left: 9px; top: 5px; position: absolute; outline: 1.40px var(--Stroke-Default, #E3E4E5) solid; outline-offset: -0.70px"></div>
+                                        </div>
+                                        <div style="height: 24px; justify-content: center; align-items: center; gap: 10px; display: flex">
+                                            <div style="text-align: center; justify-content: center; display: flex; flex-direction: column; color: white; font-size: 14px; font-family: Inter; font-weight: 600; line-height: 30px; word-wrap: break-word">Criar com A.I</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div data-tipo="Default" style="height: 901px; padding-left: 12px; padding-right: 12px; padding-top: 22px; padding-bottom: 22px; background: white; overflow: hidden; border-left: 1px var(--Stroke-Default, #E3E4E5) solid; flex-direction: column; justify-content: flex-start; align-items: center; gap: 22px; display: inline-flex">
+                            <div data-houver="off" data-tipo="Classificação" style="padding: 8px; background: var(--Background-Content, #F6F5FA); border-radius: 4px; justify-content: flex-start; align-items: center; gap: 12px; display: inline-flex; flex-wrap: wrap; align-content: center">
+                                <div style="width: 16px; height: 16px; position: relative; overflow: hidden">
+                                    <div style="width: 16px; height: 16px; left: 0px; top: 0px; position: absolute"></div>
+                                    <div style="width: 13px; height: 9px; left: 2px; top: 3.50px; position: absolute; outline: 1.40px var(--Icon-Active, #22252B) solid; outline-offset: -0.70px"></div>
+                                </div>
+                            </div>
+                            <div data-houver="off" data-tipo="Configuração" style="padding: 8px; opacity: 0; background: var(--Background-Content, #F6F5FA); border-radius: 4px; justify-content: flex-start; align-items: center; gap: 12px; display: inline-flex; flex-wrap: wrap; align-content: center">
+                                <div style="width: 16px; height: 16px; position: relative; overflow: hidden">
+                                    <div style="width: 16px; height: 16px; left: 0px; top: 0px; position: absolute"></div>
+                                    <div style="width: 5px; height: 5px; left: 5.50px; top: 5.50px; position: absolute; outline: 1.30px var(--Icon-Active, #22252B) solid; outline-offset: -0.65px"></div>
+                                    <div style="width: 12.09px; height: 12.09px; left: 1.96px; top: 1.96px; position: absolute; outline: 1.30px var(--Icon-Active, #22252B) solid; outline-offset: -0.65px"></div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
-                <div style={{flex: '1 1 0', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex'}}>
-                    <div style={{color: '#1E1B39', fontSize: 12, fontFamily: 'Inter', fontWeight: '500', lineHeight: 24, wordWrap: 'break-word'}}>Pagamentos</div>
-                    <div style={{alignSelf: 'stretch', color: '#9291A5', fontSize: 12, fontFamily: 'Inter', fontWeight: '400', lineHeight: 16, wordWrap: 'break-word'}}>Preencha seus dados bancários para o recebimento de pagamentos. </div>
-                </div>
-            </div>
-            <div style={{alignSelf: 'stretch', paddingLeft: 22, paddingRight: 22, paddingTop: 14, paddingBottom: 14, background: 'white', boxShadow: '0px 0px 4.425286769866943px 2px rgba(13, 10, 44, 0.08)', overflow: 'hidden', borderRadius: 10, justifyContent: 'flex-start', alignItems: 'center', gap: 12, display: 'inline-flex'}}>
-                <div style={{padding: 12, background: 'rgba(139, 97, 255, 0.10)', overflow: 'hidden', borderRadius: 10, flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', gap: 1, display: 'inline-flex'}}>
-                    <div style={{width: 24, height: 24, position: 'relative', overflow: 'hidden'}}>
-                        <div style={{width: 19.20, height: 21.60, left: 2.40, top: 1.20, position: 'absolute', background: 'var(--Colors-Indigo, #6155F5)'}} />
-                    </div>
-                </div>
-                <div style={{flex: '1 1 0', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex'}}>
-                    <div style={{color: '#1E1B39', fontSize: 12, fontFamily: 'Inter', fontWeight: '500', lineHeight: 24, wordWrap: 'break-word'}}>Crie um curso</div>
-                    <div style={{alignSelf: 'stretch', color: '#9291A5', fontSize: 12, fontFamily: 'Inter', fontWeight: '400', lineHeight: 16, wordWrap: 'break-word'}}>Crie o seu primeiro curso online com a Connekt </div>
-                </div>
-            </div>
-            <div style={{alignSelf: 'stretch', paddingLeft: 22, paddingRight: 22, paddingTop: 14, paddingBottom: 14, background: 'white', boxShadow: '0px 0px 4.425286769866943px 2px rgba(13, 10, 44, 0.08)', overflow: 'hidden', borderRadius: 10, justifyContent: 'flex-start', alignItems: 'center', gap: 12, display: 'inline-flex'}}>
-                <div style={{padding: 12, background: '#FFFCDE', overflow: 'hidden', borderRadius: 10, flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', gap: 1, display: 'inline-flex'}}>
-                    <div style={{width: 24, height: 24, position: 'relative', overflow: 'hidden'}}>
-                        <div style={{width: 19.20, height: 21.60, left: 2.40, top: 1.20, position: 'absolute', background: 'var(--Miscellaneous-Window-Controls-Minimize, #FEBC2F)'}} />
-                    </div>
-                </div>
-                <div style={{flex: '1 1 0', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', display: 'inline-flex'}}>
-                    <div style={{color: '#1E1B39', fontSize: 12, fontFamily: 'Inter', fontWeight: '500', lineHeight: 24, wordWrap: 'break-word'}}>Publique seu curso</div>
-                    <div style={{alignSelf: 'stretch', color: '#9291A5', fontSize: 12, fontFamily: 'Inter', fontWeight: '400', lineHeight: 16, wordWrap: 'break-word'}}>Publique a venda do seu curso online, publique seu primeiro curso. </div>
-                </div>
-            </div>
-        </div>
-    </div>
-    <div style={{alignSelf: 'stretch', padding: 32, flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'flex-start', gap: 1, display: 'flex'}}>
-        <div style={{alignSelf: 'stretch', justifyContent: 'flex-start', alignItems: 'flex-start', gap: 22, display: 'inline-flex'}}>
-            <div style={{flex: '1 1 0', height: 42, paddingLeft: 22, paddingRight: 22, paddingTop: 16, paddingBottom: 16, background: 'var(--secondary-500, #0047BB)', borderRadius: 4, justifyContent: 'center', alignItems: 'center', gap: 8, display: 'flex'}}>
-                <div style={{textBoxTrim: 'trim-both', textBoxEdge: 'cap alphabetic', color: 'var(--neutral-white, white)', fontSize: 14, fontFamily: 'Inter', fontWeight: '600', lineHeight: 42, wordWrap: 'break-word'}}>Ativar conta Connekt</div>
             </div>
         </div>
     </div>
 </div>
-
-// Finalize seu cadastro! 🔥
-color: 'var(--Miscellaneous-Segmented-Control---Selected-Fill, white)', fontSize: 20, fontFamily: 'Inter', fontWeight: '600', wordWrap: 'break-word'
----
-// Conclua todas as configurações para ativar sua conta da 
-color: 'var(--Miscellaneous-Segmented-Control---Selected-Fill, white)', fontSize: 16, fontFamily: 'Inter', fontWeight: '400', lineHeight: 26, wordWrap: 'break-word'
----
-// Connekt. 
-color: 'white', fontSize: 16, fontFamily: 'Inter', fontWeight: '600', lineHeight: 26, wordWrap: 'break-word'
----
-// Complete o onboarding (1 de 5 concluídas)
-color: 'var(--Miscellaneous-Window-Grabber, black)', fontSize: 14, fontFamily: 'Inter', fontWeight: '400', lineHeight: 20, wordWrap: 'break-word'
----
-// Perfil de usuário
-color: '#1E1B39', fontSize: 12, fontFamily: 'Inter', fontWeight: '500', lineHeight: 24, wordWrap: 'break-word'
----
-// Preencha todas as informações do seu perfil de usuário 
-color: '#9291A5', fontSize: 12, fontFamily: 'Inter', fontWeight: '400', lineHeight: 16, wordWrap: 'break-word'
----
-// Domínio / Subdomínio
-color: '#1E1B39', fontSize: 12, fontFamily: 'Inter', fontWeight: '500', lineHeight: 24, wordWrap: 'break-word'
----
-// Configure a url da área de membros da sua plataforma Connekt
-color: '#9291A5', fontSize: 12, fontFamily: 'Inter', fontWeight: '400', lineHeight: 16, wordWrap: 'break-word'
----
-// Pagamentos
-color: '#1E1B39', fontSize: 12, fontFamily: 'Inter', fontWeight: '500', lineHeight: 24, wordWrap: 'break-word'
----
-// Preencha seus dados bancários para o recebimento de pagamentos. 
-color: '#9291A5', fontSize: 12, fontFamily: 'Inter', fontWeight: '400', lineHeight: 16, wordWrap: 'break-word'
----
-// Crie um curso
-color: '#1E1B39', fontSize: 12, fontFamily: 'Inter', fontWeight: '500', lineHeight: 24, wordWrap: 'break-word'
----
-// Crie o seu primeiro curso online com a Connekt 
-color: '#9291A5', fontSize: 12, fontFamily: 'Inter', fontWeight: '400', lineHeight: 16, wordWrap: 'break-word'
----
-// Publique seu curso
-color: '#1E1B39', fontSize: 12, fontFamily: 'Inter', fontWeight: '500', lineHeight: 24, wordWrap: 'break-word'
----
-// Publique a venda do seu curso online, publique seu primeiro curso. 
-color: '#9291A5', fontSize: 12, fontFamily: 'Inter', fontWeight: '400', lineHeight: 16, wordWrap: 'break-word'
----
-// Ativar conta Connekt
-color: 'var(--neutral-white, white)', fontSize: 14, fontFamily: 'Inter', fontWeight: '600', lineHeight: 42, wordWrap: 'break-word'

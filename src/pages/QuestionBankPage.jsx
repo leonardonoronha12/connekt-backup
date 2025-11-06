@@ -101,7 +101,7 @@ const ExistingBankCard = ({ bank, onAction }) => {
                 </clipPath> 
               </defs> 
             </svg>
-            <span className="font-inter font-semibold text-[12px]" style={{color: '#1E1B39'}}>{bank.question_count || 0} questões</span>
+          <span className="font-inter font-semibold text-[12px]" style={{color: '#1E1B39'}}>{(bank.questionCount ?? bank.question_count ?? 0)} questões</span>
           </div>
           <div className="mt-1">
             <span className="block text-[10px] font-inter font-normal truncate" style={{color: '#9291A5'}}>Criado em: {formatDate(bank.created_at)}</span>
@@ -623,6 +623,16 @@ const QuestionBankPage = () => {
       if (window.parent && window.parent !== window) {
         window.parent.postMessage({ type: 'MODAL_OPENED' }, '*');
       }
+    } else if (action === 'view') {
+      // Navegar para a página de questões do banco específico
+      const bankId = typeof data === 'object' && data?.id ? data.id : data;
+      const bank = questionBanks.find(b => b.id === bankId);
+      if (bank) {
+        toast({ description: `Abrindo banco: ${bank.name}` });
+      }
+      const targetUrl = bankId ? `/questoes?bankId=${encodeURIComponent(bankId)}` : '/questoes';
+      window.history.pushState({}, '', targetUrl);
+      window.dispatchEvent(new PopStateEvent('popstate'));
     } else {
       toast({
         description: "🚧 This feature isn't implemented yet—but don't worry! You can request it in your next prompt! 🚀",
@@ -660,13 +670,21 @@ const QuestionBankPage = () => {
 
     // Mostrar popup de configuração após clicar no botão dentro do modal
     setIsSetupModalOpen(true);
+    // Mostrar a div por 5 segundos e navegar para /questoes
+    setTimeout(() => {
+      setIsSetupModalOpen(false);
+      // Navegar para a nova página de Questões
+      window.history.pushState({}, '', '/questoes');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    }, 5000);
 
     try {
       const questionBankData = {
         name: formData.name.trim(),
         category: formData.category.trim(),
         subcategory: formData.subcategory.trim(),
-        tags: formData.tags.split(',').map(tag => tag.trim()),
+        // Enviar as tags como array de objetos selecionados
+        tags: Array.isArray(formData.tags) ? formData.tags : [],
         description: formData.description.trim()
       };
 
@@ -681,9 +699,7 @@ const QuestionBankPage = () => {
         // Resetar estado de modificação após salvar com sucesso
         setOriginalFormData(JSON.parse(JSON.stringify(formData)));
         setIsFormModified(false);
-        // Fechar popup de configuração e o formulário principal
-        setIsSetupModalOpen(false);
-        handleClosePopup();
+        // Mantemos o modal aberto; apenas ocultamos a div após 5s
         toast({
           description: "Banco de questões criado com sucesso!",
         });
@@ -696,7 +712,7 @@ const QuestionBankPage = () => {
         description: "Erro ao conectar com o servidor",
         variant: "destructive"
       });
-      setIsSetupModalOpen(false);
+      // O overlay será ocultado pelo timeout configurado ao abrir
     }
   };
 
@@ -883,29 +899,26 @@ const QuestionBankPage = () => {
         </main>
       </div>
 
-      {/* Setup Modal */}
-      {isSetupModalOpen && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center">
-          <div className="absolute inset-0 bg-[#F8F9FB] opacity-95"></div>
-          <div className="relative z-[61] flex flex-col items-center text-center">
-            <Hourglass className="w-14 h-14 text-[#0B57D0]" strokeWidth={3} />
-            <h3 className="mt-6 text-[18px] font-medium text-gray-900 font-inter">Configurando banco...</h3>
-            <p className="mt-2 text-[14px] font-normal text-gray-500 font-inter max-w-[420px]">
-              Aguarde, estamos criando toda a estrutura do seu banco de questões.
-            </p>
-          </div>
-        </div>
-      )}
+      {/* Setup Overlay dentro do modal */}
 
       {/* Popup Modal */}
       {isPopupOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl w-[800px] max-w-[95vw] max-h-[95vh] overflow-y-auto">
+          <div className="bg-white rounded-lg shadow-xl w-[800px] max-w-[95vw] max-h-[95vh] overflow-y-auto relative">
+            {isSetupModalOpen && (
+              <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[60] w-[272px] h-[138px] bg-white rounded-[8px] p-4 flex flex-col items-center justify-center text-center">
+                <Hourglass className="w-8 h-8 text-[#0B57D0] animate-spin" strokeWidth={3} />
+                <h3 className="mt-3 text-[16px] font-medium text-gray-900 font-inter">Configurando banco...</h3>
+                <p className="mt-2 text-[12px] font-normal text-gray-500 font-inter">
+                  Aguarde, estamos criando toda a estrutura do seu banco de questões.
+                </p>
+              </div>
+            )}
             {/* Header */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+            <div className={`flex items-center px-6 py-4 border-b border-gray-200 ${isSetupModalOpen ? 'justify-center' : 'justify-between'}`}>
               <button
                 onClick={handleClosePopup}
-                className="p-1 hover:bg-gray-100 rounded transition-colors"
+                className={`p-1 hover:bg-gray-100 rounded transition-colors ${isSetupModalOpen ? 'hidden' : ''}`}
               >
                 <X className="w-5 h-5 text-gray-500" />
               </button>
@@ -929,15 +942,15 @@ const QuestionBankPage = () => {
               </div>
               <Button
                 onClick={handleSave}
-                className="px-6 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-md font-medium disabled:bg-gray-300 disabled:cursor-not-allowed"
+                className={`px-6 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-md font-medium disabled:bg-gray-300 disabled:cursor-not-allowed ${isSetupModalOpen ? 'hidden' : ''}`}
                 disabled={!isFormModified}
               >
                 {isEditMode ? 'Salvar' : 'Criar banco'}
               </Button>
             </div>
 
-            {/* Content */}
-            <div className="p-8 space-y-8 max-w-[600px] mx-auto">
+            {/* Content (mantém altura; desativa interação quando a div de setup estiver visível) */}
+            <div className={`p-8 space-y-8 max-w-[600px] mx-auto ${isSetupModalOpen ? 'opacity-0 pointer-events-none select-none' : ''}`}>
               {/* Illustration */}
               <div className="flex justify-start mb-8">
                 <img src="/bank-icon.svg" alt="Bank Icon" className="w-20 h-20 mb-6" />

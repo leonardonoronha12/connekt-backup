@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { FileText, Plus, ChevronDown, MoreVertical } from 'lucide-react';
 
@@ -22,15 +22,78 @@ const simuladosMock = [
 const SimuladosPage = () => {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [coverImage, setCoverImage] = useState(null);
+  const [coverPreviewUrl, setCoverPreviewUrl] = useState(null);
+  const [isCoverPopupOpen, setIsCoverPopupOpen] = useState(false);
+  const [coverTab, setCoverTab] = useState('padrao'); // 'padrao' | 'upload'
+  const fileInputRef = useRef(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const uploadIntervalRef = useRef(null);
+
+  // Gerenciar URL de preview para o arquivo selecionado
+  useEffect(() => {
+    let url = null;
+    if (coverImage && coverImage instanceof File) {
+      url = URL.createObjectURL(coverImage);
+      setCoverPreviewUrl(url);
+    } else if (typeof coverImage === 'string') {
+      setCoverPreviewUrl(coverImage);
+    } else {
+      setCoverPreviewUrl(null);
+    }
+    return () => {
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [coverImage]);
   const navigateTo = (path) => {
     window.history.pushState({}, '', path);
     window.dispatchEvent(new PopStateEvent('popstate'));
+  };
+
+  const handleOpenFileDialog = () => {
+    if (fileInputRef.current) fileInputRef.current.click();
+  };
+
+  const handleFileChange = (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (file) {
+      setCoverImage(file);
+      // Iniciar upload simulado: preenche o anel e sobe porcentagem até 100%
+      if (uploadIntervalRef.current) {
+        clearInterval(uploadIntervalRef.current);
+        uploadIntervalRef.current = null;
+      }
+      setIsUploading(true);
+      setUploadProgress(0);
+      const totalDurationMs = 2500; // ~2.5s até 100%
+      const tickMs = 50;
+      const step = 100 / (totalDurationMs / tickMs);
+      uploadIntervalRef.current = setInterval(() => {
+        setUploadProgress((prev) => {
+          const next = Math.min(100, prev + step);
+          if (next >= 100) {
+            clearInterval(uploadIntervalRef.current);
+            uploadIntervalRef.current = null;
+            // pequena pausa para mostrar 100% antes de concluir
+            setTimeout(() => {
+              setIsUploading(false);
+            }, 500);
+          }
+          return next;
+        });
+      }, tickMs);
+    }
   };
 
   const handleCreateSimulado = () => {
     // Abrir modal de criação de simulado
     setIsCreateModalOpen(true);
   };
+
+  // Estado para abrir/fechar o grupo de configurações dentro da barra direita
+  const [isSettingsPopupOpen, setIsSettingsPopupOpen] = useState(false);
+  // Estado dos seis switches do painel de configurações
+  const [panelSwitches, setPanelSwitches] = useState([false, false, false, false, false, false]);
 
   const renderApprovalIcon = () => (
     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0047BB" strokeWidth="2"><circle cx="12" cy="12" r="10" opacity="0.3"/><path d="M12 2 a10 10 0 0 1 0 20" /></svg>
@@ -45,12 +108,14 @@ const SimuladosPage = () => {
       <div className="px-[22px]">
       <div className="max-w-[1904px] mx-auto w-full mt-4">
           {/* Hero Header */}
-          <div className="relative grid grid-cols-1 md:grid-cols-[1fr,320px] gap-4">
+        <div className="relative w-[1076px] mx-auto grid grid-cols-1 md:grid-cols-[1fr,254px] gap-0">
             {/* Left hero card - idêntico ao header do Banco de Questões */}
-            <div className="relative px-4 sm:px-8 pt-4 sm:pt-6 lg:pt-8 pb-4 sm:pb-5 lg:pb-7 bg-[#003a99] text-white rounded-[10px] shadow-lg overflow-visible compact-header ultra-compact-header w-[calc(100%+50px)]">
-              <div className="relative z-10">
-                <h1 className="text-base sm:text-[18px] font-medium font-inter mb-1">Simulados</h1>
-                <p className="text-sm sm:text-[16px] font-normal font-inter text-blue-100 mb-3 sm:mb-4 lg:mb-6">Crie e gerencie os seus simulados interativos</p>
+      <div className="relative pl-[42px] pr-[42px] pt-[22px] pb-[22px] bg-[#003a99] text-white rounded-[10px] shadow-lg overflow-visible compact-header ultra-compact-header w-[800px] h-fit flex flex-col">
+              <div className="relative z-10 h-fit flex flex-col gap-[22px]">
+                <div className="h-fit">
+                  <h1 className="text-base sm:text-[18px] font-medium font-inter mb-0 h-[37px]">Simulados</h1>
+                  <p className="text-sm sm:text-[16px] font-normal font-inter text-blue-100 mb-0 h-[30px]">Crie e gerencie os seus simulados interativos</p>
+                </div>
                 <button
                   onClick={handleCreateSimulado}
                   className="ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-white text-[#0047BB] hover:bg-gray-100 px-5 py-2.5 rounded-[4px] shadow-sm w-[135px] h-[30px] text-[14px] font-semibold font-inter flex items-center justify-center"
@@ -100,9 +165,11 @@ const SimuladosPage = () => {
               </svg>
             </div>
             {/* Right info card (pálido azul) */}
-            <div className="bg-[#E7EDFC] text-[#22252B] rounded-[10px] border border-[#D9E6FF] p-4 w-[76.8%] justify-self-start relative z-[60] left-[45px]">
-              <h2 className="text-[14px] font-semibold text-[#22252B] font-inter">Banco de questões</h2>
-              <p className="text-[14px] font-normal text-[#22252B] font-inter mt-1">Crie questões que podem ser usadas em seus simulados.</p>
+            <div className="bg-[#E7EDFC] text-[#22252B] rounded-[10px] border border-[#D9E6FF] px-4 pt-[22px] pb-[22px] w-[254px] h-[163px] relative z-[60]">
+              <div className="space-y-0 p-0">
+                <h2 className="text-[14px] font-semibold text-[#22252B] font-inter">Banco de questões</h2>
+                <p className="text-[12px] font-normal text-[#22252B] font-inter h-[60px] leading-[30px]">Crie questões que podem ser usadas em seus simulados.</p>
+              </div>
               <button onClick={() => navigateTo('/banco-de-questoes')} className="mt-4 bg-white text-[#0047BB] hover:bg-gray-100 font-semibold px-5 py-2 rounded-[4px] shadow-sm w-[210px] mx-auto h-[30px] text-[14px] font-inter flex items-center justify-center text-center">
                 Criar banco de questões
               </button>
@@ -110,35 +177,35 @@ const SimuladosPage = () => {
           </div>
 
           {/* Toolbar */}
-          <div className="mt-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 px-0">
+          <div className="mt-6 w-[1076px] mx-auto flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div>
               <h3 className="text-[16px] font-semibold text-[#000000] font-inter">Simulados</h3>
               <p className="text-[16px] text-[#404040] font-inter font-normal">Todos os seus simulados</p>
             </div>
-            <div className="flex items-center gap-3 w-full sm:w-auto">
+            <div className="flex items-center gap-[12px] w-full sm:w-auto">
               <div className="relative flex-1 sm:flex-none sm:w-[328px]">
                 <img src="/search simulados 1.png" alt="Buscar" className="absolute left-3 top-1/2 -translate-y-1/2 w-[20px] h-[20px] object-contain" />
                 <input
                   type="text"
                   placeholder="Buscar simulado"
-                  className="w-full h-[40px] pl-10 pr-4 py-2 border border-[#E3E4E5] bg-white rounded-lg focus:ring-0 text-[14px] font-normal font-inter text-[#ABADB3] placeholder:text-[#ABADB3]"
+                  className="w-[328px] h-[40px] pl-10 pr-4 py-2 border border-[#E3E4E5] bg-white rounded-[4px] focus:ring-0 text-[14px] font-normal font-inter text-[#ABADB3] placeholder:text-[#ABADB3]"
                 />
               </div>
-              <button className="flex items-center gap-2 h-[40px] px-[8.5px] border border-[#E3E4E5] rounded-lg bg-[#F8FAFC] text-[#22252B] text-[14px] font-normal hover:bg-gray-50">
+              <button className="flex items-center gap-2 h-[40px] w-[107px] px-[8.5px] border border-[#E3E4E5] rounded-[4px] bg-[#F8FAFC] text-[#22252B] text-[14px] font-normal hover:bg-gray-50">
                 <img src="/Filtro simulados 1.png" alt="Filtrar" className="w-4 h-4 object-contain" />
                 Filtrar
                 <ChevronDown className="w-4 h-4 text-[#6B7588]" />
               </button>
-              <button onClick={handleCreateSimulado} className="bg-[#0047BB] text-[#FFFFFF] hover:bg-[#003a99] font-semibold px-5 py-2.5 rounded-[4px] shadow-sm h-[40px] text-[14px] font-inter">
+              <button onClick={handleCreateSimulado} className="bg-[#0047BB] text-[#FFFFFF] hover:bg-[#003a99] font-semibold px-5 py-2.5 rounded-[4px] shadow-sm h-[40px] w-[139px] text-[14px] font-inter">
                 Criar simulado
               </button>
             </div>
           </div>
 
           {/* Grid */}
-          <div className="mt-6 grid auto-rows-fr grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-[22px]">
+          <div className="mt-6 w-[1076px] mx-auto grid auto-rows-fr grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-[22px]">
             {simuladosMock.map(sim => (
-              <div key={sim.id} className="bg-white border border-[#E3E4E5] rounded-[10px] p-4 w-[252.5px] h-[222.17px] flex flex-col">
+              <div key={sim.id} className="bg-white border border-[#E3E4E5] rounded-[4px] p-4 w-[252.5px] h-[222.17px] flex flex-col">
                 <div className="flex items-start justify-between mb-0">
                   <div className="flex items-center gap-2">
                     <img src="/t simulados 1.png" alt="Simulado" className="w-[85px] h-[85px] object-contain" />
@@ -147,18 +214,18 @@ const SimuladosPage = () => {
                     <button className="w-8 h-8 rounded bg-[#F6F5FA] hover:bg-[#F6F5FA] flex items-center justify-center">
                       <MoreVertical className="w-4 h-4 text-[#737780] -rotate-90" />
                     </button>
-                    <span className="inline-flex items-center justify-center w-[64px] h-[18px] px-3 text-[10px] bg-[#E9FFEF] text-[#06C270] rounded-[25%] leading-none font-medium">{sim.status}</span>
+                    <span className="inline-flex items-center justify-center w-[64px] h-[18px] px-3 text-[10px] bg-[#E9FFEF] text-[#06C270] rounded-[54px] leading-none font-medium">{sim.status}</span>
                   </div>
                 </div>
                 <div className="mt-0">
                   <h4 className="text-[12px] font-medium text-[#1E1B39] font-inter">{sim.name}</h4>
-                  <p className="text-[10px] text-[#9291A5] font-inter font-normal mt-1">Descrição breve do simulado</p>
+                  <p className="text-[10px] text-[#9291A5] font-inter font-[400] mt-1">Descrição breve do simulado</p>
                 </div>
                 <div className="mt-3 flex items-center gap-2">
                   {sim.categories.map((c, i) => (
                     <span
                       key={i}
-                      className="inline-flex items-center gap-1 text-[12px] font-normal h-[20px] px-2 py-0 rounded"
+                      className="inline-flex items-center gap-1 text-[12px] font-normal h-[20px] px-2 py-0 rounded-[4px]"
                       style={{ backgroundColor: 'rgba(173,137,247,0.1)', color: '#22252B' }}
                     >
                       <span className="leading-none text-[7px] text-[#AD89F7]">🟪</span>
@@ -178,7 +245,7 @@ const SimuladosPage = () => {
 
             {/* Placeholders */}
             {Array.from({ length: 6 }).map((_, idx) => (
-              <div key={idx} className="bg-white border border-[#E3E4E5] rounded-[10px] p-4 w-[252.5px] h-[222.17px] shadow-sm flex flex-col items-center justify-center">
+              <div key={idx} className="bg-white border border-[#E3E4E5] rounded-[4px] p-4 w-[252.5px] h-[222.17px] shadow-sm flex flex-col items-center justify-center">
                 <div className="w-12 h-12 rounded-full border border-solid border-[#F6F5FA] bg-[#F6F5FA] flex items-center justify-center">
                   <Plus className="w-5 h-5 text-gray-400" />
                 </div>
@@ -197,9 +264,9 @@ const SimuladosPage = () => {
       {isCreateModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/50" onClick={() => setIsCreateModalOpen(false)}></div>
-          <div className="relative bg-[#F6F5FA] rounded-lg shadow-2xl w-[1000px] h-[580px] overflow-y-auto">
+          <div className="relative bg-[#F6F5FA] rounded-lg shadow-2xl w-[1000px] h-[740px] overflow-y-auto">
             {/* Top Bar */}
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 bg-[#FFFFFF]">
+            <div className="flex items-center justify-between px-6 h-[59px] border-b border-gray-200 bg-[#FFFFFF]">
               <button
                 className="w-8 h-8 rounded flex items-center justify-center text-gray-600 hover:bg-gray-100"
                 onClick={() => setIsCreateModalOpen(false)}
@@ -212,13 +279,14 @@ const SimuladosPage = () => {
                 <span className="text-[14px] font-semibold text-[#000000]">Criar novo simulado</span>
               </div>
               <div className="flex items-center gap-[12px]">
-                <div className="h-[35px] w-[2px] bg-[#E3E4E5]" />
+                <div className="h-[35px] w-[2px] bg-[#E3E4E5]/0" />
                 <button className="bg-[#0047BB] text-[#FFFFFF] w-[104px] h-[35px] rounded-[6px] text-[14px] font-semibold flex items-center justify-center">Continuar</button>
               </div>
             </div>
 
             {/* Content */}
-        <div className="px-6 py-6 relative pr-[72px]">
+        <div className="pl-6 pr-0 pt-0 pb-0 relative flex gap-0">
+          <div className="flex-1 pt-[30px]">
               {/* Cover upload */}
               <div
                 className="relative bg-pink-200/60 rounded-[10px] w-[600px] h-[200px] mb-9 mx-auto flex items-end"
@@ -233,10 +301,111 @@ const SimuladosPage = () => {
                   alt="Produtos - Cores"
                   className="absolute left-6 -bottom-5 w-[52px] h-[52px] rounded-md shadow object-cover"
                 />
-                <button className="absolute right-6 bottom-4 bg-white text-[#0047BB] px-3 py-1.5 rounded shadow text-[13px] inline-flex items-center gap-2">
-                  <span>Upload da capa</span>
+                <button onClick={() => setIsCoverPopupOpen(true)} className="absolute right-6 bottom-4 bg-white text-[#0047BB] px-3 py-0 h-[18px] rounded shadow text-[13px] inline-flex items-center gap-2">
+                  <img src="/icone img simulado.png" alt="Ícone simulado" className="w-[15px] h-[15px] object-contain" />
+                  <span className="text-[#22252B] text-[12px] font-medium">Upload da capa</span>
                 </button>
               </div>
+              {isCoverPopupOpen && (
+                <div className="fixed inset-0 z-[200] flex items-center justify-center">
+                  <div className="absolute inset-0 bg-black/30" onClick={() => setIsCoverPopupOpen(false)}></div>
+                  <div className="relative bg-white rounded-[8px] shadow-xl w-[352px] h-fit p-4">
+                    {/* Tabs */}
+                    <div className="flex items-center gap-6 border-b border-[#E3E4E5] pb-2">
+                      <button
+                        className={`text-[14px] font-medium ${coverTab === 'padrao' ? 'text-[#0047BB]' : 'text-[#737780]'}`}
+                        onClick={() => setCoverTab('padrao')}
+                      >
+                        Padrão
+                      </button>
+                      <button
+                        className={`text-[14px] font-medium ${coverTab === 'upload' ? 'text-[#0047BB]' : 'text-[#737780]'}`}
+                        onClick={() => setCoverTab('upload')}
+                      >
+                        Upload
+                      </button>
+                    </div>
+
+                    {/* Content */}
+                    {coverTab === 'padrao' ? (
+                      <div className="mt-3">
+                        <span className="text-[12px] font-medium text-[#22252B]">Paleta de cores</span>
+                        <div className="grid grid-cols-5 gap-2 mt-2">
+                          {['#E9EEF3','#F97066','#F5D90A','#3CB371','#6DD5F7','#1D4ED8','#003a99','#FFB6C1','#F3F4F6','#111827'].map((c) => (
+                            <div key={c} className="w-[60.8px] h-[40px] rounded-md border border-[#E3E4E5]" style={{ backgroundColor: c }}></div>
+                          ))}
+                        </div>
+
+                        <span className="text-[12px] font-medium text-[#22252B] mt-4 inline-block">Galeria de Imagens</span>
+                        <div className="grid grid-cols-5 gap-1 mt-2">
+                          {[...Array(9)].map((_, i) => (
+                            <img key={i} src="/Produtos - Cores.png" alt="Imagem da galeria" className="w-[60.8px] h-[40px] rounded border border-[#E3E4E5] object-cover" />
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="mt-3">
+                        {isUploading ? (
+                          <div className="mt-2 p-6 rounded-md text-center text-[12px] bg-white border-2 border-dashed border-[#0047BB]">
+                            <div className="flex flex-col items-center justify-center gap-2">
+                              {/* Indicador de progresso estilo anel */}
+                              {(() => {
+                                const radius = 16;
+                                const circumference = 2 * Math.PI * radius;
+                                const offset = circumference * (1 - uploadProgress / 100);
+                                return (
+                                  <div className="relative w-10 h-10">
+                                    <svg width="40" height="40" viewBox="0 0 40 40">
+                                      <circle cx="20" cy="20" r={radius} stroke="#0047BB" strokeWidth="4" opacity="0.3" fill="none" />
+                                      <circle cx="20" cy="20" r={radius} stroke="#0047BB" strokeWidth="4" fill="none" strokeDasharray={circumference} strokeDashoffset={offset} transform="rotate(-90 20 20)" />
+                                    </svg>
+                  <span className="absolute inset-0 flex items-center justify-center text-[12px] text-[#22252B]">{Math.round(uploadProgress)}%</span>
+                                  </div>
+                                );
+                              })()}
+                              <p className="text-[#22252B]">Carregando...</p>
+                            </div>
+                          </div>
+                        ) : coverImage ? (
+                          <div className="mt-2 p-4 rounded-md text-[12px] bg-white border-2 border-dashed border-[#0047BB]">
+                            <div className="flex items-center gap-3">
+                              <img src={coverPreviewUrl || '/Produtos - Cores.png'} alt={coverImage?.name || 'Capa'} className="w-[120px] h-[80px] rounded object-cover" />
+                              <div>
+                                <p className="text-[#1E1B39] font-inter font-medium text-[14px]">{coverImage?.name || 'Capa do curso'}</p>
+                                <p className="text-[#9291A5] font-inter text-[12px]">Tamanho: {coverImage?.size ? `${(coverImage.size / (1024 * 1024)).toFixed(1)}MB` : '—'}</p>
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="mt-2 p-6 rounded-md text-center text-[12px] bg-white border-2 border-dashed border-[#0047BB] cursor-pointer" onClick={handleOpenFileDialog} role="button" aria-label="Selecionar imagem">
+                            <div className="flex flex-col items-center justify-center gap-2">
+                              {/* Ícone de upload vindo da pasta public */}
+                              <img src="/icone%20backup%20simulados.png" alt="Upload" className="w-[36px] h-[36px]" />
+                              <p className="text-[#22252B]">
+                                Arraste a capa aqui ou
+                                <button type="button" className="text-[#0047BB] underline ml-1" onClick={handleOpenFileDialog}>selecione clicando aqui</button>
+                              </p>
+                              <p className="text-[#9AA0A6]">Max 10 MB, formato: PNG ou JPEG</p>
+                              <input ref={fileInputRef} type="file" accept="image/png,image/jpeg" className="hidden" onChange={handleFileChange} />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Footer actions */}
+                    <div className="mt-4 flex items-center justify-between border-t border-[#E3E4E5] pt-4 pl-3">
+                      {coverTab !== 'upload' && (
+                        <button className="text-[12px] text-[#FF3B3B] font-medium">Remover capa</button>
+                      )}
+                      <div className="flex items-center gap-2">
+                         <button onClick={() => setIsCoverPopupOpen(false)} className="h-[26px] w-[68px] px-3 rounded-[6px] bg-transparent text-[#737780] text-[12px] font-medium border border-[#E3E4E5] flex items-center justify-center text-center">Cancelar</button>
+                         <button onClick={() => setIsCoverPopupOpen(false)} className="h-[26px] w-[52px] px-3 rounded-[6px] bg-[#0047BB] text-[#FFFFFF] text-[12px] font-medium flex items-center justify-center text-center">Salvar</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Bloco de formulário (estrutura similar ao Banco de Questões) */}
               <div className="space-y-6">
@@ -309,8 +478,135 @@ const SimuladosPage = () => {
             />
             <div className="absolute right-3 bottom-3 text-[#9291A5] text-[12px]">0/300</div>
           </div>
+          </div>
           {/* Sidebar direita */}
-          <div className="absolute right-0 top-0 bottom-[-24px] w-[44px] bg-[#FFFFFF] border-l border-[#E3E4E5]"></div>
+          <div className="flex-shrink-0 h-[681px]">
+            {/* Barra estreita fixa à direita (oculta quando painel aberto) */}
+            {!isSettingsPopupOpen && (
+              <div className="h-[681px] w-[44px] bg-[#FFFFFF] border-l border-[#E3E4E5] pt-[24px] flex items-start justify-center">
+                <img
+                  src="/config simulados.png"
+                  alt="Configurar simulados"
+                  className="w-[20px] h-[20px] object-contain cursor-pointer"
+                  onClick={() => setIsSettingsPopupOpen(prev => !prev)}
+                />
+              </div>
+            )}
+
+            {/* Painel dentro da mesma div (ocupando espaço interno) */}
+            {isSettingsPopupOpen && (
+              <div className="h-[681px] w-[320px] bg-white border-l border-l-[#E3E4E5] rounded-none overflow-y-auto font-inter">
+                <div className="flex items-center justify-between px-4 pt-[12px] pb-[12px] w-[296px] h-[44px] border-b border-[#E3E4E5] bg-[#FFFFFF] mx-auto">
+                  <span className="text-[14px] font-semibold text-[#000000] font-inter">Configurações do simulado</span>
+                  <button
+                    className="w-[32px] h-[32px] rounded-[4px] flex items-center justify-center text-gray-600 bg-[#F6F5FA] hover:bg-gray-100"
+                    onClick={() => setIsSettingsPopupOpen(false)}
+                    aria-label="Fechar"
+                  >
+                    <span className="inline-flex items-center justify-center w-[16px] h-[16px] text-[16px] leading-[16px] text-[#6B7588]">✕</span>
+                  </button>
+                </div>
+                <div className="p-4 space-y-3">
+                    {/* Perguntas */}
+                    <div className="text-[14px] font-normal text-[#22252B]">Perguntas</div>
+                    <div className="rounded-[8px] bg-[#F9FAFB] px-[18px] py-[12px] h-[74px] w-[296px] shadow-[0px_1.48px_4.43px_0px_#0D0A2C14] flex items-center justify-between" style={{ border: `1px solid ${panelSwitches[0] ? '#0047BB' : 'var(--Stroke-Default, #E3E4E5)'}` }}>
+                    <div>
+                    <div className="flex items-center gap-[1px]"><img src="/segunda.png" alt="Segunda" className="w-[14px] h-[14px] object-contain" /><span className="text-[12px] font-medium text-[#22252B]">Segunda chance</span></div>
+                    <div className="text-[10px] font-normal text-[#737780]">Oferece uma segunda chance para corrigir<br />erros em questões erradas.</div>
+                    </div>
+                    <button
+                      type="button"
+                      className="w-[26.14px] h-[14px]"
+                      aria-pressed={panelSwitches[0]}
+                      aria-label="Alternar Segunda chance"
+                      onClick={() => setPanelSwitches(prev => { const next = [...prev]; next[0] = !next[0]; return next; })}
+                    >
+                      <img src={panelSwitches[0] ? '/Switch.2.png' : '/Switch.png'} alt="Switch" className="w-full h-full rounded-[10.14px]" />
+                    </button>
+                  </div>
+                    <div className="rounded-[8px] bg-[#F9FAFB] px-[18px] py-[12px] h-[74px] w-[296px] shadow-[0px_1.48px_4.43px_0px_#0D0A2C14] flex items-center justify-between" style={{ border: `1px solid ${panelSwitches[1] ? '#0047BB' : 'var(--Stroke-Default, #E3E4E5)'}` }}>
+                    <div>
+                    <div className="flex items-center gap-[1px]"><img src="/embaralhar.png" alt="Embaralhar" className="w-[14px] h-[14px] object-contain" /><span className="text-[12px] font-medium text-[#22252B]">Embaralhar questões</span></div>
+                    <div className="text-[10px] font-normal text-[#737780] w-[221.86px] h-[28px]">Ordem diferente de questões, o que evita memorização mecânica e reduz cópia.</div>
+                    </div>
+                    <button
+                      type="button"
+                      className="w-[26.14px] h-[14px]"
+                      aria-pressed={panelSwitches[1]}
+                      aria-label="Alternar Embaralhar questões"
+                      onClick={() => setPanelSwitches(prev => { const next = [...prev]; next[1] = !next[1]; return next; })}
+                    >
+                      <img src={panelSwitches[1] ? '/Switch.2.png' : '/Switch.png'} alt="Switch" className="w-full h-full rounded-[10.14px]" />
+                    </button>
+                  </div>
+                    <div className="rounded-[8px] bg-[#F9FAFB] px-[18px] py-[12px] h-[74px] w-[296px] shadow-[0px_1.48px_4.43px_0px_#0D0A2C14] flex items-center justify-between" style={{ border: `1px solid ${panelSwitches[2] ? '#0047BB' : 'var(--Stroke-Default, #E3E4E5)'}` }}>
+                    <div>
+                    <div className="flex items-center gap-[1px]"><img src="/pular.png" alt="Pular" className="w-[14px] h-[14px] object-contain" /><span className="text-[12px] font-medium text-[#22252B]">Pular questão</span></div>
+                    <div className="text-[10px] font-normal text-[#737780]">Avançar sem responder imediatamente<br />e depois retornar.</div>
+                    </div>
+                    <button
+                      type="button"
+                      className="w-[26.14px] h-[14px]"
+                      aria-pressed={panelSwitches[2]}
+                      aria-label="Alternar Pular questão"
+                      onClick={() => setPanelSwitches(prev => { const next = [...prev]; next[2] = !next[2]; return next; })}
+                    >
+                      <img src={panelSwitches[2] ? '/Switch.2.png' : '/Switch.png'} alt="Switch" className="w-full h-full rounded-[10.14px]" />
+                    </button>
+                  </div>
+
+                  {/* Respostas */}
+                    <div className="mt-3 text-[14px] font-normal text-[#22252B]">Respostas</div>
+                    <div className="rounded-[8px] bg-[#F9FAFB] px-[18px] py-[12px] h-[74px] w-[296px] shadow-[0px_1.48px_4.43px_0px_#0D0A2C14] flex items-center justify-between" style={{ border: `1px solid ${panelSwitches[3] ? '#0047BB' : 'var(--Stroke-Default, #E3E4E5)'}` }}>
+                    <div>
+                    <div className="flex items-center gap-[1px]"><img src="/nota.png" alt="Nota" className="w-[14px] h-[14px] object-contain" /><span className="text-[12px] font-medium text-[#22252B]">Nota de aprovação</span></div>
+                    <div className="text-[10px] font-normal text-[#737780]">O participante precisa atingir essa pontuação<br />para ser aprovado. Exemplo: 50%.</div>
+                    </div>
+                    <button
+                      type="button"
+                      className="w-[26.14px] h-[14px]"
+                      aria-pressed={panelSwitches[3]}
+                      aria-label="Alternar Nota de aprovação"
+                      onClick={() => setPanelSwitches(prev => { const next = [...prev]; next[3] = !next[3]; return next; })}
+                    >
+                      <img src={panelSwitches[3] ? '/Switch.2.png' : '/Switch.png'} alt="Switch" className="w-full h-full rounded-[10.14px]" />
+                    </button>
+                  </div>
+                    <div className="rounded-[8px] bg-[#F9FAFB] px-[18px] py-[12px] h-[74px] w-[296px] shadow-[0px_1.48px_4.43px_0px_#0D0A2C14] flex items-center justify-between" style={{ border: `1px solid ${panelSwitches[4] ? '#0047BB' : 'var(--Stroke-Default, #E3E4E5)'}` }}>
+                    <div>
+                    <div className="flex items-center gap-[1px]"><img src="/tentativa.png" alt="Tentativa" className="w-[14px] h-[14px] object-contain" /><span className="text-[12px] font-medium text-[#22252B]">Tentativa</span></div>
+                    <div className="text-[10px] font-normal text-[#737780]">Oferece a possibilidade de tentar novamente<br />uma alternativa marcada de forma errada.</div>
+                    </div>
+                    <button
+                      type="button"
+                      className="w-[26.14px] h-[14px]"
+                      aria-pressed={panelSwitches[4]}
+                      aria-label="Alternar Tentativa"
+                      onClick={() => setPanelSwitches(prev => { const next = [...prev]; next[4] = !next[4]; return next; })}
+                    >
+                      <img src={panelSwitches[4] ? '/Switch.2.png' : '/Switch.png'} alt="Switch" className="w-full h-full rounded-[10.14px]" />
+                    </button>
+                  </div>
+                    <div className="rounded-[8px] bg-[#F9FAFB] px-[18px] py-[12px] h-[74px] w-[296px] shadow-[0px_1.48px_4.43px_0px_#0D0A2C14] flex items-center justify-between" style={{ border: `1px solid ${panelSwitches[5] ? '#0047BB' : 'var(--Stroke-Default, #E3E4E5)'}` }}>
+                    <div>
+                    <div className="flex items-center gap-[1px]"><img src="/mostrar.png" alt="Mostrar" className="w-[14px] h-[14px] object-contain" /><span className="text-[12px] font-medium text-[#22252B]">Mostrar resposta correta</span></div>
+                    <div className="text-[10px] font-normal text-[#737780]">O sistema apresenta para o participante a<br />alternativa correta.</div>
+                    </div>
+                    <button
+                      type="button"
+                      className="w-[26.14px] h-[14px]"
+                      aria-pressed={panelSwitches[5]}
+                      aria-label="Alternar Mostrar resposta correta"
+                      onClick={() => setPanelSwitches(prev => { const next = [...prev]; next[5] = !next[5]; return next; })}
+                    >
+                      <img src={panelSwitches[5] ? '/Switch.2.png' : '/Switch.png'} alt="Switch" className="w-full h-full rounded-[10.14px]" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
         </div>
           </div>
         </div>

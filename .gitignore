@@ -1,2 +1,9 @@
 node_modules
-node_modules
+
+# Ignore environment files
+.env
+.env.*
+.env.local
+
+# Build output (if any)
+dist
