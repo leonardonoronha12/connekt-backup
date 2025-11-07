@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
 
 const Header = () => {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
+  const { signOut } = useAuth();
 
   const toggleDropdown = () => {
     setIsDropdownOpen(!isDropdownOpen);
@@ -28,6 +30,21 @@ const Header = () => {
     window.history.pushState({}, '', '/simulados');
     setCurrentPath(window.location.pathname);
     window.dispatchEvent(new PopStateEvent('popstate'));
+  };
+
+  const handleLogout = async () => {
+    try {
+      const { error } = await signOut();
+      if (error) {
+        console.error('Erro ao deslogar:', error?.message || String(error));
+      }
+      setIsDropdownOpen(false);
+      // Garantir redirecionamento imediato para login
+      window.history.replaceState({}, '', '/login');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    } catch (e) {
+      console.error('Exceção ao deslogar:', e?.message || String(e));
+    }
   };
 
   return (
@@ -172,7 +189,7 @@ const Header = () => {
               Configurações
             </button>
             <hr className="my-1" />
-            <button className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm text-red-600">
+            <button onClick={handleLogout} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm text-red-600">
               Sair
             </button>
           </div>

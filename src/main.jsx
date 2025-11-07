@@ -4,6 +4,8 @@ import { HelmetProvider } from 'react-helmet-async';
 import App from '@/App';
 import '@/index.css';
 
+// Logs de diagnóstico removidos após validação de ambiente
+
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <HelmetProvider>

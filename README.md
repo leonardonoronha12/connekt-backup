@@ -100,6 +100,7 @@ npm install
 # Crie um arquivo .env.local com as configurações do Supabase
 VITE_SUPABASE_URL=sua_url_do_supabase
 VITE_SUPABASE_ANON_KEY=sua_chave_anonima
+VITE_SUPABASE_QUESTION_IMAGES_BUCKET=question-images # nome do bucket de imagens das questões
 ```
 
 ## ⚙️ Configuração
@@ -111,6 +112,9 @@ VITE_SUPABASE_ANON_KEY=sua_chave_anonima
    - `v_posts_with_replies` (view para posts com respostas)
    - Tabelas de usuários e autenticação
 3. Atualize as credenciais em `src/lib/supabaseClient.js`
+4. Crie um bucket de Storage para imagens das questões (padrão: `question-images`)
+   - Permissions: público para leitura (URLs públicas)
+   - Configure o nome via `VITE_SUPABASE_QUESTION_IMAGES_BUCKET`
 
 ### Configuração do Vite
 

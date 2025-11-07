@@ -29,13 +29,22 @@ export const AuthProvider = ({ children }) => {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, currentSession) => {
-        // Detectar confirmação de email e redirecionar para dashboard
-        if (event === 'SIGNED_IN' && currentSession?.user?.email_confirmed_at) {
-          const urlParams = new URLSearchParams(window.location.search);
-          if (!urlParams.has('email_confirmed')) {
-            window.history.replaceState({}, '', '/dashboard?email_confirmed=true');
-            window.dispatchEvent(new PopStateEvent('popstate'));
-          }
+        // Redireciona ao dashboard em SIGNED_IN.
+        // Caso tenha vindo da confirmação e caiu na raiz '/', adiciona email_confirmed=true.
+        if (event === 'SIGNED_IN') {
+          const params = new URLSearchParams(window.location.search);
+          const hasEmailConfirmedParam = params.get('email_confirmed') === 'true';
+          const arrivedFromRoot = window.location.pathname === '/' || window.location.pathname === '/index.html';
+          const target = hasEmailConfirmedParam || arrivedFromRoot
+            ? '/dashboard?email_confirmed=true'
+            : '/dashboard';
+          window.history.replaceState({}, '', target);
+          window.dispatchEvent(new PopStateEvent('popstate'));
+        }
+        // Opcional: em SIGNED_OUT, volta para login
+        if (event === 'SIGNED_OUT') {
+          window.history.replaceState({}, '', '/login');
+          window.dispatchEvent(new PopStateEvent('popstate'));
         }
         handleSession(currentSession);
       }

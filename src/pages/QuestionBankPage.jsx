@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Helmet } from 'react-helmet-async';
+import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { Plus, Search, ChevronDown, Award, CalendarDays, ListFilter, X, Hash, Tag, Hourglass, Pencil, Trash, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
@@ -68,9 +69,12 @@ const ExistingBankCard = ({ bank, onAction }) => {
   
   return (
     <div 
-      className="bg-white p-3 sm:p-4 lg:p-6 rounded border border-gray-200/80 shadow-sm flex flex-col justify-between min-h-[220px] sm:min-h-[250px] lg:min-h-[295px] w-full overflow-hidden compact-cards ultra-compact-cards cursor-pointer hover:shadow-md transition-shadow"
+      className="bg-white p-3 sm:p-4 lg:p-6 rounded border border-gray-200/80 shadow-sm flex flex-col justify-between min-h-[220px] sm:min-h-[250px] lg:min-h-[295px] w-full overflow-hidden compact-cards ultra-compact-cards cursor-pointer hover:shadow-md transition-shadow relative"
       onClick={() => onAction('edit', bank)}
     >
+      {bank?.status === 'draft' && (
+        <span className="absolute top-3 right-3 bg-yellow-100 text-yellow-800 text-[10px] font-inter font-medium px-2 py-1 rounded">Rascunho</span>
+      )}
       <div className="flex-1">
         <div className="flex justify-start mb-4">
           <BankCardIcon />
@@ -104,7 +108,7 @@ const ExistingBankCard = ({ bank, onAction }) => {
           <span className="font-inter font-semibold text-[12px]" style={{color: '#1E1B39'}}>{(bank.questionCount ?? bank.question_count ?? 0)} questões</span>
           </div>
           <div className="mt-1">
-            <span className="block text-[10px] font-inter font-normal truncate" style={{color: '#9291A5'}}>Criado em: {formatDate(bank.created_at)}</span>
+            <span className="block text-[10px] font-inter font-normal truncate" style={{color: '#9291A5'}}>Criado em: {formatDate(bank.createdAt ?? bank.created_at)}</span>
           </div>
         </div>
         <Button 
@@ -118,6 +122,7 @@ const ExistingBankCard = ({ bank, onAction }) => {
         >
           Visualizar
         </Button>
+        {/* Botão de "Ativar" removido conforme solicitação */}
       </div>
     </div>
   );
@@ -176,6 +181,7 @@ const DecorativeIcons = () => (
 );
 
 const QuestionBankPage = () => {
+  const { user } = useAuth();
   const { toast } = useToast();
   const [questionBanks, setQuestionBanks] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -334,9 +340,9 @@ const QuestionBankPage = () => {
   const filteredSubcategories = subcategories.filter(subcategory =>
     subcategory.name.toLowerCase().includes(subcategorySearchTerm.toLowerCase())
   );
-  const filteredTags = availableTags.filter(tag =>
-    tag.name.toLowerCase().includes(tagsSearchTerm.toLowerCase())
-  );
+  const filteredTags = (availableTags || [])
+    .filter(tag => !!tag && typeof tag.name === 'string')
+    .filter(tag => tag.name.toLowerCase().includes(tagsSearchTerm.toLowerCase()));
 
   const handleCreateNewCategory = () => {
     if (newCategoryName.trim() && newCategoryDescription.trim() && 
@@ -623,10 +629,30 @@ const QuestionBankPage = () => {
       if (window.parent && window.parent !== window) {
         window.parent.postMessage({ type: 'MODAL_OPENED' }, '*');
       }
+    } else if (action === 'activate') {
+      const bank = typeof data === 'object' ? data : (questionBanks || []).find(b => b && b.id === data);
+      if (!bank) {
+        toast({ description: 'Banco não encontrado.', variant: 'destructive' });
+        return;
+      }
+      if (bank.status !== 'draft') {
+        toast({ description: 'Este banco já está ativo.' });
+        return;
+      }
+      // Ativar banco: atualiza status para 'active' (offline persistência respeita)
+      questionBankService.updateQuestionBank(bank.id, { status: 'active' })
+        .then(() => {
+          toast({ description: `Banco "${bank.name}" ativado.` });
+          // Recarregar listagem para refletir o novo status
+          loadQuestionBanks();
+        })
+        .catch(() => {
+          toast({ description: 'Falha ao ativar banco.', variant: 'destructive' });
+        });
     } else if (action === 'view') {
       // Navegar para a página de questões do banco específico
       const bankId = typeof data === 'object' && data?.id ? data.id : data;
-      const bank = questionBanks.find(b => b.id === bankId);
+      const bank = (questionBanks || []).find(b => b && b.id === bankId);
       if (bank) {
         toast({ description: `Abrindo banco: ${bank.name}` });
       }
@@ -660,6 +686,11 @@ const QuestionBankPage = () => {
   };
 
   const handleSave = async () => {
+    // Exigir autenticação para garantir persistência no Supabase (RLS)
+    if (!user) {
+      toast({ description: 'Faça login para salvar no Supabase.', variant: 'destructive' });
+      return;
+    }
     if (!formData.name.trim()) {
       toast({
         description: "Nome do banco de questões é obrigatório",
@@ -668,15 +699,10 @@ const QuestionBankPage = () => {
       return;
     }
 
-    // Mostrar popup de configuração após clicar no botão dentro do modal
-    setIsSetupModalOpen(true);
-    // Mostrar a div por 5 segundos e navegar para /questoes
-    setTimeout(() => {
-      setIsSetupModalOpen(false);
-      // Navegar para a nova página de Questões
-      window.history.pushState({}, '', '/questoes');
-      window.dispatchEvent(new PopStateEvent('popstate'));
-    }, 5000);
+    // Mostrar popup de configuração (apenas para criação)
+    if (!isEditMode) {
+      setIsSetupModalOpen(true);
+    }
 
     try {
       const questionBankData = {
@@ -688,23 +714,61 @@ const QuestionBankPage = () => {
         description: formData.description.trim()
       };
 
-      const { data, error } = await questionBankService.createQuestionBank(questionBankData);
-      
-      if (error) {
-        toast({
-          description: "Erro ao criar banco de questões: " + error,
-          variant: "destructive"
-        });
+      if (isEditMode && editingBank?.id) {
+        const { data, error } = await questionBankService.updateQuestionBank(editingBank.id, questionBankData);
+        if (error) {
+          toast({
+            description: "Erro ao atualizar banco de questões: " + error,
+            variant: "destructive"
+          });
+        } else {
+          setOriginalFormData(JSON.parse(JSON.stringify(formData)));
+          setIsFormModified(false);
+          toast({ description: "Banco de questões atualizado com sucesso!" });
+          loadQuestionBanks();
+          if (isSetupModalOpen) setIsSetupModalOpen(false);
+          if (!questionBankService.isSupabaseAvailable) {
+            toast({ description: 'Sem conexão com Supabase; alterações mantidas localmente.', variant: 'destructive' });
+          }
+        }
       } else {
-        // Resetar estado de modificação após salvar com sucesso
-        setOriginalFormData(JSON.parse(JSON.stringify(formData)));
-        setIsFormModified(false);
-        // Mantemos o modal aberto; apenas ocultamos a div após 5s
-        toast({
-          description: "Banco de questões criado com sucesso!",
-        });
-        // Recarregar a lista de bancos de questões
-        loadQuestionBanks();
+        const { data, error } = await questionBankService.createQuestionBank(questionBankData);
+        
+        if (error) {
+          toast({
+            description: "Erro ao criar banco de questões: " + error,
+            variant: "destructive"
+          });
+        } else {
+          // Resetar estado de modificação após salvar com sucesso
+          setOriginalFormData(JSON.parse(JSON.stringify(formData)));
+          setIsFormModified(false);
+          // Mantemos o modal aberto; apenas ocultamos a div após 5s
+          toast({
+            description: "Banco de questões criado com sucesso!",
+          });
+          // Recarregar a lista de bancos de questões
+          loadQuestionBanks();
+
+          // Navegar para a página de Questões com o bankId criado
+          const bankId = data?.id;
+          if (!questionBankService.isSupabaseAvailable) {
+            // Supabase indisponível: avisar e não navegar com ID que pode não persistir
+            toast({ description: 'Sem conexão com Supabase; banco criado localmente e pode não persistir.', variant: 'destructive' });
+            setTimeout(() => setIsSetupModalOpen(false), 5000);
+          } else if (bankId) {
+            // Ocultar overlay após 5 segundos e navegar com o bankId
+            setTimeout(() => {
+              setIsSetupModalOpen(false);
+              const targetUrl = `/questoes?bankId=${encodeURIComponent(bankId)}`;
+              window.history.pushState({}, '', targetUrl);
+              window.dispatchEvent(new PopStateEvent('popstate'));
+            }, 5000);
+          } else {
+            // Sem ID, não navegar; apenas fechar overlay
+            setTimeout(() => setIsSetupModalOpen(false), 5000);
+          }
+        }
       }
     } catch (err) {
       console.error('Error creating question bank:', err);
@@ -712,7 +776,8 @@ const QuestionBankPage = () => {
         description: "Erro ao conectar com o servidor",
         variant: "destructive"
       });
-      // O overlay será ocultado pelo timeout configurado ao abrir
+      // Ocultar overlay
+      setTimeout(() => setIsSetupModalOpen(false), 5000);
     }
   };
 
@@ -764,18 +829,22 @@ const QuestionBankPage = () => {
     type: "create"
   }));
 
-  const filteredBanks = questionBanks.filter(bank => {
-    // Filtro por termo de busca
-    const matchesSearch = bank.name.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    // Filtro por status (simulado - todos os bancos são considerados "Ativo" por padrão)
-    const matchesStatus = activeFilters.status === 'Todos' || 
-                         (activeFilters.status === 'Ativo' && true) || // Todos os bancos são ativos por padrão
-                         (activeFilters.status === 'Inativo' && false) ||
-                         (activeFilters.status === 'Rascunho' && false);
-    
-    return matchesSearch && matchesStatus;
-  });
+  const filteredBanks = (questionBanks || [])
+    .filter((b) => !!b && typeof b.name === 'string')
+    .filter(bank => {
+      // Filtro por termo de busca
+      const matchesSearch = bank.name.toLowerCase().includes(searchTerm.toLowerCase());
+      
+      // Filtro por status real baseado em bank.status
+      const status = bank?.status || 'active';
+      const matchesStatus = 
+        activeFilters.status === 'Todos' ||
+        (activeFilters.status === 'Ativo' && status === 'active') ||
+        (activeFilters.status === 'Inativo' && status === 'inactive') ||
+        (activeFilters.status === 'Rascunho' && status === 'draft');
+      
+      return matchesSearch && matchesStatus;
+    });
 
   const displayBanks = [
     ...filteredBanks.map(bank => ({ ...bank, type: "existing" })),
@@ -1582,7 +1651,7 @@ const QuestionBankPage = () => {
                     {/* Botão de adicionar tags - só aparece quando há tags disponíveis para selecionar */}
                     {(() => {
                       const unselectedTags = availableTags.filter(tag => 
-                        !formData.tags.some(selectedTag => selectedTag.id === tag.id)
+                        !(formData.tags || []).some(selectedTag => selectedTag && selectedTag.id === tag.id)
                       );
                       return unselectedTags.length > 0;
                     })() && (
@@ -1614,7 +1683,7 @@ const QuestionBankPage = () => {
                               {/* Lista */}
                               <div ref={tagsDropdownRef} className="max-h-[220px] overflow-y-auto">
                                 {filteredTags
-                                  .filter(tag => !formData.tags.some(selectedTag => selectedTag.id === tag.id))
+                                  .filter(tag => !(formData.tags || []).some(selectedTag => selectedTag && selectedTag.id === tag.id))
                                   .map((tag) => (
                                     <div key={tag.id} className="px-1 py-1">
                                       {editingTagId === tag.id ? (
@@ -1664,7 +1733,7 @@ const QuestionBankPage = () => {
                                           <div className="flex items-center gap-2 rounded-md">
                                             <button
                                               onClick={() => {
-                                                const isAlreadySelected = formData.tags.some(selectedTag => selectedTag.id === tag.id);
+                                                const isAlreadySelected = (formData.tags || []).some(selectedTag => selectedTag && selectedTag.id === tag.id);
                                                 if (!isAlreadySelected) {
                                                   setFormData(prev => ({ ...prev, tags: [...prev.tags, tag] }));
                                                 }
@@ -1676,7 +1745,7 @@ const QuestionBankPage = () => {
                                             >
                                               <div
                                                 className="w-3 h-3 rounded-full flex-shrink-0"
-                                                style={{ backgroundColor: tag.color }}
+                                                style={{ backgroundColor: (tag && tag.color) || '#AD89F7' }}
                                               ></div>
                                               <div className="flex-1">
                                                 <div className="font-medium">{tag.name}</div>
@@ -1709,7 +1778,7 @@ const QuestionBankPage = () => {
                                           <div className="flex items-center gap-2 hover:bg-gray-100 rounded-md">
                                             <button
                                               onClick={() => {
-                                                const isAlreadySelected = formData.tags.some(selectedTag => selectedTag.id === tag.id);
+                                                const isAlreadySelected = (formData.tags || []).some(selectedTag => selectedTag && selectedTag.id === tag.id);
                                                 if (!isAlreadySelected) {
                                                   setFormData(prev => ({ ...prev, tags: [...prev.tags, tag] }));
                                                 }
@@ -1751,7 +1820,7 @@ const QuestionBankPage = () => {
                                   ))}
 
                                 {/* Mensagem quando não há tags */}
-                                {filteredTags.filter(tag => !formData.tags.some(selectedTag => selectedTag.id === tag.id)).length === 0 && tagsSearchTerm && (
+                                {filteredTags.filter(tag => !(formData.tags || []).some(selectedTag => selectedTag && selectedTag.id === tag.id)).length === 0 && tagsSearchTerm && (
                                   <div className="px-3 py-2 text-sm text-gray-500 text-center">
                                     Nenhuma tag encontrada
                                   </div>
@@ -1821,7 +1890,7 @@ const QuestionBankPage = () => {
 
                     {/* Tags selecionadas */}
                     <div className="flex flex-wrap items-center gap-2">
-                      {Array.isArray(formData.tags) && formData.tags.map((tag, index) => (
+                      {Array.isArray(formData.tags) && formData.tags.filter(t => !!t && typeof t === 'object').map((tag, index) => (
                         <span 
                           key={tag.id || index}
                           className="px-3 py-1 text-sm flex items-center gap-2"

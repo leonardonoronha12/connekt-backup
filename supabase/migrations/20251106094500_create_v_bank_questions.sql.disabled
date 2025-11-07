@@ -1,0 +1,45 @@
+-- View agregada para bancos com questões e relações completas
+-- Usa joins entre question_banks, questions, choices, categories, subcategories, tags (via question_tags) e attempts.
+-- Observação: ajuste os nomes de colunas conforme seu esquema real se diferirem.
+
+create or replace view public.v_bank_questions as
+select
+  qb.id as bank_id,
+  qb.name as bank_name,
+  qb.created_at as bank_created_at,
+
+  q.id as question_id,
+  q.body as question_body,
+  -- Caso exista coluna stem, expor também
+  coalesce(nullif(q.body, ''), q.body) as question_stem,
+
+  -- Pontos/tentativas: se existirem colunas próprias ou vindo de metadata
+  (q.metadata ->> 'points')::int as metadata_points,
+  (q.metadata ->> 'attempts')::int as metadata_attempts,
+
+  c.id as category_id,
+  c.name as category_name,
+  sc.id as subcategory_id,
+  sc.name as subcategory_name,
+
+  ch.id as choice_id,
+  ch.label as choice_label,
+  ch.is_correct as choice_is_correct,
+
+  t.id as tag_id,
+  t.name as tag_name,
+
+  a.id as attempt_id,
+  a.user_id as attempt_user_id,
+  a.score as attempt_score,
+  a.created_at as attempt_created_at
+from public.question_banks qb
+join public.questions q on q.question_bank_id = qb.id
+left join public.categories c on c.id = q.category_id
+left join public.subcategories sc on sc.id = q.subcategory_id
+left join public.choices ch on ch.question_id = q.id
+left join public.question_tags qt on qt.question_id = q.id
+left join public.tags t on t.id = qt.tag_id
+left join public.attempts a on a.question_id = q.id;
+
+comment on view public.v_bank_questions is 'View para unir bancos, questões, alternativas, categorias, subcategorias, tags e tentativas em uma única origem de dados.';
