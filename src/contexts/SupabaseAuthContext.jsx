@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
-import { supabase } from '@/lib/supabaseClient';
+import { supabase, isSupabaseConfigured } from '@/lib/supabaseClient';
 
 const AuthContext = createContext(undefined);
 
@@ -16,6 +16,11 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     const getSession = async () => {
+      if (!isSupabaseConfigured || !supabase) {
+        console.warn('[Auth] Supabase não configurado. Pular autenticação até configurar env.')
+        handleSession(null)
+        return
+      }
       try {
         const { data: { session: currentSession } } = await supabase.auth.getSession();
         handleSession(currentSession);
@@ -27,6 +32,9 @@ export const AuthProvider = ({ children }) => {
 
     getSession();
 
+    if (!isSupabaseConfigured || !supabase) {
+      return () => {}
+    }
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, currentSession) => {
         // Detectar confirmação de email e redirecionar para dashboard

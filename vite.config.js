@@ -233,19 +233,22 @@ logger.error = (msg, options) => {
 }
 
 export default defineConfig({
-	customLogger: logger,
-	plugins: [
+  customLogger: logger,
+  plugins: [
 		...(isDev ? [inlineEditPlugin(), editModeDevPlugin(), iframeRouteRestorationPlugin()] : []),
 		react(),
 		addTransformIndexHtml
-	],
-	server: {
-		cors: true,
-		headers: {
-			'Cross-Origin-Embedder-Policy': 'credentialless',
-		},
-		allowedHosts: true,
-	},
+  ],
+  server: {
+    port: 5173,
+    strictPort: true,
+    host: 'localhost',
+    cors: true,
+    headers: {
+      'Cross-Origin-Embedder-Policy': 'credentialless',
+    },
+    allowedHosts: true,
+  },
 	resolve: {
 		extensions: ['.jsx', '.js', '.tsx', '.ts', '.json', ],
 		alias: {

@@ -8,6 +8,7 @@ import CursosPage from '@/pages/CursosPage';
 import AlunosPage from '@/pages/AlunosPage';
 import SimuladosPage from '@/pages/SimuladosPage';
 import SimuladosAproveitamentoPage from '@/pages/SimuladosAproveitamentoPage';
+import ControleAcessoSimuladosPage from '@/pages/ControleAcessoSimuladosPage';
 import VendasPage from '@/pages/VendasPage';
 import DashboardPage from '@/pages/DashboardPage';
 import LoginPage from '@/pages/LoginPage';
@@ -48,6 +49,8 @@ const getViewFromLocation = () => {
     return 'verifyEmail';
   } else if (path === '/hero') {
     return 'hero';
+  } else if (path === '/controle-de-acesso-simulados') {
+    return 'controleAcessoSimulados';
   }
   return 'inbox';
 };
@@ -102,6 +105,8 @@ function App() {
         return <EmailVerificationPage />;
       case 'hero':
         return <HeroPage />;
+      case 'controleAcessoSimulados':
+        return <ControleAcessoSimuladosPage />;
       case 'inbox':
       default:
         return <InboxPage />;
