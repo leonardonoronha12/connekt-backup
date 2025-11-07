@@ -18,6 +18,23 @@ import QuestoesPage from '@/pages/QuestoesPage';
 const ADMIN_VIEW_PARAM = 'dev-admin';
 const QUESTION_BANK_PATH = '/banco-de-questoes';
 
+// Mapeia títulos amigáveis por view para compor "Connekt - (pagina)"
+const PAGE_TITLES = {
+  admin: 'Admin',
+  questionBank: 'Banco de Questões',
+  questoes: 'Questões',
+  cursos: 'Meus Cursos',
+  alunos: 'Alunos',
+  simulados: 'Simulados',
+  simuladosAproveitamento: 'Simulados - Aproveitamento',
+  vendas: 'Vendas',
+  dashboard: 'Dashboard',
+  login: 'Login',
+  verifyEmail: 'Verificação de Email',
+  hero: 'Hero',
+  inbox: 'Inbox',
+};
+
 // Deriva a view inicial com base na URL para evitar montar o layout global
 // desnecessariamente e prevenir logs de requisições abortadas ao trocar de rota.
 const getViewFromLocation = () => {
@@ -59,9 +76,13 @@ function App() {
 
   useEffect(() => {
     const handleLocationChange = () => {
-      setCurrentView(getViewFromLocation());
+      const nextView = getViewFromLocation();
+      setCurrentView(nextView);
       // Atualiza chave quando a query muda sem alterar o path
       setLocationKey(window.location.search);
+      // Atualiza título da página com base na view atual
+      const pageName = PAGE_TITLES[nextView] || 'Página';
+      document.title = `Connekt - ${pageName}`;
     };
 
     // Initial load
