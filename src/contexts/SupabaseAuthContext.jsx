@@ -21,6 +21,16 @@ export const AuthProvider = ({ children }) => {
         handleSession(currentSession);
       } catch (e) {
         console.error("Error getting session:", e);
+        // Sessão inválida/expirada ou refresh falhou: limpar storage e garantir signOut
+        try {
+          const keys = Object.keys(localStorage || {});
+          keys
+            .filter((k) => k.startsWith('sb-') && k.endsWith('-auth-token'))
+            .forEach((k) => {
+              try { localStorage.removeItem(k); } catch (_) {}
+            });
+        } catch (_) {}
+        try { await supabase.auth.signOut(); } catch (_) {}
         handleSession(null);
       }
     };
