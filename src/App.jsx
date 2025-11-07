@@ -54,10 +54,14 @@ const getViewFromLocation = () => {
 
 function App() {
   const [currentView, setCurrentView] = useState(getViewFromLocation());
+  // Chave de localização para forçar remontagem em mudanças de query (ex.: bankId)
+  const [locationKey, setLocationKey] = useState(() => window.location.search);
 
   useEffect(() => {
     const handleLocationChange = () => {
       setCurrentView(getViewFromLocation());
+      // Atualiza chave quando a query muda sem alterar o path
+      setLocationKey(window.location.search);
     };
 
     // Initial load
@@ -83,7 +87,8 @@ function App() {
       case 'questionBank':
         return <QuestionBankPage />;
       case 'questoes':
-        return <QuestoesPage />;
+        // Remonta a página quando search (ex.: ?bankId=...) muda
+        return <QuestoesPage key={locationKey} />;
       case 'cursos':
         return <CursosPage />;
       case 'alunos':
@@ -111,11 +116,11 @@ function App() {
   return (
     <AuthProvider>
       {(currentView === 'login' || currentView === 'verifyEmail' || currentView === 'questoes') ? (
-        currentView === 'login' 
-          ? <LoginPage /> 
-          : currentView === 'verifyEmail' 
-            ? <EmailVerificationPage /> 
-            : <QuestoesPage />
+        currentView === 'login'
+          ? <LoginPage />
+          : currentView === 'verifyEmail'
+            ? <EmailVerificationPage />
+            : <QuestoesPage key={locationKey} />
       ) : (
         <MainLayout>
           {renderContent()}

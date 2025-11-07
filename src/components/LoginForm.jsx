@@ -89,7 +89,9 @@ const LoginForm = ({ onShowRegister }) => {
         showAlert(`Erro no login: ${translatedMessage}`);
       } else {
         showAlert('Login realizado com sucesso!', 'success');
-        // O redirecionamento será tratado pelo contexto de autenticação
+        // Redireciona imediatamente para o dashboard após login bem-sucedido
+        window.history.replaceState({}, '', '/dashboard');
+        window.dispatchEvent(new PopStateEvent('popstate'));
       }
     } catch (error) {
       console.error('Erro no login:', error);

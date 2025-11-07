@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { FileText, Plus, ChevronDown, MoreVertical } from 'lucide-react';
+import { questionBankService } from '@/services/questionBankService';
 
 const simuladosMock = [
   {
@@ -29,6 +30,7 @@ const SimuladosPage = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const uploadIntervalRef = useRef(null);
+  const [coverSupabaseUrl, setCoverSupabaseUrl] = useState(null);
 
   // Gerenciar URL de preview para o arquivo selecionado
   useEffect(() => {
@@ -54,7 +56,7 @@ const SimuladosPage = () => {
     if (fileInputRef.current) fileInputRef.current.click();
   };
 
-  const handleFileChange = (e) => {
+  const handleFileChange = async (e) => {
     const file = e.target.files && e.target.files[0];
     if (file) {
       setCoverImage(file);
@@ -82,6 +84,23 @@ const SimuladosPage = () => {
           return next;
         });
       }, tickMs);
+
+      // Upload real para Supabase Storage e log em imagens_logs
+      try {
+        const res = await questionBankService.uploadQuestionImage(file, {
+          bankId: 'simulados',
+          questionId: 'cover',
+        });
+        if (res?.url) {
+          // Substituir o arquivo selecionado pela URL do Supabase para exibição imediata
+          setCoverSupabaseUrl(res.url);
+          setCoverImage(res.url);
+        } else if (res?.error) {
+          console.warn('Falha no upload:', res.error);
+        }
+      } catch (err) {
+        console.warn('Erro ao fazer upload no Supabase:', err?.message || String(err));
+      }
     }
   };
 
@@ -118,7 +137,7 @@ const SimuladosPage = () => {
                 </div>
                 <button
                   onClick={handleCreateSimulado}
-                  className="ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-white text-[#0047BB] hover:bg-gray-100 px-5 py-2.5 rounded-[4px] shadow-sm w-[135px] h-[30px] text-[14px] font-semibold font-inter flex items-center justify-center"
+                  className="ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-white text-[#0047BB] hover:bg-gray-100 px-5 py-2.5 rounded-[4px] shadow-sm w-[139px] h-[30px] text-[14px] font-semibold font-inter flex items-center justify-center"
                 >
                   Criar simulado
                 </button>
@@ -373,6 +392,9 @@ const SimuladosPage = () => {
                               <div>
                                 <p className="text-[#1E1B39] font-inter font-medium text-[14px]">{coverImage?.name || 'Capa do curso'}</p>
                                 <p className="text-[#9291A5] font-inter text-[12px]">Tamanho: {coverImage?.size ? `${(coverImage.size / (1024 * 1024)).toFixed(1)}MB` : '—'}</p>
+                                {coverSupabaseUrl && /^https?:\/\//.test(coverSupabaseUrl) && (
+                                  <p className="text-[#0047BB] font-inter text-[12px] break-all mt-1">URL Supabase: {coverSupabaseUrl}</p>
+                                )}
                               </div>
                             </div>
                           </div>
