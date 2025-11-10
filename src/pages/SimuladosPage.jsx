@@ -237,7 +237,16 @@ const SimuladosPage = () => {
                   </div>
                 </div>
                 <div className="mt-0">
-                  <h4 className="text-[12px] font-medium text-[#1E1B39] font-inter">{sim.name}</h4>
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-[12px] font-medium text-[#1E1B39] font-inter">{sim.name}</h4>
+                    {/* Avatares dos usuários imediatamente ao lado do título */}
+                    <div className="inline-flex items-center gap-1 shrink-0">
+                      <img src="/verde.svg" alt="Usuário" className="w-[18px] h-[18px] rounded-full ring-1 ring-white object-cover" />
+                      <img src="/roxo.svg" alt="Usuário" className="w-[18px] h-[18px] rounded-full ring-1 ring-white object-cover" />
+                      <img src="/laranja.svg" alt="Usuário" className="w-[18px] h-[18px] rounded-full ring-1 ring-white object-cover" />
+                      <img src="/perfil rc.png" alt="Usuário" className="w-[18px] h-[18px] rounded-full ring-1 ring-white object-cover" />
+                    </div>
+                  </div>
                   <p className="text-[10px] text-[#9291A5] font-inter font-[400] mt-1">Descrição breve do simulado</p>
                 </div>
                 <div className="mt-3 flex items-center gap-2">

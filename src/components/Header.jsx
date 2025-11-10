@@ -26,6 +26,7 @@ const Header = () => {
   }, []);
 
   const isAproveitamento = currentPath === '/simulados-aproveitamento';
+  const isSimuladoResposta = currentPath === '/reposta-correta-simulado';
   const goToSimulados = () => {
     window.history.pushState({}, '', '/simulados');
     setCurrentPath(window.location.pathname);
@@ -51,15 +52,15 @@ const Header = () => {
     <header 
       className={`sticky top-0 w-full flex items-center ${isAproveitamento ? 'justify-between' : 'justify-end'}`}
       style={{
-        height: '60px',
+        height: isSimuladoResposta ? '48px' : '60px',
         backgroundColor: 'rgb(255, 255, 255)',
         border: '1px solid rgb(227, 228, 229)',
-        paddingRight: '22px',
+        paddingRight: isSimuladoResposta ? '18px' : '22px',
         paddingLeft: isAproveitamento ? '22px' : undefined,
         zIndex: 2
       }}
     >
-      {/* Bloco à esquerda (apenas na página de aproveitamento) */}
+      {/* Bloco à esquerda (apenas aproveitamento) */}
       {isAproveitamento && (
         <div className="flex items-center" style={{ width: '173px', height: '30px' }}>
           <button 
