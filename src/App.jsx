@@ -14,6 +14,7 @@ import LoginPage from '@/pages/LoginPage';
 import HeroPage from '@/pages/HeroPage';
 import EmailVerificationPage from '@/pages/EmailVerificationPage';
 import QuestoesPage from '@/pages/QuestoesPage';
+import RepostaCorretaSimuladoPage from '@/pages/RepostaCorretaSimuladoPage';
 
 const ADMIN_VIEW_PARAM = 'dev-admin';
 const QUESTION_BANK_PATH = '/banco-de-questoes';
@@ -33,6 +34,7 @@ const PAGE_TITLES = {
   verifyEmail: 'Verificação de Email',
   hero: 'Hero',
   inbox: 'Inbox',
+  repostaCorretaSimulado: 'Reposta correta simulado',
 };
 
 // Deriva a view inicial com base na URL para evitar montar o layout global
@@ -65,6 +67,8 @@ const getViewFromLocation = () => {
     return 'verifyEmail';
   } else if (path === '/hero') {
     return 'hero';
+  } else if (path === '/reposta-correta-simulado') {
+    return 'repostaCorretaSimulado';
   }
   return 'inbox';
 };
@@ -128,6 +132,8 @@ function App() {
         return <EmailVerificationPage />;
       case 'hero':
         return <HeroPage />;
+      case 'repostaCorretaSimulado':
+        return <RepostaCorretaSimuladoPage />;
       case 'inbox':
       default:
         return <InboxPage />;

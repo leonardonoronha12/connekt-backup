@@ -35,11 +35,12 @@ const MainLayout = ({ children }) => {
   }, []);
 
   const isAproveitamento = currentPath === '/simulados-aproveitamento';
+  const isSimuladoResposta = currentPath === '/reposta-correta-simulado';
 
   return (
     <div className="flex bg-gray-50" style={{ height: '100dvh', minHeight: '100vh' }}>
       {/* Sidebar - largura fixa, não rola */}
-      <CollapsibleSidebar />
+      {!isSimuladoResposta && <CollapsibleSidebar />}
       
       {/* Container principal - flex column */}
       <div className="flex-1 flex flex-col" style={{ height: '100%' }}>
