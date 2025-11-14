@@ -8,19 +8,28 @@ function Badge({ children }) {
   );
 }
 
-function StatItem({ label, value, color = 'text-gray-700', icon }) {
+function StatItem({ label, value, color = 'text-gray-700', icon, labelFirst = false }) {
   return (
     <div className="flex flex-col items-center">
       <button
         type="button"
         data-action="stat-click"
         data-value={label}
-        className="flex w-[44px] h-[44px] items-center justify-center rounded-[4px] border border-gray-200 bg-white rotate-0 opacity-100 hover:bg-gray-50"
+        className="flex w-[44px] h-[44px] items-center justify-center rounded-[4px] border border-transparent bg-white rotate-0 opacity-100 hover:bg-gray-50"
       >
         {icon}
       </button>
-      <span className={`mt-1 text-sm font-semibold ${color}`}>{value}</span>
-      <span className="text-[10px] leading-tight text-gray-600">{label}</span>
+      {labelFirst ? (
+        <>
+          <span className="mt-1 font-inter font-medium text-[12px] leading-[16px] tracking-[0px] text-[#22252b]">{label}</span>
+          <span className="font-inter font-semibold text-[16px] leading-[24px] tracking-[0px] text-[#22252B]">{value}</span>
+        </>
+      ) : (
+        <>
+          <span className="mt-1 font-inter font-semibold text-[16px] leading-[24px] tracking-[0px] text-[#22252B]">{value}</span>
+          <span className="mt-1 font-inter font-medium text-[12px] leading-[16px] tracking-[0px] text-[#22252b]">{label}</span>
+        </>
+      )}
     </div>
   );
 }
@@ -32,11 +41,17 @@ function QuestionListItem({ index, label, status }) {
       type="button"
       data-action="open-question"
       data-value={index}
-      className="flex w-full items-center justify-between rounded-md border border-gray-200 bg-white px-3 py-2 text-left hover:bg-gray-50"
+      className="flex w-[220px] h-[36px] items-center justify-between rounded border border-gray-200 bg-[#F9FAFB] px-4 py-2 text-left opacity-100 hover:bg-gray-50"
     >
-      <div className="flex items-center gap-2">
-        <span className={`h-2 w-2 rounded-full ${statusColor}`}></span>
-        <span className="text-sm text-gray-700">Questão {index}</span>
+      <div className="flex items-center gap-3">
+        <span className={`${statusColor} inline-flex items-center justify-center rounded-full ${statusColor === 'bg-green-500' || statusColor === 'bg-gray-300' || statusColor === 'bg-red-500' ? 'w-[16.250003814697266px] h-[16.250003814697266px]' : 'w-2 h-2'}`}>
+          {statusColor === 'bg-red-500' ? (
+            <img src="/errada.png" alt="Errada" className="w-full h-full rotate-0 opacity-100 object-contain" />
+          ) : (statusColor === 'bg-green-500' || statusColor === 'bg-gray-300') ? (
+            <img src="/certa.png" alt="Certa" className="w-full h-full rotate-0 opacity-100 object-contain" />
+          ) : null}
+        </span>
+        <span className="font-inter font-medium text-[14px] leading-[16px] tracking-[0px] text-[#22252B]">Questão {index}</span>
       </div>
     </button>
   );
@@ -104,31 +119,43 @@ function RepostaCorretaSimuladoPage() {
             </div>
 
             <div className="flex items-center justify-end w-[207px] h-[92px] gap-[32px] mx-auto rotate-0 opacity-100">
-              <StatItem label="Questões" value={10} />
-              <StatItem label="Certas" value={4} color="text-green-600" />
+              <StatItem
+                label="Questões"
+                value={10}
+                icon={<img src="/questoes.png" alt="Questões" className="w-[44px] h-[44px] object-contain" />}
+                labelFirst
+              />
+              <StatItem
+                label="Certas"
+                value={4}
+                color="text-green-600"
+                icon={<img src="/certas.png" alt="Certas" className="w-[44px] h-[44px] object-contain" />}
+                labelFirst
+              />
               <StatItem
                 label="Erradas"
                 value={3}
                 color="text-red-600"
-                icon={<img src="/erradas.png" alt="Erradas" className="w-3/4 h-3/4 object-contain" />}
+                icon={<img src="/erradas.png" alt="Erradas" className="w-[44px] h-[44px] object-contain" />}
+                labelFirst
               />
             </div>
 
             <div>
-              <div className="flex items-center justify-between rounded-md border border-gray-200 bg-white px-3 py-2">
-                <span className="text-sm text-gray-600">Total de pontos</span>
+              <div className="w-[207px] h-[40px] rounded-[4px] bg-[#F6F5FA] p-[12px] flex items-center justify-between gap-[8px] rotate-0 opacity-100">
+                <span className="inline-flex items-center gap-[1px] font-inter font-medium text-[12px] leading-[16px] tracking-[0px] text-[#22252B]">
+                  <img src="/pontos.png" alt="Pontos" className="w-[14px] h-[14px] rounded-[600px] p-[1px] rotate-0 opacity-100 object-contain" />
+                  Total de pontos
+                </span>
                 <span className="text-sm font-semibold text-gray-800">20</span>
               </div>
             </div>
 
             <div>
-              <label className="flex items-center justify-between rounded-md border border-gray-200 bg-white px-3 py-2">
-                <span className="text-sm text-gray-600">Pular de ponto</span>
-                <input type="checkbox" className="h-4 w-4 rounded border-gray-300" />
-              </label>
+              {/* Label "Pular de ponto" removido conforme solicitado */}
             </div>
 
-            <div className="rounded-md border border-gray-200 bg-white px-3 py-2">
+            <div className="w-[207px] h-[97px] rounded-[4px] border border-gray-200 bg-[#F6F5FA] p-[12px] flex flex-col gap-[16px] rotate-0 opacity-100">
               <p className="text-xs text-gray-600">Tempo restante</p>
               <p className="text-lg font-semibold text-blue-700">00:54:21</p>
             </div>

@@ -217,6 +217,39 @@ appcodigo/
 - `npm run build` - Gera build de produção
 - `npm run preview` - Visualiza build de produção
 
+## 🚢 Publicação desta versão
+
+### Build e Preview
+- Execute `npm run build` e depois `npm run preview`.
+- Acesse `http://localhost:3000/`. Para validar esta versão, use a rota `http://localhost:3000/reposta-correta-simulado`.
+- Observação: o `SpeedInsights` está desativado em `localhost` para evitar erros de script no ambiente local.
+
+### Push para `main`
+Em ambientes Windows/PowerShell, rode os comandos separadamente:
+
+```
+git checkout main
+git pull origin main
+git add -A
+git commit -m "chore: desabilitar SpeedInsights em localhost; botão F9FAFB; tipografia 'Questão N'; span=img nas bolinhas"
+git push origin main
+```
+
+Se não houver remoto configurado:
+
+```
+git remote add origin <URL-do-repositorio.git>
+git push -u origin main
+```
+
+### O que mudou nesta versão
+- Botão selecionado com largura 220px, altura 36px, raio 4px, gap 12, paddings 8/16 e cor `#F9FAFB`.
+- `span` das bolinhas de status igual ao tamanho das imagens (16.25px), imagens ocupam todo o `span`.
+- Tipografia do texto "Questão N": Inter 500, 14px, line-height 16px, tracking 0, cor `#22252B`.
+- Desativação do `SpeedInsights` em localhost.
+
+Para detalhes, consulte `CHANGELOG.md`.
+
 ## 🤝 Contribuição
 
 1. Faça um fork do projeto
