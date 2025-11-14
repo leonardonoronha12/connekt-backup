@@ -8,6 +8,7 @@ import CursosPage from '@/pages/CursosPage';
 import AlunosPage from '@/pages/AlunosPage';
 import SimuladosPage from '@/pages/SimuladosPage';
 import SimuladosAproveitamentoPage from '@/pages/SimuladosAproveitamentoPage';
+import SimuladosNovo from '@/pages/SimuladosNovo';
 import VendasPage from '@/pages/VendasPage';
 import DashboardPage from '@/pages/DashboardPage';
 import LoginPage from '@/pages/LoginPage';
@@ -28,6 +29,7 @@ const PAGE_TITLES = {
   alunos: 'Alunos',
   simulados: 'Simulados',
   simuladosAproveitamento: 'Simulados - Aproveitamento',
+  simuladosNovo: 'Simulados - Novo',
   vendas: 'Vendas',
   dashboard: 'Dashboard',
   login: 'Login',
@@ -55,6 +57,8 @@ const getViewFromLocation = () => {
     return 'alunos';
   } else if (path === '/simulados') {
     return 'simulados';
+  } else if (path === '/simulados/novo') {
+    return 'simuladosNovo';
   } else if (path === '/simulados-aproveitamento') {
     return 'simuladosAproveitamento';
   } else if (path === '/vendas') {
@@ -77,6 +81,8 @@ function App() {
   const [currentView, setCurrentView] = useState(getViewFromLocation());
   // Chave de localização para forçar remontagem em mudanças de query (ex.: bankId)
   const [locationKey, setLocationKey] = useState(() => window.location.search);
+  // Detecta ambiente local para evitar injeção de SpeedInsights no preview local
+  const isLocalhost = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 
   useEffect(() => {
     const handleLocationChange = () => {
@@ -120,6 +126,8 @@ function App() {
         return <AlunosPage />;
       case 'simulados':
         return <SimuladosPage />;
+      case 'simuladosNovo':
+        return <SimuladosNovo />;
       case 'simuladosAproveitamento':
         return <SimuladosAproveitamentoPage />;
       case 'vendas':
@@ -153,7 +161,7 @@ function App() {
           {renderContent()}
         </MainLayout>
       )}
-      {import.meta.env.PROD && <SpeedInsights />}
+      {import.meta.env.PROD && !isLocalhost && <SpeedInsights />}
     </AuthProvider>
   );
 }
