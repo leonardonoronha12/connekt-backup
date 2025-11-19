@@ -36,28 +36,38 @@ const MainLayout = ({ children }) => {
 
   const isAproveitamento = currentPath === '/simulados-aproveitamento';
   const isSimuladoResposta = currentPath === '/reposta-correta-simulado';
+  const isSimuladosNovo = currentPath === '/simulados/novo';
 
   return (
     <div className="flex bg-gray-50" style={{ height: '100dvh', minHeight: '100vh' }}>
       {/* Sidebar - largura fixa, não rola */}
-      {!isSimuladoResposta && <CollapsibleSidebar />}
+      {!isSimuladoResposta && !isSimuladosNovo && <CollapsibleSidebar />}
       
       {/* Container principal - flex column */}
       <div className="flex-1 flex flex-col" style={{ height: '100%' }}>
         {/* Header - altura fixa, não rola */}
-        <Header className="flex-shrink-0" />
+        {!isSimuladosNovo && <Header className="flex-shrink-0" />}
         
         {/* Main content - área rolável */}
-        <main 
-          className={`flex-1 scroll-area ${isMobile ? 'main-content-mobile' : ''}`}
-          style={{ minHeight: 0, overflow: 'auto', backgroundColor: isAproveitamento ? '#FFFFFF' : undefined }}
-        >
-          <div className="w-full flex justify-center">
-            <div className="w-full" style={{ maxWidth: '1348px', maxHeight: '900px' }}>
-              {children}
+        {isSimuladosNovo ? (
+          // Renderiza a página diretamente (header interno fica fora do main)
+          <>{children}</>
+        ) : (
+          <main 
+            className={`flex-1 scroll-area ${isMobile ? 'main-content-mobile' : ''}`}
+            style={{ 
+              minHeight: 0, 
+              overflow: 'auto', 
+              backgroundColor: isAproveitamento ? '#FFFFFF' : undefined 
+            }}
+          >
+            <div className="w-full flex justify-center">
+              <div className="w-full" style={{ maxWidth: '1348px', maxHeight: '900px' }}>
+                {children}
+              </div>
             </div>
-          </div>
-        </main>
+          </main>
+        )}
       </div>
     </div>
   );

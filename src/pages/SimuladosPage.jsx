@@ -2,25 +2,14 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Helmet } from 'react-helmet-async';
 import { FileText, Plus, ChevronDown, MoreVertical } from 'lucide-react';
 import { questionBankService } from '@/services/questionBankService';
+import { supabase } from '@/lib/supabaseClient';
+import { useAuth } from '@/contexts/SupabaseAuthContext.jsx';
 
-const simuladosMock = [
-  {
-    id: 1,
-    name: 'Nome do simulado',
-    status: 'Publicado',
-    categories: ['Categoria', 'Categoria'],
-    approval: 60
-  },
-  {
-    id: 2,
-    name: 'Nome do simulado',
-    status: 'Publicado',
-    categories: ['Categoria', 'Categoria'],
-    approval: 60
-  }
-];
+// Lista real de simulados do usuário autenticado
+// RLS garante que apenas os simulados do usuário atual sejam retornados
 
 const SimuladosPage = () => {
+  const { user, loading } = useAuth();
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [coverImage, setCoverImage] = useState(null);
   const [coverPreviewUrl, setCoverPreviewUrl] = useState(null);
@@ -31,6 +20,13 @@ const SimuladosPage = () => {
   const [uploadProgress, setUploadProgress] = useState(0);
   const uploadIntervalRef = useRef(null);
   const [coverSupabaseUrl, setCoverSupabaseUrl] = useState(null);
+  const [simulados, setSimulados] = useState([]);
+  const [listError, setListError] = useState(null);
+  const [listLoading, setListLoading] = useState(true);
+  const [openMenuId, setOpenMenuId] = useState(null);
+  const [confirmDeleteSim, setConfirmDeleteSim] = useState(null);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [activeFilter, setActiveFilter] = useState('Publicado');
 
   // Gerenciar URL de preview para o arquivo selecionado
   useEffect(() => {
@@ -50,6 +46,102 @@ const SimuladosPage = () => {
   const navigateTo = (path) => {
     window.history.pushState({}, '', path);
     window.dispatchEvent(new PopStateEvent('popstate'));
+  };
+
+  // Duplicar um simulado existente para o mesmo usuário
+  const handleDuplicateSimulado = async (sim) => {
+    try {
+      if (!user) {
+        setListError('Faça login para duplicar simulados.');
+        return;
+      }
+      const copyTitle = `${sim?.title || 'Simulado'} (Cópia)`;
+      const seedStudents = () => ([
+        { name: 'Maria Silva', avatar_url: 'https://i.pravatar.cc/150?img=5' },
+        { name: 'João Souza', avatar_url: 'https://i.pravatar.cc/150?img=12' },
+        { name: 'Ana Lima', avatar_url: 'https://i.pravatar.cc/150?img=32' },
+        { name: 'Carlos Brito', avatar_url: 'https://i.pravatar.cc/150?img=44' },
+        { name: 'Julia Alves', avatar_url: 'https://i.pravatar.cc/150?img=22' },
+        { name: 'Rafael N.', avatar_url: 'https://i.pravatar.cc/150?img=68' },
+      ]);
+      const originalSettings = sim?.settings ?? {};
+      const withStudents = Array.isArray(originalSettings?.students) && originalSettings.students.length > 0
+        ? originalSettings
+        : { ...originalSettings, students: seedStudents() };
+      const payload = {
+        title: copyTitle,
+        cover_image_url: sim?.cover_image_url ?? null,
+        is_paid: sim?.is_paid ?? false,
+        price: sim?.price ?? 0,
+        availability_date: sim?.availability_date ?? null,
+        duration_minutes: sim?.duration_minutes ?? null,
+        max_grade: sim?.max_grade ?? null,
+        course_ids: Array.isArray(sim?.course_ids) ? sim.course_ids : [],
+        question_ids: Array.isArray(sim?.question_ids) ? sim.question_ids : [],
+        settings: withStudents,
+        user_id: user.id,
+      };
+      const { data: inserted, error } = await supabase
+        .from('simulados')
+        .insert(payload)
+        .select('*')
+        .single();
+      if (error) {
+        setListError(error.message || 'Erro ao duplicar simulado');
+        return;
+      }
+      // Adicionar cópia ao topo da lista
+      setSimulados((prev) => [inserted, ...prev]);
+    } catch (e) {
+      setListError(e?.message || 'Erro inesperado ao duplicar simulado');
+    }
+  };
+
+  // Arquivar um simulado (soft-archive via settings)
+  const handleArchiveSimulado = async (sim) => {
+    try {
+      if (!user) {
+        setListError('Faça login para arquivar simulados.');
+        return;
+      }
+      const baseSettings = sim?.settings ?? {};
+      const updatedSettings = { ...baseSettings, archived: true, archived_at: new Date().toISOString() };
+      const { data, error } = await supabase
+        .from('simulados')
+        .update({ settings: updatedSettings })
+        .eq('id', sim.id)
+        .select('*')
+        .single();
+      if (error) {
+        setListError(error.message || 'Erro ao arquivar simulado');
+        return;
+      }
+      // Remover da lista atual
+      setSimulados((prev) => prev.filter((s) => s.id !== sim.id));
+    } catch (e) {
+      setListError(e?.message || 'Erro inesperado ao arquivar simulado');
+    }
+  };
+
+  // Excluir um simulado definitivamente
+  const handleDeleteSimulado = async (sim) => {
+    try {
+      if (!user) {
+        setListError('Faça login para excluir simulados.');
+        return;
+      }
+      const { error } = await supabase
+        .from('simulados')
+        .delete()
+        .eq('id', sim.id);
+      if (error) {
+        setListError(error.message || 'Erro ao excluir simulado');
+        return;
+      }
+      setSimulados((prev) => prev.filter((s) => s.id !== sim.id));
+    } catch (e) {
+      setListError(e?.message || 'Erro inesperado ao excluir simulado');
+    }
   };
 
   const handleOpenFileDialog = () => {
@@ -105,8 +197,8 @@ const SimuladosPage = () => {
   };
 
   const handleCreateSimulado = () => {
-    // Abrir modal de criação de simulado
-    setIsCreateModalOpen(true);
+    // Navegar para a página de criação de simulado
+    navigateTo('/simulados/novo');
   };
 
   // Estado para abrir/fechar o grupo de configurações dentro da barra direita
@@ -117,6 +209,68 @@ const SimuladosPage = () => {
   const renderApprovalIcon = () => (
     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0047BB" strokeWidth="2"><circle cx="12" cy="12" r="10" opacity="0.3"/><path d="M12 2 a10 10 0 0 1 0 20" /></svg>
   );
+
+  // Carregar simulados do usuário atual
+  useEffect(() => {
+    const loadSimulados = async () => {
+      if (loading) return; // aguardando estado de auth
+      setListLoading(true);
+      setListError(null);
+      try {
+        if (!user) {
+          setSimulados([]);
+          setListLoading(false);
+          return;
+        }
+        // Lista de participantes de exemplo (com fotos reais via pravatar)
+        const getSeedStudents = () => ([
+          { name: 'Maria Silva', avatar_url: 'https://i.pravatar.cc/150?img=5' },
+          { name: 'João Souza', avatar_url: 'https://i.pravatar.cc/150?img=12' },
+          { name: 'Ana Lima', avatar_url: 'https://i.pravatar.cc/150?img=32' },
+          { name: 'Carlos Brito', avatar_url: 'https://i.pravatar.cc/150?img=44' },
+          { name: 'Julia Alves', avatar_url: 'https://i.pravatar.cc/150?img=22' },
+          { name: 'Rafael N.', avatar_url: 'https://i.pravatar.cc/150?img=68' },
+          { name: 'Paula Mendes', avatar_url: 'https://i.pravatar.cc/150?img=15' },
+          { name: 'Diego Rocha', avatar_url: 'https://i.pravatar.cc/150?img=27' },
+          { name: 'Larissa Dias', avatar_url: 'https://i.pravatar.cc/150?img=49' },
+          { name: 'Bruno Martins', avatar_url: 'https://i.pravatar.cc/150?img=9' },
+          { name: 'Aline Cardoso', avatar_url: 'https://i.pravatar.cc/150?img=33' },
+          { name: 'Pedro Henrique', avatar_url: 'https://i.pravatar.cc/150?img=41' },
+        ]);
+        // RLS filtra por created_by = auth.uid()
+        const { data, error } = await supabase
+          .from('simulados')
+          .select('*')
+          .order('created_at', { ascending: false });
+        if (error) {
+          setListError(error.message || 'Erro ao carregar simulados');
+          setSimulados([]);
+        } else {
+          const raw = Array.isArray(data) ? data : [];
+          // Preencher participantes se não existirem
+          const seeded = raw.map((sim) => {
+            const currentSettings = sim?.settings || {};
+            const hasStudents = Array.isArray(currentSettings?.students) && currentSettings.students.length > 0;
+            return {
+              ...sim,
+              settings: {
+                ...currentSettings,
+                students: hasStudents ? currentSettings.students : getSeedStudents(),
+              },
+            };
+          });
+          // Manter todos para permitir filtro por Publicado/Rascunho/Arquivado
+          setSimulados(seeded);
+        }
+      } catch (e) {
+        setListError(e?.message || 'Erro inesperado ao listar simulados');
+        setSimulados([]);
+      } finally {
+        setListLoading(false);
+      }
+    };
+    loadSimulados();
+  }, [user, loading]);
 
   return (
     <div className="min-h-screen bg-[#F8F9FB] overflow-y-auto">
@@ -210,11 +364,26 @@ const SimuladosPage = () => {
                   className="w-[328px] h-[40px] pl-10 pr-4 py-2 border border-[#E3E4E5] bg-white rounded-[4px] focus:ring-0 text-[14px] font-normal font-inter text-[#ABADB3] placeholder:text-[#ABADB3]"
                 />
               </div>
-              <button className="flex items-center gap-2 h-[40px] w-[107px] px-[8.5px] border border-[#E3E4E5] rounded-[4px] bg-[#F8FAFC] text-[#22252B] text-[14px] font-normal hover:bg-gray-50">
-                <img src="/Filtro simulados 1.png" alt="Filtrar" className="w-4 h-4 object-contain" />
-                Filtrar
-                <ChevronDown className="w-4 h-4 text-[#6B7588]" />
-              </button>
+              <div className="relative">
+                <button onClick={() => setFilterOpen(v => !v)} className="flex items-center gap-2 h-[40px] w-[140px] px-[8.5px] border border-[#E3E4E5] rounded-[4px] bg-[#F8FAFC] text-[#22252B] text-[14px] font-normal hover:bg-gray-50">
+                  <img src="/Filtro simulados 1.png" alt="Filtrar" className="w-4 h-4 object-contain" />
+                  {activeFilter}
+                  <ChevronDown className="w-4 h-4 text-[#6B7588]" />
+                </button>
+                {filterOpen && (
+                  <div className="absolute right-0 mt-1 w-[180px] bg-white border border-[#E3E4E5] rounded-[6px] shadow-lg z-50">
+                    {['Publicado','Rascunho','Arquivado'].map((opt) => (
+                      <button
+                        key={opt}
+                        className={`w-full text-left px-3 py-2 text-[12px] ${activeFilter===opt ? 'bg-[#F8FAFC] text-[#0047BB]' : 'text-[#22252B] hover:bg-[#F8FAFC]'}`}
+                        onClick={() => { setActiveFilter(opt); setFilterOpen(false); }}
+                      >
+                        {opt}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
               <button onClick={handleCreateSimulado} className="bg-[#0047BB] text-[#FFFFFF] hover:bg-[#003a99] font-semibold px-5 py-2.5 rounded-[4px] shadow-sm h-[40px] w-[139px] text-[14px] font-inter">
                 Criar simulado
               </button>
@@ -223,41 +392,150 @@ const SimuladosPage = () => {
 
           {/* Grid */}
           <div className="mt-6 w-[1076px] mx-auto grid auto-rows-fr grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-[22px]">
-            {simuladosMock.map(sim => (
-              <div key={sim.id} className="bg-white border border-[#E3E4E5] rounded-[4px] p-4 w-[252.5px] h-[222.17px] flex flex-col">
+            {listLoading && (
+              <div className="col-span-full text-center text-[14px] text-[#737780]">Carregando seus simulados...</div>
+            )}
+            {!listLoading && simulados.length === 0 && (
+              <div className="col-span-full text-center text-[14px] text-[#737780]">Nenhum simulado criado por você ainda.</div>
+            )}
+            {listError && (
+              <div className="col-span-full text-center text-[12px] text-red-600">{listError}</div>
+            )}
+            {(() => {
+              const deriveStatus = (s) => {
+                const st = s?.settings || {};
+                if (st.archived === true) return 'Arquivado';
+                const isDraft = st.draft === true || !s?.availability_date;
+                return isDraft ? 'Rascunho' : 'Publicado';
+              };
+              const filtered = simulados.filter((s) => deriveStatus(s) === activeFilter);
+              if (!listLoading && filtered.length === 0) {
+                return [<div key="empty" className="col-span-full text-center text-[14px] text-[#737780]">Nenhum simulado {activeFilter.toLowerCase()}.</div>];
+              }
+              return filtered.map(sim => (
+              <div
+                key={sim.id}
+                className="bg-white border border-[#E3E4E5] rounded-[4px] p-4 w-[252.5px] h-[222.17px] flex flex-col"
+                onClick={() => setOpenMenuId(null)}
+              >
                 <div className="flex items-start justify-between mb-0">
                   <div className="flex items-center gap-2">
-                    <img src="/t simulados 1.png" alt="Simulado" className="w-[85px] h-[85px] object-contain" />
+                    <img
+                      src={(sim && sim.cover_image_url) ? sim.cover_image_url : "/t simulados 1.png"}
+                      alt={sim?.title || "Simulado"}
+                      className="w-[85px] h-[85px] rounded-md object-cover"
+                    />
                   </div>
                   <div className="flex flex-col items-end gap-4">
-                    <button className="w-8 h-8 rounded bg-[#F6F5FA] hover:bg-[#F6F5FA] flex items-center justify-center">
-                      <MoreVertical className="w-4 h-4 text-[#737780] -rotate-90" />
-                    </button>
-                    <span className="inline-flex items-center justify-center w-[64px] h-[18px] px-3 text-[10px] bg-[#E9FFEF] text-[#06C270] rounded-[54px] leading-none font-medium">{sim.status}</span>
+                    <div className="relative">
+                      <button
+                        className="w-8 h-8 rounded bg-[#F6F5FA] hover:bg-[#F6F5FA] flex items-center justify-center"
+                        onClick={(e) => { e.stopPropagation(); setOpenMenuId(openMenuId === sim.id ? null : sim.id); }}
+                        aria-haspopup="menu"
+                        aria-expanded={openMenuId === sim.id}
+                      >
+                        <MoreVertical className="w-4 h-4 text-[#737780] -rotate-90" />
+                      </button>
+                      {openMenuId === sim.id && (
+                        <div
+                          className="absolute right-0 mt-2 w-[160px] bg-white border border-[#E3E4E5] rounded-[6px] shadow-lg z-50"
+                          role="menu"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <button
+                            className="w-full text-left px-3 py-2 text-[12px] text-[#22252B] hover:bg-[#F8FAFC]"
+                            onClick={() => { setOpenMenuId(null); navigateTo(`/simulados/novo?edit=${sim.id}`); }}
+                            role="menuitem"
+                          >
+                            Editar
+                          </button>
+                          <button
+                            className="w-full text-left px-3 py-2 text-[12px] text-[#22252B] hover:bg-[#F8FAFC]"
+                            onClick={(e) => { e.stopPropagation(); setOpenMenuId(null); handleDuplicateSimulado(sim); }}
+                            role="menuitem"
+                          >
+                            Duplicar
+                          </button>
+                          <button
+                            className="w-full text-left px-3 py-2 text-[12px] text-[#22252B] hover:bg-[#F8FAFC]"
+                            onClick={() => { setOpenMenuId(null); navigateTo(`/simulados-aproveitamento?simId=${sim.id}`); }}
+                            role="menuitem"
+                          >
+                            Analytics
+                          </button>
+                          <button
+                            className="w-full text-left px-3 py-2 text-[12px] text-[#22252B] hover:bg-[#F8FAFC]"
+                            onClick={(e) => { e.stopPropagation(); setOpenMenuId(null); handleArchiveSimulado(sim); }}
+                            role="menuitem"
+                          >
+                            Arquivar
+                          </button>
+                          <button
+                            className="w-full text-left px-3 py-2 text-[12px] text-red-600 hover:bg-[#F8FAFC]"
+                            onClick={(e) => { e.stopPropagation(); setOpenMenuId(null); setConfirmDeleteSim(sim); }}
+                            role="menuitem"
+                          >
+                            Excluir
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                    {(() => {
+                      const st = (sim?.settings?.archived === true) ? 'Arquivado' : ((sim?.settings?.draft === true || !sim?.availability_date) ? 'Rascunho' : 'Publicado');
+                      const cls = st === 'Publicado'
+                        ? 'bg-[#E9FFEF] text-[#06C270]'
+                        : st === 'Rascunho'
+                          ? 'bg-yellow-100 text-yellow-800'
+                          : 'bg-gray-200 text-gray-700';
+                      return (
+                        <span className={`inline-flex items-center justify-center w-[80px] h-[18px] px-3 text-[10px] rounded-[54px] leading-none font-medium ${cls}`}>{st}</span>
+                      );
+                    })()}
                   </div>
                 </div>
                 <div className="mt-0">
                   <div className="flex items-center justify-between">
-                    <h4 className="text-[12px] font-medium text-[#1E1B39] font-inter">{sim.name}</h4>
-                    {/* Avatares dos usuários imediatamente ao lado do título */}
+                    <h4 className="text-[12px] font-medium text-[#1E1B39] font-inter">{sim.title}</h4>
+                    {/* Avatares reais dos alunos ao lado do título (usa avatar_url, avatarUrl ou photoUrl) */}
                     <div className="inline-flex items-center gap-1 shrink-0">
-                      <img src="/verde.svg" alt="Usuário" className="w-[18px] h-[18px] rounded-full ring-1 ring-white object-cover" />
-                      <img src="/roxo.svg" alt="Usuário" className="w-[18px] h-[18px] rounded-full ring-1 ring-white object-cover" />
-                      <img src="/laranja.svg" alt="Usuário" className="w-[18px] h-[18px] rounded-full ring-1 ring-white object-cover" />
-                      <img src="/perfil rc.png" alt="Usuário" className="w-[18px] h-[18px] rounded-full ring-1 ring-white object-cover" />
+                      {(() => {
+                        const students = Array.isArray(sim?.settings?.students) ? sim.settings.students : [];
+                        const maxVisible = 6;
+                        const visible = students.slice(0, maxVisible);
+                        const overflow = Math.max(0, students.length - visible.length);
+                        return (
+                          <>
+                            {visible.map((stu, i) => {
+                              const src = stu?.avatar_url || stu?.avatarUrl || stu?.photoUrl || "/perfil rc.png";
+                              const alt = stu?.name || "Aluno";
+                              return (
+                                <img
+                                  key={i}
+                                  src={src}
+                                  alt={alt}
+                                  className="w-[18px] h-[18px] rounded-full ring-1 ring-white object-cover"
+                                />
+                              );
+                            })}
+                            {overflow > 0 && (
+                              <span className="inline-flex items-center justify-center h-[18px] px-2 text-[10px] bg-[#F6F5FA] text-[#9291A5] rounded-[54px] leading-none font-medium">+{overflow}</span>
+                            )}
+                          </>
+                        );
+                      })()}
                     </div>
                   </div>
-                  <p className="text-[10px] text-[#9291A5] font-inter font-[400] mt-1">Descrição breve do simulado</p>
+                  <p className="text-[10px] text-[#9291A5] font-inter font-[400] mt-1">{sim.description ?? sim.settings?.description ?? 'Simulado criado por você'}</p>
                 </div>
                 <div className="mt-3 flex items-center gap-2">
-                  {sim.categories.map((c, i) => (
+                  {(sim.settings?.categories || []).map((c, i) => (
                     <span
                       key={i}
                       className="inline-flex items-center gap-1 text-[12px] font-normal h-[20px] px-2 py-0 rounded-[4px]"
                       style={{ backgroundColor: 'rgba(173,137,247,0.1)', color: '#22252B' }}
                     >
                       <span className="leading-none text-[7px] text-[#AD89F7]">🟪</span>
-                      <span className="text-[10px] text-[#22252B] font-normal not-italic">{c}</span>
+                      <span className="text-[10px] text-[#22252B] font-normal not-italic">{String(c)}</span>
                     </span>
                   ))}
                 </div>
@@ -265,11 +543,12 @@ const SimuladosPage = () => {
                   <span className="text-[12px] text-[#1E1B39] font-inter font-bold">Aprovação (%)</span>
                   <div className="flex items-center gap-1 text-[#0047BB]">
                     {renderApprovalIcon()}
-                    <span className="text-[12px] font-bold text-[#0047BB]">{sim.approval}%</span>
+                    <span className="text-[12px] font-bold text-[#0047BB]">0%</span>
                   </div>
                 </div>
               </div>
-            ))}
+              ));
+            })()}
 
             {/* Placeholders */}
             {Array.from({ length: 6 }).map((_, idx) => (
@@ -287,6 +566,31 @@ const SimuladosPage = () => {
           </div>
         </div>
       </div>
+
+      {/* Modal de confirmação de exclusão */}
+      {confirmDeleteSim && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setConfirmDeleteSim(null)}></div>
+          <div className="relative bg-white rounded-[10px] shadow-xl max-w-[420px] w-[92%] p-5 border border-[#E3E4E5]">
+            <h3 className="text-[14px] font-semibold text-[#1E1B39] mb-2">Confirmar exclusão</h3>
+            <p className="text-[12px] text-[#4D525C] mb-4">Tem certeza que deseja excluir o simulado "{confirmDeleteSim?.title}"? Esta ação é definitiva.</p>
+            <div className="flex justify-end gap-2">
+              <button
+                className="px-3 py-2 text-[12px] rounded-[6px] border border-[#E3E4E5] text-[#22252B] hover:bg-[#F8FAFC]"
+                onClick={() => setConfirmDeleteSim(null)}
+              >
+                Cancelar
+              </button>
+              <button
+                className="px-3 py-2 text-[12px] rounded-[6px] bg-red-600 text-white hover:bg-red-700"
+                onClick={async () => { await handleDeleteSimulado(confirmDeleteSim); setConfirmDeleteSim(null); }}
+              >
+                Excluir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Create Simulado Modal */}
       {isCreateModalOpen && (

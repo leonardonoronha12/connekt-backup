@@ -67,8 +67,9 @@ function savePersistedQuestions(map) {
 
 async function getCurrentUserExternalId() {
   try {
-    const { data: { user } } = await supabase.auth.getUser();
-    return user?.id || '';
+    // Evitar chamada à /auth/v1/user quando não há sessão
+    const { data: { session } } = await supabase.auth.getSession();
+    return session?.user?.id || '';
   } catch {
     return '';
   }

@@ -1,4 +1,4 @@
-import { POPUP_STYLES } from './plugins/visual-editor/visual-editor-config.js';
+import { POPUP_STYLES } from '/plugins/visual-editor/visual-editor-config.js';
 
 const PLUGIN_APPLY_EDIT_API_URL = '/api/apply-edit';
 
@@ -312,4 +312,4 @@ window.addEventListener("message", function(event) {
   if (event.data?.type === "disable-edit-mode") {
     disableEditMode();
   }
-}); 
+});
