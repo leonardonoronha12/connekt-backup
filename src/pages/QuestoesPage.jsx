@@ -35,6 +35,8 @@ const QuestoesPage = () => {
   const [selectedCategories, setSelectedCategories] = useState([]); // array de objetos { id, name, color, description }
   const [selectedSubcategories, setSelectedSubcategories] = useState([]); // array de objetos { id, name, color, description }
   const [selectedTags, setSelectedTags] = useState([]); // array de objetos { id, name, color, description }
+  // Editor rico por escolha (mapeia índice da escolha -> aberto/fechado)
+  const [choiceRichEditorOpen, setChoiceRichEditorOpen] = useState({});
   // Helpers para acessar/atualizar a questão selecionada
   const getSelectedQuestion = () => (
     selectedQuestionIndex !== null && questions[selectedQuestionIndex]
@@ -50,6 +52,31 @@ const QuestoesPage = () => {
       next[selectedQuestionIndex] = { ...current, ...partial };
       return next;
     });
+  };
+
+  // Persistir extras de metadata da questão atual no Supabase, preservando campos reservados
+  const persistSelectedQuestionExtras = async (extras = {}, reservedOverrides = {}) => {
+    try {
+      const current = getSelectedQuestion();
+      if (!current || !current.id) return;
+      const updates = {
+        name: current.name,
+        title: current.title,
+        text: current.text,
+        body: current.body,
+        type: reservedOverrides.type ?? current.type ?? (current.metadata?.type ?? 'multiple_choice'),
+        required: reservedOverrides.required ?? (typeof current.required === 'boolean' ? current.required : !!current.metadata?.required),
+        disabled: reservedOverrides.disabled ?? (typeof current.disabled === 'boolean' ? current.disabled : !!current.metadata?.disabled),
+        choices: Array.isArray(reservedOverrides.choices) ? reservedOverrides.choices : (Array.isArray(current.choices) ? current.choices : []),
+        correctChoiceIndex: typeof reservedOverrides.correctChoiceIndex === 'number' ? reservedOverrides.correctChoiceIndex : (typeof current.correctChoiceIndex === 'number' ? current.correctChoiceIndex : null),
+        points: typeof reservedOverrides.points === 'number' ? reservedOverrides.points : (typeof current.points === 'number' ? current.points : (typeof current.metadata?.points === 'number' ? current.metadata.points : 0)),
+        attempts: typeof reservedOverrides.attempts === 'number' ? reservedOverrides.attempts : (typeof current.attempts === 'number' ? current.attempts : (typeof current.metadata?.attempts === 'number' ? current.metadata.attempts : 0)),
+        metadata: { ...(current.metadata || {}), ...extras },
+      };
+      await questionBankService.updateQuestion(current.id, updates);
+    } catch (err) {
+      console.warn('persistSelectedQuestionExtras error:', err);
+    }
   };
 
   // Ao trocar para outra questão, fechar quaisquer caixas de upload/preview abertas
@@ -2514,7 +2541,7 @@ const QuestoesPage = () => {
                           value={value}
                           placeholder="Digite sua escolha aqui."
                           className="flex-1 h-[32px] px-3 rounded-[var(--Corner-Radius-4px,4px)] bg-[var(--Background-Content,#F6F5FA)] text-[12px] font-inter"
-                          onChange={(e) => {
+                         onChange={(e) => {
                             const val = e.target.value;
                             const current = getSelectedQuestion();
                             if (!current) return;
@@ -2525,8 +2552,316 @@ const QuestoesPage = () => {
                         />
                         <button
                           type="button"
-                          className="flex flex-wrap items-center content-center p-[var(--Spacing-8px,8px)] gap-y-[12px] gap-x-[var(--Spacing-12px,12px)] rounded-[var(--Corner-Radius-4px,4px)] bg-[var(--Background-Content,#F6F5FA)]"
+                          className="h-[32px] px-3 rounded-[var(--Corner-Radius-4px,4px)] bg-[var(--Background-Content,#F6F5FA)] text-[12px] font-inter"
                           onClick={() => {
+                            setChoiceRichEditorOpen((prev) => ({ ...prev, [idx]: !prev[idx] }));
+                          }}
+                          title={(() => {
+                            const html = (getSelectedQuestion()?.metadata?.choicesTextHtml?.[idx]) || '';
+                            const hasText = typeof html === 'string' && html.replace(/<[^>]+>/g, '').trim().length > 0;
+                            return hasText ? 'Editar texto da escolha' : 'Adicionar texto para esta escolha';
+                          })()}
+                        >
+                          {(() => {
+                            const html = (getSelectedQuestion()?.metadata?.choicesTextHtml?.[idx]) || '';
+                            const hasText = typeof html === 'string' && html.replace(/<[^>]+>/g, '').trim().length > 0;
+                            return hasText ? 'Editar texto' : 'Adicionar texto';
+                          })()}
+                        </button>
+                        {(() => {
+                          const html = (getSelectedQuestion()?.metadata?.choicesTextHtml?.[idx]) || '';
+                          const hasText = typeof html === 'string' && html.replace(/<[^>]+>/g, '').trim().length > 0;
+                          return hasText ? (
+                            <span
+                              className="ml-2 px-2 py-1 text-[11px] rounded bg-white border border-[#E6E8EB] text-[#22252B]"
+                              title="Esta escolha tem texto adicional"
+                            >
+                              Texto adicionado
+                            </span>
+                          ) : null;
+                        })()}
+                        {choiceRichEditorOpen[idx] ? (
+                          <div className="mt-2 w-full p-2 rounded-[4px] bg-[var(--Background-Content,#F6F5FA)] border border-[#E6E8EB]">
+                            <div className="flex items-center gap-2 mb-2">
+                              <button
+                                type="button"
+                                className="px-2 py-1 text-[12px] text-[#22252B] bg-white rounded border border-[#E6E8EB]"
+                                onClick={(e) => {
+                                  const editor = e.currentTarget.closest('div')?.querySelector('.choice-rich-editor');
+                                  if (editor) { editor.focus(); document.execCommand('bold'); }
+                                }}
+                                title="Negrito"
+                              >B</button>
+                              <button
+                                type="button"
+                                className="px-2 py-1 text-[12px] text-[#22252B] bg-white rounded border border-[#E6E8EB] italic"
+                                onClick={(e) => {
+                                  const editor = e.currentTarget.closest('div')?.querySelector('.choice-rich-editor');
+                                  if (editor) { editor.focus(); document.execCommand('italic'); }
+                                }}
+                                title="Itálico"
+                              >I</button>
+                              <button
+                                type="button"
+                                className="px-2 py-1 text-[12px] text-[#22252B] bg-white rounded border border-[#E6E8EB] underline"
+                                onClick={(e) => {
+                                  const editor = e.currentTarget.closest('div')?.querySelector('.choice-rich-editor');
+                                  if (editor) { editor.focus(); document.execCommand('underline'); }
+                                }}
+                                title="Sublinhado"
+                              >U</button>
+                              <button
+                                type="button"
+                                className="px-2 py-1 text-[12px] text-[#22252B] bg-white rounded border border-[#E6E8EB]"
+                                onClick={(e) => {
+                                  const editor = e.currentTarget.closest('div')?.querySelector('.choice-rich-editor');
+                                  if (editor) { editor.focus(); document.execCommand('insertUnorderedList'); }
+                                }}
+                                title="Lista"
+                              >• Lista</button>
+                              <button
+                                type="button"
+                                className="px-2 py-1 text-[12px] text-[#6B7588] bg-white rounded border border-[#E6E8EB]"
+                                onClick={(e) => {
+                                  const editor = e.currentTarget.closest('div')?.querySelector('.choice-rich-editor');
+                                  if (editor) { editor.focus(); document.execCommand('removeFormat'); }
+                                }}
+                                title="Limpar formatação"
+                              >Limpar</button>
+                              <div className="flex-1" />
+                              <button
+                                type="button"
+                                className="px-2 py-1 text-[12px] text-white bg-[#22252B] rounded"
+                                onClick={async () => {
+                                  setChoiceRichEditorOpen((prev) => ({ ...prev, [idx]: false }));
+                                  try {
+                                    const metaChoices = (getSelectedQuestion()?.metadata?.choicesTextHtml) || {};
+                                    await persistSelectedQuestionExtras({ choicesTextHtml: metaChoices });
+                                  } catch (err) {
+                                    console.warn('Persistência de texto rico falhou:', err);
+                                  }
+                                }}
+                              >Concluir</button>
+                            </div>
+                            <div
+                              className="choice-rich-editor min-h-[80px] max-h-[220px] overflow-auto px-3 py-2 bg-white rounded border border-[#E6E8EB] text-[14px]"
+                              contentEditable
+                              suppressContentEditableWarning
+                              dangerouslySetInnerHTML={{ __html: (getSelectedQuestion()?.metadata?.choicesTextHtml?.[idx]) || '' }}
+                              onInput={(e) => {
+                                const html = e.currentTarget.innerHTML;
+                                const current = getSelectedQuestion();
+                                if (!current) return;
+                                const nextText = { ...((current.metadata && current.metadata.choicesTextHtml) || {}) };
+                                nextText[idx] = html;
+                                updateSelectedQuestion({ metadata: { ...(current.metadata || {}), choicesTextHtml: nextText } });
+                              }}
+                              placeholder="Digite o comentário rico da escolha aqui..."
+                            />
+                          </div>
+                        ) : null}
+                        {/* Imagem da escolha: upload/URL/preview */}
+                        <div className="flex items-center gap-2">
+                          {/* input file oculto por escolha */}
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden choice-image-input"
+                            onChange={async (e) => {
+                              try {
+                                const file = e.target.files && e.target.files[0];
+                                if (!file) return;
+                                const current = getSelectedQuestion();
+                                if (!current) return;
+                                // Mostrar preview imediato com URL local para dar feedback
+                                const tempUrl = URL.createObjectURL(file);
+                                {
+                                  const nextChoicesMedia = { ...(current.choicesMedia || {}) };
+                                  nextChoicesMedia[idx] = { ...(nextChoicesMedia[idx] || {}), imageUrl: tempUrl };
+                                  updateSelectedQuestion({ choicesMedia: nextChoicesMedia, metadata: { ...(current.metadata || {}), choicesMedia: nextChoicesMedia } });
+                                }
+                                const bankIdFallback = currentBankId
+                                  || (bancoAtual && bancoAtual.id)
+                                  || current.question_bank_id
+                                  || (current.metadata && current.metadata.bankId)
+                                  || null;
+                                const res = await questionBankService.uploadQuestionImage(file, { bankId: bankIdFallback, questionId: current.id });
+                                const finalUrl = (res && res.url) || '';
+                                if (finalUrl) {
+                                  const nextChoicesMedia = { ...(current.choicesMedia || {}) };
+                                  nextChoicesMedia[idx] = { ...(nextChoicesMedia[idx] || {}), imageUrl: finalUrl };
+                                  updateSelectedQuestion({ choicesMedia: nextChoicesMedia, metadata: { ...(current.metadata || {}), choicesMedia: nextChoicesMedia } });
+                                  try { await persistSelectedQuestionExtras({ choicesMedia: nextChoicesMedia }); } catch {}
+                                  try { URL.revokeObjectURL(tempUrl); } catch {}
+                                }
+                              } catch (err) {
+                                toast({ description: 'Falha ao enviar imagem da escolha.', variant: 'destructive' });
+                              } finally {
+                                // limpar para permitir novo upload do mesmo arquivo
+                                e.target.value = '';
+                              }
+                            }}
+                          />
+                          <button
+                            type="button"
+                            className="h-[32px] px-3 rounded-[var(--Corner-Radius-4px,4px)] bg-[var(--Background-Content,#F6F5FA)] text-[12px] font-inter"
+                            onClick={(evt) => {
+                              const input = evt.currentTarget.parentElement?.querySelector('.choice-image-input');
+                              if (input) input.click();
+                            }}
+                            title={(() => {
+                              const url = (getSelectedQuestion()?.choicesMedia?.[idx]?.imageUrl) || '';
+                              const hasImage = typeof url === 'string' && url.trim().length > 0;
+                              return hasImage ? 'Alterar imagem da escolha' : 'Enviar imagem para esta escolha';
+                            })()}
+                          >
+                            {(() => {
+                              const url = (getSelectedQuestion()?.choicesMedia?.[idx]?.imageUrl) || '';
+                              const hasImage = typeof url === 'string' && url.trim().length > 0;
+                              return hasImage ? 'Alterar imagem' : 'Adicionar imagem';
+                            })()}
+                          </button>
+                          {(() => {
+                            const url = (getSelectedQuestion()?.choicesMedia?.[idx]?.imageUrl) || '';
+                            const hasImage = typeof url === 'string' && url.trim().length > 0;
+                            return hasImage ? (
+                              <span
+                                className="ml-2 px-2 py-1 text-[11px] rounded bg-white border border-[#E6E8EB] text-[#22252B]"
+                                title="Esta escolha tem uma imagem adicionada"
+                              >
+                                Imagem adicionada
+                              </span>
+                            ) : null;
+                          })()}
+                          {/* input file oculto por escolha (vídeo) */}
+                          <input
+                            type="file"
+                            accept="video/*"
+                            className="hidden choice-video-input"
+                            onChange={async (e) => {
+                              try {
+                                const file = e.target.files && e.target.files[0];
+                                if (!file) return;
+                                const current = getSelectedQuestion();
+                                if (!current) return;
+                                // Preview imediato com URL local
+                                const tempUrl = URL.createObjectURL(file);
+                                {
+                                  const nextChoicesMedia = { ...(current.choicesMedia || {}) };
+                                  nextChoicesMedia[idx] = { ...(nextChoicesMedia[idx] || {}), videoUrl: tempUrl };
+                                  updateSelectedQuestion({ choicesMedia: nextChoicesMedia, metadata: { ...(current.metadata || {}), choicesMedia: nextChoicesMedia } });
+                                }
+                                const bankIdFallback = currentBankId
+                                  || (bancoAtual && bancoAtual.id)
+                                  || current.question_bank_id
+                                  || (current.metadata && current.metadata.bankId)
+                                  || null;
+                                const res = await questionBankService.uploadQuestionVideo(file, { bankId: bankIdFallback, questionId: current.id });
+                                const finalUrl = (res && res.url) || '';
+                                if (finalUrl) {
+                                  const nextChoicesMedia = { ...(current.choicesMedia || {}) };
+                                  nextChoicesMedia[idx] = { ...(nextChoicesMedia[idx] || {}), videoUrl: finalUrl };
+                                  updateSelectedQuestion({ choicesMedia: nextChoicesMedia, metadata: { ...(current.metadata || {}), choicesMedia: nextChoicesMedia } });
+                                  try { await persistSelectedQuestionExtras({ choicesMedia: nextChoicesMedia }); } catch {}
+                                  try { URL.revokeObjectURL(tempUrl); } catch {}
+                                }
+                              } catch (err) {
+                                toast({ description: 'Falha ao enviar vídeo da escolha.', variant: 'destructive' });
+                              } finally {
+                                e.target.value = '';
+                              }
+                            }}
+                          />
+                          <button
+                            type="button"
+                            className="h-[32px] px-3 rounded-[var(--Corner-Radius-4px,4px)] bg-[var(--Background-Content,#F6F5FA)] text-[12px] font-inter"
+                            onClick={(evt) => {
+                              const input = evt.currentTarget.parentElement?.querySelector('.choice-video-input');
+                              if (input) input.click();
+                            }}
+                            title={(() => {
+                              const url = (getSelectedQuestion()?.choicesMedia?.[idx]?.videoUrl) || '';
+                              const hasVideo = typeof url === 'string' && url.trim().length > 0;
+                              return hasVideo ? 'Alterar vídeo da escolha' : 'Enviar vídeo para esta escolha';
+                            })()}
+                          >
+                            {(() => {
+                              const url = (getSelectedQuestion()?.choicesMedia?.[idx]?.videoUrl) || '';
+                              const hasVideo = typeof url === 'string' && url.trim().length > 0;
+                              return hasVideo ? 'Alterar vídeo' : 'Adicionar vídeo';
+                            })()}
+                          </button>
+                          {(() => {
+                            const url = (getSelectedQuestion()?.choicesMedia?.[idx]?.videoUrl) || '';
+                            const hasVideo = typeof url === 'string' && url.trim().length > 0;
+                            return hasVideo ? (
+                              <span
+                                className="ml-2 px-2 py-1 text-[11px] rounded bg-white border border-[#E6E8EB] text-[#22252B]"
+                                title="Esta escolha tem um vídeo adicionada"
+                              >
+                                Vídeo adicionado
+                              </span>
+                            ) : null;
+                          })()}
+                          {getSelectedQuestion()?.choicesMedia?.[idx]?.imageUrl ? (
+                            <div className="flex items-center gap-1">
+                              <img
+                                src={getSelectedQuestion()?.choicesMedia?.[idx]?.imageUrl}
+                                alt={`Imagem da escolha ${String.fromCharCode(65 + idx)}`}
+                                className="h-8 w-8 rounded-[4px] object-cover"
+                              />
+                              <button
+                                type="button"
+                                className="text-[12px] text-[#6B7588] hover:text-[#22252B]"
+                                title="Remover imagem"
+                                onClick={() => {
+                                  const current = getSelectedQuestion();
+                                  if (!current) return;
+                                  const nextChoicesMedia = { ...(current.choicesMedia || {}) };
+                                  nextChoicesMedia[idx] = { ...(nextChoicesMedia[idx] || {}), imageUrl: '' };
+                                  updateSelectedQuestion({
+                                    choicesMedia: nextChoicesMedia,
+                                    metadata: { ...(current.metadata || {}), choicesMedia: nextChoicesMedia }
+                                  });
+                                  try { persistSelectedQuestionExtras({ choicesMedia: nextChoicesMedia }); } catch {}
+                                }}
+                              >
+                                ×
+                              </button>
+                            </div>
+                          ) : null}
+                          {getSelectedQuestion()?.choicesMedia?.[idx]?.videoUrl ? (
+                            <div className="flex items-center gap-1">
+                              <video
+                                src={getSelectedQuestion()?.choicesMedia?.[idx]?.videoUrl}
+                                className="h-8 w-14 rounded-[4px]"
+                                controls
+                              />
+                              <button
+                                type="button"
+                                className="text-[12px] text-[#6B7588] hover:text-[#22252B]"
+                                title="Remover vídeo"
+                                onClick={() => {
+                                  const current = getSelectedQuestion();
+                                  if (!current) return;
+                                  const nextChoicesMedia = { ...(current.choicesMedia || {}) };
+                                  nextChoicesMedia[idx] = { ...(nextChoicesMedia[idx] || {}), videoUrl: '' };
+                                  updateSelectedQuestion({
+                                    choicesMedia: nextChoicesMedia,
+                                    metadata: { ...(current.metadata || {}), choicesMedia: nextChoicesMedia }
+                                  });
+                                  try { persistSelectedQuestionExtras({ choicesMedia: nextChoicesMedia }); } catch {}
+                                }}
+                              >
+                                ×
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
+                        <button
+                          type="button"
+                          className="flex flex-wrap items-center content-center p-[var(--Spacing-8px,8px)] gap-y-[12px] gap-x-[var(--Spacing-12px,12px)] rounded-[var(--Corner-Radius-4px,4px)] bg-[var(--Background-Content,#F6F5FA)]"
+                          onClick={async () => {
                             const current = getSelectedQuestion();
                             if (!current) return;
                             const nextChoices = (current.choices || []).filter((_, i) => i !== idx);
@@ -2536,7 +2871,66 @@ const QuestoesPage = () => {
                                 ? current.correctChoiceIndex - 1
                                 : current.correctChoiceIndex
                             );
-                            updateSelectedQuestion({ choices: nextChoices, correctChoiceIndex: nextCorrect });
+                            // remover mídia associada, se houver
+                            const nextChoicesMedia = { ...(current.choicesMedia || {}) };
+                            if (nextChoicesMedia[idx]) {
+                              const rebuilt = {};
+                              Object.keys(nextChoicesMedia).forEach((k) => {
+                                const keyNum = parseInt(k, 10);
+                                if (keyNum < idx) {
+                                  rebuilt[keyNum] = nextChoicesMedia[keyNum];
+                                } else if (keyNum > idx) {
+                                  // shift para manter alinhamento com índices
+                                  rebuilt[keyNum - 1] = nextChoicesMedia[keyNum];
+                                }
+                              });
+                              // Ajustar comentários ricos por escolha (choicesTextHtml) ao remover
+                              const metaChoicesText = (current.metadata && current.metadata.choicesTextHtml) || {};
+                              const textRebuilt = {};
+                              Object.keys(metaChoicesText).forEach((k) => {
+                                const keyNum = parseInt(k, 10);
+                                if (keyNum < idx) {
+                                  textRebuilt[keyNum] = metaChoicesText[keyNum];
+                                } else if (keyNum > idx) {
+                                  textRebuilt[keyNum - 1] = metaChoicesText[keyNum];
+                                }
+                              });
+                              updateSelectedQuestion({ choices: nextChoices, correctChoiceIndex: nextCorrect, choicesMedia: rebuilt, metadata: { ...(current.metadata || {}), choicesMedia: rebuilt, choicesTextHtml: textRebuilt } });
+                              persistSelectedQuestionExtras({ choicesMedia: rebuilt, choicesTextHtml: textRebuilt }, { choices: nextChoices, correctChoiceIndex: nextCorrect }).catch(() => {})
+                              // Ajustar estado de abertura do editor rico
+                              setChoiceRichEditorOpen((prev) => {
+                                const next = {};
+                                Object.keys(prev || {}).forEach((k) => {
+                                  const keyNum = parseInt(k, 10);
+                                  if (keyNum < idx) next[keyNum] = prev[keyNum];
+                                  else if (keyNum > idx) next[keyNum - 1] = prev[keyNum];
+                                });
+                                return next;
+                              });
+                            } else {
+                              // Mesmo sem mídia, ajustar choicesTextHtml
+                              const metaChoicesText = (current.metadata && current.metadata.choicesTextHtml) || {};
+                              const textRebuilt = {};
+                              Object.keys(metaChoicesText).forEach((k) => {
+                                const keyNum = parseInt(k, 10);
+                                if (keyNum < idx) {
+                                  textRebuilt[keyNum] = metaChoicesText[keyNum];
+                                } else if (keyNum > idx) {
+                                  textRebuilt[keyNum - 1] = metaChoicesText[keyNum];
+                                }
+                              });
+                              updateSelectedQuestion({ choices: nextChoices, correctChoiceIndex: nextCorrect, metadata: { ...(current.metadata || {}), choicesTextHtml: textRebuilt } });
+                              persistSelectedQuestionExtras({ choicesTextHtml: textRebuilt }, { choices: nextChoices, correctChoiceIndex: nextCorrect }).catch(() => {})
+                              setChoiceRichEditorOpen((prev) => {
+                                const next = {};
+                                Object.keys(prev || {}).forEach((k) => {
+                                  const keyNum = parseInt(k, 10);
+                                  if (keyNum < idx) next[keyNum] = prev[keyNum];
+                                  else if (keyNum > idx) next[keyNum - 1] = prev[keyNum];
+                                });
+                                return next;
+                              });
+                            }
                           }}
                         >
                           <svg

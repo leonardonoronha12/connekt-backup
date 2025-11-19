@@ -345,23 +345,29 @@ const QuestionBankPage = () => {
     .filter(tag => tag.name.toLowerCase().includes(tagsSearchTerm.toLowerCase()));
 
   const handleCreateNewCategory = () => {
-    if (newCategoryName.trim() && newCategoryDescription.trim() && 
-        !categories.some(cat => cat.name === newCategoryName.trim())) {
-      const newCategory = {
-        id: categories.length + 1,
-        name: newCategoryName.trim(),
-        color: newCategoryColor,
-        description: newCategoryDescription.trim()
-      };
-      setCategories(prev => [...prev, newCategory]);
-      setFormData(prev => ({ ...prev, category: newCategoryName.trim() }));
-      setNewCategoryName('');
-      setNewCategoryColor('#8B5CF6');
-      setNewCategoryDescription('');
-      setIsCreatingNewCategory(false);
-      setShowCategoryDropdown(false);
-      setCategorySearchTerm('');
+    const name = newCategoryName.trim();
+    if (!name) return;
+    const exists = categories.some(cat => (cat.name || '').toLowerCase() === name.toLowerCase());
+    if (exists) {
+      toast({ description: 'Já existe uma categoria com este nome.', variant: 'destructive' });
+      return;
     }
+
+    const newCategory = {
+      id: categories.length + 1,
+      name,
+      color: newCategoryColor,
+      description: newCategoryDescription.trim()
+    };
+    setCategories(prev => [...prev, newCategory]);
+    setFormData(prev => ({ ...prev, category: name }));
+    setNewCategoryName('');
+    setNewCategoryColor('#8B5CF6');
+    setNewCategoryDescription('');
+    setIsCreatingNewCategory(false);
+    setShowCategoryDropdown(false);
+    setCategorySearchTerm('');
+    toast({ description: 'Categoria criada com sucesso!' });
   };
 
   const handleCancelNewCategory = () => {
@@ -556,6 +562,8 @@ const QuestionBankPage = () => {
 
   // Função para scroll automático quando criar nova categoria
   const handleStartCreatingCategory = () => {
+    // Pré-preenche com o termo buscado, se houver
+    setNewCategoryName((categorySearchTerm || '').trim());
     setIsCreatingNewCategory(true);
     // Aguarda um pouco para o DOM atualizar e depois faz o scroll
     setTimeout(() => {
@@ -1329,7 +1337,7 @@ const QuestionBankPage = () => {
                                 <div className="flex gap-2">
                                   <button
                                     onClick={handleCreateNewCategory}
-                                    disabled={!newCategoryName.trim() || !newCategoryDescription.trim()}
+                                    disabled={!newCategoryName.trim()}
                                     className="flex-1 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
                                     style={{ 
                                       fontFamily: 'Inter',
