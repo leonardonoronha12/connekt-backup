@@ -279,8 +279,13 @@ export const AuthProvider = ({ children }) => {
     const redirectTo = `${origin}${safePath}`;
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider,
-      options: { redirectTo },
+      options: { redirectTo, skipBrowserRedirect: true },
     });
+    if (!error && data?.url && typeof window !== 'undefined') {
+      try {
+        window.location.assign(data.url)
+      } catch (_) {}
+    }
     return { data, error };
   }, [getAuthRedirectOrigin]);
 
