@@ -16,14 +16,16 @@ const translateErrorMessage = (errorMessage) => {
     'Weak password': 'Senha muito fraca',
     'Invalid password': 'Senha inválida',
     'Network error': 'Erro de conexão',
-    'Server error': 'Erro do servidor'
+    'Server error': 'Erro do servidor',
+    'Unsupported provider: provider is not enabled': 'Login com Google/Facebook não está habilitado no Supabase. Ative o provedor nas configurações de Authentication.'
   };
   
   return translations[errorMessage] || errorMessage;
 };
 
-const LoginForm = ({ onShowRegister }) => {
-  const { signIn, resetPassword } = useAuth();
+const LoginForm = ({ onShowRegister, mode = 'producer' }) => {
+  const { signIn, resetPassword, signInWithOAuth } = useAuth();
+  const isStudentMode = mode === 'student'
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -31,10 +33,12 @@ const LoginForm = ({ onShowRegister }) => {
   });
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [oauthLoading, setOauthLoading] = useState(null);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [resetEmail, setResetEmail] = useState('');
   const [resetEmailSent, setResetEmailSent] = useState(false);
   const [resetLoading, setResetLoading] = useState(false);
+  const [resetCooldown, setResetCooldown] = useState(0);
   
   // Estados para alertas
   const [alert, setAlert] = useState({
@@ -58,6 +62,34 @@ const LoginForm = ({ onShowRegister }) => {
       type: 'error'
     });
   };
+
+  React.useEffect(() => {
+    let error = null
+    let errorDesc = null
+    try {
+      const params = new URLSearchParams(window.location.search || '')
+      error = params.get('error')
+      errorDesc = params.get('error_description')
+    } catch (_) {}
+
+    const msg = String(errorDesc || error || '').trim()
+    if (!msg) return
+
+    const lower = msg.toLowerCase()
+    if (lower.includes('app') && (lower.includes('inactive') || lower.includes('inativo'))) {
+      showAlert('Login com Facebook indisponível: o app do Facebook está inativo. Ative o app no Meta Developers (modo Live) e garanta seu usuário como Tester/Admin durante testes.')
+    } else {
+      showAlert(msg)
+    }
+
+    try {
+      const url = new URL(window.location.href)
+      url.searchParams.delete('error')
+      url.searchParams.delete('error_description')
+      url.searchParams.delete('error_code')
+      window.history.replaceState({}, '', `${url.pathname}${url.search}`)
+    } catch (_) {}
+  }, [])
 
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -110,6 +142,7 @@ const LoginForm = ({ onShowRegister }) => {
     setResetEmail('');
     setResetEmailSent(false);
     setResetLoading(false);
+    setResetCooldown(0);
   };
 
   const handleResetSubmit = async (e) => {
@@ -123,25 +156,27 @@ const LoginForm = ({ onShowRegister }) => {
     setResetLoading(true);
     
     try {
-      const { error } = await resetPassword(resetEmail);
+      const { error, mode } = await resetPassword(resetEmail);
       
       if (error) {
         const translatedMessage = translateErrorMessage(error.message);
         showAlert(`Erro ao enviar email de recuperação: ${translatedMessage}`);
       } else {
-        // Redireciona para página de verificação
-        window.history.pushState({}, '', '/verify-email');
-        window.dispatchEvent(new PopStateEvent('popstate'));
-        
-        // Passa o email via state (simulando navigate com state)
-        setTimeout(() => {
-          const event = new CustomEvent('navigate-to-verify', {
-            detail: { email: resetEmail, isPasswordReset: true }
-          });
-          window.dispatchEvent(event);
-        }, 100);
-        
-        showAlert('Código de recuperação enviado para seu email!', 'success');
+        if (mode === 'supabase') {
+          setResetEmailSent(true);
+          setResetCooldown(60);
+          showAlert('Se o e-mail estiver cadastrado, enviaremos um link de recuperação.', 'success');
+        } else {
+          window.history.pushState({}, '', '/verify-email');
+          window.dispatchEvent(new PopStateEvent('popstate'));
+          setTimeout(() => {
+            const event = new CustomEvent('navigate-to-verify', {
+              detail: { email: resetEmail, isPasswordReset: true }
+            });
+            window.dispatchEvent(event);
+          }, 100);
+          showAlert('Código de recuperação enviado para seu email!', 'success');
+        }
       }
     } catch (error) {
       console.error('Erro ao enviar email de recuperação:', error);
@@ -151,8 +186,65 @@ const LoginForm = ({ onShowRegister }) => {
     }
   };
 
-  const handleSocialLogin = (provider) => {
-    console.log(`Login with ${provider}`);
+  const handleResendResetLink = async () => {
+    if (!resetEmail.trim()) {
+      showAlert('Por favor, digite seu email');
+      return;
+    }
+    if (resetCooldown > 0 || resetLoading) return;
+    setResetLoading(true);
+    try {
+      const { error, mode } = await resetPassword(resetEmail);
+      if (error) {
+        const translatedMessage = translateErrorMessage(error.message);
+        showAlert(`Erro ao reenviar: ${translatedMessage}`);
+      } else if (mode === 'supabase') {
+        setResetCooldown(60);
+        showAlert('Se o e-mail estiver cadastrado, enviaremos um novo link.', 'success');
+      } else {
+        showAlert('Não foi possível reenviar o link. Tente novamente.', 'error');
+      }
+    } catch (err) {
+      showAlert('Erro ao reenviar. Tente novamente.');
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
+  React.useEffect(() => {
+    if (resetCooldown <= 0) return;
+    const t = setTimeout(() => setResetCooldown((v) => (v > 0 ? v - 1 : 0)), 1000);
+    return () => clearTimeout(t);
+  }, [resetCooldown]);
+
+  const handleSocialLogin = async (provider) => {
+    try {
+      const p = String(provider || '').toLowerCase();
+      if (p !== 'facebook' && p !== 'google') {
+        showAlert('Provedor de login não suportado.');
+        return;
+      }
+      setOauthLoading(p)
+      const { error } = await signInWithOAuth(p, '/login');
+      if (error) {
+        const msg = String(error?.message || error?.error_description || String(error) || '')
+        if (msg.toLowerCase().includes('provider is not enabled') || msg.toLowerCase().includes('unsupported provider')) {
+          showAlert('Login com Google não está habilitado no Supabase. Ative o provedor Google em Authentication → Providers e configure Client ID/Secret.')
+          setOauthLoading(null)
+          return
+        }
+        showAlert(translateErrorMessage(msg));
+        setOauthLoading(null)
+      }
+    } catch (e) {
+      showAlert('Erro ao iniciar login com provedor. Tente novamente.');
+      setOauthLoading(null)
+    }
+  };
+
+  const goTo = (path) => {
+    window.history.pushState({}, '', path);
+    window.dispatchEvent(new PopStateEvent('popstate'));
   };
 
   return (
@@ -280,10 +372,29 @@ const LoginForm = ({ onShowRegister }) => {
                    <div>
                      <h3 className="text-lg font-medium text-gray-900 mb-2">Email enviado!</h3>
                      <p className="text-gray-600 text-sm">
-                       Enviamos um link de recuperação para <strong>{resetEmail}</strong>. 
-                       Verifique sua caixa de entrada e siga as instruções.
+                       Se o e-mail <strong>{resetEmail}</strong> estiver cadastrado, você receberá um link de recuperação.
+                       Verifique também o spam.
                      </p>
                    </div>
+                   <button
+                     type="button"
+                     onClick={handleResendResetLink}
+                     disabled={resetLoading || resetCooldown > 0}
+                     style={{
+                       width: '100%',
+                       padding: '12px 16px',
+                       backgroundColor: (resetLoading || resetCooldown > 0) ? '#E3E4E5' : '#F8FAFC',
+                       color: (resetLoading || resetCooldown > 0) ? '#9291A5' : '#0047BB',
+                       fontWeight: '600',
+                       borderRadius: '4px',
+                       border: '1px solid #0047BB',
+                       cursor: (resetLoading || resetCooldown > 0) ? 'not-allowed' : 'pointer',
+                       transition: 'background-color 0.2s',
+                       outline: 'none'
+                     }}
+                   >
+                     {resetLoading ? 'Reenviando...' : resetCooldown > 0 ? `Reenviar em ${resetCooldown}s` : 'Reenviar link'}
+                   </button>
                    <button
                      onClick={handleBackToLogin}
                      style={{
@@ -304,13 +415,13 @@ const LoginForm = ({ onShowRegister }) => {
                      Voltar ao login
                    </button>
                  </div>
-               ) : (
-                 <>
-                   {/* Email Field */}
-                   <div style={{ width: '100%' }}>
-                     <label htmlFor="resetEmail" style={{
-                       color: '#22252B',
-                       fontSize: '14px',
+              ) : (
+                <form onSubmit={handleResetSubmit} style={{ width: '100%' }}>
+                  {/* Email Field */}
+                  <div style={{ width: '100%' }}>
+                    <label htmlFor="resetEmail" style={{
+                      color: '#22252B',
+                      fontSize: '14px',
                        fontFamily: 'Inter',
                        fontWeight: '400'
                      }}>
@@ -338,78 +449,106 @@ const LoginForm = ({ onShowRegister }) => {
                        }}
                        onFocus={(e) => e.target.style.borderColor = '#0047BB'}
                        onBlur={(e) => e.target.style.borderColor = '#E3E4E5'}
-                       required
-                       disabled={resetLoading}
-                     />
-                   </div>
+                      required
+                      disabled={resetLoading}
+                    />
+                  </div>
 
-                   {/* Spacing */}
-                   <div style={{ alignSelf: 'stretch', height: '40px', position: 'relative' }}>
-                     <div style={{ width: '40px', height: '40px', left: '0px', top: '0px', position: 'absolute' }}></div>
-                   </div>
+                  {/* Spacing */}
+                  <div style={{ alignSelf: 'stretch', height: '40px', position: 'relative' }}>
+                    <div style={{ width: '40px', height: '40px', left: '0px', top: '0px', position: 'absolute' }}></div>
+                  </div>
 
-                   {/* Submit Button - Bloqueado temporariamente */}
-                   <button
-                     type="button"
-                     disabled={true}
-                     style={{ 
-                       alignSelf: 'stretch', 
-                       paddingTop: '10px', 
-                       paddingBottom: '10px', 
-                       paddingLeft: '24px', 
-                       paddingRight: '20px', 
-                       background: '#E3E4E5', 
-                       borderRadius: '4px', 
-                       justifyContent: 'center', 
-                       alignItems: 'center', 
-                       gap: '8px', 
-                       display: 'inline-flex',
-                       border: 'none',
-                       cursor: 'not-allowed',
-                       opacity: 0.5,
-                       transition: 'background-color 0.2s, opacity 0.2s'
-                     }}
-                   >
-                     <div style={{ height: '24px', justifyContent: 'center', alignItems: 'center', gap: '10px', display: 'flex' }}>
-                       <div style={{ textAlign: 'center', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: '#9291A5', fontSize: '14px', fontFamily: 'Inter', fontWeight: '700', lineHeight: '23.80px', wordWrap: 'break-word' }}>
-                         Enviar (Em breve)
-                       </div>
-                     </div>
-                   </button>
-
-                   {/* Spacing */}
-                   <div style={{ alignSelf: 'stretch', height: '32px', position: 'relative' }}>
-                     <div style={{ width: '32px', height: '32px', left: '0px', top: '0px', position: 'absolute' }}></div>
-                   </div>
-                 </>
-               )}
-             </div>
-           </div>
-        ) : (
+                  {/* Submit Button */}
+                  <button
+                    type="submit"
+                    disabled={resetLoading || !resetEmail.trim()}
+                    style={{ 
+                      alignSelf: 'stretch', 
+                      paddingTop: '10px', 
+                      paddingBottom: '10px', 
+                      paddingLeft: '24px', 
+                      paddingRight: '20px', 
+                      background: (resetLoading || !resetEmail.trim()) ? '#E3E4E5' : '#0047BB', 
+                      borderRadius: '4px', 
+                      justifyContent: 'center', 
+                      alignItems: 'center', 
+                      gap: '8px', 
+                      display: 'inline-flex',
+                      border: 'none',
+                      cursor: (resetLoading || !resetEmail.trim()) ? 'not-allowed' : 'pointer',
+                      opacity: (resetLoading || !resetEmail.trim()) ? 0.5 : 1,
+                      transition: 'background-color 0.2s, opacity 0.2s'
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!(resetLoading || !resetEmail.trim())) e.currentTarget.style.backgroundColor = '#003399';
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!(resetLoading || !resetEmail.trim())) e.currentTarget.style.backgroundColor = '#0047BB';
+                    }}
+                  >
+                    <div style={{ height: '24px', justifyContent: 'center', alignItems: 'center', gap: '10px', display: 'flex' }}>
+                      {resetLoading ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <div className="w-4 h-4 border-2 border-white/70 border-t-white rounded-full animate-spin" />
+                          <div style={{ textAlign: 'center', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: '#FFFFFF', fontSize: '14px', fontFamily: 'Inter', fontWeight: '700', lineHeight: '23.80px', wordWrap: 'break-word' }}>
+                            Enviando...
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{ textAlign: 'center', justifyContent: 'center', display: 'flex', flexDirection: 'column', color: (resetLoading || !resetEmail.trim()) ? '#9291A5' : '#FFFFFF', fontSize: '14px', fontFamily: 'Inter', fontWeight: '700', lineHeight: '23.80px', wordWrap: 'break-word' }}>
+                          Enviar
+                        </div>
+                      )}
+                    </div>
+                  </button>
+                  {/* Spacing */}
+                  <div style={{ alignSelf: 'stretch', height: '32px', position: 'relative' }}>
+                    <div style={{ width: '32px', height: '32px', left: '0px', top: '0px', position: 'absolute' }}></div>
+                  </div>
+                </form>
+              )}
+            </div>
+          </div>
+       ) : (
           /* Login Form */
           <div className="w-full max-w-md mx-auto space-y-6 flex-grow flex flex-col justify-center">
           {/* Header de boas-vindas */}
           <div className="text-center">
             <h1 className="text-2xl font-semibold text-gray-900 mb-2">
-              Boas-vindas à <span className="text-[#0047BB]">Connekt!</span>
+              {isStudentMode ? (
+                <>
+                  Área do <span className="text-[#0047BB]">Aluno</span>
+                </>
+              ) : (
+                <>
+                  Boas-vindas à <span className="text-[#0047BB]">Connekt!</span>
+                </>
+              )}
             </h1>
-            <div className="flex items-center justify-center gap-2 text-sm">
-              <span className="text-gray-600">Novo por aqui?</span>
-              <button 
-                type="button"
-                className="text-[#0047BB] hover:text-[#003399] font-medium transition-colors"
-                onClick={onShowRegister}
-              >
-                Crie sua conta agora
-              </button>
-            </div>
+            {!isStudentMode ? (
+              <div className="flex items-center justify-center gap-2 text-sm">
+                <span className="text-gray-600">Novo por aqui?</span>
+                <button 
+                  type="button"
+                  className="text-[#0047BB] hover:text-[#003399] font-medium transition-colors"
+                  onClick={onShowRegister}
+                >
+                  Crie sua conta agora
+                </button>
+              </div>
+            ) : (
+              <div className="text-sm text-gray-600">Acesse seus cursos com seu email e senha.</div>
+            )}
           </div>
 
           {/* Botões de login social */}
+          {!isStudentMode ? (
           <div style={{ display: 'flex', gap: '16px', width: '100%' }}>
             <button
               type="button"
               onClick={() => handleSocialLogin('Google')}
+              disabled={oauthLoading === 'google'}
               style={{
                 flex: '1',
                 height: '48px',
@@ -424,7 +563,8 @@ const LoginForm = ({ onShowRegister }) => {
                 gap: '8px',
                 display: 'flex',
                 border: 'none',
-                cursor: 'pointer'
+                cursor: oauthLoading === 'google' ? 'not-allowed' : 'pointer',
+                opacity: oauthLoading === 'google' ? 0.7 : 1
               }}
             >
               <svg width="18" height="18" viewBox="0 0 18 18">
@@ -443,12 +583,13 @@ const LoginForm = ({ onShowRegister }) => {
                 fontWeight: '500',
                 lineHeight: '24px',
                 wordWrap: 'break-word'
-              }}>Google</div>
+              }}>{oauthLoading === 'google' ? 'Abrindo...' : 'Google'}</div>
             </button>
             
             <button
               type="button"
               onClick={() => handleSocialLogin('Facebook')}
+              disabled={oauthLoading === 'facebook'}
               style={{
                 flex: '1',
                 height: '48px',
@@ -463,7 +604,8 @@ const LoginForm = ({ onShowRegister }) => {
                 display: 'flex',
                 background: 'white',
                 border: 'none',
-                cursor: 'pointer'
+                cursor: oauthLoading === 'facebook' ? 'not-allowed' : 'pointer',
+                opacity: oauthLoading === 'facebook' ? 0.7 : 1
               }}
             >
               <svg width="18" height="18" viewBox="0 0 18 18" fill="#1877F2">
@@ -482,13 +624,16 @@ const LoginForm = ({ onShowRegister }) => {
               }}>Facebook</div>
             </button>
           </div>
+          ) : null}
 
           {/* Divisor */}
-          <div className="flex items-center gap-4">
-            <div className="flex-1 h-px bg-gray-300"></div>
-            <span style={{ color: '#737780', fontSize: '14px', fontFamily: 'Inter', fontWeight: '400' }}>ou faça login com email</span>
-            <div className="flex-1 h-px bg-gray-300"></div>
-          </div>
+          {!isStudentMode ? (
+            <div className="flex items-center gap-4">
+              <div className="flex-1 h-px bg-gray-300"></div>
+              <span style={{ color: '#737780', fontSize: '14px', fontFamily: 'Inter', fontWeight: '400' }}>ou faça login com email</span>
+              <div className="flex-1 h-px bg-gray-300"></div>
+            </div>
+          ) : null}
 
           {/* Formulário */}
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -634,16 +779,18 @@ const LoginForm = ({ onShowRegister }) => {
           </form>
 
           {/* Link para criar conta */}
-          <div className="text-center">
-            <span className="text-gray-600 text-sm">Novo por aqui? </span>
-            <button 
-              type="button"
-              className="text-[#0047BB] hover:text-[#003399] font-medium text-sm transition-colors"
-              onClick={onShowRegister}
-            >
-              Crie sua conta agora
-            </button>
-          </div>
+          {!isStudentMode ? (
+            <div className="text-center">
+              <span className="text-gray-600 text-sm">Novo por aqui? </span>
+              <button 
+                type="button"
+                className="text-[#0047BB] hover:text-[#003399] font-medium text-sm transition-colors"
+                onClick={onShowRegister}
+              >
+                Crie sua conta agora
+              </button>
+            </div>
+          ) : null}
         </div>
         )}
         </div>
@@ -660,9 +807,9 @@ const LoginForm = ({ onShowRegister }) => {
           <div className="flex space-x-4">
             <button className="hover:text-gray-700 transition-colors">Suporte</button>
             <span>•</span>
-            <button className="hover:text-gray-700 transition-colors">Termos de uso</button>
+            <button type="button" onClick={() => goTo('/termos#termos')} className="hover:text-gray-700 transition-colors">Termos de uso</button>
             <span>•</span>
-            <button className="hover:text-gray-700 transition-colors">Política de privacidade</button>
+            <button type="button" onClick={() => goTo('/termos#privacidade')} className="hover:text-gray-700 transition-colors">Política de privacidade</button>
           </div>
         </div>
       </div>
