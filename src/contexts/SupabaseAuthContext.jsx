@@ -277,10 +277,16 @@ export const AuthProvider = ({ children }) => {
     const origin = getAuthRedirectOrigin()
     const safePath = String(redirectPath || '/login').startsWith('/') ? String(redirectPath || '/login') : `/${String(redirectPath || 'login')}`
     const redirectTo = `${origin}${safePath}`;
+    if (!origin) {
+      return { data: null, error: { message: 'Origem de redirect inválida' } };
+    }
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider,
       options: { redirectTo, skipBrowserRedirect: true },
     });
+    if (!error && !data?.url) {
+      return { data, error: { message: 'Não foi possível obter a URL de autenticação' } }
+    }
     if (!error && data?.url && typeof window !== 'undefined') {
       try {
         window.location.assign(data.url)
