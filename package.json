@@ -3,10 +3,15 @@
   "type": "module",
   "version": "0.0.0",
   "private": true,
+  "engines": {
+    "node": "20.x"
+  },
   "scripts": {
     "dev": "vite --host :: --port 3000",
     "build": "node tools/build.js",
-    "preview": "vite preview --host :: --port 3000"
+    "preview": "vite preview --host :: --port 3000",
+    "migrate:profiles": "node scripts/apply-profiles-migration.js",
+    "migrate:courses-media": "node scripts/apply-courses-media-migration.js"
   },
   "dependencies": {
     "@emotion/is-prop-valid": "^1.3.1",
@@ -27,8 +32,10 @@
     "@vercel/speed-insights": "^1.2.0",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.0.0",
+    "dotenv": "^17.2.3",
     "framer-motion": "^10.16.4",
     "lucide-react": "^0.292.0",
+    "pg": "^8.16.3",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-helmet": "^6.1.0",
