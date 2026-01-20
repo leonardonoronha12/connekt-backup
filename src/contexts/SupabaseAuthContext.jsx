@@ -303,6 +303,7 @@ export const AuthProvider = ({ children }) => {
       }
       const origin = getAuthRedirectOrigin()
       const redirectTo = `${origin}/reset-password`;
+      let emailAttemptError = null
       try {
         const r = await fetch('/api/auth/password-recovery', {
           method: 'POST',
@@ -310,27 +311,18 @@ export const AuthProvider = ({ children }) => {
           body: JSON.stringify({ email: trimmed, redirectTo }),
         })
         if (r.ok) return { error: null, mode: 'email' }
+        try {
+          const body = await r.json()
+          if (body?.error) emailAttemptError = String(body.error)
+        } catch (_) {}
       } catch (_) {}
 
       const { error } = await supabase.auth.resetPasswordForEmail(trimmed, { redirectTo });
       if (!error) return { error: null, mode: 'supabase' };
-
-      // Gera um código de 6 dígitos
-      const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
-      
-      // Armazena o código temporariamente (em produção, usar banco de dados)
-      localStorage.setItem(`reset_code_${trimmed}`, JSON.stringify({
-        code: verificationCode,
-        timestamp: Date.now(),
-        email: trimmed
-      }));
-      
-      // Simula envio de email (em produção, usar serviço de email)
-      console.log(`Código de recuperação para ${trimmed}: ${verificationCode}`);
-      
-      return { error: null, mode: 'code' };
+      const hint = emailAttemptError ? ` (email: ${emailAttemptError})` : ''
+      return { error: { message: String(error?.message || 'Falha ao enviar recuperação de senha.') + hint } };
     } catch (error) {
-      console.error('Erro ao gerar código de recuperação:', error);
+      console.error('Erro ao enviar recuperação de senha:', error);
       return { error: { message: error?.message || String(error) } };
     }
   }, []);

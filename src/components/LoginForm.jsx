@@ -162,11 +162,7 @@ const LoginForm = ({ onShowRegister, mode = 'producer' }) => {
         const translatedMessage = translateErrorMessage(error.message);
         showAlert(`Erro ao enviar email de recuperação: ${translatedMessage}`);
       } else {
-        if (mode === 'supabase') {
-          setResetEmailSent(true);
-          setResetCooldown(60);
-          showAlert('Se o e-mail estiver cadastrado, enviaremos um link de recuperação.', 'success');
-        } else {
+        if (mode === 'code') {
           window.history.pushState({}, '', '/verify-email');
           window.dispatchEvent(new PopStateEvent('popstate'));
           setTimeout(() => {
@@ -176,6 +172,10 @@ const LoginForm = ({ onShowRegister, mode = 'producer' }) => {
             window.dispatchEvent(event);
           }, 100);
           showAlert('Código de recuperação enviado para seu email!', 'success');
+        } else {
+          setResetEmailSent(true);
+          setResetCooldown(60);
+          showAlert('Se o e-mail estiver cadastrado, enviaremos um link de recuperação.', 'success');
         }
       }
     } catch (error) {
@@ -198,7 +198,7 @@ const LoginForm = ({ onShowRegister, mode = 'producer' }) => {
       if (error) {
         const translatedMessage = translateErrorMessage(error.message);
         showAlert(`Erro ao reenviar: ${translatedMessage}`);
-      } else if (mode === 'supabase') {
+      } else if (mode === 'supabase' || mode === 'email') {
         setResetCooldown(60);
         showAlert('Se o e-mail estiver cadastrado, enviaremos um novo link.', 'success');
       } else {
