@@ -20,45 +20,45 @@ function safeOriginFromUrl(url) {
 }
 
 export default async function handler(req, res) {
-  if (req.method === 'OPTIONS') {
-    res.statusCode = 204
-    res.setHeader('Access-Control-Allow-Origin', '*')
-    res.setHeader('Access-Control-Allow-Headers', 'content-type')
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
-    res.end()
-    return
-  }
-
-  if (req.method !== 'POST') return json(res, 405, { error: 'method_not_allowed' })
-
-  const admin = getSupabaseAdmin()
-  if (!admin) return json(res, 500, { error: 'missing_supabase_admin' })
-
-  const apiKey = readEnv('SENDGRID_API_KEY')
-  const fromEmail = readEnv('SENDGRID_FROM_EMAIL', readEnv('SMTP_FROM_EMAIL'))
-  const fromName = readEnv('SENDGRID_FROM_NAME', 'Connekt')
-  const replyTo = readEnv('SENDGRID_REPLY_TO', '')
-
-  if (!apiKey) return json(res, 500, { error: 'missing_sendgrid_key' })
-  if (!isValidEmail(fromEmail)) return json(res, 500, { error: 'invalid_from_email' })
-
-  let payload = null
   try {
-    const raw = await readRawBody(req)
-    payload = JSON.parse(raw.toString('utf-8') || '{}')
-  } catch (_) {
-    payload = null
-  }
-  if (!payload || typeof payload !== 'object') return json(res, 400, { error: 'invalid_json' })
+    if (req.method === 'OPTIONS') {
+      res.statusCode = 204
+      res.setHeader('Access-Control-Allow-Origin', '*')
+      res.setHeader('Access-Control-Allow-Headers', 'content-type')
+      res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
+      res.end()
+      return
+    }
 
-  const email = String(payload.email || '').trim().toLowerCase()
-  if (!isValidEmail(email)) return json(res, 400, { error: 'invalid_email' })
+    if (req.method !== 'POST') return json(res, 405, { error: 'method_not_allowed' })
 
-  const siteUrl = readEnv('SITE_URL', readEnv('VITE_SITE_URL', readEnv('VITE_APP_BASE_URL', '')))
-  const defaultRedirectTo = siteUrl ? `${safeOriginFromUrl(siteUrl)}/reset-password` : ''
-  const redirectTo = String(payload.redirectTo || defaultRedirectTo || '').trim()
+    const admin = getSupabaseAdmin()
+    if (!admin) return json(res, 500, { error: 'missing_supabase_admin' })
 
-  try {
+    const apiKey = readEnv('SENDGRID_API_KEY')
+    const fromEmail = readEnv('SENDGRID_FROM_EMAIL', readEnv('SMTP_FROM_EMAIL'))
+    const fromName = readEnv('SENDGRID_FROM_NAME', 'Connekt')
+    const replyTo = readEnv('SENDGRID_REPLY_TO', '')
+
+    if (!apiKey) return json(res, 500, { error: 'missing_sendgrid_key' })
+    if (!isValidEmail(fromEmail)) return json(res, 500, { error: 'invalid_from_email' })
+
+    let payload = null
+    try {
+      const raw = await readRawBody(req)
+      payload = JSON.parse(raw.toString('utf-8') || '{}')
+    } catch (_) {
+      payload = null
+    }
+    if (!payload || typeof payload !== 'object') return json(res, 400, { error: 'invalid_json' })
+
+    const email = String(payload.email || '').trim().toLowerCase()
+    if (!isValidEmail(email)) return json(res, 400, { error: 'invalid_email' })
+
+    const siteUrl = readEnv('SITE_URL', readEnv('VITE_SITE_URL', readEnv('VITE_APP_BASE_URL', '')))
+    const defaultRedirectTo = siteUrl ? `${safeOriginFromUrl(siteUrl)}/reset-password` : ''
+    const redirectTo = String(payload.redirectTo || defaultRedirectTo || '').trim()
+
     const { data, error } = await admin.auth.admin.generateLink({
       type: 'recovery',
       email,
@@ -84,8 +84,9 @@ export default async function handler(req, res) {
         `,
       })
     }
-  } catch (_) {}
 
-  return json(res, 200, { ok: true })
+    return json(res, 200, { ok: true })
+  } catch (e) {
+    return json(res, 500, { error: 'internal_error', message: e?.message || String(e) })
+  }
 }
-
