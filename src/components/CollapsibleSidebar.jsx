@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { CreditCard, ChevronLeft, ChevronRight } from 'lucide-react';
+import { planService } from '@/services/planService.js';
 
 const CollapsibleSidebar = () => {
   const [isExpanded, setIsExpanded] = useState(() => {
@@ -8,6 +10,24 @@ const CollapsibleSidebar = () => {
   
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [hasActivePlan, setHasActivePlan] = useState(false);
+
+  const computeHasActivePlan = () => {
+    try {
+      const sub = typeof planService.getSubscription === 'function' ? planService.getSubscription() : null;
+      const status = String(sub?.status || '').toLowerCase();
+      const planKey = String(sub?.planKey || '').toLowerCase();
+      const expiresAt = sub?.expiresAt ? new Date(sub.expiresAt).getTime() : 0;
+      if (planKey) {
+        if (expiresAt && isFinite(expiresAt)) return expiresAt > Date.now();
+        return status === 'active' || status === 'trial' || status === 'canceled';
+      }
+      const legacy = typeof planService.getActivePlan === 'function' ? planService.getActivePlan() : null
+      return !!legacy
+    } catch (_) {
+      return false;
+    }
+  };
 
   useEffect(() => {
     const handleLocationChange = () => {
@@ -20,10 +40,19 @@ const CollapsibleSidebar = () => {
 
     window.addEventListener('popstate', handleLocationChange);
     window.addEventListener('resize', handleResize);
+    const updatePlan = () => setHasActivePlan(computeHasActivePlan());
+    const onStorage = (e) => {
+      if (e?.key === 'connekt_subscription' || e?.key === 'connekt_active_plan') updatePlan();
+    };
+    window.addEventListener('storage', onStorage);
+    window.addEventListener('focus', updatePlan);
+    updatePlan();
     
     return () => {
       window.removeEventListener('popstate', handleLocationChange);
       window.removeEventListener('resize', handleResize);
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('focus', updatePlan);
     };
   }, []);
 
@@ -75,11 +104,11 @@ const CollapsibleSidebar = () => {
       section: 'WORKSPACE',
       items: [
         {
-          id: 'produtos',
-          label: 'Produtos',
+          id: 'cursos',
+          label: 'Cursos',
           icon: '/icons/book-open.svg',
-          path: '/produtos',
-          isActive: currentPath === '/produtos'
+          path: '/cursos',
+          isActive: currentPath === '/cursos' || currentPath === '/produtos'
         },
         {
           id: 'alunos',
@@ -127,6 +156,13 @@ const CollapsibleSidebar = () => {
           icon: '/icons/vendas.svg',
           path: '/vendas',
           isActive: currentPath === '/vendas'
+        },
+        {
+          id: 'planos',
+          label: 'Planos',
+          icon: '/bank-icon.svg',
+          path: '/planos',
+          isActive: currentPath === '/planos'
         },
         {
           id: 'configuracoes',
@@ -192,14 +228,11 @@ const CollapsibleSidebar = () => {
               style={{ backgroundColor: 'rgb(0, 71, 187)', marginRight: '-35px' }}
               aria-label={isExpanded ? 'Recolher sidebar' : 'Expandir sidebar'}
             >
-              <img 
-                src={isExpanded 
-                  ? "https://f1925bd3031c7289927c33dbfff0ab8f.cdn.bubble.io/f1758650714011x222569527988370800/Voltar%202.svg"
-                  : "https://f1925bd3031c7289927c33dbfff0ab8f.cdn.bubble.io/f1758651082346x622943058494926960/Avan%C3%A7ar%202.svg"
-                }
-                alt="Toggle"
-                className="w-3 h-3 transition-transform duration-200"
-              />
+              {isExpanded ? (
+                <ChevronLeft className="w-3 h-3 text-white" />
+              ) : (
+                <ChevronRight className="w-3 h-3 text-white" />
+              )}
             </button>
           </div>
         </div>
@@ -260,7 +293,9 @@ const CollapsibleSidebar = () => {
                       aria-current={item.isActive ? 'page' : undefined}
                       title={!isExpanded ? item.label : undefined}
                     >
-                      {item.id === 'simulados' ? (
+                      {item.id === 'planos' ? (
+                        <CreditCard size={20} color="#E3E4E5" strokeWidth={1.5} />
+                      ) : item.id === 'simulados' ? (
                         // SVG do ícone de Simulados (inline)
                         <svg
                           xmlns="http://www.w3.org/2000/svg"
@@ -319,7 +354,7 @@ const CollapsibleSidebar = () => {
               </ul>
               
               {/* Upgrade Card - aparece apenas após a seção GERAL */}
-              {section.section === 'GERAL' && isExpanded && (
+              {section.section === 'GERAL' && isExpanded && !hasActivePlan && (
                 <div className="px-4" style={{ marginTop: '35px' }}>
                   <div className="relative rounded p-4 text-center" style={{ background: 'none', border: '1px solid #0047bb', borderRadius: '4px' }}>
                     {/* Badge */}
@@ -350,7 +385,7 @@ const CollapsibleSidebar = () => {
                     </p>
                     
                     {/* Button */}
-                    <button className="w-full h-9 bg-white rounded text-sm font-medium transition-all duration-200 hover:opacity-90 text-blue-600">
+                    <button className="w-full h-9 bg-white rounded text-sm font-medium transition-all duration-200 hover:opacity-90 text-blue-600" onClick={() => handleNavigation('/planos')}>
                       Upgrade de plano
                     </button>
                   </div>

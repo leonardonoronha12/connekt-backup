@@ -1,10 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { useAuth } from '@/contexts/SupabaseAuthContext.jsx';
+import { supabase } from '@/lib/supabaseClient.js';
 
 const DashboardPage = () => {
   const [periodo, setPeriodo] = useState('diario');
   const [isFloatingGroupOpen, setIsFloatingGroupOpen] = useState(false);
   const [showWelcomeBanner, setShowWelcomeBanner] = useState(false);
+  const [onboardingAnim, setOnboardingAnim] = useState(null);
+  const { user } = useAuth();
+  const displayName = user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email || 'Usuário';
+  const [onboarding, setOnboarding] = useState({ profile: false, domain: false, payments: false, course: false, publish: false });
+  const [salesRows, setSalesRows] = useState([]);
 
   // Verificar se o usuário chegou via confirmação de email
   useEffect(() => {
@@ -19,98 +26,187 @@ const DashboardPage = () => {
     }
   }, []);
 
-  // Estados e dados mock
-  const stats = {
-    alunos: { qtde: 1247, valor: "R$ 0,00", delta: "+24,03%" },
-    vendas: { qtde: 635, valor: "R$ 5.258,00", delta: "+21,01%" },
-    reembolsadas: { qtde: 8, valor: "R$ 174,00", delta: "+21,01%" },
-    chargeback: { qtde: 0, valor: "R$ 0,00", delta: "0,00%" }
-  };
-
-  const meiosPagamento = [
-    {
-      tipo: 'PIX',
-      conversao: '86%',
-      emAnalise: 'R$ 17.080,00',
-      aprovados: 'R$ 135.896,20',
-      cancelados: 'R$ 998,00',
-      corFundo: '#DEFFFC'
-    },
-    {
-      tipo: 'Cartão de crédito',
-      conversao: '95%',
-      emAnalise: 'R$ 31.200,00',
-      aprovados: 'R$ 24.354,00',
-      cancelados: 'R$ 789,00',
-      corFundo: '#FAEFE0'
-    },
-    {
-      tipo: 'Boleto',
-      conversao: '34%',
-      emAnalise: 'R$ 19.524,50',
-      aprovados: 'R$ 4.005,05',
-      cancelados: 'R$ 8.624,00',
-      corFundo: '#F4F4F4'
-    }
-  ];
-
-  // Dados do gráfico baseados no período
-  const dadosGrafico = {
-    diario: [
-      { data: '01/01', valor: 5200 },
-      { data: '02/01', valor: 6800 },
-      { data: '03/01', valor: 4900 },
-      { data: '04/01', valor: 7200 },
-      { data: '05/01', valor: 8100 },
-      { data: '06/01', valor: 6500 },
-      { data: '07/01', valor: 7800 },
-      { data: '08/01', valor: 9200 },
-      { data: '09/01', valor: 6900 },
-      { data: '10/01', valor: 8500 },
-      { data: '11/01', valor: 7300 },
-      { data: '12/01', valor: 8900 },
-      { data: '13/01', valor: 9800 },
-      { data: '14/01', valor: 10200 }
-    ],
-    semanal: [
-      { data: 'Sem 1', valor: 42000 },
-      { data: 'Sem 2', valor: 48000 },
-      { data: 'Sem 3', valor: 35000 },
-      { data: 'Sem 4', valor: 52000 },
-      { data: 'Sem 5', valor: 58000 },
-      { data: 'Sem 6', valor: 45000 },
-      { data: 'Sem 7', valor: 62000 },
-      { data: 'Sem 8', valor: 68000 },
-      { data: 'Sem 9', valor: 55000 },
-      { data: 'Sem 10', valor: 72000 },
-      { data: 'Sem 11', valor: 65000 },
-      { data: 'Sem 12', valor: 78000 }
-    ],
-    anual: [
-      { data: 'Jan', valor: 180000 },
-      { data: 'Fev', valor: 220000 },
-      { data: 'Mar', valor: 195000 },
-      { data: 'Abr', valor: 240000 },
-      { data: 'Mai', valor: 285000 },
-      { data: 'Jun', valor: 260000 },
-      { data: 'Jul', valor: 310000 },
-      { data: 'Ago', valor: 295000 },
-      { data: 'Set', valor: 325000 },
-      { data: 'Out', valor: 340000 },
-      { data: 'Nov', valor: 365000 },
-      { data: 'Dez', valor: 380000 }
-    ]
-  };
-
   const formatarMoeda = (valor) => {
+    const n = Number(valor || 0);
+    const value = isFinite(n) ? n : 0;
     return new Intl.NumberFormat('pt-BR', {
       style: 'currency',
       currency: 'BRL'
-    }).format(valor);
+    }).format(value);
   };
 
-  const onOpenProfileCompletion = () => {
-    console.log('Abrir modal de completar perfil');
+  const formatarCentavos = (cents) => {
+    const n = Number(cents || 0);
+    const value = isFinite(n) ? n / 100 : 0;
+    return formatarMoeda(value);
+  };
+
+  useEffect(() => {
+    if (!user?.id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const [{ data: profileData }, { data: coursesData }] = await Promise.all([
+          supabase
+            .from('profiles')
+            .select('profile_full_name,profile_phone,member_area_url,payout_enabled,payout_pix_key,payout_bank,payout_account')
+            .eq('user_id', user.id)
+            .maybeSingle(),
+          supabase
+            .from('courses')
+            .select('id,status')
+            .eq('user_id', user.id)
+            .limit(50),
+        ]);
+        if (cancelled) return;
+        const fullNameOk = !!(profileData?.profile_full_name || user?.user_metadata?.full_name || user?.user_metadata?.name);
+        const phoneOk = !!profileData?.profile_phone;
+        const profileOk = fullNameOk && phoneOk;
+        const domainOk = !!profileData?.member_area_url;
+        const paymentsOk = !!profileData?.payout_enabled && !!(profileData?.payout_pix_key || (profileData?.payout_bank && profileData?.payout_account));
+        const courses = Array.isArray(coursesData) ? coursesData : [];
+        const courseOk = courses.length > 0;
+        const publishOk = courses.some(c => String(c?.status || '').toLowerCase() !== 'draft');
+        setOnboarding({ profile: profileOk, domain: domainOk, payments: paymentsOk, course: courseOk, publish: publishOk });
+      } catch (_) {}
+    })();
+    return () => { cancelled = true; };
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from('sales')
+          .select('id,amount_cents,status,created_at')
+          .eq('producer_id', user.id)
+          .order('created_at', { ascending: false })
+          .limit(2000);
+        if (error) throw error;
+        if (!cancelled) setSalesRows(Array.isArray(data) ? data : []);
+      } catch (_) {
+        if (!cancelled) setSalesRows([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [user?.id]);
+
+  const sumCentsByStatus = (statusKey) => {
+    const key = String(statusKey || '').toLowerCase();
+    return (salesRows || []).reduce((sum, r) => {
+      const status = String(r?.status || '').toLowerCase();
+      if (status !== key) return sum;
+      const cents = Number(r?.amount_cents || 0);
+      return sum + (isFinite(cents) ? cents : 0);
+    }, 0);
+  };
+
+  const countByStatus = (statusKey) => {
+    const key = String(statusKey || '').toLowerCase();
+    return (salesRows || []).reduce((sum, r) => sum + (String(r?.status || '').toLowerCase() === key ? 1 : 0), 0);
+  };
+
+  const paidCents = sumCentsByStatus('paid');
+  const refundedCents = sumCentsByStatus('refunded');
+  const chargebackCents = sumCentsByStatus('chargeback');
+
+  const stats = {
+    alunos: { qtde: 0, valor: formatarCentavos(0), delta: "0,00%" },
+    vendas: { qtde: countByStatus('paid'), valor: formatarCentavos(paidCents), delta: "0,00%" },
+    reembolsadas: { qtde: countByStatus('refunded'), valor: formatarCentavos(refundedCents), delta: "0,00%" },
+    chargeback: { qtde: countByStatus('chargeback'), valor: formatarCentavos(chargebackCents), delta: "0,00%" }
+  };
+
+  const meiosPagamento = [
+    { tipo: 'PIX', conversao: '0%', emAnalise: formatarCentavos(0), aprovados: formatarCentavos(0), cancelados: formatarCentavos(0), corFundo: '#DEFFFC' },
+    { tipo: 'Cartão de crédito', conversao: '0%', emAnalise: formatarCentavos(0), aprovados: formatarCentavos(0), cancelados: formatarCentavos(0), corFundo: '#FAEFE0' },
+    { tipo: 'Boleto', conversao: '0%', emAnalise: formatarCentavos(0), aprovados: formatarCentavos(0), cancelados: formatarCentavos(0), corFundo: '#F4F4F4' }
+  ];
+
+  const dadosGrafico = {
+    diario: [
+      { data: '01/01', valor: 0 },
+      { data: '02/01', valor: 0 },
+      { data: '03/01', valor: 0 },
+      { data: '04/01', valor: 0 },
+      { data: '05/01', valor: 0 },
+      { data: '06/01', valor: 0 },
+      { data: '07/01', valor: 0 },
+      { data: '08/01', valor: 0 },
+      { data: '09/01', valor: 0 },
+      { data: '10/01', valor: 0 },
+      { data: '11/01', valor: 0 },
+      { data: '12/01', valor: 0 },
+      { data: '13/01', valor: 0 },
+      { data: '14/01', valor: 0 }
+    ],
+    semanal: [
+      { data: 'Sem 1', valor: 0 },
+      { data: 'Sem 2', valor: 0 },
+      { data: 'Sem 3', valor: 0 },
+      { data: 'Sem 4', valor: 0 },
+      { data: 'Sem 5', valor: 0 },
+      { data: 'Sem 6', valor: 0 },
+      { data: 'Sem 7', valor: 0 },
+      { data: 'Sem 8', valor: 0 },
+      { data: 'Sem 9', valor: 0 },
+      { data: 'Sem 10', valor: 0 },
+      { data: 'Sem 11', valor: 0 },
+      { data: 'Sem 12', valor: 0 }
+    ],
+    anual: [
+      { data: 'Jan', valor: 0 },
+      { data: 'Fev', valor: 0 },
+      { data: 'Mar', valor: 0 },
+      { data: 'Abr', valor: 0 },
+      { data: 'Mai', valor: 0 },
+      { data: 'Jun', valor: 0 },
+      { data: 'Jul', valor: 0 },
+      { data: 'Ago', valor: 0 },
+      { data: 'Set', valor: 0 },
+      { data: 'Out', valor: 0 },
+      { data: 'Nov', valor: 0 },
+      { data: 'Dez', valor: 0 }
+    ]
+  };
+
+  const receitaTotalLabel = formatarCentavos(paidCents);
+
+  const navigateTo = (path) => {
+    try {
+      window.history.pushState({}, '', path);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    } catch (_) {
+      window.location.assign(path);
+    }
+  };
+
+  const items = [
+    { id: 'profile', title: 'Perfil de usuário', desc: 'Preencha todas as informações do seu perfil de usuário', icon: '/laranja.svg', bg: '#FFEDCE', to: '/configuracoes?tab=perfil' },
+    { id: 'domain', title: 'Domínio / Subdomínio', desc: 'Configure a url da área de membros da sua plataforma Connekt', icon: '/azul.svg', bg: '#E7EDFC', to: '/configuracoes?tab=whitelabel' },
+    { id: 'payments', title: 'Pagamentos', desc: 'Preencha seus dados bancários para o recebimento de pagamentos.', icon: '/verde.svg', bg: '#E4FFF3', to: '/configuracoes?tab=pagamentos' },
+    { id: 'course', title: 'Crie um curso', desc: 'Crie o seu primeiro curso online com a Connekt', icon: '/roxo.svg', bg: 'rgba(139, 97, 255, 0.10)', to: '/produtos/novo' },
+    { id: 'publish', title: 'Publique seu curso', desc: 'Publique a venda do seu curso online, publique seu primeiro curso.', icon: '/amarelo.svg', bg: '#FFFCDE', to: '/cursos' },
+  ];
+  const doneCount = items.reduce((acc, it) => acc + (onboarding[it.id] ? 1 : 0), 0);
+  const progressPct = Math.round((doneCount / items.length) * 100);
+  const firstPending = items.find(it => !onboarding[it.id]) || null;
+
+  const handleOnboardingAction = () => {
+    if (firstPending) {
+      setIsFloatingGroupOpen(false);
+      setOnboardingAnim({ type: 'loading', title: 'Abrindo...', subtitle: firstPending.title || '' });
+      window.setTimeout(() => {
+        navigateTo(firstPending.to);
+        setOnboardingAnim(null);
+      }, 450);
+      return;
+    }
+    setIsFloatingGroupOpen(false);
+    setOnboardingAnim({ type: 'success', title: 'Onboarding concluído', subtitle: 'Sua conta está pronta para uso.' });
+    window.setTimeout(() => setOnboardingAnim(null), 1200);
   };
 
   return (
@@ -149,14 +245,14 @@ const DashboardPage = () => {
           {/* Card de boas-vindas */}
           <div className="flex-1 bg-[#E7EDFC] rounded-[10px] px-[42px] py-[22px]">
             <h1 className="text-lg font-semibold mb-2">
-              Olá <span className="text-[#0047BB]">Leonardo</span> 👋
+              Olá <span className="text-[#0047BB]">{displayName}</span> 👋
             </h1>
             <p className="text-base text-[#404040]">
               Seja bem vindo a maior plataforma de cursos de medicina do Brasil
             </p>
           </div>
 
-          {/* Card Finalize cadastro */}
+        {/* Card Finalize cadastro */}
           <div className={`w-full lg:w-[254px] bg-gradient-to-b from-[#321A88] to-[#0D0439] rounded-[10px] px-[22px] py-3 text-white relative ${
             showWelcomeBanner ? 'ring-4 ring-yellow-400 ring-opacity-75 animate-bounce' : ''
           }`}>
@@ -267,10 +363,10 @@ const DashboardPage = () => {
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6">
               <div className="mb-4 sm:mb-0">
                 <p className="text-sm text-[#9291A5] mb-1">Receita total</p>
-                <p className="text-2xl font-semibold mb-2">R$ 86.789,15</p>
+                <p className="text-2xl font-semibold mb-2">{receitaTotalLabel}</p>
                 <div className="flex items-center gap-2">
                   <div className="w-2 h-2 bg-[#04CE00] rounded-full"></div>
-                  <span className="text-xs font-semibold text-[#04CE00]">1.3%</span>
+                  <span className="text-xs font-semibold text-[#04CE00]">0,00%</span>
                   <span className="text-xs text-[#9291A5]">AUMENTO DE VENDAS</span>
                 </div>
               </div>
@@ -500,80 +596,81 @@ const DashboardPage = () => {
             <div className="px-4 md:px-8 pb-6 md:pb-8 pt-6 md:pt-8 overflow-y-auto flex-1">
               {/* Barra de progresso */}
               <div className="mb-8">
-                <p className="text-black text-sm font-normal leading-5 mb-4">Complete o onboarding (1 de 5 concluídas)</p>
+                <p className="text-black text-sm font-normal leading-5 mb-4">Complete o onboarding ({doneCount} de {items.length} concluídas)</p>
                 <div className="w-full h-2 bg-gray-200 rounded">
-                  <div className="w-1/5 h-2 bg-[#2D5BFF] rounded"></div>
+                  <div className="h-2 bg-[#2D5BFF] rounded" style={{ width: `${progressPct}%` }}></div>
                 </div>
               </div>
 
               {/* Lista de itens */}
               <div className="space-y-6 mb-8">
-                {/* Perfil de usuário - Concluído */}
-                <div className="flex items-center p-4 bg-white rounded-lg" style={{boxShadow: '0px 0px 4.425286769866943px 2px rgba(13, 10, 44, 0.08)'}}>
-                  <div className="p-3 bg-[#FFEDCE] rounded-lg mr-3">
-                    <img src="/laranja.svg" alt="Perfil" className="w-6 h-6" />
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="text-[#1E1B39] text-xs font-medium leading-6">Perfil de usuário</h3>
-                    <p className="text-[#9291A5] text-xs font-normal leading-4">Preencha todas as informações do seu perfil de usuário</p>
-                  </div>
-                  <div className="ml-5">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none">
-                      <path fillRule="evenodd" clipRule="evenodd" d="M2.25 12C2.25 6.61522 6.61522 2.25 12 2.25C17.3848 2.25 21.75 6.61522 21.75 12C21.75 17.3848 17.3848 21.75 12 21.75C6.61522 21.75 2.25 17.3848 2.25 12ZM15.6103 10.1859C15.8511 9.84887 15.773 9.38046 15.4359 9.1397C15.0989 8.89894 14.6305 8.97701 14.3897 9.31407L11.1543 13.8436L9.53033 12.2197C9.23744 11.9268 8.76256 11.9268 8.46967 12.2197C8.17678 12.5126 8.17678 12.9874 8.46967 13.2803L10.7197 15.5303C10.8756 15.6862 11.0921 15.7656 11.3119 15.7474C11.5316 15.7293 11.7322 15.6153 11.8603 15.4359L15.6103 10.1859Z" fill="#34C759"/>
-                    </svg>
-                  </div>
-                </div>
-
-                {/* Domínio / Subdomínio */}
-                <div className="flex items-center p-4 bg-white rounded-lg" style={{boxShadow: '0px 0px 4.425286769866943px 2px rgba(13, 10, 44, 0.08)'}}>
-                  <div className="p-3 bg-[#E7EDFC] rounded-lg mr-3">
-                    <img src="/azul.svg" alt="Domínio" className="w-6 h-6" />
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="text-[#1E1B39] text-xs font-medium leading-6">Domínio / Subdomínio</h3>
-                    <p className="text-[#9291A5] text-xs font-normal leading-4">Configure a url da área de membros da sua plataforma Connekt</p>
-                  </div>
-                </div>
-
-                {/* Pagamentos */}
-                <div className="flex items-center p-4 bg-white rounded-lg" style={{boxShadow: '0px 0px 4.425286769866943px 2px rgba(13, 10, 44, 0.08)'}}>
-                  <div className="p-3 bg-[#E4FFF3] rounded-lg mr-3">
-                    <img src="/verde.svg" alt="Pagamentos" className="w-6 h-6" />
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="text-[#1E1B39] text-xs font-medium leading-6">Pagamentos</h3>
-                    <p className="text-[#9291A5] text-xs font-normal leading-4">Preencha seus dados bancários para o recebimento de pagamentos.</p>
-                  </div>
-                </div>
-
-                {/* Crie um curso */}
-                <div className="flex items-center p-4 bg-white rounded-lg" style={{boxShadow: '0px 0px 4.425286769866943px 2px rgba(13, 10, 44, 0.08)'}}>
-                  <div className="p-3 rounded-lg mr-3" style={{backgroundColor: 'rgba(139, 97, 255, 0.10)'}}>
-                    <img src="/roxo.svg" alt="Curso" className="w-6 h-6" />
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="text-[#1E1B39] text-xs font-medium leading-6">Crie um curso</h3>
-                    <p className="text-[#9291A5] text-xs font-normal leading-4">Crie o seu primeiro curso online com a Connekt</p>
-                  </div>
-                </div>
-
-                {/* Publique seu curso */}
-                <div className="flex items-center p-4 bg-white rounded-lg" style={{boxShadow: '0px 0px 4.425286769866943px 2px rgba(13, 10, 44, 0.08)'}}>
-                  <div className="p-3 bg-[#FFFCDE] rounded-lg mr-3">
-                    <img src="/amarelo.svg" alt="Publicar" className="w-6 h-6" />
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="text-[#1E1B39] text-xs font-medium leading-6">Publique seu curso</h3>
-                    <p className="text-[#9291A5] text-xs font-normal leading-4">Publique a venda do seu curso online, publique seu primeiro curso.</p>
-                  </div>
-                </div>
+                {items.map((it) => {
+                  const done = !!onboarding[it.id];
+                  return (
+                    <div
+                      key={it.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => { navigateTo(it.to); setIsFloatingGroupOpen(false); }}
+                      onKeyDown={(e) => { if (e.key === 'Enter') { navigateTo(it.to); setIsFloatingGroupOpen(false); } }}
+                      className="flex items-center p-4 bg-white rounded-lg cursor-pointer hover:bg-gray-50 transition-colors"
+                      style={{ boxShadow: '0px 0px 4.425286769866943px 2px rgba(13, 10, 44, 0.08)' }}
+                    >
+                      <div className="p-3 rounded-lg mr-3" style={{ backgroundColor: it.bg }}>
+                        <img src={it.icon} alt={it.title} className="w-6 h-6" />
+                      </div>
+                      <div className="flex-1">
+                        <h3 className="text-[#1E1B39] text-xs font-medium leading-6">{it.title}</h3>
+                        <p className="text-[#9291A5] text-xs font-normal leading-4">{it.desc}</p>
+                      </div>
+                      <div className="ml-5">
+                        {done ? (
+                          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none">
+                            <path fillRule="evenodd" clipRule="evenodd" d="M2.25 12C2.25 6.61522 6.61522 2.25 12 2.25C17.3848 2.25 21.75 6.61522 21.75 12C21.75 17.3848 17.3848 21.75 12 21.75C6.61522 21.75 2.25 17.3848 2.25 12ZM15.6103 10.1859C15.8511 9.84887 15.773 9.38046 15.4359 9.1397C15.0989 8.89894 14.6305 8.97701 14.3897 9.31407L11.1543 13.8436L9.53033 12.2197C9.23744 11.9268 8.76256 11.9268 8.46967 12.2197C8.17678 12.5126 8.17678 12.9874 8.46967 13.2803L10.7197 15.5303C10.8756 15.6862 11.0921 15.7656 11.3119 15.7474C11.5316 15.7293 11.7322 15.6153 11.8603 15.4359L15.6103 10.1859Z" fill="#34C759"/>
+                          </svg>
+                        ) : (
+                          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none">
+                            <path d="M9 18L15 12L9 6" stroke="#9291A5" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                          </svg>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
 
               {/* Botão de ação */}
-<button className="w-full h-[42px] bg-[#0047BB] text-white px-6 rounded font-semibold text-sm hover:bg-[#023992] transition-colors mt-16 flex items-center justify-center">
-                Ativar conta Connekt
+              <button
+                type="button"
+                onClick={handleOnboardingAction}
+                className="w-full h-[42px] bg-[#0047BB] text-white px-6 rounded font-semibold text-sm hover:bg-[#023992] transition-colors mt-16 flex items-center justify-center"
+              >
+                {firstPending ? 'Continuar onboarding' : 'Onboarding concluído'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {onboardingAnim && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30">
+          <div className="bg-white rounded-[16px] shadow-xl border border-[#E3E4E5] px-8 py-7 flex flex-col items-center gap-3 animate-in fade-in zoom-in duration-200">
+            {onboardingAnim?.type === 'loading' ? (
+              <div className="w-12 h-12 rounded-full border-4 border-[#E3E4E5] border-t-[#0047BB] animate-spin" />
+            ) : (
+              <div className="relative">
+                <div className="absolute inset-0 rounded-full bg-[#34C759]/20 animate-ping" />
+                <div className="w-14 h-14 rounded-full bg-[#34C759]/10 flex items-center justify-center relative">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M20 6L9 17L4 12" stroke="#34C759" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </div>
+              </div>
+            )}
+            <div className="text-[14px] font-semibold text-[#1E1B39]">{onboardingAnim?.title || ''}</div>
+            {onboardingAnim?.subtitle ? (
+              <div className="text-[12px] text-[#8F9299] text-center">{onboardingAnim.subtitle}</div>
+            ) : null}
           </div>
         </div>
       )}

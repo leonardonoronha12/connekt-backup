@@ -19,14 +19,15 @@ const translateErrorMessage = (errorMessage) => {
     'Network error': 'Erro de conexão',
     'Server error': 'Erro do servidor',
     'Email address not authorized': 'Endereço de email não autorizado',
-    'Signup is disabled': 'Cadastro desabilitado'
+    'Signup is disabled': 'Cadastro desabilitado',
+    'Unsupported provider: provider is not enabled': 'Login com Google/Facebook não está habilitado no Supabase. Ative o provedor nas configurações de Authentication.'
   };
   
   return translations[errorMessage] || errorMessage;
 };
 
-const RegisterForm = ({ onBackToLogin }) => {
-  const { signUp } = useAuth();
+const RegisterForm = ({ onBackToLogin, onShowLogin }) => {
+  const { signUp, signInWithOAuth } = useAuth();
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -38,6 +39,16 @@ const RegisterForm = ({ onBackToLogin }) => {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [acceptedPrivacy, setAcceptedPrivacy] = useState(false);
+
+  const goTo = (path) => {
+    window.history.pushState({}, '', path);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  };
+  const handleBackToLogin = () => {
+    if (typeof onBackToLogin === 'function') return onBackToLogin();
+    if (typeof onShowLogin === 'function') return onShowLogin();
+    goTo('/login');
+  };
   const [loading, setLoading] = useState(false);
   const [showPasswordRequirements, setShowPasswordRequirements] = useState(false);
 
@@ -151,8 +162,18 @@ const RegisterForm = ({ onBackToLogin }) => {
     }
   };
 
-  const handleSocialLogin = (provider) => {
-    console.log(`Cadastro com ${provider}`);
+  const handleSocialLogin = async (provider) => {
+    try {
+      const p = String(provider || '').toLowerCase();
+      if (p !== 'facebook' && p !== 'google') {
+        showAlert('Provedor de login não suportado.');
+        return;
+      }
+      const { error } = await signInWithOAuth(p, '/login');
+      if (error) showAlert(translateErrorMessage(error.message || String(error)));
+    } catch (e) {
+      showAlert('Erro ao iniciar login com provedor. Tente novamente.');
+    }
   };
 
   return (
@@ -211,7 +232,7 @@ const RegisterForm = ({ onBackToLogin }) => {
           <div className="w-full max-w-md mx-auto flex flex-col">
           {/* Botão Voltar */}
           <button 
-            onClick={onBackToLogin}
+            onClick={handleBackToLogin} 
             style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
           >
             <div style={{ width: '100%', height: '100%', overflow: 'hidden', borderRadius: '8px', justifyContent: 'flex-start', alignItems: 'center', gap: '8px', display: 'inline-flex' }}>
@@ -630,8 +651,22 @@ const RegisterForm = ({ onBackToLogin }) => {
                 lineHeight: '18px'
               }}>
                 Para seguirmos com o seu cadastro você precisa estar de acordo com nossos{' '}
-                <a href="#" style={{ color: '#0047BB', textDecoration: 'underline' }}>termos de uso</a> e{' '}
-                <a href="#" style={{ color: '#0047BB', textDecoration: 'underline' }}>política de privacidade</a>, que estão representados logo abaixo.
+                <a
+                  href="/termos#termos"
+                  onClick={(e) => { e.preventDefault(); goTo('/termos#termos'); }}
+                  style={{ color: '#0047BB', textDecoration: 'underline' }}
+                >
+                  termos de uso
+                </a>{' '}
+                e{' '}
+                <a
+                  href="/termos#privacidade"
+                  onClick={(e) => { e.preventDefault(); goTo('/termos#privacidade'); }}
+                  style={{ color: '#0047BB', textDecoration: 'underline' }}
+                >
+                  política de privacidade
+                </a>
+                , que estão representados logo abaixo.
               </p>
               
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -718,9 +753,9 @@ const RegisterForm = ({ onBackToLogin }) => {
           <div className="flex space-x-4">
             <button className="hover:text-gray-700 transition-colors">Suporte</button>
             <span>•</span>
-            <button className="hover:text-gray-700 transition-colors">Termos de uso</button>
+            <button type="button" onClick={() => goTo('/termos#termos')} className="hover:text-gray-700 transition-colors">Termos de uso</button>
             <span>•</span>
-            <button className="hover:text-gray-700 transition-colors">Política de privacidade</button>
+            <button type="button" onClick={() => goTo('/termos#privacidade')} className="hover:text-gray-700 transition-colors">Política de privacidade</button>
           </div>
         </div>
       </div>

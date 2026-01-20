@@ -8,13 +8,33 @@ import {
   Database, 
   ShoppingCart, 
   Settings,
+  Tag,
   ChevronUp
 } from 'lucide-react';
+import { planService } from '@/services/planService.js';
 
 const SystemSidebar = () => {
   const [isUpgradeHovered, setIsUpgradeHovered] = useState(false);
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
   const [currentSearch, setCurrentSearch] = useState(window.location.search);
+  const [hasActivePlan, setHasActivePlan] = useState(false);
+
+  const computeHasActivePlan = () => {
+    try {
+      const sub = typeof planService.getSubscription === 'function' ? planService.getSubscription() : null;
+      const status = String(sub?.status || '').toLowerCase();
+      const planKey = String(sub?.planKey || '').toLowerCase();
+      const expiresAt = sub?.expiresAt ? new Date(sub.expiresAt).getTime() : 0;
+      if (planKey) {
+        if (expiresAt && isFinite(expiresAt)) return expiresAt > Date.now();
+        return status === 'active' || status === 'trial' || status === 'canceled';
+      }
+      const legacy = typeof planService.getActivePlan === 'function' ? planService.getActivePlan() : null
+      return !!legacy
+    } catch (_) {
+      return false;
+    }
+  };
 
   useEffect(() => {
     const handleLocationChange = () => {
@@ -23,7 +43,19 @@ const SystemSidebar = () => {
     };
 
     window.addEventListener('popstate', handleLocationChange);
-    return () => window.removeEventListener('popstate', handleLocationChange);
+    const updatePlan = () => setHasActivePlan(computeHasActivePlan());
+    const onStorage = (e) => {
+      if (e?.key === 'connekt_subscription' || e?.key === 'connekt_active_plan') updatePlan();
+    };
+    window.addEventListener('storage', onStorage);
+    window.addEventListener('focus', updatePlan);
+    updatePlan();
+
+    return () => {
+      window.removeEventListener('popstate', handleLocationChange);
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('focus', updatePlan);
+    };
   }, []);
 
   const handleNavigation = (path) => {
@@ -41,15 +73,15 @@ const SystemSidebar = () => {
           id: 'dashboard', 
           label: 'Dashboard', 
           icon: LayoutDashboard, 
-          path: '/',
-          isActive: currentPath === '/' && !currentSearch.includes('dev-admin')
+          path: '/dashboard',
+          isActive: (currentPath === '/dashboard' || currentPath === '/') && !currentSearch.includes('dev-admin')
         },
         { 
           id: 'inbox', 
           label: 'Inbox', 
           icon: Mail, 
-          path: '/',
-          isActive: currentPath === '/' && !currentSearch.includes('dev-admin')
+          path: '/inbox',
+          isActive: currentPath === '/inbox' && !currentSearch.includes('dev-admin')
         }
       ]
     },
@@ -89,6 +121,13 @@ const SystemSidebar = () => {
     {
       section: 'GERAL',
       items: [
+        { 
+          id: 'categorias', 
+          label: 'Categorias', 
+          icon: Tag, 
+          path: '/categorias',
+          isActive: currentPath === '/categorias'
+        },
         { 
           id: 'vendas', 
           label: 'Vendas', 
@@ -157,28 +196,29 @@ const SystemSidebar = () => {
         ))}
       </nav>
 
-      {/* Upgrade Section */}
-      <div className="p-4 border-t border-white/10">
-        <div className="bg-white/5 rounded-lg p-4 text-center">
-          <div className="w-12 h-12 bg-white/10 rounded-full flex items-center justify-center mx-auto mb-3">
-            <ChevronUp className="w-6 h-6 text-white" />
+      {!hasActivePlan && (
+        <div className="p-4 border-t border-white/10">
+          <div className="bg-white/5 rounded-lg p-4 text-center">
+            <div className="w-12 h-12 bg-white/10 rounded-full flex items-center justify-center mx-auto mb-3">
+              <ChevronUp className="w-6 h-6 text-white" />
+            </div>
+            <p className="text-sm text-white/80 mb-3 leading-relaxed">
+              Faça um upgrade do seu plano para aproveitar ao máximo da Connekt
+            </p>
+            <button
+              onMouseEnter={() => setIsUpgradeHovered(true)}
+              onMouseLeave={() => setIsUpgradeHovered(false)}
+              className={`w-full py-2.5 px-4 rounded-lg text-sm font-medium transition-all duration-200 ${
+                isUpgradeHovered
+                  ? 'bg-white text-[#1a1b3a] shadow-lg transform scale-105'
+                  : 'bg-white/90 text-[#1a1b3a] hover:bg-white'
+              }`}
+            >
+              Upgrade de plano
+            </button>
           </div>
-          <p className="text-sm text-white/80 mb-3 leading-relaxed">
-            Faça um upgrade do seu plano para aproveitar ao máximo da Connekt
-          </p>
-          <button
-            onMouseEnter={() => setIsUpgradeHovered(true)}
-            onMouseLeave={() => setIsUpgradeHovered(false)}
-            className={`w-full py-2.5 px-4 rounded-lg text-sm font-medium transition-all duration-200 ${
-              isUpgradeHovered
-                ? 'bg-white text-[#1a1b3a] shadow-lg transform scale-105'
-                : 'bg-white/90 text-[#1a1b3a] hover:bg-white'
-            }`}
-          >
-            Upgrade de plano
-          </button>
         </div>
-      </div>
+      )}
     </aside>
   );
 };

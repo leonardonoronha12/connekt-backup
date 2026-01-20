@@ -8,6 +8,50 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 const QuestoesPage = () => {
   const { toast } = useToast();
   const { user } = useAuth();
+
+  const isTransientNetworkError = (err) => {
+    const msg = String(err?.message || err || '').toLowerCase();
+    return msg.includes('failed to fetch') || msg.includes('networkerror') || msg.includes('load failed') || msg.includes('err_network') || msg.includes('network');
+  };
+
+  const DeferredVideo = ({ src, className }) => {
+    const [armed, setArmed] = useState(false);
+    useEffect(() => {
+      setArmed(false);
+    }, [src]);
+    if (!src) return null;
+    const finalSrc = (typeof src === 'string' && src.includes('.supabase.co/storage/v1/object/')) ? `/api/media?u=${encodeURIComponent(src)}` : src
+    if (!armed) {
+      return (
+        <button
+          type="button"
+          className="w-full h-full flex items-center justify-center bg-black/5"
+          onClick={() => setArmed(true)}
+          aria-label="Carregar vídeo"
+        >
+          <div className="w-11 h-11 rounded-full bg-white/90 border border-gray-200 flex items-center justify-center text-[#0047BB] text-[18px]">
+            ▶
+          </div>
+        </button>
+      );
+    }
+    return (
+      <video
+        src={finalSrc}
+        className={className}
+        controls
+        preload="none"
+        onError={(e) => {
+          const v = e.currentTarget
+          if (!finalSrc.startsWith('/api/media?u=')) return
+          if (v?.dataset?.fallbackUsed === '1') return
+          v.dataset.fallbackUsed = '1'
+          v.src = src
+          try { v.load() } catch (_) {}
+        }}
+      />
+    );
+  };
   // Ler o bankId da URL para identificar o banco específico
   const [currentBankId, setCurrentBankId] = useState(null);
   // Estado agregado do banco atual com relações completas
@@ -22,10 +66,17 @@ const QuestoesPage = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const uploadIntervalRef = useRef(null);
+  const [isImageDragOver, setIsImageDragOver] = useState(false);
+  const [isVideoDragOver, setIsVideoDragOver] = useState(false);
   // Upload de vídeo
   const [selectedVideo, setSelectedVideo] = useState(null);
   const [videoPreviewUrl, setVideoPreviewUrl] = useState(null);
   const videoFileInputRef = useRef(null);
+  const resolutionImageInputRef = useRef(null);
+  const resolutionVideoInputRef = useRef(null);
+  const [resolutionImageUploading, setResolutionImageUploading] = useState(false);
+  const [resolutionVideoUploading, setResolutionVideoUploading] = useState(false);
+  const isResolutionUploading = resolutionImageUploading || resolutionVideoUploading;
   // Lista de questões e seleção atual
   const [questions, setQuestions] = useState([]);
   const [selectedQuestionIndex, setSelectedQuestionIndex] = useState(null);
@@ -37,6 +88,7 @@ const QuestoesPage = () => {
   const [selectedTags, setSelectedTags] = useState([]); // array de objetos { id, name, color, description }
   // Editor rico por escolha (mapeia índice da escolha -> aberto/fechado)
   const [choiceRichEditorOpen, setChoiceRichEditorOpen] = useState({});
+  const [choiceMediaUploading, setChoiceMediaUploading] = useState({});
   // Helpers para acessar/atualizar a questão selecionada
   const getSelectedQuestion = () => (
     selectedQuestionIndex !== null && questions[selectedQuestionIndex]
@@ -54,11 +106,79 @@ const QuestoesPage = () => {
     });
   };
 
+  const sanitizeMetadataForPersistence = (meta) => {
+    if (!meta || typeof meta !== 'object') return meta;
+    const next = { ...meta };
+    const dropBlob = (v) => (typeof v === 'string' && v.trim().startsWith('blob:')) ? null : v;
+
+    if (next.choicesMedia && typeof next.choicesMedia === 'object') {
+      const cleaned = {};
+      Object.keys(next.choicesMedia).forEach((k) => {
+        const entry = next.choicesMedia[k];
+        if (!entry || typeof entry !== 'object') return;
+        const e2 = { ...entry };
+        const img = dropBlob(e2.imageUrl);
+        const vid = dropBlob(e2.videoUrl);
+        if (img === null) delete e2.imageUrl; else e2.imageUrl = img;
+        if (vid === null) delete e2.videoUrl; else e2.videoUrl = vid;
+        if (Object.keys(e2).length > 0) cleaned[k] = e2;
+      });
+      next.choicesMedia = cleaned;
+    }
+
+    const topKeys = [
+      'imageUrl', 'image_url', 'image', 'thumbnail', 'cover', 'capa',
+      'videoUrl', 'video_url', 'video',
+      'resolutionImageUrl', 'resolution_image_url', 'resolutionImage', 'resolution_image',
+      'resolutionVideoUrl', 'resolution_video_url', 'resolutionVideo', 'resolution_video',
+    ];
+    topKeys.forEach((k) => {
+      if (k in next) {
+        const v = dropBlob(next[k]);
+        if (v === null) delete next[k];
+        else next[k] = v;
+      }
+    });
+
+    return next;
+  };
+
+  const normalizeSupabaseSignedToPublic = (rawUrl) => {
+    if (typeof rawUrl !== 'string') return rawUrl;
+    const u = rawUrl.trim();
+    if (!u) return u;
+    if (u.startsWith('data:') || u.startsWith('blob:')) return u;
+    try {
+      const parsed = new URL(u);
+      const m = parsed.pathname.match(/\/storage\/v1\/object\/sign\/([^/]+)\/(.+)$/);
+      if (m?.[1] && m?.[2]) {
+        parsed.pathname = `/storage/v1/object/public/${m[1]}/${m[2]}`;
+        parsed.search = '';
+        parsed.hash = '';
+        return parsed.toString();
+      }
+      return u;
+    } catch {
+      const base = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_SUPABASE_URL)
+        ? String(import.meta.env.VITE_SUPABASE_URL)
+        : '';
+      const bucket = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_SUPABASE_QUESTION_IMAGES_BUCKET)
+        ? String(import.meta.env.VITE_SUPABASE_QUESTION_IMAGES_BUCKET)
+        : 'question-images';
+      if (!base) return u;
+      let p = u.replace(/^\/+/, '');
+      if (p.startsWith(`${bucket}/`)) p = p.slice(bucket.length + 1);
+      if (p.startsWith('question-images/')) p = p.slice('question-images/'.length);
+      return `${base.replace(/\/+$/, '')}/storage/v1/object/public/${bucket}/${p}`;
+    }
+  };
+
   // Persistir extras de metadata da questão atual no Supabase, preservando campos reservados
   const persistSelectedQuestionExtras = async (extras = {}, reservedOverrides = {}) => {
     try {
       const current = getSelectedQuestion();
       if (!current || !current.id) return;
+      const mergedMeta = sanitizeMetadataForPersistence({ ...(current.metadata || {}), ...extras });
       const updates = {
         name: current.name,
         title: current.title,
@@ -71,12 +191,90 @@ const QuestoesPage = () => {
         correctChoiceIndex: typeof reservedOverrides.correctChoiceIndex === 'number' ? reservedOverrides.correctChoiceIndex : (typeof current.correctChoiceIndex === 'number' ? current.correctChoiceIndex : null),
         points: typeof reservedOverrides.points === 'number' ? reservedOverrides.points : (typeof current.points === 'number' ? current.points : (typeof current.metadata?.points === 'number' ? current.metadata.points : 0)),
         attempts: typeof reservedOverrides.attempts === 'number' ? reservedOverrides.attempts : (typeof current.attempts === 'number' ? current.attempts : (typeof current.metadata?.attempts === 'number' ? current.metadata.attempts : 0)),
-        metadata: { ...(current.metadata || {}), ...extras },
+        metadata: mergedMeta,
       };
       await questionBankService.updateQuestion(current.id, updates);
     } catch (err) {
       console.warn('persistSelectedQuestionExtras error:', err);
     }
+  };
+
+  const handleResolutionImageChange = async (e) => {
+    const file = e?.target?.files?.[0];
+    try { if (e?.target) e.target.value = ''; } catch (_) {}
+    if (!file) return;
+    const current = getSelectedQuestion();
+    if (!current) return;
+    setResolutionImageUploading(true);
+    try {
+      const uploadRes = await questionBankService.uploadQuestionImage(file, {
+        bankId: currentBankId,
+        questionId: current.id,
+      });
+      if (uploadRes?.aborted) return;
+      const url = uploadRes?.url || null;
+      const path = uploadRes?.path || null;
+      if (!url) {
+        toast({ description: uploadRes?.error ? `Falha no upload: ${uploadRes.error}` : 'Falha no upload da imagem da resolução.', variant: 'destructive' });
+        return;
+      }
+      const nextMeta = { ...(current.metadata || {}), resolutionImageUrl: url, resolutionImagePath: path || null, resolutionEnabled: true };
+      updateSelectedQuestion({ metadata: nextMeta });
+      await persistSelectedQuestionExtras({ resolutionImageUrl: url, resolutionImagePath: path || null, resolutionEnabled: true });
+      toast({ description: 'Imagem adicionada na resolução.' });
+    } catch (err) {
+      toast({ description: `Erro ao enviar imagem da resolução: ${err?.message || String(err)}`, variant: 'destructive' });
+    } finally {
+      setResolutionImageUploading(false);
+    }
+  };
+
+  const handleResolutionVideoChange = async (e) => {
+    const file = e?.target?.files?.[0];
+    try { if (e?.target) e.target.value = ''; } catch (_) {}
+    if (!file) return;
+    const current = getSelectedQuestion();
+    if (!current) return;
+    setResolutionVideoUploading(true);
+    try {
+      const uploadRes = await questionBankService.uploadQuestionVideo(file, {
+        bankId: currentBankId,
+        questionId: current.id,
+      });
+      if (uploadRes?.aborted) return;
+      const url = uploadRes?.url || null;
+      const path = uploadRes?.path || null;
+      if (!url) {
+        toast({ description: uploadRes?.error ? `Falha no upload: ${uploadRes.error}` : (uploadRes?.warning || 'Falha no upload do vídeo da resolução.'), variant: 'destructive' });
+        return;
+      }
+      const nextMeta = { ...(current.metadata || {}), resolutionVideoUrl: url, resolutionVideoPath: path || null, resolutionEnabled: true };
+      updateSelectedQuestion({ metadata: nextMeta });
+      await persistSelectedQuestionExtras({ resolutionVideoUrl: url, resolutionVideoPath: path || null, resolutionEnabled: true });
+      toast({ description: 'Vídeo adicionado na resolução.' });
+    } catch (err) {
+      toast({ description: `Erro ao enviar vídeo da resolução: ${err?.message || String(err)}`, variant: 'destructive' });
+    } finally {
+      setResolutionVideoUploading(false);
+    }
+  };
+
+  const handleRemoveResolutionImage = async () => {
+    const current = getSelectedQuestion();
+    if (!current) return;
+    const nextMeta = { ...(current.metadata || {}), resolutionImageUrl: null, resolutionImagePath: null };
+    updateSelectedQuestion({ metadata: nextMeta });
+    await persistSelectedQuestionExtras({ resolutionImageUrl: null, resolutionImagePath: null });
+    toast({ description: 'Imagem da resolução removida.' });
+  };
+
+  const handleRemoveResolutionVideo = async () => {
+    const current = getSelectedQuestion();
+    if (!current) return;
+    const nextMeta = { ...(current.metadata || {}), resolutionVideoUrl: null, resolutionVideoPath: null };
+    updateSelectedQuestion({ metadata: nextMeta });
+    await persistSelectedQuestionExtras({ resolutionVideoUrl: null, resolutionVideoPath: null });
+    toast({ description: 'Vídeo da resolução removido.' });
   };
 
   // Ao trocar para outra questão, fechar quaisquer caixas de upload/preview abertas
@@ -98,6 +296,7 @@ const QuestoesPage = () => {
     if (videoFileInputRef.current) {
       videoFileInputRef.current.value = '';
     }
+    setChoiceMediaUploading({});
   }, [selectedQuestionIndex]);
 
   // Input de arquivo para imagem (ao clicar no ícone de imagem)
@@ -246,7 +445,7 @@ const QuestoesPage = () => {
       setIsUploading(true);
       setUploadProgress(0);
       const uploadRes = await questionBankService.uploadQuestionImage(sourceFile, { bankId: bankIdFallback, questionId: current.id });
-      const publicUrl = uploadRes?.url || '';
+      const publicUrl = normalizeSupabaseSignedToPublic(uploadRes?.url || '');
       const objectPath = uploadRes?.path || null;
       if (publicUrl && publicUrl.startsWith('http')) {
         setPreviewUrl(publicUrl);
@@ -413,6 +612,9 @@ const QuestoesPage = () => {
               correctChoiceIndex,
               points,
               attempts,
+              choicesMedia: (meta && typeof meta === 'object' && meta.choicesMedia && typeof meta.choicesMedia === 'object')
+                ? meta.choicesMedia
+                : (meta && typeof meta === 'object' && meta.choices_media && typeof meta.choices_media === 'object' ? meta.choices_media : {}),
               metadata: meta,
             };
           });
@@ -421,31 +623,42 @@ const QuestoesPage = () => {
             setSelectedQuestionIndex(0);
           }
         } catch (e) {
-          console.error('Erro ao carregar banco por ID:', e);
-          toast({ description: 'Erro ao carregar banco selecionado', variant: 'destructive' });
+          if (!isTransientNetworkError(e)) {
+            console.error('Erro ao carregar banco por ID:', e);
+          }
+          toast({ description: isTransientNetworkError(e) ? 'Sem conexão. Tente novamente em instantes.' : 'Erro ao carregar banco selecionado', variant: 'destructive' });
         }
       })();
     }
   }, []);
   // Gerenciar URL de preview para arquivo selecionado
   useEffect(() => {
-    let url = null;
+    let cancelled = false;
     if (selectedImage && selectedImage instanceof File) {
-      url = URL.createObjectURL(selectedImage);
-      setPreviewUrl(url);
-    } else if (typeof selectedImage === 'string') {
-      setPreviewUrl(selectedImage);
-    } else {
-      setPreviewUrl(null);
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (cancelled) return;
+        setPreviewUrl(typeof reader.result === 'string' ? reader.result : null);
+      };
+      reader.onerror = () => {
+        if (cancelled) return;
+        setPreviewUrl(null);
+      };
+      reader.readAsDataURL(selectedImage);
+      return () => {
+        cancelled = true;
+        try { reader.abort(); } catch (_) {}
+      };
     }
-    return () => {
-      if (url) URL.revokeObjectURL(url);
-    };
+    if (typeof selectedImage === 'string') {
+      setPreviewUrl(selectedImage);
+      return () => {};
+    }
+    setPreviewUrl(null);
+    return () => {};
   }, [selectedImage]);
-  const handleImageFileChange = (e) => {
-    const file = e.target.files && e.target.files[0];
-    if (file) {
-      setSelectedImage(file);
+  const processSelectedImageFile = (file) => {
+    setSelectedImage(file);
       // Iniciar upload simulado: preenche o anel e sobe porcentagem até 100%
       if (uploadIntervalRef.current) {
         clearInterval(uploadIntervalRef.current);
@@ -480,11 +693,10 @@ const QuestoesPage = () => {
             bankId: currentBankId,
             questionId: current.id,
           });
+          if (uploadRes?.aborted) return;
           const publicUrl = uploadRes?.url || null;
           const objectPath = uploadRes?.path || null;
           if (publicUrl) {
-            setSelectedImage(publicUrl);
-            setPreviewUrl(publicUrl);
             // Atualizar a questão selecionada para refletir a URL já no estado
             setQuestions(prev => {
               if (!Array.isArray(prev)) return prev;
@@ -533,8 +745,38 @@ const QuestoesPage = () => {
             });
             try {
               const dataUrl = await toDataUrl(file);
-              setSelectedImage(dataUrl);
-              setPreviewUrl(dataUrl);
+              // Persistir metadados com base64 como fallback
+              try {
+                const metaExtras = { ...(current.metadata || {}), imageUrl: dataUrl, imagePath: (current.metadata && current.metadata.imagePath) };
+                setQuestions(prev => {
+                  if (!Array.isArray(prev)) return prev;
+                  return prev.map((q, idx) => {
+                    if (idx !== selectedQuestionIndex) return q;
+                    return {
+                      ...q,
+                      imageUrl: dataUrl,
+                      metadata: { ...(q.metadata || {}), imageUrl: dataUrl, imagePath: (q.metadata && q.metadata.imagePath) }
+                    };
+                  });
+                });
+                await questionBankService.updateQuestion(current.id, {
+                  name: current.name,
+                  title: current.title,
+                  text: current.text,
+                  body: current.body,
+                  type: current.type,
+                  required: current.required,
+                  disabled: !!current.disabled,
+                  choices: current.choices,
+                  correctChoiceIndex: current.correctChoiceIndex,
+                  points: current.points,
+                  attempts: current.attempts,
+                  metadata: metaExtras,
+                });
+                try { toast({ description: 'Preview base64 da imagem salvo na questão.' }); } catch {}
+              } catch (persistErr) {
+                console.warn('Falha ao persistir imagem base64 na questão:', persistErr);
+              }
               // Tentar gerar automaticamente uma URL pública a partir do base64
               try {
                 await handleGeneratePublicUrl();
@@ -543,6 +785,9 @@ const QuestoesPage = () => {
               }
             } catch (convErr) {
               console.warn('Falha ao converter imagem para data URL:', convErr);
+            }
+            if (uploadRes?.aborted) {
+              return;
             }
             if (uploadRes?.error) {
               toast({ description: `Falha no upload ao Supabase: ${uploadRes.error}`, variant: 'destructive' });
@@ -562,28 +807,29 @@ const QuestoesPage = () => {
           setUploadProgress(100);
         }
       })();
-    }
+  };
+
+  const handleImageFileChange = (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (file) processSelectedImageFile(file);
+    try { e.target.value = ''; } catch (_) {}
   };
 
   // Gerenciar URL de preview para vídeo selecionado
   useEffect(() => {
-    let url = null;
     if (selectedVideo && selectedVideo instanceof File) {
-      url = URL.createObjectURL(selectedVideo);
-      setVideoPreviewUrl(url);
-    } else if (typeof selectedVideo === 'string') {
-      setVideoPreviewUrl(selectedVideo);
-    } else {
       setVideoPreviewUrl(null);
+      return () => {};
     }
-    return () => {
-      if (url) URL.revokeObjectURL(url);
-    };
+    if (typeof selectedVideo === 'string') {
+      setVideoPreviewUrl(selectedVideo);
+      return () => {};
+    }
+    setVideoPreviewUrl(null);
+    return () => {};
   }, [selectedVideo]);
 
-  const handleVideoFileChange = (e) => {
-    const file = e.target.files && e.target.files[0];
-    if (file) {
+  const processSelectedVideoFile = (file) => {
       setSelectedVideo(file);
       // Simular upload com mesmo progresso
       if (uploadIntervalRef.current) {
@@ -618,11 +864,10 @@ const QuestoesPage = () => {
             bankId: currentBankId,
             questionId: current.id,
           });
+          if (uploadRes?.aborted) return;
           const publicUrl = uploadRes?.url || null;
           const objectPath = uploadRes?.path || null;
           if (publicUrl) {
-            setSelectedVideo(publicUrl);
-            setVideoPreviewUrl(publicUrl);
             // Atualizar questão selecionada no estado local
             setQuestions(prev => {
               if (!Array.isArray(prev)) return prev;
@@ -657,59 +902,10 @@ const QuestoesPage = () => {
             }
             try { toast({ description: 'Upload de vídeo concluído. URL disponível.' }); } catch {}
           } else {
-            // Fallback: converter para data URL e persistir na questão
-            const toDataUrl = (f) => new Promise((resolve, reject) => {
-              try {
-                const reader = new FileReader();
-                reader.onload = () => resolve(reader.result);
-                reader.onerror = (err) => reject(err);
-                reader.readAsDataURL(f);
-              } catch (err) { reject(err); }
-            });
-            try {
-              const dataUrl = await toDataUrl(file);
-              setSelectedVideo(dataUrl);
-              setVideoPreviewUrl(dataUrl);
-              // Atualizar estado local da questão selecionada
-              setQuestions(prev => {
-                if (!Array.isArray(prev)) return prev;
-                return prev.map((q, idx) => {
-                  if (idx !== selectedQuestionIndex) return q;
-                  return {
-                    ...q,
-                    metadata: { ...(q.metadata || {}), videoUrl: dataUrl, videoPath: (q.metadata && q.metadata.videoPath) }
-                  };
-                });
-              });
-              // Persistir metadados com base64 como fallback
-              try {
-                const metaExtras = { ...(current.metadata || {}), videoUrl: dataUrl, videoPath: (current.metadata && current.metadata.videoPath) };
-                await questionBankService.updateQuestion(current.id, {
-                  name: current.name,
-                  title: current.title,
-                  text: current.text,
-                  body: current.body,
-                  type: current.type,
-                  required: current.required,
-                  disabled: !!current.disabled,
-                  choices: current.choices,
-                  correctChoiceIndex: current.correctChoiceIndex,
-                  points: current.points,
-                  attempts: current.attempts,
-                  metadata: metaExtras,
-                });
-                try { toast({ description: 'Preview base64 do vídeo salvo na questão.' }); } catch {}
-              } catch (persistErr) {
-                console.warn('Falha ao persistir vídeo base64 na questão:', persistErr);
-              }
-            } catch (convErr) {
-              console.warn('Falha ao converter vídeo para data URL:', convErr);
-            }
-            if (uploadRes?.error) {
-              toast({ description: `Falha no upload de vídeo: ${uploadRes.error}`, variant: 'destructive' });
-            } else {
-              toast({ description: 'Upload de vídeo indisponível. Usando preview local/base64.', variant: 'destructive' });
-            }
+            const msg = uploadRes?.error
+              ? `Falha no upload de vídeo: ${uploadRes.error}`
+              : (uploadRes?.warning || 'Upload de vídeo indisponível. Mantendo preview local.');
+            toast({ description: msg, variant: 'destructive' });
           }
         } catch (err) {
           console.warn('Upload imediato do vídeo falhou:', err);
@@ -723,7 +919,12 @@ const QuestoesPage = () => {
           setUploadProgress(100);
         }
       })();
-    }
+  };
+
+  const handleVideoFileChange = (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (file) processSelectedVideoFile(file);
+    try { e.target.value = ''; } catch (_) {}
   };
 
   // Remover imagem selecionada e resetar estados de upload/preview
@@ -802,7 +1003,7 @@ const QuestoesPage = () => {
     try {
       const { data, error } = await questionBankService.createQuestion(currentBankId, baseQuestion);
       if (error) {
-        toast({ description: 'Erro ao salvar a questão.', variant: 'destructive' });
+        toast({ description: String(error || 'Erro ao salvar a questão.'), variant: 'destructive' });
         return;
       }
       const created = {
@@ -830,8 +1031,10 @@ const QuestoesPage = () => {
         console.warn('Falha ao atualizar cabeçalho do banco após criação:', e);
       }
     } catch (e) {
-      console.error('Erro ao criar questão:', e);
-      toast({ description: 'Erro ao criar questão.', variant: 'destructive' });
+      if (!isTransientNetworkError(e)) {
+        console.error('Erro ao criar questão:', e);
+      }
+      toast({ description: isTransientNetworkError(e) ? 'Sem conexão. Tente novamente em instantes.' : 'Erro ao criar questão.', variant: 'destructive' });
     }
   };
 
@@ -921,7 +1124,7 @@ const QuestoesPage = () => {
               variant: 'destructive'
             });
           }
-          imageCandidate = uploadRes?.url || null;
+          imageCandidate = normalizeSupabaseSignedToPublic(uploadRes?.url || null);
           // Fallback: se o upload não retornou URL, salvar como data URL (base64)
           if (!imageCandidate) {
             const toDataUrl = (file) => new Promise((resolve, reject) => {
@@ -960,15 +1163,15 @@ const QuestoesPage = () => {
       } else {
         // Determinar o melhor candidato de URL de imagem para persistir (preview/base64 ou string existente)
         imageCandidate = (() => {
-          if (typeof previewUrl === 'string' && previewUrl.trim()) return previewUrl;
-          if (typeof selectedImage === 'string' && selectedImage.trim()) return selectedImage;
+          if (typeof previewUrl === 'string' && previewUrl.trim()) return normalizeSupabaseSignedToPublic(previewUrl);
+          if (typeof selectedImage === 'string' && selectedImage.trim()) return normalizeSupabaseSignedToPublic(selectedImage);
           return null;
         })();
       }
       // Preparar metadata extra para preservar imagem e dados auxiliares
       const metaExtras = { ...(current.metadata || {}) };
       if (imageCandidate) {
-        metaExtras.imageUrl = imageCandidate;
+        metaExtras.imageUrl = normalizeSupabaseSignedToPublic(imageCandidate);
       }
       if (selectedImage && typeof selectedImage === 'object' && selectedImage?.name) {
         metaExtras.imageName = selectedImage.name;
@@ -1028,8 +1231,10 @@ const QuestoesPage = () => {
         console.warn('Falha ao atualizar cabeçalho do banco após salvar:', e);
       }
     } catch (e) {
-      console.error('Erro ao salvar questão:', e);
-      toast({ description: 'Erro ao salvar questão.', variant: 'destructive' });
+      if (!isTransientNetworkError(e)) {
+        console.error('Erro ao salvar questão:', e);
+      }
+      toast({ description: isTransientNetworkError(e) ? 'Sem conexão. Tente novamente em instantes.' : 'Erro ao salvar questão.', variant: 'destructive' });
     }
   };
 
@@ -1088,8 +1293,10 @@ const QuestoesPage = () => {
       const offlineMsg = questionBankService.isSupabaseAvailable ? '' : ' (modo offline/memória)';
       toast({ description: msg + offlineMsg });
     } catch (e) {
-      console.error('Erro ao alternar desativação da questão:', e);
-      toast({ description: 'Erro ao alternar desativação.', variant: 'destructive' });
+      if (!isTransientNetworkError(e)) {
+        console.error('Erro ao alternar desativação da questão:', e);
+      }
+      toast({ description: isTransientNetworkError(e) ? 'Sem conexão. Tente novamente em instantes.' : 'Erro ao alternar desativação.', variant: 'destructive' });
     }
   };
 
@@ -1134,8 +1341,10 @@ const QuestoesPage = () => {
         console.warn('Falha ao atualizar cabeçalho do banco após exclusão:', e);
       }
     } catch (e) {
-      console.error('Erro ao excluir questão:', e);
-      toast({ description: 'Erro ao excluir questão.', variant: 'destructive' });
+      if (!isTransientNetworkError(e)) {
+        console.error('Erro ao excluir questão:', e);
+      }
+      toast({ description: isTransientNetworkError(e) ? 'Sem conexão. Tente novamente em instantes.' : 'Erro ao excluir questão.', variant: 'destructive' });
     }
   };
 
@@ -1170,6 +1379,7 @@ const QuestoesPage = () => {
         points: typeof q.points === 'number' ? q.points : 0,
         attempts: typeof q.attempts === 'number' ? q.attempts : 0,
         metadata: { ...(q.metadata || {}) },
+        choicesMedia: (q && typeof q.choicesMedia === 'object' && q.choicesMedia) ? JSON.parse(JSON.stringify(q.choicesMedia)) : {},
       };
       // Sincronizar metadata com os valores visíveis na UI para evitar divergências
       base.metadata = {
@@ -1183,6 +1393,7 @@ const QuestoesPage = () => {
         attempts: base.attempts,
         originalId: q.id,
         copiedAt: new Date().toISOString(),
+        choicesMedia: (base.choicesMedia && typeof base.choicesMedia === 'object') ? base.choicesMedia : (q.metadata && q.metadata.choicesMedia) || {},
       };
 
       const { data, error } = await questionBankService.createQuestion(currentBankId, base);
@@ -1198,6 +1409,9 @@ const QuestoesPage = () => {
         title: data?.title ?? base.title,
         body: data?.body ?? base.body,
         metadata: meta,
+        choicesMedia: (meta && typeof meta === 'object' && meta.choicesMedia && typeof meta.choicesMedia === 'object')
+          ? meta.choicesMedia
+          : (base.choicesMedia || {}),
         // choices e demais campos mantidos em nível superior para a UI
         choices: (() => {
           const arr = Array.isArray(meta.choices) ? meta.choices : (
@@ -1237,8 +1451,10 @@ const QuestoesPage = () => {
         console.warn('Falha ao atualizar cabeçalho do banco após duplicação:', e);
       }
     } catch (e) {
-      console.error('Erro ao duplicar questão:', e);
-      toast({ description: 'Erro ao duplicar questão.', variant: 'destructive' });
+      if (!isTransientNetworkError(e)) {
+        console.error('Erro ao duplicar questão:', e);
+      }
+      toast({ description: isTransientNetworkError(e) ? 'Sem conexão. Tente novamente em instantes.' : 'Erro ao duplicar questão.', variant: 'destructive' });
     }
   };
 
@@ -1748,8 +1964,10 @@ const QuestoesPage = () => {
         }
       }
     } catch (err) {
-      console.error('Error creating question bank:', err);
-      toast({ description: 'Erro ao conectar com o servidor', variant: 'destructive' });
+      if (!isTransientNetworkError(err)) {
+        console.error('Error creating question bank:', err);
+      }
+      toast({ description: isTransientNetworkError(err) ? 'Sem conexão. Tente novamente em instantes.' : 'Erro ao conectar com o servidor', variant: 'destructive' });
       // Em caso de erro inesperado, ainda assim voltar
       window.history.pushState({}, '', '/banco-de-questoes');
       window.dispatchEvent(new PopStateEvent('popstate'));
@@ -2037,7 +2255,7 @@ const QuestoesPage = () => {
         {/* Área principal */}
         <main className="flex-1 p-6">
           {questions.length > 0 ? (
-            <div className="w-[951px] mx-auto">
+            <div className="w-full">
               <div className="bg-white border border-gray-200 rounded-[8px] shadow-sm">
                 {/* Header do card */}
                 <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 relative">
@@ -2158,805 +2376,878 @@ const QuestoesPage = () => {
 
                 {/* Corpo do card */}
                 <div className="px-5 py-4">
-                  {/* Campo título da questão */}
-                  <div className="mb-4 flex items-start gap-3">
-                  <div className="w-[523px] box-border">
-                  <div className="flex items-center rounded-[8px] pl-0 pr-3 py-2 w-[523px] box-border">
-                    <div className="flex items-center gap-2 w-[467px] shrink-0 box-border bg-[#F6F5FA] px-3 py-2 rounded-[4px]">
-                      <span className="w-[20px] h-[20px] rounded bg-blue-600 text-white text-[12px] grid place-items-center">
-                        {selectedQuestionIndex !== null ? (selectedQuestionIndex + 1) : ''}
-                      </span>
-                      <span className="text-[14px] font-semibold font-inter leading-[18px]" style={{ color: 'var(--Typography-Title, #22252B)', wordWrap: 'break-word' }}>Questão:</span>
-                      <input
-                        type="text"
-                        placeholder="Digite aqui o nome de identificação da questão"
-                        value={selectedQuestionIndex !== null && questions[selectedQuestionIndex] ? (questions[selectedQuestionIndex].name || '') : ''}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          if (selectedQuestionIndex !== null) {
-                            setQuestions(prev => {
-                              const next = [...prev];
-                              if (next[selectedQuestionIndex]) {
-                                next[selectedQuestionIndex] = { ...next[selectedQuestionIndex], name: val };
+                  <div className="grid grid-cols-12 gap-4">
+                    <div className="col-span-12 rounded-xl border border-gray-200 bg-white p-4">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <span className="w-7 h-7 rounded-lg bg-blue-600 text-white text-[12px] grid place-items-center font-inter font-semibold">
+                          {selectedQuestionIndex !== null ? (selectedQuestionIndex + 1) : ''}
+                        </span>
+                        <div className="flex-1 min-w-[240px]">
+                          <div className="text-[12px] font-inter text-[#6B7588]">Nome da questão</div>
+                          <input
+                            type="text"
+                            placeholder="Ex.: Questão 1"
+                            value={selectedQuestionIndex !== null && questions[selectedQuestionIndex] ? (questions[selectedQuestionIndex].name || '') : ''}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              if (selectedQuestionIndex !== null) {
+                                setQuestions(prev => {
+                                  const next = [...prev];
+                                  if (next[selectedQuestionIndex]) {
+                                    next[selectedQuestionIndex] = { ...next[selectedQuestionIndex], name: val };
+                                  }
+                                  return next;
+                                });
                               }
-                              return next;
-                            });
-                          }
-                        }}
-                        className="flex-1 min-w-0 h-[30px] px-3 bg-transparent outline-none text-[14px] leading-[20px] font-normal font-inter break-words placeholder:text-[var(--Typography-Placeholder,#ABADB3)]"
-                      />
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {/* Botão de imagem (agora à esquerda) */}
-                      <button
-                        type="button"
-                        className="w-6 h-6"
-                        style={{
-                          display: 'flex',
-                          padding: 'var(--Spacing-4px, 4px)',
-                          alignItems: 'center',
-                          alignContent: 'center',
-                          gap: '12px var(--Spacing-12px, 12px)',
-                          flexWrap: 'wrap',
-                          borderRadius: 'var(--Corner-Radius-4px, 4px)',
-                          border: `1px solid ${(() => {
-                            const current = getSelectedQuestion();
-                            const meta = (current && current.metadata) || {};
-                            const candidates = [
-                              current?.image,
-                              current?.imageUrl,
-                              current?.image_url,
-                              current?.cover,
-                              current?.capa,
-                              current?.thumbnail,
-                              meta?.image,
-                              meta?.imageUrl,
-                              meta?.image_url,
-                              meta?.cover,
-                              meta?.capa,
-                              meta?.thumbnail,
-                            ];
-                            const saved = candidates.find(v => typeof v === 'string' && v.trim().length > 0);
-                            const hasImage = !!(saved || selectedImage);
-                            return hasImage ? '#0047BB' : 'var(--Stroke-Default, #E3E4E5)';
-                          })()}`,
-                          background: 'var(--Background-Default, #F9FAFB)'
-                        }}
-                        onClick={handleSwitchToImageUpload}
-                        aria-label="Selecionar imagem"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" className="w-4 h-4 aspect-square" aria-hidden="true">
-                          <g clipPath="url(#clip0_597_7236)">
-                            <path d="M13 2.5H3C2.72386 2.5 2.5 2.72386 2.5 3V13C2.5 13.2761 2.72386 13.5 3 13.5H13C13.2761 13.5 13.5 13.2761 13.5 13V3C13.5 2.72386 13.2761 2.5 13 2.5Z" stroke="#6B7588" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
-                            <path d="M6 7C6.55228 7 7 6.55228 7 6C7 5.44772 6.55228 5 6 5C5.44772 5 5 5.44772 5 6C5 6.55228 5.44772 7 6 7Z" stroke="#6B7588" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
-                            <path d="M3.54297 13.5004L10.3961 6.64664C10.4425 6.60015 10.4977 6.56328 10.5584 6.53811C10.6191 6.51295 10.6841 6.5 10.7498 6.5C10.8156 6.5 10.8806 6.51295 10.9413 6.53811C11.002 6.56328 11.0572 6.60015 11.1036 6.64664L13.4998 9.04352" stroke="#6B7588" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
-                          </g>
-                          <defs>
-                            <clipPath id="clip0_597_7236">
-                              <rect width="16" height="16" fill="white"/>
-                            </clipPath>
-                          </defs>
-                        </svg>
-                      </button>
-                      {/* Botão de câmera/vídeo (agora à direita) */}
-                      <button
-                        type="button"
-                        className="w-6 h-6"
-                        style={{
-                          display: 'flex',
-                          padding: 'var(--Spacing-4px, 4px)',
-                          alignItems: 'center',
-                          alignContent: 'center',
-                          gap: '12px var(--Spacing-12px, 12px)',
-                          flexWrap: 'wrap',
-                          borderRadius: 'var(--Corner-Radius-4px, 4px)',
-                          border: `1px solid ${(() => {
-                            const current = getSelectedQuestion();
-                            const meta = (current && current.metadata) || {};
-                            const candidates = [
-                              meta?.videoUrl,
-                              meta?.video_url,
-                              meta?.video,
-                              current?.videoUrl,
-                              current?.video_url,
-                              current?.video,
-                            ];
-                            const saved = candidates.find(v => typeof v === 'string' && v.trim().length > 0);
-                            const hasVideo = !!(saved || selectedVideo);
-                            return hasVideo ? '#0047BB' : 'var(--Stroke-Default, #E3E4E5)';
-                          })()}`,
-                          background: 'var(--Background-Default, #F9FAFB)'
-                        }}
-                        onClick={handleSwitchToVideoUpload}
-                        aria-label="Selecionar vídeo"
-                      >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                          <g clipPath="url(#clip0_828_24506)">
-                            <path d="M12 4H2C1.72386 4 1.5 4.22386 1.5 4.5V11.5C1.5 11.7761 1.72386 12 2 12H12C12.2761 12 12.5 11.7761 12.5 11.5V4.5C12.5 4.22386 12.2761 4 12 4Z" stroke="#6B7588" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-                            <path d="M12.5 7L15.5 5V11L12.5 9" stroke="#6B7588" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-                          </g>
-                          <defs>
-                            <clipPath id="clip0_828_24506">
-                              <rect width="16" height="16" fill="white" />
-                            </clipPath>
-                          </defs>
-                        </svg>
-                      </button>
-                      {/* Input de arquivo oculto para o botão de imagem */}
-                      
-                    </div>
-                  </div>
-                    <textarea
-                      placeholder="Adicione aqui a sua pergunta..."
-                      className="w-[523px] h-[120px] px-3 py-2 rounded-[var(--Corner-Radius-4px,4px)] bg-[var(--Background-Content,#F6F5FA)] border border-gray-200 text-[12px] font-inter"
-                      value={getSelectedQuestion()?.text || ''}
-                      onChange={(e) => {
-                        updateSelectedQuestion({ text: e.target.value });
-                      }}
-                    />
-                  </div>
-                  {/* Box de upload à direita do textarea (aparece ao clicar no botão) */}
-                  {showUploadBox && (
-                    <div className="self-end mb-[2px]">
-                      {isUploading ? (
-                        <div className="p-6 h-[120px] w-full max-w-[360px] rounded-md text-center text-[12px] bg-white border-2 border-dashed border-[#0047BB]">
-                          <div className="flex flex-col items-center justify-center gap-2">
-                            {(() => {
-                              const radius = 16;
-                              const circumference = 2 * Math.PI * radius;
-                              const offset = circumference * (1 - uploadProgress / 100);
-                              return (
-                                <div className="relative w-10 h-10">
-                                  <svg width="40" height="40" viewBox="0 0 40 40">
-                                    <circle cx="20" cy="20" r={radius} stroke="#0047BB" strokeWidth="4" opacity="0.3" fill="none" />
-                                    <circle cx="20" cy="20" r={radius} stroke="#0047BB" strokeWidth="4" fill="none" strokeDasharray={circumference} strokeDashoffset={offset} transform="rotate(-90 20 20)" />
-                                  </svg>
-                                  <span className="absolute inset-0 flex items-center justify-center text-[12px] text-[#22252B]">{Math.round(uploadProgress)}%</span>
-                                </div>
-                              );
-                            })()}
-                            <p className="text-[#22252B]">Carregando...</p>
+                            }}
+                            className="mt-1 w-full h-[38px] px-3 rounded-md bg-[#F6F5FA] border border-gray-200 outline-none text-[14px] font-inter"
+                            onBlur={() => { persistSelectedQuestionExtras({}); }}
+                          />
+                          <div className="mt-1 text-[11px] font-inter text-[#9291A5]">
+                            Apenas para organização. Não aparece para o aluno.
                           </div>
                         </div>
-                      ) : uploadMode === 'image' ? (
-                        (() => {
-                          // Usar preview salvo da questão mesmo sem selectedImage
+                      </div>
+
+                      <div className="mt-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="text-[12px] font-inter text-[#6B7588]">Enunciado</div>
+                          <div className="text-[11px] font-inter text-[#9291A5]">
+                            {(getSelectedQuestion()?.text || '').length} caracteres
+                          </div>
+                        </div>
+                        <textarea
+                          placeholder="Digite aqui a pergunta..."
+                          className="mt-1 w-full h-[130px] px-3 py-2 rounded-md bg-[#F6F5FA] border border-gray-200 text-[12px] font-inter"
+                          value={getSelectedQuestion()?.text || ''}
+                          onChange={(e) => { updateSelectedQuestion({ text: e.target.value }); }}
+                          onBlur={() => { persistSelectedQuestionExtras({}); }}
+                        />
+                        <div className="mt-1 text-[11px] font-inter text-[#9291A5]">
+                          Use uma frase clara e objetiva. Mídia é opcional.
+                        </div>
+                      </div>
+
+                      <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {(() => {
                           const current = getSelectedQuestion();
                           const meta = (current && current.metadata) || {};
                           const savedUrl = [
-                            // Preferir sempre URL definida em metadata (padrão novo)
-                            meta?.imageUrl,
-                            meta?.image_url,
-                            meta?.image,
-                            meta?.thumbnail,
-                            meta?.cover,
-                            meta?.capa,
-                            // Campos antigos/alternativos do objeto raiz
-                            current?.imageUrl,
-                            current?.image_url,
-                            current?.image,
-                            current?.thumbnail,
-                            current?.cover,
-                            current?.capa,
+                            meta?.imageUrl, meta?.image_url, meta?.image, meta?.thumbnail, meta?.cover, meta?.capa,
+                            current?.imageUrl, current?.image_url, current?.image, current?.thumbnail, current?.cover, current?.capa,
                           ].find(v => typeof v === 'string' && v.trim().length > 0) || null;
                           const hasPreview = !!(selectedImage || savedUrl);
-                          return hasPreview ? (
-                        <div
-                          className="relative p-4 h-[120px] w-full max-w-[360px] rounded-md text-[12px] bg-white border-2 border-dashed border-[#0047BB]"
-                        >
-                          {/* Botão de remoção (X) */}
-                          <button
-                            type="button"
-                            aria-label="Remover imagem"
-                            className="absolute top-2 right-2 w-5 h-5 rounded-full bg-red-500 text-white text-[10px] flex items-center justify-center"
-                            onClick={(e) => { e.stopPropagation(); handleRemoveSelectedImage(); setShowUploadBox(false); }}
-                            title="Remover imagem"
-                          >
-                            ×
-                          </button>
-                          <div className="flex items-center gap-3">
-                            <img src={previewUrl || savedUrl || '/Produtos - Cores.png'} alt={selectedImage?.name || 'Imagem da questão'} className="w-[120px] h-[80px] rounded object-cover" />
-                            <div>
-                              {(() => {
-                                // Nome do arquivo: se for File, usa file.name; se for URL, extrai basename
-                                let displayName = 'Imagem';
-                                if (selectedImage && selectedImage instanceof File) {
-                                  displayName = selectedImage.name || 'Imagem';
-                                } else {
-                                  const src = previewUrl || savedUrl || '';
-                                  if (typeof src === 'string' && src.trim().length > 0) {
-                                    try {
-                                      const u = new URL(src);
-                                      const base = (u.pathname || '').split('/').pop() || '';
-                                      displayName = decodeURIComponent(base) || 'Imagem';
-                                    } catch {
-                                      const noQuery = src.split('?')[0];
-                                      const base = (noQuery || '').split('/').pop() || '';
-                                      displayName = decodeURIComponent(base) || 'Imagem';
-                                    }
-                                  }
-                                }
-                                return (
-                                  <p className="text-[#1E1B39] font-inter font-medium text-[14px]">{displayName}</p>
-                                );
-                              })()}
-                              <p className="text-[#9291A5] font-inter text-[12px]">Tamanho: {selectedImage?.size ? `${(selectedImage.size / (1024 * 1024)).toFixed(1)}MB` : '—'}</p>
-                              {/* Removido bloco de exibição de URL/preview do Supabase por solicitação */}
+                          return (
+                            <div className="rounded-xl border border-gray-200 bg-white p-3">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2">
+                                  <div className="text-[12px] font-semibold font-inter text-[#22252B]">Imagem</div>
+                                  <span
+                                    className="px-2 py-0.5 rounded-full text-[11px] font-inter border"
+                                    style={{
+                                      backgroundColor: (isUploading && uploadMode === 'image') ? '#EFF6FF' : (savedUrl ? '#ECFDF3' : '#F9FAFB'),
+                                      borderColor: (isUploading && uploadMode === 'image') ? '#BFDBFE' : (savedUrl ? '#BBF7D0' : '#E5E7EB'),
+                                      color: (isUploading && uploadMode === 'image') ? '#1D4ED8' : (savedUrl ? '#166534' : '#6B7280'),
+                                    }}
+                                  >
+                                    {(isUploading && uploadMode === 'image') ? 'Enviando' : (savedUrl ? 'Salvo' : 'Opcional')}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    className="px-3 h-[32px] rounded-md text-[12px] border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-60"
+                                    onClick={() => imageFileInputRef.current && imageFileInputRef.current.click()}
+                                    disabled={isUploading}
+                                  >
+                                    {isUploading && uploadMode === 'image' ? (
+                                      <span className="inline-flex items-center gap-2">
+                                        <span className="inline-block w-3.5 h-3.5 border-2 border-gray-300 border-t-[#0047BB] rounded-full animate-spin" />
+                                        Enviando...
+                                      </span>
+                                    ) : (hasPreview ? 'Alterar' : 'Adicionar')}
+                                  </button>
+                                  {savedUrl ? (
+                                    <button
+                                      type="button"
+                                      className="px-3 h-[32px] rounded-md text-[12px] border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-60"
+                                      onClick={() => {
+                                        const current = getSelectedQuestion();
+                                        if (!current) return;
+                                        updateSelectedQuestion({ metadata: { ...(current.metadata || {}), imageUrl: null, imagePath: null } });
+                                        persistSelectedQuestionExtras({ imageUrl: null, imagePath: null }).catch(() => {});
+                                        handleRemoveSelectedImage();
+                                      }}
+                                      disabled={isUploading}
+                                    >
+                                      Remover
+                                    </button>
+                                  ) : null}
+                                  <input
+                                    key={imageFileInputKey}
+                                    ref={imageFileInputRef}
+                                    type="file"
+                                    accept="image/png,image/jpeg"
+                                    className="hidden"
+                                    onChange={handleImageFileChange}
+                                  />
+                                </div>
+                              </div>
+                              <div className="mt-1 text-[11px] font-inter text-[#9291A5]">
+                                Formatos: PNG/JPEG.
+                              </div>
+                              <div className="mt-3">
+                                {hasPreview ? (
+                                  <div className="relative w-full h-[120px] rounded-lg overflow-hidden border border-gray-200 bg-[#F6F5FA]">
+                                    <img
+                                      src={normalizeSupabaseSignedToPublic(previewUrl || savedUrl || '')}
+                                      alt="Imagem da questão"
+                                      className="w-full h-full object-cover"
+                                      onError={(e) => {
+                                        const img = e.currentTarget;
+                                        if (img?.dataset?.fallbackUsed === '1') return;
+                                        img.dataset.fallbackUsed = '1';
+                                        img.src = String(previewUrl || savedUrl || '');
+                                      }}
+                                    />
+                                    {isUploading && uploadMode === 'image' ? (
+                                      <div className="absolute inset-0 bg-white/70 flex items-center justify-center">
+                                        <span className="inline-block w-7 h-7 border-2 border-gray-300 border-t-[#0047BB] rounded-full animate-spin" />
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                ) : (
+                                  <div className="w-full h-[120px] rounded-lg border border-dashed border-gray-300 bg-[#F9FAFB] flex items-center justify-center text-[12px] font-inter text-[#6B7588]">
+                                    Sem imagem
+                                  </div>
+                                )}
+                              </div>
                             </div>
-                          </div>
-                          {/* Input de arquivo oculto para re-seleção no estado de preview */}
-                          <input
-                            key={imageFileInputKey}
-                            ref={imageFileInputRef}
-                            type="file"
-                            accept="image/png,image/jpeg"
-                            className="hidden"
-                            onChange={handleImageFileChange}
-                          />
-                        </div>
-                          ) : (
-                        <div className="p-6 h-[120px] rounded-md text-center text-[12px] bg-white border-2 border-dashed border-[#0047BB]">
-                          <button
-                            type="button"
-                            className="w-full h-full cursor-pointer hover:bg-gray-50 rounded-md flex flex-col items-center justify-center gap-2"
-                            onClick={handleOpenImageFileDialog}
-                            aria-label="Selecionar imagem"
-                          >
-                            <img src="/icone%20backup%20simulados.png" alt="Upload" className="w-[36px] h-[36px]" />
-                            <p className="text-[#22252B]">
-                              Clique para selecionar uma imagem
-                            </p>
-                            <p className="text-[#9AA0A6]">Max 10 MB, formato: PNG ou JPEG</p>
-                          </button>
-                          {/* Input de arquivo oculto */}
-                          <input
-                            key={imageFileInputKey}
-                            ref={imageFileInputRef}
-                            type="file"
-                            accept="image/png,image/jpeg"
-                            className="hidden"
-                            onChange={handleImageFileChange}
-                          />
-                        </div>
                           );
-                        })()
-                      ) : (
-                        /* uploadMode === 'video' */
-                        (() => {
+                        })()}
+
+                        {(() => {
                           const current = getSelectedQuestion();
                           const meta = (current && current.metadata) || {};
                           const savedUrl = [
-                            meta?.videoUrl,
-                            meta?.video_url,
-                            meta?.video,
-                            current?.videoUrl,
-                            current?.video_url,
-                            current?.video,
-                          ].find(v => typeof v === 'string' && v.trim().length > 0) || null;
+                            meta?.videoUrl, meta?.video_url, meta?.video,
+                            current?.videoUrl, current?.video_url, current?.video,
+                        ].find(v => typeof v === 'string' && v.trim().length > 0) || null;
                           const hasPreview = !!(selectedVideo || savedUrl);
-                          return hasPreview ? (
-                          <div className="relative p-4 h-[120px] rounded-md text-[12px] bg-white border-2 border-dashed border-[#0047BB]">
-                            {/* Remover vídeo */}
-                            <button
-                              type="button"
-                              aria-label="Remover vídeo"
-                              className="absolute top-2 right-2 w-5 h-5 rounded-full bg-red-500 text-white text-[10px] flex items-center justify-center"
-                              onClick={(e) => { e.stopPropagation(); handleRemoveSelectedVideo(); }}
-                              title="Remover vídeo"
-                            >
-                              ×
-                            </button>
-                            <div className="flex items-center gap-3">
-                              <video src={videoPreviewUrl || savedUrl || ''} className="w-[120px] h-[80px] rounded object-cover" controls />
-                              <div>
-                                <p className="text-[#1E1B39] font-inter font-medium text-[14px]">{selectedVideo?.name || 'Vídeo'}</p>
-                                <p className="text-[#9291A5] font-inter text-[12px]">Tamanho: {selectedVideo?.size ? `${(selectedVideo.size / (1024 * 1024)).toFixed(1)}MB` : '—'}</p>
+                          return (
+                            <div className="rounded-xl border border-gray-200 bg-white p-3">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2">
+                                  <div className="text-[12px] font-semibold font-inter text-[#22252B]">Vídeo</div>
+                                  <span
+                                    className="px-2 py-0.5 rounded-full text-[11px] font-inter border"
+                                    style={{
+                                      backgroundColor: (isUploading && uploadMode === 'video') ? '#EFF6FF' : (savedUrl ? '#ECFDF3' : '#F9FAFB'),
+                                      borderColor: (isUploading && uploadMode === 'video') ? '#BFDBFE' : (savedUrl ? '#BBF7D0' : '#E5E7EB'),
+                                      color: (isUploading && uploadMode === 'video') ? '#1D4ED8' : (savedUrl ? '#166534' : '#6B7280'),
+                                    }}
+                                  >
+                                    {(isUploading && uploadMode === 'video') ? 'Enviando' : (savedUrl ? 'Salvo' : 'Opcional')}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    className="px-3 h-[32px] rounded-md text-[12px] border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-60"
+                                    onClick={() => videoFileInputRef.current && videoFileInputRef.current.click()}
+                                    disabled={isUploading}
+                                  >
+                                    {isUploading && uploadMode === 'video' ? (
+                                      <span className="inline-flex items-center gap-2">
+                                        <span className="inline-block w-3.5 h-3.5 border-2 border-gray-300 border-t-[#0047BB] rounded-full animate-spin" />
+                                        Enviando...
+                                      </span>
+                                    ) : (hasPreview ? 'Alterar' : 'Adicionar')}
+                                  </button>
+                                  {savedUrl ? (
+                                    <button
+                                      type="button"
+                                      className="px-3 h-[32px] rounded-md text-[12px] border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-60"
+                                      onClick={() => {
+                                        const current = getSelectedQuestion();
+                                        if (!current) return;
+                                        updateSelectedQuestion({ metadata: { ...(current.metadata || {}), videoUrl: null, videoPath: null } });
+                                        persistSelectedQuestionExtras({ videoUrl: null, videoPath: null }).catch(() => {});
+                                        handleRemoveSelectedVideo();
+                                      }}
+                                      disabled={isUploading}
+                                    >
+                                      Remover
+                                    </button>
+                                  ) : null}
+                                  <input
+                                    ref={videoFileInputRef}
+                                    type="file"
+                                    accept="video/mp4,video/webm,video/ogg"
+                                    className="hidden"
+                                    onChange={handleVideoFileChange}
+                                  />
+                                </div>
+                              </div>
+                              <div className="mt-1 text-[11px] font-inter text-[#9291A5]">
+                                Formatos: MP4/WebM/Ogg.
+                              </div>
+                                  <div className="mt-3">
+                                {hasPreview ? (
+                                  <div className="relative w-full h-[120px] rounded-lg overflow-hidden border border-gray-200 bg-[#F6F5FA]">
+                                    <DeferredVideo src={videoPreviewUrl || savedUrl || ''} className="w-full h-full object-cover" />
+                                    {isUploading && uploadMode === 'video' ? (
+                                      <div className="absolute inset-0 bg-white/70 flex items-center justify-center">
+                                        <span className="inline-block w-7 h-7 border-2 border-gray-300 border-t-[#0047BB] rounded-full animate-spin" />
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                ) : (
+                                  <div className="w-full h-[120px] rounded-lg border border-dashed border-gray-300 bg-[#F9FAFB] flex items-center justify-center text-[12px] font-inter text-[#6B7588]">
+                                    Sem vídeo
+                                  </div>
+                                )}
                               </div>
                             </div>
-                            <input
-                              ref={videoFileInputRef}
-                              type="file"
-                              accept="video/mp4,video/webm,video/ogg"
-                              className="hidden"
-                              onChange={handleVideoFileChange}
+                          );
+                        })()}
+                      </div>
+                    </div>
+
+                    <div className="col-span-12 rounded-xl border border-gray-200 bg-white p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-[12px] font-semibold font-inter text-[#22252B]">Resolução</div>
+                        <div className="flex items-center gap-3">
+                          <span className="text-[12px] font-inter" style={{ color: '#737780' }}>Ativar</span>
+                          <div
+                            className="w-9 h-5 rounded-full relative cursor-pointer"
+                            style={{
+                              backgroundColor: (() => {
+                                const current = getSelectedQuestion();
+                                const meta = (current && current.metadata) || {};
+                                const txt = meta.resolutionText ?? meta.resolution ?? meta.resolucaoText ?? meta.resolucao ?? '';
+                                const enabled = typeof meta.resolutionEnabled === 'boolean' ? meta.resolutionEnabled : (typeof txt === 'string' && txt.trim().length > 0);
+                                return enabled ? '#0047BB' : '#E5E7EB';
+                              })()
+                            }}
+                            onClick={() => {
+                              const current = getSelectedQuestion();
+                              if (!current) return;
+                              const meta = current.metadata || {};
+                              const txt = meta.resolutionText ?? meta.resolution ?? meta.resolucaoText ?? meta.resolucao ?? '';
+                              const enabled = typeof meta.resolutionEnabled === 'boolean' ? meta.resolutionEnabled : (typeof txt === 'string' && txt.trim().length > 0);
+                              updateSelectedQuestion({ metadata: { ...(meta || {}), resolutionEnabled: !enabled } });
+                            }}
+                            role="switch"
+                            aria-checked={(() => {
+                              const current = getSelectedQuestion();
+                              const meta = (current && current.metadata) || {};
+                              const txt = meta.resolutionText ?? meta.resolution ?? meta.resolucaoText ?? meta.resolucao ?? '';
+                              const enabled = typeof meta.resolutionEnabled === 'boolean' ? meta.resolutionEnabled : (typeof txt === 'string' && txt.trim().length > 0);
+                              return !!enabled;
+                            })()}
+                          >
+                            <span
+                              className="absolute top-0 w-5 h-5 rounded-full bg-white border shadow"
+                              style={{
+                                left: (() => {
+                                  const current = getSelectedQuestion();
+                                  const meta = (current && current.metadata) || {};
+                                  const txt = meta.resolutionText ?? meta.resolution ?? meta.resolucaoText ?? meta.resolucao ?? '';
+                                  const enabled = typeof meta.resolutionEnabled === 'boolean' ? meta.resolutionEnabled : (typeof txt === 'string' && txt.trim().length > 0);
+                                  return enabled ? 'calc(100% - 20px)' : 0;
+                                })(),
+                                borderColor: (() => {
+                                  const current = getSelectedQuestion();
+                                  const meta = (current && current.metadata) || {};
+                                  const txt = meta.resolutionText ?? meta.resolution ?? meta.resolucaoText ?? meta.resolucao ?? '';
+                                  const enabled = typeof meta.resolutionEnabled === 'boolean' ? meta.resolutionEnabled : (typeof txt === 'string' && txt.trim().length > 0);
+                                  return enabled ? '#0047BB' : '#D1D5DB';
+                                })()
+                              }}
                             />
                           </div>
-                        ) : (
-                          <button
-                            type="button"
-                            className="p-6 h-[120px] rounded-md text-center text-[12px] bg-white border-2 border-dashed border-[#0047BB] cursor-pointer w-full"
-                            onClick={handleOpenVideoFileDialog}
-                            aria-label="Selecionar vídeo"
-                          >
-                            <div className="flex flex-col items-center justify-center gap-2">
-                              <img
-                                src="/icone backup simulados.png"
-                                alt="Selecionar vídeo"
-                                className="w-[36px] h-[36px] select-none"
-                                draggable={false}
-                                decoding="async"
-                                loading="lazy"
-                              />
-                              <p className="text-[#22252B]">
-                                Arraste o vídeo aqui ou
-                                <span className="text-[#0047BB] underline ml-1">selecione clicando aqui</span>
-                              </p>
-                              <p className="text-[#9AA0A6]">Max 50 MB, formato: MP4/WebM/Ogg</p>
-                              <input
-                                ref={videoFileInputRef}
-                                type="file"
-                                accept="video/mp4,video/webm,video/ogg"
-                                className="hidden"
-                                onChange={handleVideoFileChange}
-                              />
+                        </div>
+                      </div>
+                      <div className="mt-1 text-[11px] font-inter text-[#9291A5]">
+                        Explique o motivo da alternativa correta (opcional).
+                      </div>
+                      {(() => {
+                        const current = getSelectedQuestion();
+                        const meta = (current && current.metadata) || {};
+                        const txt = meta.resolutionText ?? meta.resolution ?? meta.resolucaoText ?? meta.resolucao ?? '';
+                        const enabled = typeof meta.resolutionEnabled === 'boolean' ? meta.resolutionEnabled : (typeof txt === 'string' && txt.trim().length > 0);
+                        const resolutionImageUrl = [
+                          meta.resolutionImageUrl,
+                          meta.resolution_image_url,
+                          meta.resolutionImage,
+                          meta.resolution_image,
+                        ].find(v => typeof v === 'string' && v.trim().length > 0) || null;
+                        const resolutionVideoUrl = [
+                          meta.resolutionVideoUrl,
+                          meta.resolution_video_url,
+                          meta.resolutionVideo,
+                          meta.resolution_video,
+                        ].find(v => typeof v === 'string' && v.trim().length > 0) || null;
+                        return enabled ? (
+                          <div className="mt-3">
+                            <div className="mb-2 flex items-center justify-between gap-3">
+                              <div className="text-[11px] font-inter text-[#9291A5]">Texto da resolução</div>
+                              <div className="text-[11px] font-inter text-[#9291A5]">{String(txt || '').length} caracteres</div>
                             </div>
-                          </button>
-                          );
-                        })()
-                      )}
+                            <textarea
+                              placeholder="Explique a resposta correta..."
+                              className="w-full h-[140px] px-3 py-2 rounded-md bg-[#F6F5FA] border border-gray-200 text-[12px] font-inter"
+                              value={String(txt || '')}
+                              onChange={(e) => {
+                                const current = getSelectedQuestion();
+                                if (!current) return;
+                                updateSelectedQuestion({ metadata: { ...(current.metadata || {}), resolutionText: e.target.value, resolutionEnabled: true } });
+                              }}
+                              onBlur={() => { persistSelectedQuestionExtras({}); }}
+                            />
+
+                            <div className="mt-3 flex flex-wrap items-center gap-2">
+                              <button
+                                type="button"
+                                className="px-3 py-2 rounded-md text-[12px] bg-white border border-gray-200 hover:bg-gray-50 disabled:opacity-60"
+                                onClick={() => resolutionImageInputRef.current && resolutionImageInputRef.current.click()}
+                                disabled={isResolutionUploading}
+                              >
+                                {resolutionImageUploading ? (
+                                  <span className="inline-flex items-center gap-2">
+                                    <span className="inline-block w-3.5 h-3.5 border-2 border-gray-300 border-t-[#0047BB] rounded-full animate-spin" />
+                                    Enviando...
+                                  </span>
+                                ) : (resolutionImageUrl ? 'Alterar imagem' : 'Adicionar imagem')}
+                              </button>
+                              <button
+                                type="button"
+                                className="px-3 py-2 rounded-md text-[12px] bg-white border border-gray-200 hover:bg-gray-50 disabled:opacity-60"
+                                onClick={() => resolutionVideoInputRef.current && resolutionVideoInputRef.current.click()}
+                                disabled={isResolutionUploading}
+                              >
+                                {resolutionVideoUploading ? (
+                                  <span className="inline-flex items-center gap-2">
+                                    <span className="inline-block w-3.5 h-3.5 border-2 border-gray-300 border-t-[#0047BB] rounded-full animate-spin" />
+                                    Enviando...
+                                  </span>
+                                ) : (resolutionVideoUrl ? 'Alterar vídeo' : 'Adicionar vídeo')}
+                              </button>
+                              <input ref={resolutionImageInputRef} type="file" accept="image/*" className="hidden" onChange={handleResolutionImageChange} />
+                              <input ref={resolutionVideoInputRef} type="file" accept="video/*" className="hidden" onChange={handleResolutionVideoChange} />
+                            </div>
+                            <div className="mt-1 text-[11px] font-inter text-[#9291A5]">
+                              Use mídia somente quando ajudar a explicar.
+                            </div>
+
+                            {(resolutionImageUrl || resolutionVideoUrl) ? (
+                              <div className="mt-3 flex flex-wrap items-center gap-2">
+                                {resolutionImageUrl ? (
+                                  <div className="relative w-[160px] h-[100px] rounded-lg overflow-hidden border border-gray-200 bg-white">
+                                    <img src={resolutionImageUrl} alt="Imagem da resolução" className="w-full h-full object-cover" />
+                                    {resolutionImageUploading ? (
+                                      <div className="absolute inset-0 bg-white/70 flex items-center justify-center">
+                                        <span className="inline-block w-7 h-7 border-2 border-gray-300 border-t-[#0047BB] rounded-full animate-spin" />
+                                      </div>
+                                    ) : null}
+                                    <button
+                                      type="button"
+                                      className="absolute top-2 right-2 w-6 h-6 rounded-full bg-red-500 text-white text-[12px] flex items-center justify-center"
+                                      onClick={handleRemoveResolutionImage}
+                                      disabled={isResolutionUploading}
+                                      aria-label="Remover imagem da resolução"
+                                    >
+                                      ×
+                                    </button>
+                                  </div>
+                                ) : null}
+                                {resolutionVideoUrl ? (
+                                  <div className="relative w-[200px] h-[100px] rounded-lg overflow-hidden border border-gray-200 bg-white">
+                                    <DeferredVideo src={resolutionVideoUrl} className="w-full h-full object-cover" />
+                                    {resolutionVideoUploading ? (
+                                      <div className="absolute inset-0 bg-white/70 flex items-center justify-center">
+                                        <span className="inline-block w-7 h-7 border-2 border-gray-300 border-t-[#0047BB] rounded-full animate-spin" />
+                                      </div>
+                                    ) : null}
+                                    <button
+                                      type="button"
+                                      className="absolute top-2 right-2 w-6 h-6 rounded-full bg-red-500 text-white text-[12px] flex items-center justify-center"
+                                      onClick={handleRemoveResolutionVideo}
+                                      disabled={isResolutionUploading}
+                                      aria-label="Remover vídeo da resolução"
+                                    >
+                                      ×
+                                    </button>
+                                  </div>
+                                ) : null}
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : null;
+                      })()}
                     </div>
-                  )}
                   </div>
 
                   {/* Escolhas */}
-                  <div className="mb-4">
-                    <span
-                      className="block mb-2"
-                      style={{
-                        color: 'var(--Typography-Title, #22252B)',
-                        fontFamily: 'var(--Font-Family-Family, Inter)',
-                        fontSize: 'var(--Font-Size-Body-14px, 14px)',
-                        fontStyle: 'normal',
-                        fontWeight: 400,
-                        lineHeight: '20px',
-                      }}
-                    >
-                      Escolhas:
-                    </span>
-
-                    {(getSelectedQuestion()?.choices || []).map((value, idx) => (
-                      <div key={idx} className="flex items-center gap-3 mb-2">
-                        <span
-                          onClick={() => {
-                            const current = getSelectedQuestion();
-                            if (!current) return;
-                            const nextIndex = current.correctChoiceIndex === idx ? null : idx;
-                            updateSelectedQuestion({ correctChoiceIndex: nextIndex });
-                          }}
-                          className={`inline-flex items-center justify-center h-[46px] w-[34px] rounded-[var(--Corner-Radius-4px,4px)] ${(getSelectedQuestion()?.correctChoiceIndex === idx) ? 'bg-[#06C270]' : 'bg-[var(--Background-Content,#F6F5FA)]'} cursor-pointer`}
-                          style={{
-                            color: (getSelectedQuestion()?.correctChoiceIndex === idx) ? '#EBEBEB' : 'var(--Typography-Title, #22252B)',
-                            fontFamily: 'var(--Font-Family-Family, Inter)',
-                            fontSize: 'var(--Font-Size-Body-14px, 14px)',
-                            fontStyle: 'normal',
-                            fontWeight: 600,
-                            lineHeight: 'var(--Font-Size-Line-Height-Subtitle, 30px)'
-                          }}
-                          title="Marcar como correta"
-                        >
-                          {String.fromCharCode(65 + idx)}
-                        </span>
-                        <input
-                          type="text"
-                          value={value}
-                          placeholder="Digite sua escolha aqui."
-                          className="flex-1 h-[32px] px-3 rounded-[var(--Corner-Radius-4px,4px)] bg-[var(--Background-Content,#F6F5FA)] text-[12px] font-inter"
-                         onChange={(e) => {
-                            const val = e.target.value;
-                            const current = getSelectedQuestion();
-                            if (!current) return;
-                            const nextChoices = Array.isArray(current.choices) ? [...current.choices] : [];
-                            nextChoices[idx] = val;
-                            updateSelectedQuestion({ choices: nextChoices });
-                          }}
-                        />
-                        <button
-                          type="button"
-                          className="h-[32px] px-3 rounded-[var(--Corner-Radius-4px,4px)] bg-[var(--Background-Content,#F6F5FA)] text-[12px] font-inter"
-                          onClick={() => {
-                            setChoiceRichEditorOpen((prev) => ({ ...prev, [idx]: !prev[idx] }));
-                          }}
-                          title={(() => {
-                            const html = (getSelectedQuestion()?.metadata?.choicesTextHtml?.[idx]) || '';
-                            const hasText = typeof html === 'string' && html.replace(/<[^>]+>/g, '').trim().length > 0;
-                            return hasText ? 'Editar texto da escolha' : 'Adicionar texto para esta escolha';
-                          })()}
-                        >
-                          {(() => {
-                            const html = (getSelectedQuestion()?.metadata?.choicesTextHtml?.[idx]) || '';
-                            const hasText = typeof html === 'string' && html.replace(/<[^>]+>/g, '').trim().length > 0;
-                            return hasText ? 'Editar texto' : 'Adicionar texto';
-                          })()}
-                        </button>
+                  <div className="mt-4 mb-4">
+                    <div className="flex items-end justify-between gap-3 mb-2">
+                      <div>
+                        <div className="text-[14px] font-inter text-[#22252B]">Alternativas</div>
+                        <div className="text-[11px] font-inter text-[#9291A5]">
+                          Clique na letra para marcar a correta. Texto/imagem/vídeo são opcionais.
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
                         {(() => {
-                          const html = (getSelectedQuestion()?.metadata?.choicesTextHtml?.[idx]) || '';
-                          const hasText = typeof html === 'string' && html.replace(/<[^>]+>/g, '').trim().length > 0;
-                          return hasText ? (
-                            <span
-                              className="ml-2 px-2 py-1 text-[11px] rounded bg-white border border-[#E6E8EB] text-[#22252B]"
-                              title="Esta escolha tem texto adicional"
-                            >
-                              Texto adicionado
+                          const c = getSelectedQuestion();
+                          const hasCorrect = typeof c?.correctChoiceIndex === 'number';
+                          return !hasCorrect ? (
+                            <span className="px-2 py-0.5 rounded-full text-[11px] font-inter border bg-[#FFFBEB] border-[#FDE68A] text-[#92400E]">
+                              Sem correta
                             </span>
                           ) : null;
                         })()}
-                        {choiceRichEditorOpen[idx] ? (
-                          <div className="mt-2 w-full p-2 rounded-[4px] bg-[var(--Background-Content,#F6F5FA)] border border-[#E6E8EB]">
-                            <div className="flex items-center gap-2 mb-2">
-                              <button
-                                type="button"
-                                className="px-2 py-1 text-[12px] text-[#22252B] bg-white rounded border border-[#E6E8EB]"
-                                onClick={(e) => {
-                                  const editor = e.currentTarget.closest('div')?.querySelector('.choice-rich-editor');
-                                  if (editor) { editor.focus(); document.execCommand('bold'); }
-                                }}
-                                title="Negrito"
-                              >B</button>
-                              <button
-                                type="button"
-                                className="px-2 py-1 text-[12px] text-[#22252B] bg-white rounded border border-[#E6E8EB] italic"
-                                onClick={(e) => {
-                                  const editor = e.currentTarget.closest('div')?.querySelector('.choice-rich-editor');
-                                  if (editor) { editor.focus(); document.execCommand('italic'); }
-                                }}
-                                title="Itálico"
-                              >I</button>
-                              <button
-                                type="button"
-                                className="px-2 py-1 text-[12px] text-[#22252B] bg-white rounded border border-[#E6E8EB] underline"
-                                onClick={(e) => {
-                                  const editor = e.currentTarget.closest('div')?.querySelector('.choice-rich-editor');
-                                  if (editor) { editor.focus(); document.execCommand('underline'); }
-                                }}
-                                title="Sublinhado"
-                              >U</button>
-                              <button
-                                type="button"
-                                className="px-2 py-1 text-[12px] text-[#22252B] bg-white rounded border border-[#E6E8EB]"
-                                onClick={(e) => {
-                                  const editor = e.currentTarget.closest('div')?.querySelector('.choice-rich-editor');
-                                  if (editor) { editor.focus(); document.execCommand('insertUnorderedList'); }
-                                }}
-                                title="Lista"
-                              >• Lista</button>
-                              <button
-                                type="button"
-                                className="px-2 py-1 text-[12px] text-[#6B7588] bg-white rounded border border-[#E6E8EB]"
-                                onClick={(e) => {
-                                  const editor = e.currentTarget.closest('div')?.querySelector('.choice-rich-editor');
-                                  if (editor) { editor.focus(); document.execCommand('removeFormat'); }
-                                }}
-                                title="Limpar formatação"
-                              >Limpar</button>
-                              <div className="flex-1" />
-                              <button
-                                type="button"
-                                className="px-2 py-1 text-[12px] text-white bg-[#22252B] rounded"
-                                onClick={async () => {
-                                  setChoiceRichEditorOpen((prev) => ({ ...prev, [idx]: false }));
-                                  try {
-                                    const metaChoices = (getSelectedQuestion()?.metadata?.choicesTextHtml) || {};
-                                    await persistSelectedQuestionExtras({ choicesTextHtml: metaChoices });
-                                  } catch (err) {
-                                    console.warn('Persistência de texto rico falhou:', err);
-                                  }
-                                }}
-                              >Concluir</button>
-                            </div>
-                            <div
-                              className="choice-rich-editor min-h-[80px] max-h-[220px] overflow-auto px-3 py-2 bg-white rounded border border-[#E6E8EB] text-[14px]"
-                              contentEditable
-                              suppressContentEditableWarning
-                              dangerouslySetInnerHTML={{ __html: (getSelectedQuestion()?.metadata?.choicesTextHtml?.[idx]) || '' }}
-                              onInput={(e) => {
-                                const html = e.currentTarget.innerHTML;
-                                const current = getSelectedQuestion();
-                                if (!current) return;
-                                const nextText = { ...((current.metadata && current.metadata.choicesTextHtml) || {}) };
-                                nextText[idx] = html;
-                                updateSelectedQuestion({ metadata: { ...(current.metadata || {}), choicesTextHtml: nextText } });
+                        <div className="text-[11px] font-inter text-[#9291A5]">
+                          {(getSelectedQuestion()?.choices || []).length} itens
+                        </div>
+                      </div>
+                    </div>
+
+                    {(getSelectedQuestion()?.choices || []).map((value, idx) => {
+                      const current = getSelectedQuestion();
+                      const isCorrect = current?.correctChoiceIndex === idx;
+                      const html = (current?.metadata?.choicesTextHtml?.[idx]) || '';
+                      const hasText = typeof html === 'string' && html.replace(/<[^>]+>/g, '').trim().length > 0;
+                      const metaChoicesMedia = (current?.metadata && typeof current.metadata === 'object' && current.metadata.choicesMedia && typeof current.metadata.choicesMedia === 'object')
+                        ? current.metadata.choicesMedia
+                        : {};
+                      const imageUrl = (metaChoicesMedia?.[idx]?.imageUrl) || '';
+                      const videoUrl = (metaChoicesMedia?.[idx]?.videoUrl) || '';
+                      return (
+                        <div key={idx} data-choice-card className="rounded-xl border border-gray-200 bg-white p-3 mb-3">
+                          <div className="flex items-center gap-3">
+                            <button
+                              type="button"
+                              className="w-10 h-10 rounded-lg border flex items-center justify-center font-inter font-semibold"
+                              style={{
+                                backgroundColor: isCorrect ? '#06C270' : '#F6F5FA',
+                                borderColor: isCorrect ? '#06C270' : '#E5E7EB',
+                                color: isCorrect ? '#FFFFFF' : '#22252B',
                               }}
-                              placeholder="Digite o comentário rico da escolha aqui..."
-                            />
-                          </div>
-                        ) : null}
-                        {/* Imagem da escolha: upload/URL/preview */}
-                        <div className="flex items-center gap-2">
-                          {/* input file oculto por escolha */}
-                          <input
-                            type="file"
-                            accept="image/*"
-                            className="hidden choice-image-input"
-                            onChange={async (e) => {
-                              try {
-                                const file = e.target.files && e.target.files[0];
-                                if (!file) return;
+                              title="Marcar como correta"
+                              onClick={() => {
                                 const current = getSelectedQuestion();
                                 if (!current) return;
-                                // Mostrar preview imediato com URL local para dar feedback
-                                const tempUrl = URL.createObjectURL(file);
-                                {
-                                  const nextChoicesMedia = { ...(current.choicesMedia || {}) };
-                                  nextChoicesMedia[idx] = { ...(nextChoicesMedia[idx] || {}), imageUrl: tempUrl };
-                                  updateSelectedQuestion({ choicesMedia: nextChoicesMedia, metadata: { ...(current.metadata || {}), choicesMedia: nextChoicesMedia } });
-                                }
-                                const bankIdFallback = currentBankId
-                                  || (bancoAtual && bancoAtual.id)
-                                  || current.question_bank_id
-                                  || (current.metadata && current.metadata.bankId)
-                                  || null;
-                                const res = await questionBankService.uploadQuestionImage(file, { bankId: bankIdFallback, questionId: current.id });
-                                const finalUrl = (res && res.url) || '';
-                                if (finalUrl) {
-                                  const nextChoicesMedia = { ...(current.choicesMedia || {}) };
-                                  nextChoicesMedia[idx] = { ...(nextChoicesMedia[idx] || {}), imageUrl: finalUrl };
-                                  updateSelectedQuestion({ choicesMedia: nextChoicesMedia, metadata: { ...(current.metadata || {}), choicesMedia: nextChoicesMedia } });
-                                  try { await persistSelectedQuestionExtras({ choicesMedia: nextChoicesMedia }); } catch {}
-                                  try { URL.revokeObjectURL(tempUrl); } catch {}
-                                }
-                              } catch (err) {
-                                toast({ description: 'Falha ao enviar imagem da escolha.', variant: 'destructive' });
-                              } finally {
-                                // limpar para permitir novo upload do mesmo arquivo
-                                e.target.value = '';
-                              }
-                            }}
-                          />
-                          <button
-                            type="button"
-                            className="h-[32px] px-3 rounded-[var(--Corner-Radius-4px,4px)] bg-[var(--Background-Content,#F6F5FA)] text-[12px] font-inter"
-                            onClick={(evt) => {
-                              const input = evt.currentTarget.parentElement?.querySelector('.choice-image-input');
-                              if (input) input.click();
-                            }}
-                            title={(() => {
-                              const url = (getSelectedQuestion()?.choicesMedia?.[idx]?.imageUrl) || '';
-                              const hasImage = typeof url === 'string' && url.trim().length > 0;
-                              return hasImage ? 'Alterar imagem da escolha' : 'Enviar imagem para esta escolha';
-                            })()}
-                          >
-                            {(() => {
-                              const url = (getSelectedQuestion()?.choicesMedia?.[idx]?.imageUrl) || '';
-                              const hasImage = typeof url === 'string' && url.trim().length > 0;
-                              return hasImage ? 'Alterar imagem' : 'Adicionar imagem';
-                            })()}
-                          </button>
-                          {(() => {
-                            const url = (getSelectedQuestion()?.choicesMedia?.[idx]?.imageUrl) || '';
-                            const hasImage = typeof url === 'string' && url.trim().length > 0;
-                            return hasImage ? (
-                              <span
-                                className="ml-2 px-2 py-1 text-[11px] rounded bg-white border border-[#E6E8EB] text-[#22252B]"
-                                title="Esta escolha tem uma imagem adicionada"
-                              >
-                                Imagem adicionada
-                              </span>
-                            ) : null;
-                          })()}
-                          {/* input file oculto por escolha (vídeo) */}
-                          <input
-                            type="file"
-                            accept="video/*"
-                            className="hidden choice-video-input"
-                            onChange={async (e) => {
-                              try {
-                                const file = e.target.files && e.target.files[0];
-                                if (!file) return;
-                                const current = getSelectedQuestion();
-                                if (!current) return;
-                                // Preview imediato com URL local
-                                const tempUrl = URL.createObjectURL(file);
-                                {
-                                  const nextChoicesMedia = { ...(current.choicesMedia || {}) };
-                                  nextChoicesMedia[idx] = { ...(nextChoicesMedia[idx] || {}), videoUrl: tempUrl };
-                                  updateSelectedQuestion({ choicesMedia: nextChoicesMedia, metadata: { ...(current.metadata || {}), choicesMedia: nextChoicesMedia } });
-                                }
-                                const bankIdFallback = currentBankId
-                                  || (bancoAtual && bancoAtual.id)
-                                  || current.question_bank_id
-                                  || (current.metadata && current.metadata.bankId)
-                                  || null;
-                                const res = await questionBankService.uploadQuestionVideo(file, { bankId: bankIdFallback, questionId: current.id });
-                                const finalUrl = (res && res.url) || '';
-                                if (finalUrl) {
-                                  const nextChoicesMedia = { ...(current.choicesMedia || {}) };
-                                  nextChoicesMedia[idx] = { ...(nextChoicesMedia[idx] || {}), videoUrl: finalUrl };
-                                  updateSelectedQuestion({ choicesMedia: nextChoicesMedia, metadata: { ...(current.metadata || {}), choicesMedia: nextChoicesMedia } });
-                                  try { await persistSelectedQuestionExtras({ choicesMedia: nextChoicesMedia }); } catch {}
-                                  try { URL.revokeObjectURL(tempUrl); } catch {}
-                                }
-                              } catch (err) {
-                                toast({ description: 'Falha ao enviar vídeo da escolha.', variant: 'destructive' });
-                              } finally {
-                                e.target.value = '';
-                              }
-                            }}
-                          />
-                          <button
-                            type="button"
-                            className="h-[32px] px-3 rounded-[var(--Corner-Radius-4px,4px)] bg-[var(--Background-Content,#F6F5FA)] text-[12px] font-inter"
-                            onClick={(evt) => {
-                              const input = evt.currentTarget.parentElement?.querySelector('.choice-video-input');
-                              if (input) input.click();
-                            }}
-                            title={(() => {
-                              const url = (getSelectedQuestion()?.choicesMedia?.[idx]?.videoUrl) || '';
-                              const hasVideo = typeof url === 'string' && url.trim().length > 0;
-                              return hasVideo ? 'Alterar vídeo da escolha' : 'Enviar vídeo para esta escolha';
-                            })()}
-                          >
-                            {(() => {
-                              const url = (getSelectedQuestion()?.choicesMedia?.[idx]?.videoUrl) || '';
-                              const hasVideo = typeof url === 'string' && url.trim().length > 0;
-                              return hasVideo ? 'Alterar vídeo' : 'Adicionar vídeo';
-                            })()}
-                          </button>
-                          {(() => {
-                            const url = (getSelectedQuestion()?.choicesMedia?.[idx]?.videoUrl) || '';
-                            const hasVideo = typeof url === 'string' && url.trim().length > 0;
-                            return hasVideo ? (
-                              <span
-                                className="ml-2 px-2 py-1 text-[11px] rounded bg-white border border-[#E6E8EB] text-[#22252B]"
-                                title="Esta escolha tem um vídeo adicionada"
-                              >
-                                Vídeo adicionado
-                              </span>
-                            ) : null;
-                          })()}
-                          {getSelectedQuestion()?.choicesMedia?.[idx]?.imageUrl ? (
-                            <div className="flex items-center gap-1">
-                              <img
-                                src={getSelectedQuestion()?.choicesMedia?.[idx]?.imageUrl}
-                                alt={`Imagem da escolha ${String.fromCharCode(65 + idx)}`}
-                                className="h-8 w-8 rounded-[4px] object-cover"
-                              />
-                              <button
-                                type="button"
-                                className="text-[12px] text-[#6B7588] hover:text-[#22252B]"
-                                title="Remover imagem"
-                                onClick={() => {
+                                const nextIndex = current.correctChoiceIndex === idx ? null : idx;
+                                updateSelectedQuestion({ correctChoiceIndex: nextIndex });
+                              }}
+                            >
+                              {String.fromCharCode(65 + idx)}
+                            </button>
+
+                            <div className="flex-1 min-w-[220px]">
+                              <input
+                                type="text"
+                                value={value}
+                                placeholder="Digite a alternativa..."
+                                className="w-full h-[38px] px-3 rounded-md bg-[#F6F5FA] border border-gray-200 text-[12px] font-inter"
+                                onChange={(e) => {
+                                  const val = e.target.value;
                                   const current = getSelectedQuestion();
                                   if (!current) return;
-                                  const nextChoicesMedia = { ...(current.choicesMedia || {}) };
-                                  nextChoicesMedia[idx] = { ...(nextChoicesMedia[idx] || {}), imageUrl: '' };
-                                  updateSelectedQuestion({
-                                    choicesMedia: nextChoicesMedia,
-                                    metadata: { ...(current.metadata || {}), choicesMedia: nextChoicesMedia }
-                                  });
-                                  try { persistSelectedQuestionExtras({ choicesMedia: nextChoicesMedia }); } catch {}
+                                  const nextChoices = Array.isArray(current.choices) ? [...current.choices] : [];
+                                  nextChoices[idx] = val;
+                                  updateSelectedQuestion({ choices: nextChoices });
                                 }}
-                              >
-                                ×
-                              </button>
+                              />
                             </div>
-                          ) : null}
-                          {getSelectedQuestion()?.choicesMedia?.[idx]?.videoUrl ? (
-                            <div className="flex items-center gap-1">
-                              <video
-                                src={getSelectedQuestion()?.choicesMedia?.[idx]?.videoUrl}
-                                className="h-8 w-14 rounded-[4px]"
-                                controls
-                              />
-                              <button
-                                type="button"
-                                className="text-[12px] text-[#6B7588] hover:text-[#22252B]"
-                                title="Remover vídeo"
-                                onClick={() => {
+
+                            <div className="hidden md:flex items-center gap-2">
+                              {isCorrect ? (
+                                <span className="px-2 py-0.5 rounded-full text-[11px] font-inter border bg-[#ECFDF3] border-[#BBF7D0] text-[#166534]">
+                                  Correta
+                                </span>
+                              ) : null}
+                              {hasText ? (
+                                <span className="px-2 py-0.5 rounded-full text-[11px] font-inter border bg-[#F9FAFB] border-[#E5E7EB] text-[#6B7280]">
+                                  Texto
+                                </span>
+                              ) : null}
+                              {imageUrl ? (
+                                <span className="px-2 py-0.5 rounded-full text-[11px] font-inter border bg-[#F9FAFB] border-[#E5E7EB] text-[#6B7280]">
+                                  Imagem
+                                </span>
+                              ) : null}
+                              {videoUrl ? (
+                                <span className="px-2 py-0.5 rounded-full text-[11px] font-inter border bg-[#F9FAFB] border-[#E5E7EB] text-[#6B7280]">
+                                  Vídeo
+                                </span>
+                              ) : null}
+                            </div>
+
+                            <button
+                              type="button"
+                              className="w-10 h-10 rounded-lg border border-gray-200 bg-white hover:bg-gray-50"
+                              onClick={async () => {
+                                const current = getSelectedQuestion();
+                                if (!current) return;
+                                const nextChoices = (current.choices || []).filter((_, i) => i !== idx);
+                                const nextCorrect = current.correctChoiceIndex === idx ? null : (
+                                  current.correctChoiceIndex !== null && current.correctChoiceIndex > idx
+                                    ? current.correctChoiceIndex - 1
+                                    : current.correctChoiceIndex
+                                );
+                                const nextChoicesMedia = { ...(current.choicesMedia || {}) };
+                                if (nextChoicesMedia[idx]) {
+                                  const rebuilt = {};
+                                  Object.keys(nextChoicesMedia).forEach((k) => {
+                                    const keyNum = parseInt(k, 10);
+                                    if (keyNum < idx) {
+                                      rebuilt[keyNum] = nextChoicesMedia[keyNum];
+                                    } else if (keyNum > idx) {
+                                      rebuilt[keyNum - 1] = nextChoicesMedia[keyNum];
+                                    }
+                                  });
+                                  const metaChoicesText = (current.metadata && current.metadata.choicesTextHtml) || {};
+                                  const textRebuilt = {};
+                                  Object.keys(metaChoicesText).forEach((k) => {
+                                    const keyNum = parseInt(k, 10);
+                                    if (keyNum < idx) {
+                                      textRebuilt[keyNum] = metaChoicesText[keyNum];
+                                    } else if (keyNum > idx) {
+                                      textRebuilt[keyNum - 1] = metaChoicesText[keyNum];
+                                    }
+                                  });
+                                  updateSelectedQuestion({ choices: nextChoices, correctChoiceIndex: nextCorrect, choicesMedia: rebuilt, metadata: { ...(current.metadata || {}), choicesMedia: rebuilt, choicesTextHtml: textRebuilt } });
+                                  persistSelectedQuestionExtras({ choicesMedia: rebuilt, choicesTextHtml: textRebuilt }, { choices: nextChoices, correctChoiceIndex: nextCorrect }).catch(() => {});
+                                  setChoiceRichEditorOpen((prev) => {
+                                    const next = {};
+                                    Object.keys(prev || {}).forEach((k) => {
+                                      const keyNum = parseInt(k, 10);
+                                      if (keyNum < idx) next[keyNum] = prev[keyNum];
+                                      else if (keyNum > idx) next[keyNum - 1] = prev[keyNum];
+                                    });
+                                    return next;
+                                  });
+                                } else {
+                                  const metaChoicesText = (current.metadata && current.metadata.choicesTextHtml) || {};
+                                  const textRebuilt = {};
+                                  Object.keys(metaChoicesText).forEach((k) => {
+                                    const keyNum = parseInt(k, 10);
+                                    if (keyNum < idx) {
+                                      textRebuilt[keyNum] = metaChoicesText[keyNum];
+                                    } else if (keyNum > idx) {
+                                      textRebuilt[keyNum - 1] = metaChoicesText[keyNum];
+                                    }
+                                  });
+                                  updateSelectedQuestion({ choices: nextChoices, correctChoiceIndex: nextCorrect, metadata: { ...(current.metadata || {}), choicesTextHtml: textRebuilt } });
+                                  persistSelectedQuestionExtras({ choicesTextHtml: textRebuilt }, { choices: nextChoices, correctChoiceIndex: nextCorrect }).catch(() => {});
+                                  setChoiceRichEditorOpen((prev) => {
+                                    const next = {};
+                                    Object.keys(prev || {}).forEach((k) => {
+                                      const keyNum = parseInt(k, 10);
+                                      if (keyNum < idx) next[keyNum] = prev[keyNum];
+                                      else if (keyNum > idx) next[keyNum - 1] = prev[keyNum];
+                                    });
+                                    return next;
+                                  });
+                                }
+                              }}
+                              title="Remover alternativa"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none" className="mx-auto">
+                                <path d="M13.5 3.5H2.5" stroke="#6B7588" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                                <path d="M6.5 6.5V10.5" stroke="#6B7588" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                                <path d="M9.5 6.5V10.5" stroke="#6B7588" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                                <path d="M12.5 3.5V13C12.5 13.1326 12.4473 13.2598 12.3536 13.3536C12.2598 13.4473 12.1326 13.5 12 13.5H4C3.86739 13.5 3.74021 13.4473 3.64645 13.3536C3.55268 13.2598 3.5 13.1326 3.5 13V3.5" stroke="#6B7588" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                                <path d="M10.5 3.5V2.5C10.5 2.23478 10.3946 1.98043 10.2071 1.79289C10.0196 1.60536 9.76522 1.5 9.5 1.5H6.5C6.23478 1.5 5.98043 1.60536 5.79289 1.79289C5.60536 1.98043 5.5 2.23478 5.5 2.5V3.5" stroke="#6B7588" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+                              </svg>
+                            </button>
+                          </div>
+
+                          <div className="mt-3 flex flex-wrap items-center gap-2">
+                            <button
+                              type="button"
+                              className={`px-3 py-2 rounded-md text-[12px] border hover:bg-gray-100 ${hasText ? 'bg-white border-[#0047BB] text-[#0047BB]' : 'bg-[#F6F5FA] border-gray-200 text-[#22252B]'}`}
+                              onClick={() => { setChoiceRichEditorOpen((prev) => ({ ...prev, [idx]: !prev[idx] })); }}
+                              title={hasText ? 'Editar texto adicional' : 'Adicionar texto adicional'}
+                            >
+                              Texto
+                            </button>
+
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden choice-image-input"
+                              onChange={async (e) => {
+                                try {
+                                  const file = e.target.files && e.target.files[0];
+                                  if (!file) return;
                                   const current = getSelectedQuestion();
                                   if (!current) return;
-                                  const nextChoicesMedia = { ...(current.choicesMedia || {}) };
-                                  nextChoicesMedia[idx] = { ...(nextChoicesMedia[idx] || {}), videoUrl: '' };
-                                  updateSelectedQuestion({
-                                    choicesMedia: nextChoicesMedia,
-                                    metadata: { ...(current.metadata || {}), choicesMedia: nextChoicesMedia }
+                                  setChoiceMediaUploading((prev) => ({
+                                    ...(prev || {}),
+                                    [idx]: { ...((prev && prev[idx]) || {}), image: true }
+                                  }));
+                                  const tempUrl = await new Promise((resolve) => {
+                                    try {
+                                      const reader = new FileReader()
+                                      reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '')
+                                      reader.onerror = () => resolve('')
+                                      reader.readAsDataURL(file)
+                                    } catch (_) {
+                                      resolve('')
+                                    }
                                   });
-                                  try { persistSelectedQuestionExtras({ choicesMedia: nextChoicesMedia }); } catch {}
+                                  {
+                                    const baseChoicesMedia = (current.metadata && typeof current.metadata === 'object' && current.metadata.choicesMedia && typeof current.metadata.choicesMedia === 'object')
+                                      ? current.metadata.choicesMedia
+                                      : (current.choicesMedia || {});
+                                    const nextChoicesMedia = { ...(baseChoicesMedia || {}) };
+                                    nextChoicesMedia[idx] = { ...(nextChoicesMedia[idx] || {}), imageUrl: tempUrl };
+                                    updateSelectedQuestion({ choicesMedia: nextChoicesMedia, metadata: { ...(current.metadata || {}), choicesMedia: nextChoicesMedia } });
+                                  }
+                                  const bankIdFallback = currentBankId
+                                    || (bancoAtual && bancoAtual.id)
+                                    || current.question_bank_id
+                                    || (current.metadata && current.metadata.bankId)
+                                    || null;
+                                  const res = await questionBankService.uploadQuestionImage(file, { bankId: bankIdFallback, questionId: current.id });
+                                  if (res?.aborted) return;
+                                  const finalUrl = (res && res.url) || '';
+                                  if (finalUrl) {
+                                    const baseChoicesMedia = (current.metadata && typeof current.metadata === 'object' && current.metadata.choicesMedia && typeof current.metadata.choicesMedia === 'object')
+                                      ? current.metadata.choicesMedia
+                                      : (current.choicesMedia || {});
+                                    const nextChoicesMedia = { ...(baseChoicesMedia || {}) };
+                                    nextChoicesMedia[idx] = { ...(nextChoicesMedia[idx] || {}), imageUrl: finalUrl };
+                                    try { await persistSelectedQuestionExtras({ choicesMedia: nextChoicesMedia }); } catch {}
+                                  }
+                                } catch (err) {
+                                  if (String(err?.name || '') !== 'AbortError') {
+                                    toast({ description: 'Falha ao enviar imagem da escolha.', variant: 'destructive' });
+                                  }
+                                } finally {
+                                  setChoiceMediaUploading((prev) => ({
+                                    ...(prev || {}),
+                                    [idx]: { ...((prev && prev[idx]) || {}), image: false }
+                                  }));
+                                  e.target.value = '';
+                                }
+                              }}
+                            />
+                            <button
+                              type="button"
+                              className={`px-3 py-2 rounded-md text-[12px] border hover:bg-gray-100 disabled:opacity-60 ${imageUrl ? 'bg-white border-[#0047BB] text-[#0047BB]' : 'bg-[#F6F5FA] border-gray-200 text-[#22252B]'}`}
+                              onClick={(evt) => {
+                                const input = evt.currentTarget.closest('[data-choice-card]')?.querySelector('.choice-image-input');
+                                if (input) input.click();
+                              }}
+                              disabled={!!choiceMediaUploading?.[idx]?.image || !!choiceMediaUploading?.[idx]?.video}
+                              title={imageUrl ? 'Alterar imagem' : 'Adicionar imagem'}
+                            >
+                              {!!choiceMediaUploading?.[idx]?.image ? 'Enviando...' : 'Imagem'}
+                            </button>
+
+                            <input
+                              type="file"
+                              accept="video/*"
+                              className="hidden choice-video-input"
+                              onChange={async (e) => {
+                                try {
+                                  const file = e.target.files && e.target.files[0];
+                                  if (!file) return;
+                                  const current = getSelectedQuestion();
+                                  if (!current) return;
+                                  setChoiceMediaUploading((prev) => ({
+                                    ...(prev || {}),
+                                    [idx]: { ...((prev && prev[idx]) || {}), video: true }
+                                  }));
+                                  const tempUrl = '';
+                                  {
+                                    const baseChoicesMedia = (current.metadata && typeof current.metadata === 'object' && current.metadata.choicesMedia && typeof current.metadata.choicesMedia === 'object')
+                                      ? current.metadata.choicesMedia
+                                      : (current.choicesMedia || {});
+                                    const nextChoicesMedia = { ...(baseChoicesMedia || {}) };
+                                    nextChoicesMedia[idx] = { ...(nextChoicesMedia[idx] || {}), videoUrl: tempUrl };
+                                    updateSelectedQuestion({ choicesMedia: nextChoicesMedia, metadata: { ...(current.metadata || {}), choicesMedia: nextChoicesMedia } });
+                                  }
+                                  const bankIdFallback = currentBankId
+                                    || (bancoAtual && bancoAtual.id)
+                                    || current.question_bank_id
+                                    || (current.metadata && current.metadata.bankId)
+                                    || null;
+                                  const res = await questionBankService.uploadQuestionVideo(file, { bankId: bankIdFallback, questionId: current.id });
+                                  if (res?.aborted) return;
+                                  const finalUrl = (res && res.url) || '';
+                                  if (finalUrl) {
+                                    const baseChoicesMedia = (current.metadata && typeof current.metadata === 'object' && current.metadata.choicesMedia && typeof current.metadata.choicesMedia === 'object')
+                                      ? current.metadata.choicesMedia
+                                      : (current.choicesMedia || {});
+                                    const nextChoicesMedia = { ...(baseChoicesMedia || {}) };
+                                    nextChoicesMedia[idx] = { ...(nextChoicesMedia[idx] || {}), videoUrl: finalUrl };
+                                    try { await persistSelectedQuestionExtras({ choicesMedia: nextChoicesMedia }); } catch {}
+                                  }
+                                } catch (err) {
+                                  if (String(err?.name || '') !== 'AbortError') {
+                                    toast({ description: 'Falha ao enviar vídeo da escolha.', variant: 'destructive' });
+                                  }
+                                } finally {
+                                  setChoiceMediaUploading((prev) => ({
+                                    ...(prev || {}),
+                                    [idx]: { ...((prev && prev[idx]) || {}), video: false }
+                                  }));
+                                  e.target.value = '';
+                                }
+                              }}
+                            />
+                            <button
+                              type="button"
+                              className={`px-3 py-2 rounded-md text-[12px] border hover:bg-gray-100 disabled:opacity-60 ${videoUrl ? 'bg-white border-[#0047BB] text-[#0047BB]' : 'bg-[#F6F5FA] border-gray-200 text-[#22252B]'}`}
+                              onClick={(evt) => {
+                                const input = evt.currentTarget.closest('[data-choice-card]')?.querySelector('.choice-video-input');
+                                if (input) input.click();
+                              }}
+                              disabled={!!choiceMediaUploading?.[idx]?.image || !!choiceMediaUploading?.[idx]?.video}
+                              title={videoUrl ? 'Alterar vídeo' : 'Adicionar vídeo'}
+                            >
+                              {!!choiceMediaUploading?.[idx]?.video ? 'Enviando...' : 'Vídeo'}
+                            </button>
+
+                            {imageUrl ? (
+                              <div className="ml-auto flex items-center gap-2">
+                                <div className="relative w-10 h-10 rounded-lg overflow-hidden border border-gray-200 bg-white">
+                                  <img src={imageUrl} alt="Imagem da alternativa" className="w-full h-full object-cover" />
+                                </div>
+                                <button
+                                  type="button"
+                                  className="w-8 h-8 rounded-md border border-gray-200 bg-white hover:bg-gray-50"
+                                  onClick={() => {
+                                    const current = getSelectedQuestion();
+                                    if (!current) return;
+                                    const baseChoicesMedia = (current.metadata && typeof current.metadata === 'object' && current.metadata.choicesMedia && typeof current.metadata.choicesMedia === 'object')
+                                      ? current.metadata.choicesMedia
+                                      : (current.choicesMedia || {});
+                                    const nextChoicesMedia = { ...(baseChoicesMedia || {}) };
+                                    nextChoicesMedia[idx] = { ...(nextChoicesMedia[idx] || {}), imageUrl: '' };
+                                    updateSelectedQuestion({ choicesMedia: nextChoicesMedia, metadata: { ...(current.metadata || {}), choicesMedia: nextChoicesMedia } });
+                                    try { persistSelectedQuestionExtras({ choicesMedia: nextChoicesMedia }); } catch {}
+                                  }}
+                                  title="Remover imagem"
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            ) : null}
+                            {videoUrl ? (
+                              <div className={`${imageUrl ? '' : 'ml-auto'} flex items-center gap-2`}>
+                                <div className="relative w-14 h-10 rounded-lg overflow-hidden border border-gray-200 bg-white">
+                                  <DeferredVideo src={videoUrl} className="w-full h-full object-cover" />
+                                </div>
+                                <button
+                                  type="button"
+                                  className="w-8 h-8 rounded-md border border-gray-200 bg-white hover:bg-gray-50"
+                                  onClick={() => {
+                                    const current = getSelectedQuestion();
+                                    if (!current) return;
+                                    const baseChoicesMedia = (current.metadata && typeof current.metadata === 'object' && current.metadata.choicesMedia && typeof current.metadata.choicesMedia === 'object')
+                                      ? current.metadata.choicesMedia
+                                      : (current.choicesMedia || {});
+                                    const nextChoicesMedia = { ...(baseChoicesMedia || {}) };
+                                    nextChoicesMedia[idx] = { ...(nextChoicesMedia[idx] || {}), videoUrl: '' };
+                                    updateSelectedQuestion({ choicesMedia: nextChoicesMedia, metadata: { ...(current.metadata || {}), choicesMedia: nextChoicesMedia } });
+                                    try { persistSelectedQuestionExtras({ choicesMedia: nextChoicesMedia }); } catch {}
+                                  }}
+                                  title="Remover vídeo"
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            ) : null}
+                          </div>
+
+                          {choiceRichEditorOpen[idx] ? (
+                            <div className="mt-3 w-full p-2 rounded-lg bg-[#F6F5FA] border border-[#E6E8EB]">
+                              <div className="flex items-center gap-2 mb-2">
+                                <button
+                                  type="button"
+                                  className="px-2 py-1 text-[12px] text-[#22252B] bg-white rounded border border-[#E6E8EB]"
+                                  onClick={(e) => {
+                                    const editor = e.currentTarget.closest('div')?.parentElement?.querySelector('.choice-rich-editor');
+                                    if (editor) { editor.focus(); document.execCommand('bold'); }
+                                  }}
+                                >B</button>
+                                <button
+                                  type="button"
+                                  className="px-2 py-1 text-[12px] text-[#22252B] bg-white rounded border border-[#E6E8EB] italic"
+                                  onClick={(e) => {
+                                    const editor = e.currentTarget.closest('div')?.parentElement?.querySelector('.choice-rich-editor');
+                                    if (editor) { editor.focus(); document.execCommand('italic'); }
+                                  }}
+                                >I</button>
+                                <button
+                                  type="button"
+                                  className="px-2 py-1 text-[12px] text-[#22252B] bg-white rounded border border-[#E6E8EB] underline"
+                                  onClick={(e) => {
+                                    const editor = e.currentTarget.closest('div')?.parentElement?.querySelector('.choice-rich-editor');
+                                    if (editor) { editor.focus(); document.execCommand('underline'); }
+                                  }}
+                                >U</button>
+                                <button
+                                  type="button"
+                                  className="px-2 py-1 text-[12px] text-[#22252B] bg-white rounded border border-[#E6E8EB]"
+                                  onClick={(e) => {
+                                    const editor = e.currentTarget.closest('div')?.parentElement?.querySelector('.choice-rich-editor');
+                                    if (editor) { editor.focus(); document.execCommand('insertUnorderedList'); }
+                                  }}
+                                >•</button>
+                                <button
+                                  type="button"
+                                  className="px-2 py-1 text-[12px] text-[#6B7588] bg-white rounded border border-[#E6E8EB]"
+                                  onClick={(e) => {
+                                    const editor = e.currentTarget.closest('div')?.parentElement?.querySelector('.choice-rich-editor');
+                                    if (editor) { editor.focus(); document.execCommand('removeFormat'); }
+                                  }}
+                                >Limpar</button>
+                                <div className="flex-1" />
+                                <button
+                                  type="button"
+                                  className="px-2 py-1 text-[12px] text-white bg-[#22252B] rounded"
+                                  onClick={async () => {
+                                    setChoiceRichEditorOpen((prev) => ({ ...prev, [idx]: false }));
+                                    try {
+                                      const metaChoices = (getSelectedQuestion()?.metadata?.choicesTextHtml) || {};
+                                      await persistSelectedQuestionExtras({ choicesTextHtml: metaChoices });
+                                    } catch (_) {}
+                                  }}
+                                >
+                                  Concluir
+                                </button>
+                              </div>
+                              <div
+                                className="choice-rich-editor min-h-[80px] max-h-[220px] overflow-auto px-3 py-2 bg-white rounded border border-[#E6E8EB] text-[14px]"
+                                contentEditable
+                                suppressContentEditableWarning
+                                dangerouslySetInnerHTML={{ __html: (getSelectedQuestion()?.metadata?.choicesTextHtml?.[idx]) || '' }}
+                                onInput={(e) => {
+                                  const html = e.currentTarget.innerHTML;
+                                  const current = getSelectedQuestion();
+                                  if (!current) return;
+                                  const nextText = { ...((current.metadata && current.metadata.choicesTextHtml) || {}) };
+                                  nextText[idx] = html;
+                                  updateSelectedQuestion({ metadata: { ...(current.metadata || {}), choicesTextHtml: nextText } });
                                 }}
-                              >
-                                ×
-                              </button>
+                                onBlur={() => {
+                                  const metaChoices = (getSelectedQuestion()?.metadata?.choicesTextHtml) || {};
+                                  persistSelectedQuestionExtras({ choicesTextHtml: metaChoices }).catch(() => {});
+                                }}
+                              />
                             </div>
                           ) : null}
                         </div>
-                        <button
-                          type="button"
-                          className="flex flex-wrap items-center content-center p-[var(--Spacing-8px,8px)] gap-y-[12px] gap-x-[var(--Spacing-12px,12px)] rounded-[var(--Corner-Radius-4px,4px)] bg-[var(--Background-Content,#F6F5FA)]"
-                          onClick={async () => {
-                            const current = getSelectedQuestion();
-                            if (!current) return;
-                            const nextChoices = (current.choices || []).filter((_, i) => i !== idx);
-                            // Se remover a correta, limpa o índice
-                            const nextCorrect = current.correctChoiceIndex === idx ? null : (
-                              current.correctChoiceIndex !== null && current.correctChoiceIndex > idx
-                                ? current.correctChoiceIndex - 1
-                                : current.correctChoiceIndex
-                            );
-                            // remover mídia associada, se houver
-                            const nextChoicesMedia = { ...(current.choicesMedia || {}) };
-                            if (nextChoicesMedia[idx]) {
-                              const rebuilt = {};
-                              Object.keys(nextChoicesMedia).forEach((k) => {
-                                const keyNum = parseInt(k, 10);
-                                if (keyNum < idx) {
-                                  rebuilt[keyNum] = nextChoicesMedia[keyNum];
-                                } else if (keyNum > idx) {
-                                  // shift para manter alinhamento com índices
-                                  rebuilt[keyNum - 1] = nextChoicesMedia[keyNum];
-                                }
-                              });
-                              // Ajustar comentários ricos por escolha (choicesTextHtml) ao remover
-                              const metaChoicesText = (current.metadata && current.metadata.choicesTextHtml) || {};
-                              const textRebuilt = {};
-                              Object.keys(metaChoicesText).forEach((k) => {
-                                const keyNum = parseInt(k, 10);
-                                if (keyNum < idx) {
-                                  textRebuilt[keyNum] = metaChoicesText[keyNum];
-                                } else if (keyNum > idx) {
-                                  textRebuilt[keyNum - 1] = metaChoicesText[keyNum];
-                                }
-                              });
-                              updateSelectedQuestion({ choices: nextChoices, correctChoiceIndex: nextCorrect, choicesMedia: rebuilt, metadata: { ...(current.metadata || {}), choicesMedia: rebuilt, choicesTextHtml: textRebuilt } });
-                              persistSelectedQuestionExtras({ choicesMedia: rebuilt, choicesTextHtml: textRebuilt }, { choices: nextChoices, correctChoiceIndex: nextCorrect }).catch(() => {})
-                              // Ajustar estado de abertura do editor rico
-                              setChoiceRichEditorOpen((prev) => {
-                                const next = {};
-                                Object.keys(prev || {}).forEach((k) => {
-                                  const keyNum = parseInt(k, 10);
-                                  if (keyNum < idx) next[keyNum] = prev[keyNum];
-                                  else if (keyNum > idx) next[keyNum - 1] = prev[keyNum];
-                                });
-                                return next;
-                              });
-                            } else {
-                              // Mesmo sem mídia, ajustar choicesTextHtml
-                              const metaChoicesText = (current.metadata && current.metadata.choicesTextHtml) || {};
-                              const textRebuilt = {};
-                              Object.keys(metaChoicesText).forEach((k) => {
-                                const keyNum = parseInt(k, 10);
-                                if (keyNum < idx) {
-                                  textRebuilt[keyNum] = metaChoicesText[keyNum];
-                                } else if (keyNum > idx) {
-                                  textRebuilt[keyNum - 1] = metaChoicesText[keyNum];
-                                }
-                              });
-                              updateSelectedQuestion({ choices: nextChoices, correctChoiceIndex: nextCorrect, metadata: { ...(current.metadata || {}), choicesTextHtml: textRebuilt } });
-                              persistSelectedQuestionExtras({ choicesTextHtml: textRebuilt }, { choices: nextChoices, correctChoiceIndex: nextCorrect }).catch(() => {})
-                              setChoiceRichEditorOpen((prev) => {
-                                const next = {};
-                                Object.keys(prev || {}).forEach((k) => {
-                                  const keyNum = parseInt(k, 10);
-                                  if (keyNum < idx) next[keyNum] = prev[keyNum];
-                                  else if (keyNum > idx) next[keyNum - 1] = prev[keyNum];
-                                });
-                                return next;
-                              });
-                            }
-                          }}
-                        >
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            width="16"
-                            height="16"
-                            viewBox="0 0 16 16"
-                            fill="none"
-                            className="w-4 h-4 aspect-square"
-                          >
-                            <g clipPath="url(#clip0_597_16648)">
-                              <path d="M13.5 3.5H2.5" stroke="#6B7588" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-                              <path d="M6.5 6.5V10.5" stroke="#6B7588" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-                              <path d="M9.5 6.5V10.5" stroke="#6B7588" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-                              <path d="M12.5 3.5V13C12.5 13.1326 12.4473 13.2598 12.3536 13.3536C12.2598 13.4473 12.1326 13.5 12 13.5H4C3.86739 13.5 3.74021 13.4473 3.64645 13.3536C3.55268 13.2598 3.5 13.1326 3.5 13V3.5" stroke="#6B7588" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-                              <path d="M10.5 3.5V2.5C10.5 2.23478 10.3946 1.98043 10.2071 1.79289C10.0196 1.60536 9.76522 1.5 9.5 1.5H6.5C6.23478 1.5 5.98043 1.60536 5.79289 1.79289C5.60536 1.98043 5.5 2.23478 5.5 2.5V3.5" stroke="#6B7588" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
-                            </g>
-                            <defs>
-                              <clipPath id="clip0_597_16648">
-                                <rect width="16" height="16" fill="white" />
-                              </clipPath>
-                            </defs>
-                          </svg>
-                        </button>
-                      </div>
-                    ))}
+                      );
+                    })}
 
                     <button
                       type="button"

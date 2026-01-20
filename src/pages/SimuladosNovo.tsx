@@ -1,12 +1,14 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, useMemo } from "react"
 import { ArrowLeft, Eye, ChevronDown, ChevronUp, Search, Calendar, Clock, X, DollarSign, Award, Check, Plus, Minus, Info, Tag, Layers, BookOpen, BadgeCheck, CreditCard, Database, ListChecks, Trash2, Users, FileText, Pencil } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
 import { useToast } from "@/hooks/use-toast"
 import questionBankService from "@/services/questionBankService"
 import { supabase } from "@/lib/supabaseClient"
+import { TaxonomyDropdown, type TaxonomyItem } from "@/components/TaxonomyDropdown"
+import { useTaxonomy } from "@/contexts/TaxonomyContext"
 
 type Question = { id: string; name: string }
 type Category = { id: string; name: string; questions: Question[] }
@@ -93,8 +95,6 @@ export default function NovoSimuladoPage() {
           shuffleQuestions,
           skipQuestions,
           enableCalculator,
-          enableQuestionTimer,
-          questionTimer: enableQuestionTimer ? parseInt((questionTimer || "0").toString(), 10) || 0 : 0,
           categories: selectedCategories,
           subcategories: selectedSubcategories,
           tags: selectedTags,
@@ -219,24 +219,47 @@ export default function NovoSimuladoPage() {
   const [selectedSubcategories, setSelectedSubcategories] = useState<string[]>([])
   const [selectedTags, setSelectedTags] = useState<string[]>([])
   const [showCategorySelector, setShowCategorySelector] = useState(false)
-  const [categorySelectorOrigin, setCategorySelectorOrigin] = useState<'primary' | 'alt' | null>(null)
-  const [isCreatingNewCategory, setIsCreatingNewCategory] = useState(false)
-  const [newCategoryName, setNewCategoryName] = useState("")
-  const [newCategoryColor, setNewCategoryColor] = useState('#8B5CF6')
-  const [newCategoryDescription, setNewCategoryDescription] = useState('')
   const [showSubcategorySelector, setShowSubcategorySelector] = useState(false)
-  const [isCreatingNewSubcategory, setIsCreatingNewSubcategory] = useState(false)
-  const [newSubcategoryName, setNewSubcategoryName] = useState("")
-  const [newSubcategoryColor, setNewSubcategoryColor] = useState('#8B5CF6')
-  const [newSubcategoryDescription, setNewSubcategoryDescription] = useState('')
   const [showTagSelector, setShowTagSelector] = useState(false)
-  const [isCreatingNewTag, setIsCreatingNewTag] = useState(false)
-  const [newTagName, setNewTagName] = useState("")
-  const [newTagColor, setNewTagColor] = useState('#8B5CF6')
-  const [newTagDescription, setNewTagDescription] = useState('')
-  const [categorySearchQuery, setCategorySearchQuery] = useState("")
-  const [subcategorySearchQuery, setSubcategorySearchQuery] = useState("")
-  const [tagSearchQuery, setTagSearchQuery] = useState("")
+  const {
+    categories: taxonomyCategories,
+    subcategories: taxonomySubcategories,
+    tags: taxonomyTags,
+    createCategory,
+    updateCategory,
+    deleteCategory,
+    createSubcategory,
+    updateSubcategory,
+    deleteSubcategory,
+    createTag,
+    updateTag,
+    deleteTag,
+  } = useTaxonomy()
+
+  const categoryMeta = useMemo<Record<string, { desc: string; color: string }>>(
+    () =>
+      taxonomyCategories.reduce((acc, c) => {
+        acc[c.name] = { desc: c.description || 'Categoria', color: c.color || '#8B5CF6' }
+        return acc
+      }, {} as Record<string, { desc: string; color: string }>),
+    [taxonomyCategories],
+  )
+  const subcategoryMeta = useMemo<Record<string, { desc: string; color: string }>>(
+    () =>
+      taxonomySubcategories.reduce((acc, s) => {
+        acc[s.name] = { desc: s.description || 'Subcategoria', color: s.color || '#22C55E' }
+        return acc
+      }, {} as Record<string, { desc: string; color: string }>),
+    [taxonomySubcategories],
+  )
+  const tagMeta = useMemo<Record<string, { desc: string; color: string }>>(
+    () =>
+      taxonomyTags.reduce((acc, t) => {
+        acc[t.name] = { desc: t.description || 'Tag', color: t.color || '#EF4444' }
+        return acc
+      }, {} as Record<string, { desc: string; color: string }>),
+    [taxonomyTags],
+  )
 
   // Question bank custom categories and inline creator
   const [customCategories, setCustomCategories] = useState<Category[]>([])
@@ -258,93 +281,18 @@ export default function NovoSimuladoPage() {
   const [customSubcategories, setCustomSubcategories] = useState<string[]>([])
   // Tags personalizadas criadas inline
   const [customTags, setCustomTags] = useState<string[]>([])
-
-  // Refs para menus dropdown e fechamento por clique fora
-  const categoryDropdownRef = useRef<HTMLDivElement | null>(null)
-  const categoryDropdownAltRef = useRef<HTMLDivElement | null>(null)
-  const subcategoryDropdownRef = useRef<HTMLDivElement | null>(null)
-  const tagDropdownRef = useRef<HTMLDivElement | null>(null)
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent | TouchEvent) => {
-      const target = event.target as Node
-      if (showCategorySelector) {
-        const insidePrimary = categoryDropdownRef.current?.contains(target)
-        const insideAlt = categoryDropdownAltRef.current?.contains(target)
-        if (!insidePrimary && !insideAlt) {
-          setShowCategorySelector(false)
-        }
-      }
-      if (showSubcategorySelector && subcategoryDropdownRef.current && !subcategoryDropdownRef.current.contains(target)) {
-        setShowSubcategorySelector(false)
-      }
-      if (showTagSelector && tagDropdownRef.current && !tagDropdownRef.current.contains(target)) {
-        setShowTagSelector(false)
-      }
-    }
-
-    document.addEventListener('mousedown', handleClickOutside)
-    document.addEventListener('touchstart', handleClickOutside, { passive: true } as AddEventListenerOptions)
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside)
-      document.removeEventListener('touchstart', handleClickOutside)
-    }
-  }, [showCategorySelector, showSubcategorySelector, showTagSelector])
-
-  // Fechamento com tecla Escape
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setShowCategorySelector(false)
-        setShowSubcategorySelector(false)
-        setShowTagSelector(false)
-      }
-    }
-    document.addEventListener('keydown', onKeyDown)
-    return () => document.removeEventListener('keydown', onKeyDown)
-  }, [])
-
-  const availableCategories = [
-    ...bankCategoryNames,
-    ...customCategories.map((c) => c.name),
-  ]
-  const availableSubcategories = [
-    ...bankSubcategoryNames,
-    ...customSubcategories,
-  ]
-  const availableTags = [
-    ...bankTagNames,
-    ...customTags,
-  ]
-
-  const filteredCategoriesList = availableCategories
-    .filter((n) => n.toLowerCase().includes(categorySearchQuery.toLowerCase()))
-    .filter((n) => !selectedCategories.includes(n))
-  const filteredSubcategoriesList = availableSubcategories
-    .filter((n) => n.toLowerCase().includes(subcategorySearchQuery.toLowerCase()))
-    .filter((n) => !selectedSubcategories.includes(n))
-  const filteredTagsList = availableTags
-    .filter((n) => n.toLowerCase().includes(tagSearchQuery.toLowerCase()))
-    .filter((n) => !selectedTags.includes(n))
-
-  const categoryMeta: Record<string, { desc: string; color: string }> = {
-    Neurologia: { desc: "Especialidade médica que trata do sistema nervoso", color: "#8B5CF6" },
-    Cardiologia: { desc: "Avaliação e tratamento de doenças do coração", color: "#EF4444" },
-    Obstetrícia: { desc: "Saúde materna e acompanhamento da gestação", color: "#F59E0B" },
-    Cirurgia: { desc: "Procedimentos cirúrgicos e condutas operatórias", color: "#3B82F6" },
-    "Medicina Geral": { desc: "Fundamentos e práticas da clínica geral", color: "#10B981" },
-  }
-
-  const subcategoryMeta: Record<string, { desc: string; color: string }> = {
-    "Clínica Médica": { desc: "Subárea da clínica geral", color: "#6EE7B7" },
-    "Urgência e Emergência": { desc: "Atendimento imediato e protocolos", color: "#F59E0B" },
-  }
-
-  const tagMeta: Record<string, { desc: string; color: string }> = {
-    Neurologia: { desc: "Assuntos de neurologia", color: "#8B5CF6" },
-    Cardiologia: { desc: "Assuntos de cardiologia", color: "#EF4444" },
-    Pediatria: { desc: "Assuntos de pediatria", color: "#10B981" },
-  }
+  const categoryItems = useMemo<TaxonomyItem[]>(
+    () => taxonomyCategories.map((c) => ({ id: c.id, name: c.name, color: c.color, description: c.description })),
+    [taxonomyCategories],
+  )
+  const subcategoryItems = useMemo<TaxonomyItem[]>(
+    () => taxonomySubcategories.map((s) => ({ id: s.id, name: s.name, color: s.color, description: s.description })),
+    [taxonomySubcategories],
+  )
+  const tagItems = useMemo<TaxonomyItem[]>(
+    () => taxonomyTags.map((t) => ({ id: t.id, name: t.name, color: t.color, description: t.description })),
+    [taxonomyTags],
+  )
 
   const addCategory = (name: string) => {
     if (!selectedCategories.includes(name)) {
@@ -362,42 +310,6 @@ export default function NovoSimuladoPage() {
     }
   }
 
-  const startInlineTagCreation = () => {
-    setNewTagName(tagSearchQuery.trim())
-    setIsCreatingNewTag(true)
-    setTimeout(() => {
-      const el = tagDropdownRef.current
-      if (el) el.scrollTop = el.scrollHeight
-    }, 0)
-  }
-
-  const createInlineTag = () => {
-    const name = newTagName.trim()
-    if (!name) return
-    const exists = availableTags.some((n) => n.toLowerCase() === name.toLowerCase())
-    if (exists) {
-      toast({ title: "Tag já existe", description: "Escolha um nome diferente.", variant: "destructive" as any })
-      return
-    }
-    setCustomTags((prev) => [...prev, name])
-    tagMeta[name] = { desc: (newTagDescription.trim() || 'Tag personalizada'), color: newTagColor }
-    addTag(name)
-    setIsCreatingNewTag(false)
-    setNewTagName("")
-    setNewTagColor('#8B5CF6')
-    setNewTagDescription('')
-    setTagSearchQuery("")
-    setShowTagSelector(false)
-    toast({ title: "Tag criada", description: "Tag adicionada às opções e selecionada." })
-  }
-
-  const cancelInlineTagCreation = () => {
-    setIsCreatingNewTag(false)
-    setNewTagName("")
-    setNewTagColor('#8B5CF6')
-    setNewTagDescription('')
-  }
-
   // Courses
   const [selectedCourses, setSelectedCourses] = useState<Course[]>([])
   const [courseSearchQuery, setCourseSearchQuery] = useState("")
@@ -407,6 +319,7 @@ export default function NovoSimuladoPage() {
   const [isPaid, setIsPaid] = useState(false)
   const [simulationPrice, setSimulationPrice] = useState("0,00")
   const [availabilityDate, setAvailabilityDate] = useState("")
+  const [availabilityDateDisplay, setAvailabilityDateDisplay] = useState("")
   const [simulationDuration, setSimulationDuration] = useState("")
   const simulationDurationRef = useRef<HTMLInputElement | null>(null)
   const availabilityDateRef = useRef<HTMLInputElement | null>(null)
@@ -422,9 +335,6 @@ export default function NovoSimuladoPage() {
   // Score & timer
   const [maxGrade, setMaxGrade] = useState("100")
   const maxGradeRef = useRef<HTMLInputElement | null>(null)
-  const [enableQuestionTimer, setEnableQuestionTimer] = useState(false)
-  const [questionTimer, setQuestionTimer] = useState("")
-  const [timerUnit, setTimerUnit] = useState<"seconds" | "minutes">("seconds")
 
   // Question bank
   const [expandedCategories, setExpandedCategories] = useState<string[]>([])
@@ -472,7 +382,9 @@ export default function NovoSimuladoPage() {
           setDescription((data as any)?.description || (data as any)?.settings?.description || '')
           setIsPaid(Boolean(data.is_paid))
           setSimulationPrice(typeof data.price === 'number' ? String(data.price).replace('.', ',') : (data.price ?? '0,00'))
-          setAvailabilityDate(data.availability_date ? new Date(data.availability_date).toISOString().slice(0,16) : '')
+          const iso = data.availability_date ? new Date(data.availability_date).toISOString().slice(0,10) : ''
+          setAvailabilityDate(iso)
+          setAvailabilityDateDisplay(iso ? iso.split('-').reverse().join('/') : '')
           setSimulationDuration(data.duration_minutes ? String(data.duration_minutes) : '')
           setMaxGrade(data.max_grade ? String(data.max_grade) : '100')
           setSelectedCategories(Array.isArray(data.settings?.categories) ? data.settings.categories : [])
@@ -482,8 +394,6 @@ export default function NovoSimuladoPage() {
           setShuffleQuestions(Boolean(data.settings?.shuffleQuestions))
           setSkipQuestions(Boolean(data.settings?.skipQuestions))
           setEnableCalculator(Boolean(data.settings?.enableCalculator))
-          setEnableQuestionTimer(Boolean(data.settings?.enableQuestionTimer))
-          setQuestionTimer(data.settings?.questionTimer ? String(data.settings.questionTimer) : '')
 
           // Preencher cursos selecionados priorizando settings.courseIds (fallback para course_ids)
           try {
@@ -544,6 +454,43 @@ export default function NovoSimuladoPage() {
       }
     })()
   }, [])
+
+  useEffect(() => {
+    if (!availabilityDate) {
+      if (availabilityDateDisplay) setAvailabilityDateDisplay("")
+      return
+    }
+    const parts = String(availabilityDate).split("-")
+    if (parts.length !== 3) return
+    const [y, m, d] = parts
+    const next = `${d}/${m}/${y}`
+    if (availabilityDateDisplay !== next) setAvailabilityDateDisplay(next)
+  }, [availabilityDate])
+
+  const parseBrDateToIso = (value: string) => {
+    const digits = String(value || "").replace(/\D/g, "").slice(0, 8)
+    if (digits.length !== 8) return null
+    const d = digits.slice(0, 2)
+    const m = digits.slice(2, 4)
+    const y = digits.slice(4, 8)
+    const dd = parseInt(d, 10)
+    const mm = parseInt(m, 10)
+    const yy = parseInt(y, 10)
+    if (!yy || mm < 1 || mm > 12 || dd < 1 || dd > 31) return null
+    const dt = new Date(Date.UTC(yy, mm - 1, dd))
+    if (dt.getUTCFullYear() !== yy || dt.getUTCMonth() !== (mm - 1) || dt.getUTCDate() !== dd) return null
+    return `${y}-${m}-${d}`
+  }
+
+  const formatBrDateInput = (raw: string) => {
+    const digits = String(raw || "").replace(/\D/g, "").slice(0, 8)
+    const p1 = digits.slice(0, 2)
+    const p2 = digits.slice(2, 4)
+    const p3 = digits.slice(4, 8)
+    if (digits.length <= 2) return p1
+    if (digits.length <= 4) return `${p1}/${p2}`
+    return `${p1}/${p2}/${p3}`
+  }
   
 
   const handleSimulationDurationChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -606,85 +553,143 @@ export default function NovoSimuladoPage() {
     toast({ title: "Categoria criada", description: "A nova categoria foi adicionada ao banco." })
   }
 
-  const startInlineCategoryCreation = () => {
-    setNewCategoryName(categorySearchQuery.trim())
-    setIsCreatingNewCategory(true)
-    setTimeout(() => {
-      const el = categoryDropdownRef.current
-      if (el) el.scrollTop = el.scrollHeight
-    }, 0)
-  }
-
-  const createInlineCategory = () => {
-    const name = newCategoryName.trim()
+  const createCategoryFromPayload = async (payload: { name: string; color: string; description: string }) => {
+    const name = payload.name.trim()
     if (!name) return
-    const exists = availableCategories.some((n) => n.toLowerCase() === name.toLowerCase())
+    const exists = taxonomyCategories.some((c) => (c.name || '').toLowerCase() === name.toLowerCase())
     if (exists) {
       toast({ title: "Categoria já existe", description: "Escolha um nome diferente.", variant: "destructive" as any })
       return
     }
-    const base = slugify(name)
-    let candidate = base || `categoria-${Date.now()}`
-    const existingIds = new Set([...bankCategories, ...customCategories].map((c) => c.id))
-    let i = 1
-    while (existingIds.has(candidate)) {
-      candidate = `${base}-${i++}`
-    }
-    setCustomCategories((prev) => [...prev, { id: candidate, name, questions: [] }])
-    // salvar metadados para nova categoria no mesmo mapa usado pelo seletor
-    categoryMeta[name] = { desc: (newCategoryDescription.trim() || 'Categoria personalizada'), color: newCategoryColor }
-    addCategory(name)
-    setIsCreatingNewCategory(false)
-    setNewCategoryName("")
-    setNewCategoryColor('#8B5CF6')
-    setNewCategoryDescription('')
-    setCategorySearchQuery("")
-    setShowCategorySelector(false)
+    const created = createCategory({
+      name,
+      description: payload.description.trim(),
+      color: payload.color || '#8B5CF6',
+      tagIds: [],
+    })
+    addCategory(created.name)
     toast({ title: "Categoria criada", description: "Categoria adicionada às opções e selecionada." })
   }
 
-  const cancelInlineCategoryCreation = () => {
-    setIsCreatingNewCategory(false)
-    setNewCategoryName("")
-    setNewCategoryColor('#8B5CF6')
-    setNewCategoryDescription('')
+  const updateCategoryFromPayload = async (itemId: string | number, payload: { name: string; color: string; description: string }) => {
+    const id = String(itemId)
+    const newName = payload.name.trim()
+    if (!newName) return
+    const current = taxonomyCategories.find((c) => String(c.id) === id)
+    const oldName = current?.name || ''
+    const exists = taxonomyCategories.some((c) => String(c.id) !== id && (c.name || '').toLowerCase() === newName.toLowerCase())
+    if (exists) {
+      toast({ title: "Categoria já existe", description: "Escolha um nome diferente.", variant: "destructive" as any })
+      return
+    }
+    updateCategory(id, { name: newName, description: payload.description.trim(), color: payload.color || '#8B5CF6' })
+    if (oldName && oldName !== newName) {
+      setSelectedCategories((prev) => prev.map((n) => (n === oldName ? newName : n)))
+    }
+    toast({ title: "Categoria atualizada", description: "Alterações salvas com sucesso." })
   }
 
-  const startInlineSubcategoryCreation = () => {
-    setNewSubcategoryName(subcategorySearchQuery.trim())
-    setIsCreatingNewSubcategory(true)
-    setTimeout(() => {
-      const el = subcategoryDropdownRef.current
-      if (el) el.scrollTop = el.scrollHeight
-    }, 0)
+  const deleteCategoryById = async (itemId: string | number) => {
+    const id = String(itemId)
+    const current = taxonomyCategories.find((c) => String(c.id) === id)
+    deleteCategory(id)
+    if (current?.name) {
+      setSelectedCategories((prev) => prev.filter((n) => n !== current.name))
+    }
+    toast({ title: "Categoria removida", description: "A categoria foi removida." })
   }
 
-  const createInlineSubcategory = () => {
-    const name = newSubcategoryName.trim()
+  const createSubcategoryFromPayload = async (payload: { name: string; color: string; description: string }) => {
+    const name = payload.name.trim()
     if (!name) return
-    const exists = availableSubcategories.some((n) => n.toLowerCase() === name.toLowerCase())
+    const exists = taxonomySubcategories.some((s) => (s.name || '').toLowerCase() === name.toLowerCase())
     if (exists) {
       toast({ title: "Subcategoria já existe", description: "Escolha um nome diferente.", variant: "destructive" as any })
       return
     }
-    // adicionar à lista disponível e selecionar
-    setCustomSubcategories((prev) => [...prev, name])
-    subcategoryMeta[name] = { desc: (newSubcategoryDescription.trim() || 'Subcategoria personalizada'), color: newSubcategoryColor }
-    addSubcategory(name)
-    setIsCreatingNewSubcategory(false)
-    setNewSubcategoryName("")
-    setNewSubcategoryColor('#8B5CF6')
-    setNewSubcategoryDescription('')
-    setSubcategorySearchQuery("")
-    setShowSubcategorySelector(false)
+    const created = createSubcategory({
+      name,
+      description: payload.description.trim(),
+      color: payload.color || '#22C55E',
+      categoryIds: [],
+      tagIds: [],
+      productsCount: 0,
+    })
+    addSubcategory(created.name)
     toast({ title: "Subcategoria criada", description: "Subcategoria adicionada às opções e selecionada." })
   }
 
-  const cancelInlineSubcategoryCreation = () => {
-    setIsCreatingNewSubcategory(false)
-    setNewSubcategoryName("")
-    setNewSubcategoryColor('#8B5CF6')
-    setNewSubcategoryDescription('')
+  const updateSubcategoryFromPayload = async (itemId: string | number, payload: { name: string; color: string; description: string }) => {
+    const id = String(itemId)
+    const newName = payload.name.trim()
+    if (!newName) return
+    const current = taxonomySubcategories.find((s) => String(s.id) === id)
+    const oldName = current?.name || ''
+    const exists = taxonomySubcategories.some((s) => String(s.id) !== id && (s.name || '').toLowerCase() === newName.toLowerCase())
+    if (exists) {
+      toast({ title: "Subcategoria já existe", description: "Escolha um nome diferente.", variant: "destructive" as any })
+      return
+    }
+    updateSubcategory(id, { name: newName, description: payload.description.trim(), color: payload.color || '#22C55E' })
+    if (oldName && oldName !== newName) {
+      setSelectedSubcategories((prev) => prev.map((n) => (n === oldName ? newName : n)))
+    }
+    toast({ title: "Subcategoria atualizada", description: "Alterações salvas com sucesso." })
+  }
+
+  const deleteSubcategoryById = async (itemId: string | number) => {
+    const id = String(itemId)
+    const current = taxonomySubcategories.find((s) => String(s.id) === id)
+    deleteSubcategory(id)
+    if (current?.name) {
+      setSelectedSubcategories((prev) => prev.filter((n) => n !== current.name))
+    }
+    toast({ title: "Subcategoria removida", description: "A subcategoria foi removida." })
+  }
+
+  const createTagFromPayload = async (payload: { name: string; color: string; description: string }) => {
+    const name = payload.name.trim()
+    if (!name) return
+    const exists = taxonomyTags.some((t) => (t.name || '').toLowerCase() === name.toLowerCase())
+    if (exists) {
+      toast({ title: "Tag já existe", description: "Escolha um nome diferente.", variant: "destructive" as any })
+      return
+    }
+    const created = createTag({
+      name,
+      description: payload.description.trim(),
+      color: payload.color || '#EF4444',
+    })
+    addTag(created.name)
+    toast({ title: "Tag criada", description: "Tag adicionada às opções e selecionada." })
+  }
+
+  const updateTagFromPayload = async (itemId: string | number, payload: { name: string; color: string; description: string }) => {
+    const id = String(itemId)
+    const newName = payload.name.trim()
+    if (!newName) return
+    const current = taxonomyTags.find((t) => String(t.id) === id)
+    const oldName = current?.name || ''
+    const exists = taxonomyTags.some((t) => String(t.id) !== id && (t.name || '').toLowerCase() === newName.toLowerCase())
+    if (exists) {
+      toast({ title: "Tag já existe", description: "Escolha um nome diferente.", variant: "destructive" as any })
+      return
+    }
+    updateTag(id, { name: newName, description: payload.description.trim(), color: payload.color || '#EF4444' })
+    if (oldName && oldName !== newName) {
+      setSelectedTags((prev) => prev.map((n) => (n === oldName ? newName : n)))
+    }
+    toast({ title: "Tag atualizada", description: "Alterações salvas com sucesso." })
+  }
+
+  const deleteTagById = async (itemId: string | number) => {
+    const id = String(itemId)
+    const current = taxonomyTags.find((t) => String(t.id) === id)
+    deleteTag(id)
+    if (current?.name) {
+      setSelectedTags((prev) => prev.filter((n) => n !== current.name))
+    }
+    toast({ title: "Tag removida", description: "A tag foi removida." })
   }
 
   const toggleCategory = (categoryId: string) => {
@@ -908,16 +913,144 @@ export default function NovoSimuladoPage() {
                             return false
                           }
 
+                          function resolveSupabasePublicUrl(value: any, pathValue?: any) {
+                            const base = (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env.VITE_SUPABASE_URL)
+                              ? String((import.meta as any).env.VITE_SUPABASE_URL)
+                              : ''
+                            const bucket = (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env.VITE_SUPABASE_QUESTION_IMAGES_BUCKET)
+                              ? String((import.meta as any).env.VITE_SUPABASE_QUESTION_IMAGES_BUCKET)
+                              : 'question-images'
+
+                            const pick = (v: any) => (typeof v === 'string' ? v.trim() : '')
+                            const raw = pick(value) || pick(pathValue)
+                            if (!raw) return null
+                            if (raw.startsWith('data:') || raw.startsWith('blob:')) return raw
+                            if (raw.startsWith('http://') || raw.startsWith('https://')) {
+                              try {
+                                const parsed = new URL(raw)
+                                const m = parsed.pathname.match(/\/storage\/v1\/object\/sign\/([^/]+)\/(.+)$/)
+                                if (m?.[1] && m?.[2]) {
+                                  parsed.pathname = `/storage/v1/object/public/${m[1]}/${m[2]}`
+                                  parsed.search = ''
+                                  parsed.hash = ''
+                                  return parsed.toString()
+                                }
+                              } catch {}
+                              return raw
+                            }
+                            if (!base) return raw
+                            let p = raw.replace(/^\/+/, '')
+                            if (p.startsWith(`${bucket}/`)) p = p.slice(bucket.length + 1)
+                            if (p.startsWith('question-images/')) p = p.slice('question-images/'.length)
+                            return `${base.replace(/\/+$/, '')}/storage/v1/object/public/${bucket}/${p}`
+                          }
+
+                          const choicesMedia = (meta && typeof meta === 'object' && meta.choicesMedia && typeof meta.choicesMedia === 'object')
+                            ? meta.choicesMedia
+                            : {}
+
                           const choices = (choicesSrc || []).map((c: any, i: number) => {
-                            const label = typeof c === 'string' ? c : (c?.label || c?.text || c?.name || '')
+                            const label = typeof c === 'string' ? c : (c?.label || c?.text || c?.name || c?.value || '')
                             const flag = typeof c === 'object'
                               ? truthyFlag(c?.is_correct) || truthyFlag(c?.correct) || truthyFlag(c?.isCorrect) || truthyFlag(c?.right) || truthyFlag(c?.correta)
                               : (correctIndexFromMeta >= 0 ? i === correctIndexFromMeta : false)
-                            return { label, is_correct: flag }
+                            const media = (choicesMedia && typeof choicesMedia === 'object') ? (choicesMedia as any)[i] : null
+                            const rawImageUrl = typeof c === 'object'
+                              ? (c?.image_url || c?.imageUrl || c?.image || c?.img_url || c?.imgUrl || c?.photo_url || c?.photoUrl || c?.picture_url || c?.pictureUrl || null)
+                              : null
+                            const rawVideoUrl = typeof c === 'object'
+                              ? (c?.video_url || c?.videoUrl || c?.video || c?.vimeo_url || c?.vimeoUrl || c?.youtube_url || c?.youtubeUrl || c?.media_url || c?.mediaUrl || null)
+                              : null
+                            const resolution = typeof c === 'object' ? (c?.resolution || c?.explanation || c?.commentary || c?.rationale || null) : null
+                            const image_url = resolveSupabasePublicUrl(
+                              rawImageUrl || media?.imageUrl || media?.image_url || media?.image,
+                              media?.imagePath || media?.image_path,
+                            )
+                            const video_url = resolveSupabasePublicUrl(
+                              rawVideoUrl || media?.videoUrl || media?.video_url || media?.video,
+                              media?.videoPath || media?.video_path,
+                            )
+                            return { label, is_correct: flag, image_url, video_url, resolution }
                           })
                           const stem = (row?.body || meta?.body || meta?.text || meta?.statement || meta?.question || '') as string
                           const name = (row?.title || q?.name || String(q?.id || '')) as string
-                          return { id: q?.id, name, stem, choices }
+                          const rawImageUrl =
+                            row?.image_url ||
+                            meta?.image_url ||
+                            meta?.imageUrl ||
+                            meta?.question_image_url ||
+                            meta?.questionImageUrl ||
+                            meta?.cover_image_url ||
+                            meta?.coverImageUrl ||
+                            null
+                          const rawImagePath =
+                            row?.image_path ||
+                            meta?.image_path ||
+                            meta?.imagePath ||
+                            meta?.question_image_path ||
+                            meta?.questionImagePath ||
+                            null
+                          const rawVideoUrl =
+                            row?.video_url ||
+                            meta?.video_url ||
+                            meta?.videoUrl ||
+                            meta?.question_video_url ||
+                            meta?.questionVideoUrl ||
+                            meta?.vimeo_url ||
+                            meta?.vimeoUrl ||
+                            meta?.youtube_url ||
+                            meta?.youtubeUrl ||
+                            null
+                          const rawVideoPath =
+                            meta?.video_path ||
+                            meta?.videoPath ||
+                            meta?.question_video_path ||
+                            meta?.questionVideoPath ||
+                            null
+                          const image_url = resolveSupabasePublicUrl(rawImageUrl, rawImagePath)
+                          const video_url = resolveSupabasePublicUrl(rawVideoUrl, rawVideoPath)
+                          const resolution =
+                            row?.resolution ||
+                            row?.explanation ||
+                            meta?.resolution ||
+                            meta?.resolucao ||
+                            meta?.explanation ||
+                            meta?.solution ||
+                            meta?.commentary ||
+                            meta?.answer_explanation ||
+                            meta?.answerExplanation ||
+                            null
+                          const rawResolutionImageUrl =
+                            meta?.resolution_image_url ||
+                            meta?.resolutionImageUrl ||
+                            meta?.resolutionImage ||
+                            meta?.resolution_image ||
+                            meta?.explanation_image_url ||
+                            meta?.explanationImageUrl ||
+                            null
+                          const rawResolutionVideoUrl =
+                            meta?.resolution_video_url ||
+                            meta?.resolutionVideoUrl ||
+                            meta?.resolutionVideo ||
+                            meta?.resolution_video ||
+                            meta?.explanation_video_url ||
+                            meta?.explanationVideoUrl ||
+                            null
+                          const rawResolutionImagePath =
+                            meta?.resolution_image_path ||
+                            meta?.resolutionImagePath ||
+                            meta?.explanation_image_path ||
+                            meta?.explanationImagePath ||
+                            null
+                          const rawResolutionVideoPath =
+                            meta?.resolution_video_path ||
+                            meta?.resolutionVideoPath ||
+                            meta?.explanation_video_path ||
+                            meta?.explanationVideoPath ||
+                            null
+                          const resolution_image_url = resolveSupabasePublicUrl(rawResolutionImageUrl, rawResolutionImagePath)
+                          const resolution_video_url = resolveSupabasePublicUrl(rawResolutionVideoUrl, rawResolutionVideoPath)
+                          return { id: q?.id, name, stem, choices, image_url, video_url, resolution, resolution_image_url, resolution_video_url }
                         })
                       }
                     } catch (fetchErr) {
@@ -1026,128 +1159,45 @@ export default function NovoSimuladoPage() {
               {/* Metadata Section - Reestruturada para combinar com a referência */}
               <div className="mb-8 rounded-[4px] border border-[#E3E4E5] bg-white p-6">
                 {/* Categoria - layout conforme referência */}
-                <div className="flex items-center gap-4 mb-6">
+                <div className="flex items-center gap-4 mb-1">
                   <div className="flex-shrink-0 flex items-center gap-2">
                     <img src="/icons/categorias-popup.svg" alt="Categoria" width={14} height={14} className="text-gray-600" />
                     <span className="text-[14px] font-normal text-[#737780]">Categoria:</span>
                   </div>
                   <div className="flex-1 flex items-center">
-                    <div className="relative dropdown-container" ref={categoryDropdownRef}>
+                    <div className="relative dropdown-container">
                       <button
                         type="button"
                         className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors"
                         title="Adicionar categoria"
                         style={{ background: 'none' }}
-                        onClick={() => { setCategorySelectorOrigin('primary'); setShowCategorySelector((v) => !v) }}
+                        onClick={() => setShowCategorySelector((v) => !v)}
                         aria-haspopup="menu"
-                        aria-expanded={showCategorySelector && categorySelectorOrigin === 'primary'}
-                        aria-controls="categorySelectorMenuPrimary"
+                        aria-expanded={showCategorySelector}
+                        aria-controls="categorySelectorMenu"
                       >
                         <Plus className="w-4 h-4 text-gray-600" />
                       </button>
-                      {showCategorySelector && categorySelectorOrigin === 'primary' && (
-                        <div
-                          id="categorySelectorMenuPrimary"
-                          role="menu"
-                          className="absolute left-0 top-full z-10 mt-2 w-[300px] rounded-[8px] border border-[#E3E4E5] bg-white shadow-md"
-                        >
-                          <div className="p-3">
-                            <div className="relative">
-                              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9291A5]" />
-                              <input
-                                value={categorySearchQuery}
-                                onChange={(e) => setCategorySearchQuery(e.target.value)}
-                                placeholder="Pesquisar categorias..."
-                                className="h-[36px] w-full rounded-[8px] border border-[#E3E4E5] bg-white pl-10 pr-3 text-[12px] text-[#1E1B39] placeholder:text-[#ABADB3] focus:border-[#0047BB] focus:outline-none"
-                                aria-label="Pesquisar categorias"
-                              />
-                            </div>
-                          </div>
-                          <ul className="max-h-48 overflow-auto px-2">
-                            {filteredCategoriesList.map((cat) => {
-                              const meta = categoryMeta[cat] || { desc: "Categoria do banco de questões", color: "#D1D5DB" }
-                              return (
-                                <li
-                                  key={cat}
-                                  role="menuitem"
-                                  tabIndex={0}
-                                  className="flex cursor-pointer items-start justify-between gap-3 rounded-[6px] px-3 py-2 hover:bg-[#F3F4F6]"
-                                  onClick={() => {
-                                    addCategory(cat)
-                                    setShowCategorySelector(false)
-                                  }}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter' || e.key === ' ') {
-                                      addCategory(cat)
-                                      setShowCategorySelector(false)
-                                    }
-                                  }}
-                                >
-                                  <div className="flex items-start gap-2">
-                                    <span className="mt-[6px] h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: meta.color }} />
-                                    <div>
-                                      <div className="text-[12px] font-medium text-[#1E1B39]">{cat}</div>
-                                      <div className="text-[11px] text-[#737780]">{meta.desc}</div>
-                                    </div>
-                                  </div>
-                                  <div className="flex items-center gap-2 text-[#737780]" onClick={(e) => e.stopPropagation()}>
-                                    <Pencil className="h-4 w-4" />
-                                    <Trash2 className="h-4 w-4" />
-                                  </div>
-                                </li>
-                              )
-                            })}
-                          </ul>
-                          <div className="border-t border-[#E3E4E5] p-3">
-                            {!isCreatingNewCategory ? (
-                              <button
-                                type="button"
-                                className="flex items-center gap-2 text-[12px] text-[#0047BB] hover:underline"
-                                onClick={startInlineCategoryCreation}
-                              >
-                                <Plus className="h-4 w-4" /> Criar nova categoria
-                              </button>
-                            ) : (
-                              <div className="space-y-2">
-                                <div className="flex items-center gap-2">
-                                  <input
-                                    value={newCategoryName}
-                                    onChange={(e) => setNewCategoryName(e.target.value)}
-                                    placeholder="Nome da nova categoria"
-                                    className="flex-1 rounded-[8px] border border-[#E3E4E5] bg-white px-2 py-1 text-[12px] text-[#1E1B39] placeholder:text-[#ABADB3] outline-none"
-                                    autoFocus
-                                  />
-                                  <input
-                                    type="color"
-                                    value={newCategoryColor}
-                                    onChange={(e) => setNewCategoryColor(e.target.value)}
-                                    title="Cor da categoria"
-                                    className="h-7 w-10 rounded-[8px] border border-[#E3E4E5] p-0"
-                                  />
-                                </div>
-                                <textarea
-                                  value={newCategoryDescription}
-                                  onChange={(e) => setNewCategoryDescription(e.target.value)}
-                                  placeholder="Descrição da categoria (opcional)"
-                                  className="w-full rounded-[8px] border border-[#E3E4E5] bg-white px-2 py-1 text-[12px] text-[#1E1B39] placeholder:text-[#ABADB3] outline-none"
-                                  rows={2}
-                                />
-                                <div className="flex items-center gap-2">
-                                  <Button size="sm" className="h-7 px-3" onClick={createInlineCategory} disabled={!newCategoryName.trim()}>
-                                    Criar
-                                  </Button>
-                                  <Button size="sm" variant="outline" className="h-7 px-3" onClick={cancelInlineCategoryCreation}>
-                                    Cancelar
-                                  </Button>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )}
+                      <TaxonomyDropdown
+                        open={showCategorySelector}
+                        onOpenChange={setShowCategorySelector}
+                        items={categoryItems}
+                        isSelected={(item) => selectedCategories.includes(item.name)}
+                        onSelect={(item) => {
+                          addCategory(item.name)
+                          setShowCategorySelector(false)
+                        }}
+                        onCreate={createCategoryFromPayload}
+                        onUpdate={updateCategoryFromPayload}
+                        onDelete={deleteCategoryById}
+                        searchPlaceholder="Pesquisar categorias..."
+                        createLabel="Criar nova categoria"
+                        defaultColor="#8B5CF6"
+                      />
                     </div>
                   </div>
                 </div>
+                <div className="text-[12px] text-[#9291A5]">Categorias que serão vinculadas:</div>
                 <div className="mb-6 flex flex-wrap items-center gap-2">
                   {selectedCategories.map((c) => (
                     <span key={c} className="inline-flex items-center gap-2 rounded-full border border-[#E3E4E5] bg-white px-3 py-1 text-[12px] text-[#1E1B39]">
@@ -1161,13 +1211,13 @@ export default function NovoSimuladoPage() {
                 
 
                 {/* Subcategoria - layout conforme referência */}
-                <div className="flex items-center gap-4 mb-6">
+                <div className="flex items-center gap-4 mb-1">
                   <div className="flex-shrink-0 flex items-center gap-2">
                     <img src="/icons/subcategoria-popup.svg" alt="Subcategoria" width={14} height={14} className="text-gray-600" />
                     <span className="text-[14px] font-normal text-[#737780]">Subcategoria:</span>
                   </div>
                   <div className="flex-1 flex items-center">
-                    <div className="relative dropdown-container" ref={subcategoryDropdownRef}>
+                    <div className="relative dropdown-container">
                       <button
                         type="button"
                         className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors"
@@ -1180,102 +1230,26 @@ export default function NovoSimuladoPage() {
                       >
                         <Plus className="w-4 h-4 text-gray-600" />
                       </button>
-                      {showSubcategorySelector && (
-                        <div
-                          id="subcategorySelectorMenu"
-                          role="menu"
-                          className="absolute left-0 top-full z-10 mt-2 w-[300px] rounded-[8px] border border-[#E3E4E5] bg-white shadow-md"
-                        >
-                          <div className="p-3">
-                            <div className="relative">
-                              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9291A5]" />
-                              <input
-                                value={subcategorySearchQuery}
-                                onChange={(e) => setSubcategorySearchQuery(e.target.value)}
-                                placeholder="Pesquisar subcategorias..."
-                                className="h-[36px] w-full rounded-[8px] border border-[#E3E4E5] bg-white pl-10 pr-3 text-[12px] text-[#1E1B39] placeholder:text-[#ABADB3] focus:border-[#0047BB] focus:outline-none"
-                                aria-label="Pesquisar subcategorias"
-                              />
-                            </div>
-                          </div>
-                          <ul className="max-h-48 overflow-auto px-2">
-                            {filteredSubcategoriesList.map((sub) => {
-                              const meta = subcategoryMeta[sub] || { desc: "Subcategoria do banco de questões", color: "#D1D5DB" }
-                              return (
-                                <li
-                                  key={sub}
-                                  role="menuitem"
-                                  tabIndex={0}
-                                  className="flex cursor-pointer items-start justify-between gap-3 rounded-[6px] px-3 py-2 hover:bg-[#F3F4F6]"
-                                  onClick={() => {
-                                    addSubcategory(sub)
-                                    setShowSubcategorySelector(false)
-                                  }}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter' || e.key === ' ') {
-                                      addSubcategory(sub)
-                                      setShowSubcategorySelector(false)
-                                    }
-                                  }}
-                                >
-                                  <div className="flex items-start gap-2">
-                                    <span className="mt-[6px] h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: meta.color }} />
-                                    <div>
-                                      <div className="text-[12px] font-medium text-[#1E1B39]">{sub}</div>
-                                      <div className="text-[11px] text-[#737780]">{meta.desc}</div>
-                                    </div>
-                                  </div>
-                                  <div className="flex items-center gap-2 text-[#737780]" onClick={(e) => e.stopPropagation()}>
-                                    <Pencil className="h-4 w-4" />
-                                    <Trash2 className="h-4 w-4" />
-                                  </div>
-                                </li>
-                              )
-                            })}
-                          </ul>
-                          <div className="border-t border-[#E3E4E5] p-3">
-                            {!isCreatingNewSubcategory ? (
-                              <button
-                                type="button"
-                                className="flex items-center gap-2 text-[12px] text-[#0047BB] hover:underline"
-                                onClick={startInlineSubcategoryCreation}
-                              >
-                                <Plus className="h-4 w-4" /> Criar nova subcategoria
-                              </button>
-                            ) : (
-                              <div className="space-y-2">
-                                <div className="flex items-center gap-2">
-                                  <input
-                                    value={newSubcategoryName}
-                                    onChange={(e) => setNewSubcategoryName(e.target.value)}
-                                    placeholder="Nome da nova subcategoria"
-                                    className="h-[32px] flex-1 rounded-[6px] border border-[#E3E4E5] bg-white px-3 text-[12px] text-[#1E1B39] placeholder:text-[#ABADB3] focus:border-[#0047BB] focus:outline-none"
-                                  />
-                                  <input
-                                    type="color"
-                                    value={newSubcategoryColor}
-                                    onChange={(e) => setNewSubcategoryColor(e.target.value)}
-                                    aria-label="Cor da subcategoria"
-                                  />
-                                </div>
-                                <input
-                                  value={newSubcategoryDescription}
-                                  onChange={(e) => setNewSubcategoryDescription(e.target.value)}
-                                  placeholder="Descrição (opcional)"
-                                  className="h-[32px] w-full rounded-[6px] border border-[#E3E4E5] bg-white px-3 text-[12px] text-[#1E1B39] placeholder:text-[#ABADB3] focus:border-[#0047BB] focus:outline-none"
-                                />
-                                <div className="flex items-center gap-2">
-                                  <Button size="sm" className="h-7 px-3" onClick={createInlineSubcategory} disabled={!newSubcategoryName.trim()}>Adicionar</Button>
-                                  <Button size="sm" variant="outline" className="h-7 px-3" onClick={cancelInlineSubcategoryCreation}>Cancelar</Button>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )}
+                      <TaxonomyDropdown
+                        open={showSubcategorySelector}
+                        onOpenChange={setShowSubcategorySelector}
+                        items={subcategoryItems}
+                        isSelected={(item) => selectedSubcategories.includes(item.name)}
+                        onSelect={(item) => {
+                          addSubcategory(item.name)
+                          setShowSubcategorySelector(false)
+                        }}
+                        onCreate={createSubcategoryFromPayload}
+                        onUpdate={updateSubcategoryFromPayload}
+                        onDelete={deleteSubcategoryById}
+                        searchPlaceholder="Pesquisar subcategorias..."
+                        createLabel="Criar nova subcategoria"
+                        defaultColor="#22C55E"
+                      />
                     </div>
                   </div>
                 </div>
+                <div className="text-[12px] text-[#9291A5]">Subcategorias que serão vinculadas:</div>
                 <div className="mb-6 flex flex-wrap items-center gap-2">
                   {selectedSubcategories.map((s) => (
                     <span key={s} className="inline-flex items-center gap-2 rounded-full border border-[#E3E4E5] bg-white px-3 py-1 text-[12px] text-[#1E1B39]">
@@ -1291,7 +1265,7 @@ export default function NovoSimuladoPage() {
                   <div className="flex items-center gap-2">
                     <img src="/icons/tag-popup.svg" alt="Tags" width={14} height={14} className="text-gray-600" />
                     <span className="text-[14px] font-normal text-[#737780]">Tags:</span>
-                    <div className="relative dropdown-container" ref={tagDropdownRef}>
+                    <div className="relative dropdown-container">
                       <button
                         type="button"
                         className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors"
@@ -1304,101 +1278,25 @@ export default function NovoSimuladoPage() {
                       >
                         <Plus className="w-4 h-4 text-gray-600" />
                       </button>
-                      {showTagSelector && (
-                        <div
-                          id="tagSelectorMenu"
-                          role="menu"
-                          className="absolute left-0 top-full z-10 mt-2 w-[300px] rounded-[8px] border border-[#E3E4E5] bg-white shadow-md"
-                        >
-                          <div className="p-3">
-                            <div className="relative">
-                              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#9291A5]" />
-                              <input
-                                value={tagSearchQuery}
-                                onChange={(e) => setTagSearchQuery(e.target.value)}
-                                placeholder="Pesquisar tags..."
-                                className="h-[36px] w-full rounded-[8px] border border-[#E3E4E5] bg-white pl-10 pr-3 text-[12px] text-[#1E1B39] placeholder:text-[#ABADB3] focus:border-[#0047BB] focus:outline-none"
-                                aria-label="Pesquisar tags"
-                              />
-                            </div>
-                          </div>
-                          <ul className="max-h-40 overflow-auto px-2">
-                            {filteredTagsList.map((tag) => {
-                              const meta = tagMeta[tag] || { desc: "Tag do banco de questões", color: "#D1D5DB" }
-                              return (
-                                <li
-                                  key={tag}
-                                  role="menuitem"
-                                  tabIndex={0}
-                                  className="flex cursor-pointer items-start justify-between gap-3 rounded-[6px] px-3 py-2 hover:bg-[#F3F4F6]"
-                                  onClick={() => {
-                                    addTag(tag)
-                                    setShowTagSelector(false)
-                                  }}
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter' || e.key === ' ') {
-                                      addTag(tag)
-                                      setShowTagSelector(false)
-                                    }
-                                  }}
-                                >
-                                  <div className="flex items-start gap-2">
-                                    <span className="mt-[6px] h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: meta.color }} />
-                                    <div>
-                                      <div className="text-[12px] font-medium text-[#1E1B39]">{tag}</div>
-                                      <div className="text-[11px] text-[#737780]">{meta.desc}</div>
-                                    </div>
-                                  </div>
-                                  <div className="flex items-center gap-2 text-[#737780]" onClick={(e) => e.stopPropagation()}>
-                                    <Pencil className="h-4 w-4" />
-                                    <Trash2 className="h-4 w-4" />
-                                  </div>
-                                </li>
-                              )
-                            })}
-                          </ul>
-                          <div className="border-t border-[#E3E4E5] p-3">
-                            {!isCreatingNewTag ? (
-                              <button
-                                type="button"
-                                className="flex items-center gap-2 text-[12px] text-[#0047BB] hover:underline"
-                                onClick={startInlineTagCreation}
-                              >
-                                <Plus className="h-4 w-4" /> Criar nova tag
-                              </button>
-                            ) : (
-                              <div className="space-y-2">
-                                <div className="flex items-center gap-2">
-                                  <input
-                                    value={newTagName}
-                                    onChange={(e) => setNewTagName(e.target.value)}
-                                    placeholder="Nome da nova tag"
-                                    className="h-[32px] flex-1 rounded-[6px] border border-[#E3E4E5] bg-white px-3 text-[12px] text-[#1E1B39] placeholder:text-[#ABADB3] focus:border-[#0047BB] focus:outline-none"
-                                  />
-                                  <input
-                                    type="color"
-                                    value={newTagColor}
-                                    onChange={(e) => setNewTagColor(e.target.value)}
-                                    aria-label="Cor da tag"
-                                  />
-                                </div>
-                                <input
-                                  value={newTagDescription}
-                                  onChange={(e) => setNewTagDescription(e.target.value)}
-                                  placeholder="Descrição (opcional)"
-                                  className="h-[32px] w-full rounded-[6px] border border-[#E3E4E5] bg-white px-3 text-[12px] text-[#1E1B39] placeholder:text-[#ABADB3] focus:border-[#0047BB] focus:outline-none"
-                                />
-                                <div className="flex items-center gap-2">
-                                  <Button size="sm" className="h-7 px-3" onClick={createInlineTag} disabled={!newTagName.trim()}>Adicionar</Button>
-                                  <Button size="sm" variant="outline" className="h-7 px-3" onClick={cancelInlineTagCreation}>Cancelar</Button>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )}
+                      <TaxonomyDropdown
+                        open={showTagSelector}
+                        onOpenChange={setShowTagSelector}
+                        items={tagItems}
+                        isSelected={(item) => selectedTags.includes(item.name)}
+                        onSelect={(item) => {
+                          addTag(item.name)
+                          setShowTagSelector(false)
+                        }}
+                        onCreate={createTagFromPayload}
+                        onUpdate={updateTagFromPayload}
+                        onDelete={deleteTagById}
+                        searchPlaceholder="Pesquisar tags..."
+                        createLabel="Criar nova tag"
+                        defaultColor="#EF4444"
+                      />
                     </div>
                   </div>
+                  <div className="mt-1 text-[12px] text-[#9291A5]">Tags que serão vinculadas:</div>
                   <div className="flex flex-wrap items-center gap-2 mt-2">
                     {selectedTags.map((t) => (
                       <span key={t} className="inline-flex items-center gap-2 rounded-full border border-[#E3E4E5] bg-white px-3 py-1 text-[12px] text-[#1E1B39]">
@@ -1487,11 +1385,35 @@ export default function NovoSimuladoPage() {
                         <input
                           id="availabilityDate"
                           ref={availabilityDateRef}
-                          type="date"
-                          value={availabilityDate}
-                          onChange={(e) => setAvailabilityDate(e.target.value)}
-                          min={new Date().toISOString().split("T")[0]}
-                          placeholder="Selecione uma data"
+                          type="text"
+                          inputMode="numeric"
+                          value={availabilityDateDisplay}
+                          onChange={(e) => {
+                            const formatted = formatBrDateInput(e.target.value)
+                            setAvailabilityDateDisplay(formatted)
+                            const iso = parseBrDateToIso(formatted)
+                            if (iso) setAvailabilityDate(iso)
+                          }}
+                          onBlur={() => {
+                            const iso = parseBrDateToIso(availabilityDateDisplay)
+                            if (!availabilityDateDisplay) {
+                              setAvailabilityDate("")
+                              return
+                            }
+                            if (!iso) {
+                              toast({ title: "Data inválida", description: "Use o formato dd/mm/aaaa.", variant: "destructive" })
+                              return
+                            }
+                            const todayIso = new Date().toISOString().slice(0, 10)
+                            if (iso < todayIso) {
+                              toast({ title: "Data inválida", description: "Escolha uma data a partir de hoje.", variant: "destructive" })
+                              setAvailabilityDate(todayIso)
+                              setAvailabilityDateDisplay(todayIso.split("-").reverse().join("/"))
+                              return
+                            }
+                            setAvailabilityDate(iso)
+                          }}
+                          placeholder="dd/mm/aaaa"
                           className="w-full bg-transparent text-[12px] text-[#1E1B39] outline-none placeholder:text-[#ABADB3]"
                           aria-label="Data de disponibilidade"
                           aria-describedby="availabilityHelp"
@@ -1612,8 +1534,8 @@ export default function NovoSimuladoPage() {
                     Acesso: alunos dos cursos selecionados
                   </span>
 
-                  <div className="mt-3 grid items-start gap-4 md:grid-cols-[280px,1fr]">
-                    <div className="rounded-[6px] bg-[#F9FAFB] p-3 md:sticky md:top-0 min-h-[120px]">
+                  <div className="mt-3 grid items-start gap-4 grid-cols-1">
+                    <div className="rounded-[6px] bg-[#F9FAFB] p-3 min-h-[120px]">
                       <div className="mb-2 flex items-center gap-2">
                         <span className="flex items-center gap-2 text-[12px] font-medium text-[#1E1B39]">Selecionados</span>
                         {selectedCourses.length > 0 && (
@@ -1631,7 +1553,7 @@ export default function NovoSimuladoPage() {
                           <BookOpen className="h-4 w-4 text-[#9291A5]" />
                           <div className="text-center">
                             <div>Nenhum curso selecionado.</div>
-                            <div className="text-[11px] text-[#ABADB3]">Use a lista à direita para adicionar.</div>
+                            <div className="text-[11px] text-[#ABADB3]">Use a lista abaixo para adicionar.</div>
                           </div>
                         </div>
                       ) : (
@@ -1724,7 +1646,7 @@ export default function NovoSimuladoPage() {
 
               {/* Question Selection Section (Unified Card) */}
               <div className="rounded-[4px] border border-[#E3E4E5] bg-white">
-                <div className="grid grid-cols-[1.5fr,1fr] gap-6 p-4">
+                <div className="p-4">
                   {/* Left Column: Question Bank */}
                   <div ref={questionBankSectionRef}>
                     <div className="mb-2 flex items-center justify-between">
@@ -1931,8 +1853,6 @@ export default function NovoSimuladoPage() {
                     </div>
                   </div>
 
-                  {/* Right Column placeholder to preserve grid layout */}
-                  <div />
                 </div>
               </div>
 
@@ -1964,33 +1884,6 @@ export default function NovoSimuladoPage() {
                   <p className="text-[12px] text-[#9291A5]">Avançar sem responder imediatamente e decidir depois.</p>
                   <div className="flex items-center justify-between"><span className="text-[12px]">Calculadora</span><Switch checked={enableCalculator} onCheckedChange={setEnableCalculator} /></div>
                 </div>
-              </div>
-              <div className="rounded-[4px] border border-[#E3E4E5] bg-white p-4">
-                <h5 className="mb-2 text-[12px] font-semibold text-[#737780]">Temporizador por questão</h5>
-                <div className="flex items-center justify-between"><span className="text-[12px]">Ativar</span><Switch checked={enableQuestionTimer} onCheckedChange={setEnableQuestionTimer} /></div>
-                {enableQuestionTimer && (
-                  <div className="mt-2 flex items-center gap-2">
-                    <input value={questionTimer} onChange={(e) => setQuestionTimer(e.target.value)} placeholder="Ex.: 60" className="w-20 rounded-[4px] border border-[#E3E4E5] bg-white px-2 py-1 text-[12px]" />
-                    <div className="flex gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className={timerUnit === "seconds" ? "border-primary text-primary bg-primary/5" : ""}
-                        onClick={() => setTimerUnit("seconds")}
-                      >
-                        Segundos
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className={timerUnit === "minutes" ? "border-primary text-primary bg-primary/5" : ""}
-                        onClick={() => setTimerUnit("minutes")}
-                      >
-                        Minutos
-                      </Button>
-                    </div>
-                  </div>
-                )}
               </div>
               <div className="rounded-[4px] border border-[#E3E4E5] bg-white p-4">
                 <h5 className="mb-2 text-[12px] font-semibold text-[#737780]">Respostas</h5>

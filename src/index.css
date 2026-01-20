@@ -84,18 +84,18 @@
   }
   
   body {
-    @apply bg-background text-foreground;
+    background-color: #F5F6FA;
+    @apply text-foreground;
     min-height: 100dvh;
     min-height: 100vh; /* fallback */
   }
+}
   
   /* Classe utilitária para áreas roláveis */
-  .scroll-area {
-    min-height: 0;
-    overflow: auto;
-  }
+.scroll-area {
+  min-height: 0;
+  overflow: auto;
 }
-
 /* Scrollbar customization for sidebar */
 .scrollbar-hide {
   -ms-overflow-style: none;  /* Internet Explorer 10+ */
@@ -121,3 +121,7 @@
 .animate-slide {
   animation: slide 1.2s ease-in-out infinite alternate;
 }
+
+
+
+

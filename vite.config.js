@@ -1,6 +1,6 @@
 import path from 'node:path';
 import react from '@vitejs/plugin-react';
-import { createLogger, defineConfig } from 'vite';
+import { createLogger, defineConfig, loadEnv } from 'vite';
 import inlineEditPlugin from './plugins/visual-editor/vite-plugin-react-inline-editor.js';
 import editModeDevPlugin from './plugins/visual-editor/vite-plugin-edit-mode.js';
 import iframeRouteRestorationPlugin from './plugins/vite-plugin-iframe-route-restoration.js';
@@ -71,12 +71,60 @@ window.onerror = (message, source, lineno, colno, errorObj) => {
 		message,
 		error: errorDetails
 	}, '*');
+
+	try {
+		const msg = String(message || '');
+		if (msg.includes('net::ERR_ABORTED') || msg.includes('ERR_ABORTED')) {
+			return true;
+		}
+	} catch {}
 };
+
+window.onunhandledrejection = (event) => {
+	try {
+		const r = event && event.reason;
+		const msg = String(r && (r.message || r) || '');
+		if (msg.includes('Failed to fetch') || msg.includes('net::ERR_ABORTED') || msg.includes('ERR_ABORTED')) {
+			try { event.preventDefault(); } catch {}
+			return;
+		}
+		window.parent.postMessage({
+			type: 'horizons-runtime-error',
+			message: 'unhandledrejection',
+			error: JSON.stringify({ message: msg, stack: r && r.stack })
+		}, '*');
+	} catch {}
+};
+
+window.addEventListener('error', (event) => {
+	try {
+		const t = event && event.target;
+		const src = t && (t.src || t.href) ? String(t.src || t.href) : '';
+		if (src && (src.startsWith('blob:') || /\\.(svg|png|jpe?g|webp)(\\?|#|$)/i.test(src))) {
+			try { event.preventDefault(); } catch {}
+			try { event.stopImmediatePropagation(); } catch {}
+		}
+	} catch {}
+}, true);
 `;
 
 const configHorizonsConsoleErrroHandler = `
 const originalConsoleError = console.error;
 console.error = function(...args) {
+	try {
+		const msg = args.map(arg => {
+			try {
+				if (arg instanceof Error) return String(arg.message || arg.stack || arg);
+				return typeof arg === 'string' ? arg : JSON.stringify(arg);
+			} catch {
+				return String(arg);
+			}
+		}).join(' ');
+		if (msg.includes('net::ERR_ABORTED') || msg.includes('ERR_ABORTED')) {
+			return;
+		}
+	} catch {}
+
 	originalConsoleError.apply(console, args);
 
 	let errorString = '';
@@ -104,38 +152,74 @@ const configWindowFetchMonkeyPatch = `
 const originalFetch = window.fetch;
 
 window.fetch = function(...args) {
-	const url = args[0] instanceof Request ? args[0].url : args[0];
+    const url = args[0] instanceof Request ? args[0].url : args[0];
+    const method = args[0] instanceof Request ? (args[0].method || 'GET') : ((args[1] && args[1].method) ? args[1].method : 'GET');
 
-	// Skip WebSocket URLs
-	if (url.startsWith('ws:') || url.startsWith('wss:')) {
-		return originalFetch.apply(this, args);
-	}
+    // Skip WebSocket URLs
+    if (url.startsWith('ws:') || url.startsWith('wss:')) {
+        return originalFetch.apply(this, args);
+    }
 
-	return originalFetch.apply(this, args)
-		.then(async response => {
-			const contentType = response.headers.get('Content-Type') || '';
+    // Helper: decide whether to log error for a given request
+    function shouldLog(url, method) {
+        try {
+            const u = new URL(url, window.location.origin);
+            const isSupabaseStorage = u.hostname.includes('supabase.co') && u.pathname.startsWith('/storage/v1');
+            const targetsLogsBucket = u.href.includes('imagens-logs');
+            const isBucketAdmin = u.pathname.includes('/bucket');
+            // Mute noisy dev errors for imagens-logs storage operations
+            if (isSupabaseStorage && (targetsLogsBucket || isBucketAdmin)) return false;
+        } catch (_) {}
+        return true;
+    }
 
-			// Exclude HTML document responses
-			const isDocumentResponse =
-				contentType.includes('text/html') ||
-				contentType.includes('application/xhtml+xml');
+    return originalFetch.apply(this, args)
+        .then(async response => {
+            const contentType = response.headers.get('Content-Type') || '';
 
-			if (!response.ok && !isDocumentResponse) {
-					const responseClone = response.clone();
-					const errorFromRes = await responseClone.text();
-					const requestUrl = response.url;
-					console.error(\`Fetch error from \${requestUrl}: \${errorFromRes}\`);
-			}
+            // Exclude HTML document responses
+            const isDocumentResponse =
+                contentType.includes('text/html') ||
+                contentType.includes('application/xhtml+xml');
 
-			return response;
-		})
-		.catch(error => {
-			if (!url.match(/\.html?$/i)) {
-				console.error(error);
-			}
+            if (!response.ok && !isDocumentResponse && shouldLog(response.url, method)) {
+                    const responseClone = response.clone();
+                    const errorFromRes = await responseClone.text();
+                    const requestUrl = response.url;
+                    console.error(\`Fetch error from \${requestUrl}: \${errorFromRes}\`);
+            }
 
-			throw error;
-		});
+            return response;
+        })
+        .catch(error => {
+            try {
+                const msg = String(error && (error.message || error) || '');
+                const name = String(error && error.name || '');
+                const u = String(url || '');
+                const isAbort =
+                    name === 'AbortError' ||
+                    msg.includes('AbortError') ||
+                    msg.includes('ERR_ABORTED') ||
+                    msg.includes('net::ERR_ABORTED') ||
+                    msg.includes('aborted');
+                const isFailedFetch = msg.includes('Failed to fetch');
+                const isSupabaseRest = (() => {
+                    try {
+                        const parsed = new URL(u, window.location.origin);
+                        return parsed.hostname.includes('supabase.co') && parsed.pathname.startsWith('/rest/v1');
+                    } catch (_) {
+                        return false;
+                    }
+                })();
+                const isAsset = /\\.(svg|png|jpe?g|webp)(\\?|#|$)/i.test(u);
+                const noisy = isAbort || (isFailedFetch && method === 'GET' && (isSupabaseRest || isAsset));
+                if (!noisy && !u.match(/\.html?$/i) && shouldLog(u, method)) {
+                    console.error(error);
+                }
+            } catch (_) {}
+
+            throw error;
+        });
 };
 `;
 
@@ -189,12 +273,6 @@ const addTransformIndexHtml = {
 			{
 				tag: 'script',
 				attrs: { type: 'module' },
-				children: configWindowFetchMonkeyPatch,
-				injectTo: 'head',
-			},
-			{
-				tag: 'script',
-				attrs: { type: 'module' },
 				children: configNavigationHandler,
 				injectTo: 'head',
 			},
@@ -233,34 +311,74 @@ logger.error = (msg, options) => {
 	loggerError(msg, options);
 }
 
-export default defineConfig({
-	customLogger: logger,
-  plugins: [
-    ...(isDev ? [inlineEditPlugin(), editModeDevPlugin(), iframeRouteRestorationPlugin(), uploadProxyPlugin()] : []),
-    react(),
-    addTransformIndexHtml
-  ],
-	server: {
-		cors: true,
-		headers: {
-			'Cross-Origin-Embedder-Policy': 'credentialless',
-		},
-		allowedHosts: true,
-	},
-	resolve: {
-		extensions: ['.jsx', '.js', '.tsx', '.ts', '.json', ],
-		alias: {
-			'@': path.resolve(__dirname, './src'),
-		},
-	},
-	build: {
-		rollupOptions: {
-			external: [
-				'@babel/parser',
-				'@babel/traverse',
-				'@babel/generator',
-				'@babel/types'
-			]
-		}
-	}
+export default defineConfig(({ mode }) => {
+    const env = loadEnv(mode, process.cwd(), '');
+    const gatewayUrl = (env.VITE_PLANS_GATEWAY_URL || '').trim();
+    // Extract origin host (e.g., https://ggxcqewdcg.execute-api.sa-east-1.amazonaws.com)
+    let gatewayTarget = undefined;
+    let gatewayBasePath = '';
+    try {
+        const u = new URL(gatewayUrl);
+        gatewayTarget = `${u.origin}`;
+        gatewayBasePath = u.pathname; // e.g., /prod
+    } catch (_) {}
+
+    return {
+        customLogger: logger,
+        plugins: [
+            ...(isDev ? [inlineEditPlugin(), editModeDevPlugin(), iframeRouteRestorationPlugin(), uploadProxyPlugin()] : []),
+            react(),
+            addTransformIndexHtml
+        ],
+        server: {
+            cors: true,
+            headers: {
+                'Cross-Origin-Embedder-Policy': 'credentialless',
+            },
+            allowedHosts: true,
+            proxy: gatewayTarget ? {
+                '/plans-gateway': {
+                    target: gatewayTarget,
+                    changeOrigin: true,
+                    secure: true,
+                    rewrite: (path) => path.replace(/^\/plans-gateway/, gatewayBasePath || ''),
+                    configure: (proxy) => {
+                        proxy.on('proxyReq', (proxyReq, req) => {
+                            const incomingAuth = req?.headers?.['authorization'] || req?.headers?.['Authorization'];
+                            const incomingApiKey = req?.headers?.['x-api-key'];
+                            // Preserve Authorization from the original request if provided; otherwise fallback to env
+                            if (incomingAuth) {
+                                proxyReq.setHeader('Authorization', incomingAuth);
+                            } else if (env.VITE_PLANS_GATEWAY_AUTH) {
+                                proxyReq.setHeader('Authorization', env.VITE_PLANS_GATEWAY_AUTH);
+                            }
+                            // Preserve x-api-key from the original request if provided; otherwise fallback to env
+                            if (incomingApiKey) {
+                                proxyReq.setHeader('x-api-key', incomingApiKey);
+                            } else if (env.VITE_PLANS_GATEWAY_API_KEY) {
+                                proxyReq.setHeader('x-api-key', env.VITE_PLANS_GATEWAY_API_KEY);
+                            }
+                            proxyReq.setHeader('Content-Type', 'application/json');
+                        });
+                    },
+                }
+            } : undefined,
+        },
+        resolve: {
+            extensions: ['.jsx', '.js', '.tsx', '.ts', '.json', ],
+            alias: {
+                '@': path.resolve(__dirname, './src'),
+            },
+        },
+        build: {
+            rollupOptions: {
+                external: [
+                    '@babel/parser',
+                    '@babel/traverse',
+                    '@babel/generator',
+                    '@babel/types'
+                ]
+            }
+        }
+    };
 });

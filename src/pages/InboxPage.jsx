@@ -324,13 +324,12 @@ function InboxPage() {
     setStudentInfoVisible(true);
   };
 
-  const handleAddReply = async (newReplyText) => {
-    if (!activeConversation || !activeConversation.posts || !activeConversation.posts[0] || !currentUser) {
+  const handleAddReply = async (postId, newReplyText) => {
+    if (!activeConversation || !activeConversation.posts || !currentUser || !postId) {
       console.error("Não foi possível enviar a resposta. Faltam dados.");
       return;
     }
   
-    const postId = activeConversation.posts[0].id;
     const producerId = currentUser.id;
   
     const { data, error } = await supabase
@@ -359,8 +358,8 @@ function InboxPage() {
   
     setActiveConversation(prev => {
       if (!prev || !prev.posts) return null;
-      const updatedPosts = prev.posts.map((p, index) => {
-        if (index === 0) {
+      const updatedPosts = prev.posts.map((p) => {
+        if (p.id === postId) {
           const newReplies = [...(p.replies || []), newReply];
           return { ...p, replies: newReplies };
         }

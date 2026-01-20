@@ -1,4 +1,6 @@
 import { supabase } from '@/lib/supabaseClient'
+import { canCreateQuestion as canCreateQuestionByPlan, canUploadBytes, resolvePlanKey } from '@/services/planEntitlements'
+import { beginUpload } from '@/services/uploadGuard'
 
 // Dados mock para o frontend (fallback)
 const mockQuestionBanks = [
@@ -39,6 +41,12 @@ const mockQuestionsByBankId = {};
 const LS_BANKS_KEY = 'connekt_mock_banks';
 const LS_QUESTIONS_KEY = 'connekt_mock_questions';
 
+function isAbortError(error) {
+  const name = String(error?.name || '')
+  const msg = String(error?.message || error || '')
+  return name === 'AbortError' || msg.toLowerCase().includes('aborted') || msg.toLowerCase().includes('abort')
+}
+
 function loadPersistedBanks() {
   try {
     const raw = localStorage.getItem(LS_BANKS_KEY);
@@ -73,6 +81,27 @@ async function getCurrentUserExternalId() {
   } catch {
     return '';
   }
+}
+
+async function getBearerAuthHeader() {
+  try {
+    const { data: { session } } = await supabase.auth.getSession()
+    const token = session?.access_token || null
+    return token ? { Authorization: `Bearer ${token}` } : {}
+  } catch {
+    return {}
+  }
+}
+
+function uploadProxyHint() {
+  try {
+    const host = String(window?.location?.hostname || '').toLowerCase()
+    const isLocal = host === 'localhost' || host === '127.0.0.1'
+    if (isLocal) {
+      return 'Configure SUPABASE_SERVICE_ROLE_KEY em .env.local e reinicie o dev server (ou use vercel dev).'
+    }
+  } catch (_) {}
+  return 'Configure SUPABASE_SERVICE_ROLE_KEY nas variáveis de ambiente da Vercel e faça redeploy.'
 }
 
 function mapDbRowToUi(row) {
@@ -172,8 +201,18 @@ class QuestionBankService {
   }
 
   async uploadQuestionImage(file, { bankId, questionId }) {
+    const endUpload = beginUpload()
     try {
       if (!(file instanceof File)) throw new Error('Invalid file');
+      try {
+        const uid = await getCurrentUserExternalId()
+        if (uid) {
+          const allowed = await canUploadBytes(uid, file.size, resolvePlanKey())
+          if (!allowed.ok) throw new Error('Limite de armazenamento atingido. Faça upgrade do seu plano para continuar.')
+        }
+      } catch (e) {
+        if (String(e?.message || '').toLowerCase().includes('limite de armazenamento')) throw e
+      }
       // Flag de desenvolvimento: desabilitar uso do Supabase Storage e retornar data URL
       if (this.DISABLE_SUPABASE_STORAGE) {
         const toDataUrl = (f) => new Promise((resolve, reject) => {
@@ -190,6 +229,58 @@ class QuestionBankService {
         this.isSupabaseAvailable = false;
         return { url: dataUrl, path: null };
       }
+
+      const toDataUrl = (f) => new Promise((resolve, reject) => {
+        try {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = (err) => reject(err);
+          reader.readAsDataURL(f);
+        } catch (err) { reject(err); }
+      });
+
+      const isRlsBlocked = (e) => {
+        const msg = String(e?.message || e || '').toLowerCase();
+        const sc = String(e?.statusCode || e?.status || '');
+        return sc === '403' || msg.includes('row-level security') || (msg.includes('unauthorized') && msg.includes('policy'));
+      };
+
+      const isProxyDisabled = (e) => {
+        const msg = String(e?.message || e || '');
+        const sc = String(e?.status || e?.statusCode || '');
+        return sc === '501' || msg.includes('Upload proxy disabled') || msg.includes('proxy_disabled');
+      };
+
+      const proxyUpload = async () => {
+        const ext = (file.type || '').split('/')[1] || 'bin';
+        const safeName = (file.name || `image.${ext}`).replace(/[^a-zA-Z0-9_.-]/g, '_');
+        const u = new URL('/api/upload-question-image', window.location.origin);
+        if (bankId) u.searchParams.set('bankId', String(bankId));
+        if (questionId) u.searchParams.set('questionId', String(questionId));
+        u.searchParams.set('filename', safeName);
+        u.searchParams.set('contentType', file.type || 'application/octet-stream');
+
+        const body = await file.arrayBuffer();
+        const authHeader = await getBearerAuthHeader()
+        const resp = await fetch(u.toString(), {
+          method: 'POST',
+          headers: { 'Content-Type': file.type || 'application/octet-stream', ...authHeader },
+          body,
+        });
+        if (!resp.ok) {
+          const errText = await resp.text().catch(() => '');
+          const err = new Error(errText || `Proxy upload failed (${resp.status})`);
+          err.status = resp.status;
+          throw err;
+        }
+        const json = await resp.json().catch(() => ({}));
+        const finalUrl = json?.url || null;
+        const objectPath = json?.path || null;
+        if (!finalUrl) throw new Error('Proxy retornou sem URL');
+        this.isSupabaseAvailable = true;
+        return { url: finalUrl, path: objectPath };
+      };
+
       // Helper: upload direto ao Supabase (sem proxy)
       const directUpload = async () => {
         // Permitir upload mesmo quando IDs não são UUID (modo mock/local)
@@ -264,58 +355,67 @@ class QuestionBankService {
         }
         return { url: finalUrl, path: objectPath };
       };
-      // Em desenvolvimento: usar proxy local com Service Role (evita políticas de insert no Storage)
       if (this.USE_LOCAL_UPLOAD_PROXY) {
-        const toDataUrl = (f) => new Promise((resolve, reject) => {
-          try {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result);
-            reader.onerror = (err) => reject(err);
-            reader.readAsDataURL(f);
-          } catch (err) { reject(err); }
-        });
-
-        const dataUrl = await toDataUrl(file);
-        const ext = (file.type || '').split('/')[1] || 'bin';
-        const safeName = (file.name || `image.${ext}`).replace(/[^a-zA-Z0-9_.-]/g, '_');
         try {
-          const resp = await fetch('/api/upload-question-image', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ bankId, questionId, filename: safeName, contentType: file.type || 'application/octet-stream', dataUrl }),
-          });
-          if (!resp.ok) {
-            // Se o proxy não estiver disponível (404) ou retornar erro, tentar upload direto
-            const errText = await resp.text();
-            console.warn('Upload proxy falhou, tentando direto:', errText);
-            return await directUpload();
-          }
-          const json = await resp.json();
-          const finalUrl = json?.url || null;
-          const objectPath = json?.path || null;
-          if (!finalUrl) {
-            console.warn('Proxy retornou sem URL, tentando direto');
-            return await directUpload();
-          }
-          this.isSupabaseAvailable = true;
-          return { url: finalUrl, path: objectPath };
+          return await proxyUpload();
         } catch (proxyErr) {
+          if (isProxyDisabled(proxyErr)) {
+            const dataUrl = await toDataUrl(file);
+            this.isSupabaseAvailable = false;
+            return {
+              url: dataUrl,
+              path: null,
+              warning: `Proxy de upload desabilitado. ${uploadProxyHint()}`,
+            };
+          }
           console.warn('Falha ao usar proxy, tentando upload direto:', proxyErr?.message || String(proxyErr));
           return await directUpload();
         }
       }
-      // Upload direto quando proxy não está habilitado
-      return await directUpload();
+
+      try {
+        return await directUpload();
+      } catch (directErr) {
+        if (isRlsBlocked(directErr)) {
+          try {
+            return await proxyUpload();
+          } catch (proxyErr) {
+            const dataUrl = await toDataUrl(file);
+            this.isSupabaseAvailable = false;
+            return {
+              url: dataUrl,
+              path: null,
+              warning: `Upload bloqueado por RLS no Storage. ${uploadProxyHint()}`,
+            };
+          }
+        }
+        throw directErr;
+      }
     } catch (error) {
+      if (isAbortError(error)) {
+        return { url: null, path: null, aborted: true };
+      }
       this.isSupabaseAvailable = false;
       console.warn('uploadQuestionImage error:', error?.message || error);
       return { url: null, path: null, error: error?.message || String(error) };
+    } finally {
+      endUpload()
     }
   }
 
   async uploadQuestionVideo(file, { bankId, questionId }) {
+    const endUpload = beginUpload()
     try {
       if (!(file instanceof File)) throw new Error('Invalid file');
+      try {
+        const uid = await getCurrentUserExternalId()
+        if (uid) {
+          const allowed = await canUploadBytes(uid, file.size, resolvePlanKey())
+          if (!allowed.ok) throw new Error('Limite de armazenamento atingido. Faça upgrade do seu plano para continuar.')
+        }
+      } catch (e) {
+        if (String(e?.message || '').toLowerCase().includes('limite de armazenamento')) throw e
+      }
       // Flag de desenvolvimento: desabilitar uso do Supabase Storage e retornar data URL
       if (this.DISABLE_SUPABASE_STORAGE) {
         const toDataUrl = (f) => new Promise((resolve, reject) => {
@@ -332,6 +432,49 @@ class QuestionBankService {
         this.isSupabaseAvailable = false;
         return { url: dataUrl, path: null };
       }
+
+      const isRlsBlocked = (e) => {
+        const msg = String(e?.message || e || '').toLowerCase();
+        const sc = String(e?.statusCode || e?.status || '');
+        return sc === '403' || msg.includes('row-level security') || (msg.includes('unauthorized') && msg.includes('policy'));
+      };
+
+      const isProxyDisabled = (e) => {
+        const msg = String(e?.message || e || '');
+        const sc = String(e?.status || e?.statusCode || '');
+        return sc === '501' || msg.includes('Upload proxy disabled') || msg.includes('proxy_disabled');
+      };
+
+      const proxyUpload = async () => {
+        const ext = (file.type || '').split('/')[1] || 'bin';
+        const safeName = (file.name || `video.${ext}`).replace(/[^a-zA-Z0-9_.-]/g, '_');
+        const u = new URL('/api/upload-question-video', window.location.origin);
+        if (bankId) u.searchParams.set('bankId', String(bankId));
+        if (questionId) u.searchParams.set('questionId', String(questionId));
+        u.searchParams.set('filename', safeName);
+        u.searchParams.set('contentType', file.type || 'application/octet-stream');
+
+        const body = await file.arrayBuffer();
+        const authHeader = await getBearerAuthHeader()
+        const resp = await fetch(u.toString(), {
+          method: 'POST',
+          headers: { 'Content-Type': file.type || 'application/octet-stream', ...authHeader },
+          body,
+        });
+        if (!resp.ok) {
+          const errText = await resp.text().catch(() => '');
+          const err = new Error(errText || `Proxy upload failed (${resp.status})`);
+          err.status = resp.status;
+          throw err;
+        }
+        const json = await resp.json().catch(() => ({}));
+        const finalUrl = json?.url || null;
+        const objectPath = json?.path || null;
+        if (!finalUrl) throw new Error('Proxy retornou sem URL');
+        this.isSupabaseAvailable = true;
+        return { url: finalUrl, path: objectPath };
+      };
+
       // Helper: upload direto ao Supabase (sem proxy)
       const directUpload = async () => {
         const bankSegment = isUuid(bankId) ? bankId : String(bankId || generateUuid());
@@ -405,51 +548,51 @@ class QuestionBankService {
         }
         return { url: finalUrl, path: objectPath };
       };
-      // Em desenvolvimento: usar proxy local com Service Role
       if (this.USE_LOCAL_UPLOAD_PROXY) {
-        const toDataUrl = (f) => new Promise((resolve, reject) => {
-          try {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result);
-            reader.onerror = (err) => reject(err);
-            reader.readAsDataURL(f);
-          } catch (err) { reject(err); }
-        });
-
-        const dataUrl = await toDataUrl(file);
-        const ext = (file.type || '').split('/')[1] || 'bin';
-        const safeName = (file.name || `video.${ext}`).replace(/[^a-zA-Z0-9_.-]/g, '_');
         try {
-          const resp = await fetch('/api/upload-question-video', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ bankId, questionId, filename: safeName, contentType: file.type || 'application/octet-stream', dataUrl }),
-          });
-          if (!resp.ok) {
-            const errText = await resp.text();
-            console.warn('Upload proxy de vídeo falhou, tentando direto:', errText);
-            return await directUpload();
-          }
-          const json = await resp.json();
-          const finalUrl = json?.url || null;
-          const objectPath = json?.path || null;
-          if (!finalUrl) {
-            console.warn('Proxy de vídeo retornou sem URL, tentando direto');
-            return await directUpload();
-          }
-          this.isSupabaseAvailable = true;
-          return { url: finalUrl, path: objectPath };
+          return await proxyUpload();
         } catch (proxyErr) {
+          if (isProxyDisabled(proxyErr)) {
+            this.isSupabaseAvailable = false;
+            return {
+              url: null,
+              path: null,
+              warning: `Proxy de upload desabilitado. ${uploadProxyHint()}`,
+            };
+          }
           console.warn('Falha ao usar proxy de vídeo, tentando upload direto:', proxyErr?.message || String(proxyErr));
           return await directUpload();
         }
       }
-      // Upload direto quando proxy não está habilitado
-      return await directUpload();
+
+      try {
+        return await directUpload();
+      } catch (directErr) {
+        if (isRlsBlocked(directErr)) {
+          try {
+            return await proxyUpload();
+          } catch (proxyErr) {
+            this.isSupabaseAvailable = false;
+            return {
+              url: null,
+              path: null,
+              warning: isProxyDisabled(proxyErr)
+                ? `Upload bloqueado por RLS e o proxy está desabilitado. ${uploadProxyHint()}`
+                : `Upload bloqueado por RLS no Storage. ${uploadProxyHint()}`,
+            };
+          }
+        }
+        throw directErr;
+      }
     } catch (error) {
+      if (isAbortError(error)) {
+        return { url: null, path: null, aborted: true };
+      }
       this.isSupabaseAvailable = false;
       console.warn('uploadQuestionVideo error:', error?.message || error);
       return { url: null, path: null, error: error?.message || String(error) };
+    } finally {
+      endUpload()
     }
   }
 
@@ -815,6 +958,16 @@ class QuestionBankService {
         throw new Error('Invalid question bank id');
       }
 
+      try {
+        const uid = await getCurrentUserExternalId()
+        if (uid) {
+          const allowed = await canCreateQuestionByPlan(uid, resolvePlanKey())
+          if (!allowed.ok) {
+            return { data: null, error: 'Limite de questões do plano atingido. Faça upgrade para criar novas questões.' }
+          }
+        }
+      } catch (_) {}
+
       const baseMeta = typeof question?.metadata === 'object' && question?.metadata
         ? { ...question.metadata }
         : {};
@@ -912,6 +1065,18 @@ class QuestionBankService {
         throw new Error('Invalid question id');
       }
 
+      const isRlsBlocked = (e) => {
+        const msg = String(e?.message || e || '').toLowerCase();
+        const sc = String(e?.statusCode || e?.status || '');
+        return sc === '401' || sc === '403' || msg.includes('row-level security') || (msg.includes('unauthorized') && msg.includes('policy'));
+      };
+
+      const isProxyDisabled = (e) => {
+        const msg = String(e?.message || e || '');
+        const sc = String(e?.status || e?.statusCode || '');
+        return sc === '501' || msg.includes('Upload proxy disabled') || msg.includes('proxy_disabled');
+      };
+
       // Evitar que campos em updates.metadata sobrescrevam valores normalizados (choices, correctChoiceIndex, etc.)
       const reservedKeys = ['type', 'required', 'disabled', 'choices', 'correctChoiceIndex', 'points', 'attempts'];
       const rawExtras = (typeof updates?.metadata === 'object' && updates.metadata) ? updates.metadata : {};
@@ -938,16 +1103,47 @@ class QuestionBankService {
         updated_at: new Date().toISOString(),
       };
 
-      const { data, error } = await supabase
-        .from('questions')
-        .update(payload)
-        .eq('id', questionId)
-        .select('id, question_bank_id, title, body, metadata, created_at, updated_at')
-        .single();
+      try {
+        const { data, error } = await supabase
+          .from('questions')
+          .update(payload)
+          .eq('id', questionId)
+          .select('id, question_bank_id, title, body, metadata, created_at, updated_at')
+          .single();
 
-      if (error) throw error;
-      this.isSupabaseAvailable = true;
-      return { data, error: null };
+        if (error) throw error;
+        this.isSupabaseAvailable = true;
+        return { data, error: null };
+      } catch (directErr) {
+        if (isRlsBlocked(directErr)) {
+          try {
+            const u = new URL('/api/update-question', window.location.origin);
+            const authHeader = await getBearerAuthHeader()
+            const resp = await fetch(u.toString(), {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', ...authHeader },
+              body: JSON.stringify({ questionId, updates: payload }),
+            });
+            if (!resp.ok) {
+              const errText = await resp.text().catch(() => '');
+              const err = new Error(errText || `Proxy update failed (${resp.status})`);
+              err.status = resp.status;
+              throw err;
+            }
+            const json = await resp.json().catch(() => ({}));
+            const updated = json?.data || null;
+            if (!updated) throw new Error('Proxy retornou sem data');
+            this.isSupabaseAvailable = true;
+            return { data: updated, error: null };
+          } catch (proxyErr) {
+            if (isProxyDisabled(proxyErr)) {
+              throw directErr;
+            }
+            throw proxyErr;
+          }
+        }
+        throw directErr;
+      }
     } catch (error) {
       this.isSupabaseAvailable = false;
       console.warn('updateQuestion fallback or error:', error?.message || error);

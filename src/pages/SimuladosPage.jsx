@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Helmet } from 'react-helmet-async';
-import { FileText, Plus, ChevronDown, MoreVertical } from 'lucide-react';
+import { FileText, Plus, ChevronDown, MoreVertical, FolderTree, Tag } from 'lucide-react';
 import { questionBankService } from '@/services/questionBankService';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext.jsx';
@@ -8,7 +8,7 @@ import { useAuth } from '@/contexts/SupabaseAuthContext.jsx';
 // Lista real de simulados do usuário autenticado
 // RLS garante que apenas os simulados do usuário atual sejam retornados
 
-const SimuladosPage = () => {
+const SimuladosPage = ({ titleText = 'Simulados', subtitleText = 'Crie e gerencie os seus simulados interativos', toolbarTitleText = 'Simulados', toolbarSubtitleText = 'Todos os seus simulados', toolbarCreateButtonText = 'Criar simulado', createPath = '/simulados/novo', showCreateButton = true, showRightCard = true, searchPlaceholder = 'Buscar simulado', duplicateHeader = false, extraStaticChips = [], chipLabelOverride = null, showStudentAvatars = true, duplicateHeaderTagTitle = 'Tags', duplicateHeaderTagSubtitle = 'Crie suas tags' } = {}) => {
   const { user, loading } = useAuth();
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [coverImage, setCoverImage] = useState(null);
@@ -28,6 +28,8 @@ const SimuladosPage = () => {
   const [filterOpen, setFilterOpen] = useState(false);
   const [activeFilter, setActiveFilter] = useState('Publicado');
 
+  const applyOverrides = (typeof window !== 'undefined' && !String(window.location?.pathname || '').startsWith('/simulados'));
+
   // Gerenciar URL de preview para o arquivo selecionado
   useEffect(() => {
     let url = null;
@@ -46,6 +48,12 @@ const SimuladosPage = () => {
   const navigateTo = (path) => {
     window.history.pushState({}, '', path);
     window.dispatchEvent(new PopStateEvent('popstate'));
+  };
+
+  const getSimuladoAcessoPath = (simId) => {
+    const id = encodeURIComponent(simId || '');
+    const isAluno = typeof window !== 'undefined' && String(window.location?.pathname || '').startsWith('/aluno/');
+    return isAluno ? `/aluno/simulados/acesso?simId=${id}` : `/simulados/acesso?simId=${id}`;
   };
 
   // Duplicar um simulado existente para o mesmo usuário
@@ -197,8 +205,7 @@ const SimuladosPage = () => {
   };
 
   const handleCreateSimulado = () => {
-    // Navegar para a página de criação de simulado
-    navigateTo('/simulados/novo');
+    navigateTo(createPath);
   };
 
   // Estado para abrir/fechar o grupo de configurações dentro da barra direita
@@ -222,21 +229,79 @@ const SimuladosPage = () => {
           setListLoading(false);
           return;
         }
-        // Lista de participantes de exemplo (com fotos reais via pravatar)
-        const getSeedStudents = () => ([
-          { name: 'Maria Silva', avatar_url: 'https://i.pravatar.cc/150?img=5' },
-          { name: 'João Souza', avatar_url: 'https://i.pravatar.cc/150?img=12' },
-          { name: 'Ana Lima', avatar_url: 'https://i.pravatar.cc/150?img=32' },
-          { name: 'Carlos Brito', avatar_url: 'https://i.pravatar.cc/150?img=44' },
-          { name: 'Julia Alves', avatar_url: 'https://i.pravatar.cc/150?img=22' },
-          { name: 'Rafael N.', avatar_url: 'https://i.pravatar.cc/150?img=68' },
-          { name: 'Paula Mendes', avatar_url: 'https://i.pravatar.cc/150?img=15' },
-          { name: 'Diego Rocha', avatar_url: 'https://i.pravatar.cc/150?img=27' },
-          { name: 'Larissa Dias', avatar_url: 'https://i.pravatar.cc/150?img=49' },
-          { name: 'Bruno Martins', avatar_url: 'https://i.pravatar.cc/150?img=9' },
-          { name: 'Aline Cardoso', avatar_url: 'https://i.pravatar.cc/150?img=33' },
-          { name: 'Pedro Henrique', avatar_url: 'https://i.pravatar.cc/150?img=41' },
-        ]);
+
+        const fetchParticipantsBySimuladoId = async (simuladoIds) => {
+          const ids = Array.isArray(simuladoIds) ? simuladoIds.filter(Boolean) : [];
+          if (ids.length === 0) return {};
+
+          const strategies = [
+            { table: 'simulado_attempts', simCol: 'simulado_id', studentCol: 'student_id' },
+            { table: 'simulados_attempts', simCol: 'simulado_id', studentCol: 'student_id' },
+            { table: 'simulation_attempts', simCol: 'simulation_id', studentCol: 'student_id' },
+            { table: 'simulation_attempts', simCol: 'simulation_id', studentCol: 'user_id' },
+            { table: 'simulado_results', simCol: 'simulado_id', studentCol: 'student_id' },
+            { table: 'simulados_results', simCol: 'simulado_id', studentCol: 'student_id' },
+            { table: 'simulado_submissions', simCol: 'simulado_id', studentCol: 'student_id' },
+            { table: 'simulados_submissions', simCol: 'simulado_id', studentCol: 'student_id' },
+            { table: 'simulado_tentativas', simCol: 'simulado_id', studentCol: 'student_id' },
+            { table: 'simulados_tentativas', simCol: 'simulado_id', studentCol: 'student_id' },
+          ];
+
+          for (const strat of strategies) {
+            const out = {};
+
+            const joined = await supabase
+              .from(strat.table)
+              .select(`${strat.simCol}, student:students(id, name, avatar_url)`)
+              .in(strat.simCol, ids)
+              .limit(1000);
+
+            if (!joined?.error) {
+              const rows = Array.isArray(joined?.data) ? joined.data : [];
+              for (const row of rows) {
+                const simId = row?.[strat.simCol];
+                const student = row?.student || null;
+                if (!simId || !student?.id) continue;
+                if (!out[simId]) out[simId] = [];
+                if (!out[simId].some((s) => s?.id === student.id)) out[simId].push(student);
+              }
+              return out;
+            }
+
+            const flat = await supabase
+              .from(strat.table)
+              .select(`${strat.simCol}, ${strat.studentCol}`)
+              .in(strat.simCol, ids)
+              .limit(1000);
+
+            if (flat?.error) continue;
+            const rows = Array.isArray(flat?.data) ? flat.data : [];
+            const studentIds = Array.from(new Set(rows.map((r) => r?.[strat.studentCol]).filter(Boolean)));
+            if (studentIds.length === 0) return {};
+
+            const { data: students, error: studentsError } = await supabase
+              .from('students')
+              .select('id, name, avatar_url')
+              .in('id', studentIds)
+              .limit(1000);
+
+            if (studentsError) return {};
+            const byId = new Map((Array.isArray(students) ? students : []).map((s) => [s?.id, s]));
+
+            for (const row of rows) {
+              const simId = row?.[strat.simCol];
+              const sid = row?.[strat.studentCol];
+              const student = byId.get(sid);
+              if (!simId || !student?.id) continue;
+              if (!out[simId]) out[simId] = [];
+              if (!out[simId].some((s) => s?.id === student.id)) out[simId].push(student);
+            }
+            return out;
+          }
+
+          return {};
+        };
+
         // RLS filtra por created_by = auth.uid()
         const { data, error } = await supabase
           .from('simulados')
@@ -247,20 +312,13 @@ const SimuladosPage = () => {
           setSimulados([]);
         } else {
           const raw = Array.isArray(data) ? data : [];
-          // Preencher participantes se não existirem
-          const seeded = raw.map((sim) => {
-            const currentSettings = sim?.settings || {};
-            const hasStudents = Array.isArray(currentSettings?.students) && currentSettings.students.length > 0;
-            return {
-              ...sim,
-              settings: {
-                ...currentSettings,
-                students: hasStudents ? currentSettings.students : getSeedStudents(),
-              },
-            };
-          });
+          const participantsBySimId = await fetchParticipantsBySimuladoId(raw.map((s) => s?.id));
+          const withParticipants = raw.map((sim) => ({
+            ...sim,
+            participants: Array.isArray(participantsBySimId?.[sim?.id]) ? participantsBySimId[sim.id] : [],
+          }));
           // Manter todos para permitir filtro por Publicado/Rascunho/Arquivado
-          setSimulados(seeded);
+          setSimulados(withParticipants);
         }
       } catch (e) {
         setListError(e?.message || 'Erro inesperado ao listar simulados');
@@ -273,28 +331,30 @@ const SimuladosPage = () => {
   }, [user, loading]);
 
   return (
-    <div className="min-h-screen bg-[#F8F9FB] overflow-y-auto">
+    <div className="min-h-screen bg-[#F5F6FA]">
       <Helmet>
         <title>Simulados – Connekt</title>
       </Helmet>
 
-      <div className="px-[22px]">
-      <div className="max-w-[1904px] mx-auto w-full mt-4">
+      <div className="px-[22px] pt-12">
+      <div className="max-w-[1904px] mx-auto w-full">
           {/* Hero Header */}
-        <div className="relative w-[1076px] mx-auto grid grid-cols-1 md:grid-cols-[1fr,254px] gap-0">
+        <div className={`relative w-full max-w-[1076px] mx-auto grid grid-cols-1 ${showRightCard ? 'md:grid-cols-[1fr,254px]' : 'md:grid-cols-1'} gap-[22px]`}>
             {/* Left hero card - idêntico ao header do Banco de Questões */}
-      <div className="relative pl-[42px] pr-[42px] pt-[22px] pb-[22px] bg-[#003a99] text-white rounded-[10px] shadow-lg overflow-visible compact-header ultra-compact-header w-[800px] h-fit flex flex-col">
+      <div className="relative pl-[42px] pr-[42px] pt-[22px] pb-[22px] bg-[#003a99] text-white rounded-[10px] shadow-lg overflow-visible compact-header ultra-compact-header w-full h-fit flex flex-col">
               <div className="relative z-10 h-fit flex flex-col gap-[22px]">
                 <div className="h-fit">
-                  <h1 className="text-base sm:text-[18px] font-medium font-inter mb-0 h-[37px]">Simulados</h1>
-                  <p className="text-sm sm:text-[16px] font-normal font-inter text-blue-100 mb-0 h-[30px]">Crie e gerencie os seus simulados interativos</p>
+                  <h1 className="text-base sm:text-[18px] font-medium font-inter mb-0 h-[37px]">{titleText}</h1>
+                  <p className="text-sm sm:text-[16px] font-normal font-inter text-blue-100 mb-0 h-[30px]">{subtitleText}</p>
                 </div>
-                <button
-                  onClick={handleCreateSimulado}
-                  className="ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-white text-[#0047BB] hover:bg-gray-100 px-5 py-2.5 rounded-[4px] shadow-sm w-[139px] h-[30px] text-[14px] font-semibold font-inter flex items-center justify-center"
-                >
-                  Criar simulado
-                </button>
+                {showCreateButton && (
+                  <button
+                    onClick={handleCreateSimulado}
+                    className="ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-white text-[#0047BB] hover:bg-gray-100 px-5 py-2.5 rounded-[4px] shadow-sm w-[139px] h-[40px] text-[14px] font-semibold font-inter flex items-center justify-center"
+                  >
+                    Criar simulado
+                  </button>
+                )}
               </div>
               {/* SVG decorativo como no Banco de Questões */}
               <svg
@@ -337,38 +397,121 @@ const SimuladosPage = () => {
                 </defs>
               </svg>
             </div>
-            {/* Right info card (pálido azul) */}
-            <div className="bg-[#E7EDFC] text-[#22252B] rounded-[10px] border border-[#D9E6FF] px-4 pt-[22px] pb-[22px] w-[254px] h-[163px] relative z-[60]">
-              <div className="space-y-0 p-0">
-                <h2 className="text-[14px] font-semibold text-[#22252B] font-inter">Banco de questões</h2>
-                <p className="text-[12px] font-normal text-[#22252B] font-inter h-[60px] leading-[30px]">Crie questões que podem ser usadas em seus simulados.</p>
+            {showRightCard && (
+              <div className="bg-[#E7EDFC] text-[#22252B] rounded-[10px] border border-[#D9E6FF] px-4 pt-[22px] pb-[22px] w-[254px] h-auto min-h-[163px] relative z-[60] flex flex-col justify-between">
+                <div className="space-y-0 p-0">
+                  <h2 className="text-[14px] font-semibold text-[#22252B] font-inter">Banco de questões</h2>
+                  <p className="text-[12px] font-normal text-[#22252B] font-inter h-[60px] leading-[30px]">Crie questões que podem ser usadas em seus simulados.</p>
+                </div>
+                <button onClick={() => navigateTo('/banco-de-questoes')} className="mt-4 bg-white text-[#0047BB] hover:bg-gray-100 font-semibold px-5 py-2 rounded-[4px] shadow-sm w-[210px] mx-auto h-[40px] text-[14px] font-inter flex items-center justify-center text-center">
+                  Criar banco de questões
+                </button>
               </div>
-              <button onClick={() => navigateTo('/banco-de-questoes')} className="mt-4 bg-white text-[#0047BB] hover:bg-gray-100 font-semibold px-5 py-2 rounded-[4px] shadow-sm w-[210px] mx-auto h-[30px] text-[14px] font-inter flex items-center justify-center text-center">
-                Criar banco de questões
-              </button>
-            </div>
+            )}
           </div>
 
-          {/* Toolbar */}
-          <div className="mt-6 w-[1076px] mx-auto flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <div>
-              <h3 className="text-[16px] font-semibold text-[#000000] font-inter">Simulados</h3>
-              <p className="text-[16px] text-[#404040] font-inter font-normal">Todos os seus simulados</p>
-            </div>
-            <div className="flex items-center gap-[12px] w-full sm:w-auto">
-              <div className="relative flex-1 sm:flex-none sm:w-[328px]">
-                <img src="/search simulados 1.png" alt="Buscar" className="absolute left-3 top-1/2 -translate-y-1/2 w-[20px] h-[20px] object-contain" />
-                <input
-                  type="text"
-                  placeholder="Buscar simulado"
-                  className="w-[328px] h-[40px] pl-10 pr-4 py-2 border border-[#E3E4E5] bg-white rounded-[4px] focus:ring-0 text-[14px] font-normal font-inter text-[#ABADB3] placeholder:text-[#ABADB3]"
-                />
+          {duplicateHeader && (
+              <div className="mt-4 w-full max-w-[1076px] mx-auto flex flex-row flex-wrap gap-[16px]">
+              <div onClick={() => navigateTo('/categorias')} className="cursor-pointer relative pl-[22px] pr-[22px] pt-[16px] pb-[16px] bg-[#FFFFFF] text-white rounded-[10px] shadow-lg overflow-visible compact-header ultra-compact-header w-full max-w-[344px] h-[90px] flex flex-col border border-[#E3E4E5]">
+                {applyOverrides && (
+                  <img src="/Artes.png" alt="Artes" className="absolute left-[8px] top-[8px] w-[58px] h-[58px]" />
+                )}
+                <div className={`relative z-10 h-fit flex flex-col gap-[16px] ${applyOverrides ? 'pl-[74px]' : ''}`}>
+                  <div className="h-fit">
+                    <p className="text-[14px] leading-[22px] tracking-[0px] font-semibold font-inter text-[#22252B] mb-0">{duplicateHeaderTagTitle}</p>
+                    <p className="text-[14px] leading-[20px] tracking-[0px] font-normal font-inter text-[#737780] mb-0">{duplicateHeaderTagSubtitle}</p>
+                  </div>
+                  {showCreateButton && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleCreateSimulado();
+                      }}
+                      className="ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-white text-[#0047BB] hover:bg-gray-100 px-5 py-2.5 rounded-[4px] shadow-sm w-[139px] h-[30px] text-[14px] font-semibold font-inter flex items-center justify-center"
+                    >
+                      Criar simulado
+                    </button>
+                  )}
+                </div>
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="188"
+                  height="150"
+                  viewBox="0 0 188 150"
+                  fill="none"
+                  className="hidden"
+                >
+                  <path d="M122 77.7098C122 71.2427 127.243 66 133.71 66H175.691C182.158 66 187.4 71.2426 187.4 77.7098V119.691C187.4 126.158 182.158 131.4 175.691 131.4H133.71C127.243 131.4 122 126.158 122 119.691V77.7098Z" fill="#E051B3" />
+                  <g clipPath="url(#clip0_93_850)">
+                    <path d="M168.189 85.2114H141.211C140.561 85.2114 139.937 85.4698 139.477 85.9298C139.017 86.3897 138.759 87.0135 138.759 87.6639V109.737C138.759 110.387 139.017 111.011 139.477 111.471C139.937 111.931 140.561 112.189 141.211 112.189H143.264C143.496 112.189 143.723 112.123 143.919 111.999C144.116 111.875 144.272 111.698 144.372 111.489C144.968 110.23 145.91 109.166 147.087 108.421C148.264 107.676 149.628 107.281 151.021 107.281C152.414 107.281 153.779 107.676 154.956 108.421C156.133 109.166 157.074 110.23 157.671 111.489C157.77 111.698 157.927 111.875 158.123 111.999C158.32 112.123 158.547 112.189 158.779 112.189H168.189C168.839 112.189 169.463 111.931 169.923 111.471C170.383 111.011 170.641 110.387 170.641 109.737V87.6639C170.641 87.0135 170.383 86.3897 169.923 85.9298C169.463 85.4698 168.839 85.2114 168.189 85.2114ZM151.021 104.832C150.051 104.832 149.103 104.544 148.296 104.005C147.49 103.466 146.861 102.7 146.49 101.804C146.118 100.907 146.021 99.9211 146.211 98.9696C146.4 98.0181 146.867 97.1441 147.553 96.4581C148.239 95.7722 149.113 95.305 150.064 95.1157C151.016 94.9265 152.002 95.0236 152.898 95.3949C153.795 95.7661 154.561 96.3948 155.1 97.2014C155.639 98.0081 155.926 98.9564 155.926 99.9265C155.926 101.227 155.41 102.475 154.49 103.395C153.57 104.315 152.322 104.832 151.021 104.832ZM168.189 109.737H159.518C158.983 108.815 158.302 107.986 157.501 107.284H164.51C164.835 107.284 165.147 107.155 165.377 106.925C165.607 106.695 165.736 106.383 165.736 106.058V91.3427C165.736 91.0175 165.607 90.7056 165.377 90.4756C165.147 90.2456 164.835 90.1165 164.51 90.1165H144.89C144.565 90.1165 144.253 90.2456 144.023 90.4756C143.793 90.7056 143.664 91.0175 143.664 91.3427V106.058C143.664 106.33 143.754 106.594 143.92 106.809C144.087 107.024 144.32 107.178 144.584 107.246C143.764 107.956 143.068 108.798 142.525 109.737H141.211V87.6639H168.189V109.737Z" fill="#E3E4E5" />
+                  </g>
+                  <path d="M0 53.882C0 50.6335 2.63346 48 5.88199 48H26.9696C30.2181 48 32.8516 50.6335 32.8516 53.882V74.9696C32.8516 78.2181 30.2181 80.8516 26.9696 80.8516H5.88199C2.63346 80.8516 0 78.2181 0 74.9696V53.882Z" fill="#EF5E2B" />
+                  <g clipPath="url(#clip1_93_850)">
+                    <path d="M24.3102 71.4465C24.379 71.538 24.421 71.6469 24.4314 71.761C24.4418 71.875 24.4202 71.9897 24.369 72.0922C24.3178 72.1946 24.2391 72.2808 24.1416 72.341C24.0442 72.4011 23.9319 72.433 23.8174 72.4328H9.03418C8.91979 72.4328 8.80766 72.401 8.71035 72.3409C8.61304 72.2807 8.5344 72.1947 8.48324 72.0923C8.43208 71.99 8.41043 71.8755 8.4207 71.7616C8.43098 71.6476 8.47277 71.5388 8.54141 71.4473C9.08683 70.716 9.81417 70.1403 10.6511 69.7773C10.1923 69.3586 9.87089 68.8109 9.72895 68.2063C9.58701 67.6016 9.63121 66.9681 9.85575 66.389C10.0803 65.8099 10.4747 65.3123 10.9871 64.9613C11.4996 64.6104 12.1062 64.4226 12.7273 64.4226C13.3484 64.4226 13.955 64.6104 14.4674 64.9613C14.9799 65.3123 15.3743 65.8099 15.5988 66.389C15.8234 66.9681 15.8676 67.6016 15.7256 68.2063C15.5837 68.8109 15.2622 69.3586 14.8035 69.7773C15.4073 70.0383 15.956 70.4116 16.4204 70.8775C16.8848 70.4116 17.4335 70.0383 18.0373 69.7773C17.5785 69.3586 17.2571 68.8109 17.1152 68.2063C16.9732 67.6016 17.0174 66.9681 17.242 66.389C17.4665 65.8099 17.8609 65.3123 18.3733 64.9613C18.8858 64.6104 19.4924 64.4226 20.1135 64.4226C20.7346 64.4226 21.3412 64.6104 21.8537 64.9613C22.3661 65.3123 22.7605 65.8099 22.985 66.389C23.2096 66.9681 23.2538 67.6016 23.1118 68.2063C22.9699 68.8109 22.6484 69.3586 22.1897 69.7773C23.0305 70.1384 23.7617 70.714 24.3102 71.4465ZM8.6646 64.3021C8.72931 64.3506 8.80295 64.3859 8.88131 64.406C8.95967 64.4261 9.04121 64.4305 9.12129 64.4191C9.20137 64.4076 9.27841 64.3805 9.34801 64.3393C9.41761 64.2981 9.47842 64.2436 9.52695 64.1789C9.89989 63.6816 10.3835 63.278 10.9394 63.0001C11.4954 62.7221 12.1084 62.5774 12.73 62.5774C13.3515 62.5774 13.9646 62.7221 14.5205 63.0001C15.0765 63.278 15.5601 63.6816 15.933 64.1789C15.9904 64.2554 16.0648 64.3175 16.1503 64.3602C16.2358 64.403 16.3302 64.4253 16.4258 64.4253C16.5214 64.4253 16.6157 64.403 16.7013 64.3602C16.7868 64.3175 16.8612 64.2554 16.9186 64.1789C17.2915 63.6816 17.7751 63.278 18.331 63.0001C18.887 62.7221 19.5 62.5774 20.1216 62.5774C20.7431 62.5774 21.3562 62.7221 21.9121 63.0001C22.4681 63.278 22.9517 63.6816 23.3246 64.1789C23.3732 64.2436 23.434 64.2981 23.5037 64.3393C23.5733 64.3805 23.6504 64.4076 23.7305 64.419C23.8107 64.4304 23.8922 64.4259 23.9706 64.4058C24.049 64.3856 24.1226 64.3503 24.1873 64.3017C24.2521 64.2531 24.3066 64.1923 24.3478 64.1226C24.389 64.053 24.416 63.9759 24.4274 63.8958C24.4388 63.8157 24.4343 63.7341 24.4142 63.6557C24.3941 63.5773 24.3587 63.5037 24.3102 63.439Z" fill="#E3E4E5" />
+                  </g>
+                  <path d="M38 108.063C38 103.058 42.0576 99 47.0629 99H79.5544C84.5597 99 88.6173 103.058 88.6173 108.063V140.554C88.6173 145.56 84.5597 149.617 79.5544 149.617H47.0629C42.0576 149.617 38 145.56 38 140.554V108.063Z" fill="#3BC5BD" />
+                  <g clipPath="url(#clip2_93_850)">
+                    <path d="M75.6466 114.818H68.054C67.0472 114.818 66.0816 115.218 65.3696 115.93C64.6577 116.642 64.2577 117.607 64.2577 118.614V129.022C64.261 129.267 64.1715 129.504 64.007 129.686C63.8426 129.867 63.6156 129.98 63.3715 130.001C63.2417 130.009 63.1115 129.991 62.989 129.947C62.8665 129.903 62.7543 129.835 62.6594 129.746C62.5645 129.657 62.4889 129.549 62.4373 129.43C62.3858 129.31 62.3593 129.182 62.3596 129.052V118.614C62.3596 117.607 61.9596 116.642 61.2477 115.93C60.5357 115.218 59.5701 114.818 58.5633 114.818H50.9707C50.719 114.818 50.4776 114.918 50.2996 115.096C50.1216 115.274 50.0216 115.515 50.0216 115.767V132.85C50.0216 133.102 50.1216 133.343 50.2996 133.521C50.4776 133.699 50.719 133.799 50.9707 133.799H59.5123C60.2662 133.799 60.9894 134.098 61.5231 134.631C62.0569 135.163 62.3577 135.886 62.3596 136.639C62.3558 136.833 62.4121 137.023 62.5209 137.184C62.6297 137.344 62.7855 137.467 62.967 137.535C63.111 137.591 63.2664 137.61 63.4197 137.592C63.5731 137.574 63.7197 137.519 63.8468 137.431C63.974 137.344 64.0779 137.227 64.1495 137.09C64.2211 136.953 64.2582 136.801 64.2577 136.647C64.2577 135.891 64.5577 135.167 65.0916 134.633C65.6256 134.099 66.3498 133.799 67.1049 133.799H75.6466C75.8983 133.799 76.1397 133.699 76.3177 133.521C76.4957 133.343 76.5957 133.102 76.5957 132.85V115.767C76.5957 115.515 76.4957 115.274 76.3177 115.096C76.1397 114.918 75.8983 114.818 75.6466 114.818ZM72.7994 129.054H68.086C67.8411 129.057 67.604 128.968 67.4224 128.803C67.2409 128.639 67.1283 128.412 67.1073 128.168C67.0987 128.038 67.1169 127.908 67.1607 127.785C67.2045 127.663 67.273 127.551 67.362 127.456C67.451 127.361 67.5586 127.285 67.6781 127.234C67.7975 127.182 67.9263 127.156 68.0564 127.156H72.7697C73.0147 127.153 73.2517 127.242 73.4333 127.407C73.6149 127.571 73.7275 127.798 73.7485 128.042C73.7571 128.172 73.7389 128.302 73.6951 128.425C73.6513 128.547 73.5827 128.659 73.4937 128.754C73.4047 128.849 73.2972 128.925 73.1777 128.976C73.0583 129.028 72.9295 129.054 72.7994 129.054Z" fill="#F9FAFB" />
+                  </g>
+                  <path d="M58 10.0267C58 4.48909 62.4891 0 68.0267 0H103.973C109.511 0 114 4.48909 114 10.0267V45.9733C114 51.5109 109.511 56 103.973 56H68.0267C62.4891 56 58 51.5109 58 45.9733V10.0267Z" fill="#E5B800" />
+                  <g clipPath="url(#clip3_93_850)"></g>
+                </svg>
               </div>
-              <div className="relative">
-                <button onClick={() => setFilterOpen(v => !v)} className="flex items-center gap-2 h-[40px] w-[140px] px-[8.5px] border border-[#E3E4E5] rounded-[4px] bg-[#F8FAFC] text-[#22252B] text-[14px] font-normal hover:bg-gray-50">
+              <div onClick={() => navigateTo('/categorias')} className="cursor-pointer relative pl-[22px] pr-[22px] pt-[16px] pb-[16px] bg-[#FFFFFF] text-white rounded-[10px] shadow-lg overflow-visible compact-header ultra-compact-header w-full max-w-[344px] h-[90px] flex flex-col border border-[#E3E4E5]">
+                {applyOverrides && (
+                  <div className="absolute left-[8px] top-[8px] w-[58px] h-[58px] rounded-[12px] bg-[#FDF2F8] flex items-center justify-center" aria-hidden="true">
+                    <FolderTree className="w-7 h-7 text-[#E051B3]" />
+                  </div>
+                )}
+                <div className={`relative z-10 h-fit flex flex-col gap-[16px] ${applyOverrides ? 'pl-[74px]' : ''}`}>
+                  <div className="h-fit">
+                    <p className="text-[14px] leading-[22px] tracking-[0px] font-semibold font-inter text-[#22252B] mb-0">Subcategorias</p>
+                    <p className="text-[14px] leading-[20px] tracking-[0px] font-normal font-inter text-[#737780] mb-0">Crie suas subcategorias</p>
+                  </div>
+                </div>
+              </div>
+              <div onClick={() => navigateTo('/categorias')} className="cursor-pointer relative pl-[22px] pr-[22px] pt-[16px] pb-[16px] bg-[#FFFFFF] text-white rounded-[10px] shadow-lg overflow-visible compact-header ultra-compact-header w-full max-w-[344px] h-[90px] flex flex-col border border-[#E3E4E5]">
+                {applyOverrides && (
+                  <div className="absolute left-[8px] top-[8px] w-[58px] h-[58px] rounded-[12px] bg-[#FEF9C3] flex items-center justify-center" aria-hidden="true">
+                    <Tag className="w-7 h-7 text-[#B45309]" />
+                  </div>
+                )}
+                <div className={`relative z-10 h-fit flex flex-col gap-[16px] ${applyOverrides ? 'pl-[74px]' : ''}`}>
+                  <div className="h-fit">
+                    <p className="text-[14px] leading-[22px] tracking-[0px] font-semibold font-inter text-[#22252B] mb-0">Tags</p>
+                    <p className="text-[14px] leading-[20px] tracking-[0px] font-normal font-inter text-[#737780] mb-0">Crie suas tags</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Toolbar */}
+          <div className="mt-6 w-full max-w-[1076px] mx-auto px-6 flex flex-col sm:flex-row items-start sm:items-center gap-4">
+            <div>
+              <h3 className="text-[16px] font-semibold text-[#000000] font-inter">{toolbarTitleText}</h3>
+              <p className="text-[16px] text-[#404040] font-inter font-normal">{toolbarSubtitleText}</p>
+            </div>
+            
+            <div className="relative flex-1 sm:flex-none w-full max-w-[480px] sm:ml-auto">
+              <img src="/search simulados 1.png" alt="Buscar" className="absolute left-3 top-1/2 -translate-y-1/2 w-[20px] h-[20px] object-contain" />
+              <input
+                type="text"
+                placeholder={searchPlaceholder}
+                className="w-full h-[40px] pl-10 pr-4 py-2 border border-[#E3E4E5] bg-white rounded-[4px] focus:ring-0 text-[14px] font-normal font-inter text-[#ABADB3] placeholder:text-[#ABADB3]"
+              />
+            </div>
+            <div className="relative">
+              <button
+                onClick={() => setFilterOpen(v => !v)}
+                  className={`${applyOverrides
+                    ? 'flex items-center gap-[6px] h-[40px] w-[81px] px-[8px] py-[12px] border border-[#E3E4E5] rounded-[4px] bg-[#F8FAFC] text-[#22252B] text-[14px] font-normal hover:bg-gray-50'
+                    : 'flex items-center gap-2 h-[40px] w-[140px] px-[8.5px] border border-[#E3E4E5] rounded-[4px] bg-[#F8FAFC] text-[#22252B] text-[14px] font-normal hover:bg-gray-50'}`}
+                  style={applyOverrides ? { transform: 'rotate(0deg)', opacity: 1 } : undefined}
+                >
                   <img src="/Filtro simulados 1.png" alt="Filtrar" className="w-4 h-4 object-contain" />
-                  {activeFilter}
-                  <ChevronDown className="w-4 h-4 text-[#6B7588]" />
+                  {applyOverrides ? 'Filtrar' : activeFilter}
+                  {applyOverrides ? null : <ChevronDown className="w-4 h-4 text-[#6B7588]" />}
                 </button>
                 {filterOpen && (
                   <div className="absolute right-0 mt-1 w-[180px] bg-white border border-[#E3E4E5] rounded-[6px] shadow-lg z-50">
@@ -384,19 +527,31 @@ const SimuladosPage = () => {
                   </div>
                 )}
               </div>
-              <button onClick={handleCreateSimulado} className="bg-[#0047BB] text-[#FFFFFF] hover:bg-[#003a99] font-semibold px-5 py-2.5 rounded-[4px] shadow-sm h-[40px] w-[139px] text-[14px] font-inter">
-                Criar simulado
+              <button
+                onClick={() => navigateTo(createPath)}
+                className="h-[40px] px-4 bg-[#0047BB] text-white rounded-[4px] text-[14px] font-medium hover:bg-[#003da0] transition-colors whitespace-nowrap mr-[-25px]"
+              >
+                {toolbarCreateButtonText}
               </button>
-            </div>
           </div>
 
           {/* Grid */}
-          <div className="mt-6 w-[1076px] mx-auto grid auto-rows-fr grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-[22px]">
+          <div className="mt-6 w-full max-w-[1076px] mx-auto px-6 grid auto-rows-fr grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-[22px]">
             {listLoading && (
               <div className="col-span-full text-center text-[14px] text-[#737780]">Carregando seus simulados...</div>
             )}
             {!listLoading && simulados.length === 0 && (
-              <div className="col-span-full text-center text-[14px] text-[#737780]">Nenhum simulado criado por você ainda.</div>
+              <div 
+                onClick={() => navigateTo(createPath)}
+                className="cursor-pointer bg-white border border-[#E3E4E5] rounded-[4px] p-4 w-full h-[222.17px] shadow-sm flex flex-col items-center justify-center gap-2 hover:border-[#0047BB] transition-colors group"
+              >
+                <div className="w-12 h-12 rounded-full border border-solid border-[#F6F5FA] bg-[#F6F5FA] flex items-center justify-center group-hover:bg-blue-50 transition-colors">
+                  <Plus className="w-5 h-5 text-gray-400 group-hover:text-[#0047BB] transition-colors" />
+                </div>
+                <p className="text-[12px] text-[#ABADB3] font-inter font-medium text-center group-hover:text-[#0047BB] transition-colors">
+                  Criar um<br />novo simulado
+                </p>
+              </div>
             )}
             {listError && (
               <div className="col-span-full text-center text-[12px] text-red-600">{listError}</div>
@@ -409,30 +564,41 @@ const SimuladosPage = () => {
                 return isDraft ? 'Rascunho' : 'Publicado';
               };
               const filtered = simulados.filter((s) => deriveStatus(s) === activeFilter);
-              if (!listLoading && filtered.length === 0) {
-                return [<div key="empty" className="col-span-full text-center text-[14px] text-[#737780]">Nenhum simulado {activeFilter.toLowerCase()}.</div>];
-              }
               return filtered.map(sim => (
               <div
                 key={sim.id}
-                className="bg-white border border-[#E3E4E5] rounded-[4px] p-4 w-[252.5px] h-[222.17px] flex flex-col"
-                onClick={() => setOpenMenuId(null)}
+                className="bg-white border border-[#E3E4E5] rounded-[4px] p-4 w-full h-[222.17px] flex flex-col"
+                onClick={() => {
+                  setOpenMenuId(null)
+                  navigateTo(getSimuladoAcessoPath(sim.id))
+                }}
               >
-                <div className="flex items-start justify-between mb-0">
-                  <div className="flex items-center gap-2">
+                <div className={`flex items-start justify-between mb-0 ${applyOverrides ? 'relative h-[85px]' : ''}`}>
+                  {applyOverrides && (
                     <img
-                      src={(sim && sim.cover_image_url) ? sim.cover_image_url : "/t simulados 1.png"}
-                      alt={sim?.title || "Simulado"}
-                      className="w-[85px] h-[85px] rounded-md object-cover"
+                      src="/resposta correta.png"
+                      alt={sim?.title || 'Simulado'}
+                      className="absolute left-0 top-0 w-full h-[85px] rounded-[4px] object-cover"
+                      style={{ transform: 'rotate(0deg)', opacity: 1 }}
                     />
+                  )}
+                  <div className={`flex items-center ${applyOverrides ? 'gap-[1px]' : 'gap-2'}`}>
+                    {!applyOverrides && (
+                      <img
+                        src={(sim && sim.cover_image_url) ? sim.cover_image_url : "/t simulados 1.png"}
+                        alt={sim?.title || "Simulado"}
+                        className="w-[85px] h-[85px] rounded-md object-cover"
+                      />
+                    )}
                   </div>
                   <div className="flex flex-col items-end gap-4">
-                    <div className="relative">
+                    <div className="relative z-10">
                       <button
                         className="w-8 h-8 rounded bg-[#F6F5FA] hover:bg-[#F6F5FA] flex items-center justify-center"
                         onClick={(e) => { e.stopPropagation(); setOpenMenuId(openMenuId === sim.id ? null : sim.id); }}
                         aria-haspopup="menu"
                         aria-expanded={openMenuId === sim.id}
+                        style={{ pointerEvents: 'auto' }}
                       >
                         <MoreVertical className="w-4 h-4 text-[#737780] -rotate-90" />
                       </button>
@@ -487,47 +653,67 @@ const SimuladosPage = () => {
                         : st === 'Rascunho'
                           ? 'bg-yellow-100 text-yellow-800'
                           : 'bg-gray-200 text-gray-700';
+                      if (applyOverrides) return null;
                       return (
                         <span className={`inline-flex items-center justify-center w-[80px] h-[18px] px-3 text-[10px] rounded-[54px] leading-none font-medium ${cls}`}>{st}</span>
                       );
                     })()}
                   </div>
                 </div>
-                <div className="mt-0">
+                <div className={applyOverrides ? "mt-[64px]" : "mt-0"}>
                   <div className="flex items-center justify-between">
                     <h4 className="text-[12px] font-medium text-[#1E1B39] font-inter">{sim.title}</h4>
-                    {/* Avatares reais dos alunos ao lado do título (usa avatar_url, avatarUrl ou photoUrl) */}
-                    <div className="inline-flex items-center gap-1 shrink-0">
-                      {(() => {
-                        const students = Array.isArray(sim?.settings?.students) ? sim.settings.students : [];
-                        const maxVisible = 6;
-                        const visible = students.slice(0, maxVisible);
-                        const overflow = Math.max(0, students.length - visible.length);
-                        return (
-                          <>
-                            {visible.map((stu, i) => {
-                              const src = stu?.avatar_url || stu?.avatarUrl || stu?.photoUrl || "/perfil rc.png";
-                              const alt = stu?.name || "Aluno";
-                              return (
-                                <img
-                                  key={i}
-                                  src={src}
-                                  alt={alt}
-                                  className="w-[18px] h-[18px] rounded-full ring-1 ring-white object-cover"
-                                />
-                              );
-                            })}
-                            {overflow > 0 && (
-                              <span className="inline-flex items-center justify-center h-[18px] px-2 text-[10px] bg-[#F6F5FA] text-[#9291A5] rounded-[54px] leading-none font-medium">+{overflow}</span>
-                            )}
-                          </>
-                        );
-                      })()}
+                    <div className="inline-flex items-center gap-2 shrink-0">
+                      {showStudentAvatars && (
+                        <div className="inline-flex items-center gap-1 shrink-0">
+                          {(() => {
+                            const participants = Array.isArray(sim?.participants) ? sim.participants : [];
+                            const maxVisible = 6;
+                            const visible = participants.slice(0, maxVisible);
+                            const overflow = Math.max(0, participants.length - visible.length);
+                            const initialsOf = (name) => {
+                              const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+                              return parts.slice(0, 2).map((p) => p[0]?.toUpperCase()).join('');
+                            };
+                            return (
+                              <>
+                                {visible.map((stu, i) => {
+                                  const src = stu?.avatar_url || stu?.avatarUrl || stu?.photoUrl || null;
+                                  const alt = stu?.name || "Aluno";
+                                  return (
+                                    src ? (
+                                      <img
+                                        key={stu?.id || i}
+                                        src={src}
+                                        alt={alt}
+                                        className="w-[18px] h-[18px] rounded-full ring-1 ring-white object-cover"
+                                      />
+                                    ) : (
+                                      <div
+                                        key={stu?.id || i}
+                                        className="w-[18px] h-[18px] rounded-full ring-1 ring-white bg-[#F6F5FA] text-[#9291A5] flex items-center justify-center text-[9px] font-semibold leading-none"
+                                      >
+                                        {initialsOf(alt)}
+                                      </div>
+                                    )
+                                  );
+                                })}
+                                {overflow > 0 && (
+                                  <span className="inline-flex items-center justify-center h-[18px] px-2 text-[10px] bg-[#F6F5FA] text-[#9291A5] rounded-[54px] leading-none font-medium">+{overflow}</span>
+                                )}
+                              </>
+                            );
+                          })()}
+                        </div>
+                      )}
+                      {applyOverrides && (
+                        <span className="inline-flex items-center justify-center w-[80px] h-[18px] px-3 text-[10px] rounded-[54px] leading-none font-medium bg-[#E9FFEF] text-[#06C270]">Publicado</span>
+                      )}
                     </div>
                   </div>
-                  <p className="text-[10px] text-[#9291A5] font-inter font-[400] mt-1">{sim.description ?? sim.settings?.description ?? 'Simulado criado por você'}</p>
+                  <p className={`text-[10px] text-[#9291A5] font-inter font-[400] ${applyOverrides ? 'mt-[2px]' : 'mt-1'}`}>{(sim.description ?? sim.settings?.description ?? 'Simulado criado por você')}</p>
                 </div>
-                <div className="mt-3 flex items-center gap-2">
+                <div className={`${applyOverrides ? 'mt-2' : 'mt-3'} flex items-center gap-2`}>
                   {(sim.settings?.categories || []).map((c, i) => (
                     <span
                       key={i}
@@ -535,28 +721,57 @@ const SimuladosPage = () => {
                       style={{ backgroundColor: 'rgba(173,137,247,0.1)', color: '#22252B' }}
                     >
                       <span className="leading-none text-[7px] text-[#AD89F7]">🟪</span>
-                      <span className="text-[10px] text-[#22252B] font-normal not-italic">{String(c)}</span>
+                      <span className="text-[10px] text-[#22252B] font-normal not-italic">{String(chipLabelOverride ?? c)}</span>
+                    </span>
+                  ))}
+                  {Array.isArray(extraStaticChips) && extraStaticChips.map((label, idx) => (
+                    <span
+                      key={`extra-chip-${idx}`}
+                      className="inline-flex items-center gap-1 text-[12px] font-normal h-[20px] px-2 py-0 rounded-[4px]"
+                      style={{ backgroundColor: 'rgba(173,137,247,0.1)', color: '#22252B' }}
+                    >
+                      <span className="leading-none text-[7px] text-[#AD89F7]">🟪</span>
+                      <span className="text-[10px] text-[#22252B] font-normal not-italic">{String(label)}</span>
                     </span>
                   ))}
                 </div>
-                <div className="mt-4 flex items-center justify-between">
-                  <span className="text-[12px] text-[#1E1B39] font-inter font-bold">Aprovação (%)</span>
-                  <div className="flex items-center gap-1 text-[#0047BB]">
-                    {renderApprovalIcon()}
-                    <span className="text-[12px] font-bold text-[#0047BB]">0%</span>
+                  <div className={`${applyOverrides ? 'mt-[8px]' : 'mt-4'} flex items-center justify-between`}>
+                    <div className="flex flex-col w-full">
+                      {applyOverrides ? (
+                        <div className="flex items-center gap-1">
+                          <img src="/pontos.png" alt="Pontos" className="w-[14px] h-[14px]" />
+                          <span className="text-[12px] text-[#1E1B39] font-inter font-bold">0 nps</span>
+                        </div>
+                      ) : (
+                        <span className="text-[12px] text-[#1E1B39] font-inter font-bold">Aprovação (%)</span>
+                      )}
+                      {applyOverrides && (
+                        <div className="flex items-center gap-2 w-full">
+                          <span className="text-[10px] text-[#9291A5] font-inter font-[400] not-italic" style={{ lineHeight: '14px', letterSpacing: '0px' }} data-id="nps-copy">0 avaliações</span>
+                          <span className="ml-auto text-[10px] text-[#9291A5] font-inter font-[400] not-italic" style={{ lineHeight: '14px', letterSpacing: '0px' }}>Criação: 20/08/2025</span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1 text-[#0047BB]">
+                      {applyOverrides ? null : (
+                        <>
+                          {renderApprovalIcon()}
+                          <span className="text-[12px] font-bold text-[#0047BB]">0%</span>
+                        </>
+                      )}
+                    </div>
                   </div>
-                </div>
               </div>
               ));
             })()}
 
             {/* Placeholders */}
             {Array.from({ length: 6 }).map((_, idx) => (
-              <div key={idx} className="bg-white border border-[#E3E4E5] rounded-[4px] p-4 w-[252.5px] h-[222.17px] shadow-sm flex flex-col items-center justify-center">
+              <div key={idx} className="bg-white border border-[#E3E4E5] rounded-[4px] p-4 w-full h-[222.17px] shadow-sm flex flex-col items-center justify-center gap-2">
                 <div className="w-12 h-12 rounded-full border border-solid border-[#F6F5FA] bg-[#F6F5FA] flex items-center justify-center">
                   <Plus className="w-5 h-5 text-gray-400" />
                 </div>
-                <p className="mt-2 text-[12px] text-[#ABADB3] font-inter font-medium text-center">
+                <p className="text-[12px] text-[#ABADB3] font-inter font-medium text-center">
                   Criar um
                   <br />
                   novo simulado
@@ -749,12 +964,12 @@ const SimuladosPage = () => {
                   <input
                     type="text"
                     placeholder="Digite o nome do simulado aqui"
-                    className="w-[544px] h-[30px] text-[24px] font-medium text-[#ABADB3] placeholder:text-[#9aa0a6] border-0 focus:ring-0 text-left leading-[30px] block mx-auto px-0 bg-[#F6F5FA]"
+                    className="w-full max-w-[544px] h-[30px] text-[24px] font-medium text-[#ABADB3] placeholder:text-[#9aa0a6] border-0 focus:ring-0 text-left leading-[30px] block mx-auto px-0 bg-[#F6F5FA]"
                   />
                 </div>
 
                 {/* Metadados */}
-                <div className="space-y-4 w-[544px] mx-auto">
+                <div className="space-y-4 w-full max-w-[544px] mx-auto">
                   {/* Categoria */}
                   <div className="flex items-center gap-4">
                     <div className="flex-shrink-0 flex items-center gap-2">
@@ -804,11 +1019,11 @@ const SimuladosPage = () => {
               </div>
 
               {/* Description */}
-          <div className="relative w-[544px] mx-auto mt-[22px]">
+          <div className="relative w-full max-w-[544px] mx-auto mt-[22px]">
             <textarea
               rows={5}
               placeholder="Digite aqui uma descrição para o seu simulado..."
-              className="w-[544px] h-[160px] border-[1.5px] border-[#E3E4E5] rounded-lg p-4 text-[14px] text-[#404040] placeholder:text-[#9aa0a6] bg-[#F6F5FA] resize-none"
+              className="w-full h-[160px] border-[1.5px] border-[#E3E4E5] rounded-lg p-4 text-[14px] text-[#404040] placeholder:text-[#9aa0a6] bg-[#F6F5FA] resize-none"
               maxLength={300}
             />
             <div className="absolute right-3 bottom-3 text-[#9291A5] text-[12px]">0/300</div>
