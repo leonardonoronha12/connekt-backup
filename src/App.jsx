@@ -76,6 +76,16 @@ const QUESTION_BANK_PATH = '/banco-de-questoes';
   alunoCurso: 'Curso',
 };
 
+try {
+  const rawHash = String(window.location.hash || '')
+  const hashLower = rawHash.toLowerCase()
+  const path = String(window.location.pathname || '')
+  if (rawHash && rawHash !== '#' && hashLower.includes('type=recovery') && !path.startsWith('/reset-password')) {
+    try { sessionStorage.setItem('connekt_pending_recovery', '1') } catch (_) {}
+    window.history.replaceState({}, '', `/reset-password${window.location.search || ''}${window.location.hash || ''}`)
+  }
+} catch (_) {}
+
 // Deriva a view inicial com base na URL para evitar montar o layout global
 // desnecessariamente e prevenir logs de requisições abortadas ao trocar de rota.
 const getViewFromLocation = () => {
