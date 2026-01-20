@@ -112,7 +112,7 @@ export default async function handler(req, res) {
     const fromEmail = readEnv('SENDGRID_FROM_EMAIL', readEnv('SMTP_FROM_EMAIL'))
     const fromName = readEnv('SENDGRID_FROM_NAME', 'Connekt')
     const replyTo = readEnv('SENDGRID_REPLY_TO', '')
-    if (!isValidEmail(fromEmail)) return json(res, 500, { error: 'invalid_from_email' })
+    if (!isValidEmail(fromEmail)) return json(res, 500, { error: 'invalid_from_email', fromEmail: String(fromEmail || '') })
 
     try {
       const payload = await readJsonBody(req)
