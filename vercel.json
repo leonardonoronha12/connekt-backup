@@ -21,6 +21,8 @@
   ],
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/$1" },
+    { "source": "/reset-password", "destination": "/api/reset-password" },
+    { "source": "/reset-password/(.*)", "destination": "/api/reset-password" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
