@@ -8,6 +8,13 @@ function isValidEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)
 }
 
+function normalizeFromEmail(raw) {
+  const v = String(raw || '').trim()
+  if (isValidEmail(v)) return v
+  if (v && !v.includes('@') && v.includes('.')) return 'no-reply@connektco.com'
+  return 'no-reply@connektco.com'
+}
+
 function json(res, statusCode, payload) {
   res.statusCode = statusCode
   res.setHeader('Content-Type', 'application/json')
@@ -116,7 +123,7 @@ export default async function handler(req, res) {
 
     if (req.method !== 'POST') return json(res, 405, { error: 'method_not_allowed' })
 
-    const fromEmail = readEnv('SENDGRID_FROM_EMAIL', readEnv('SMTP_FROM_EMAIL'))
+    const fromEmail = normalizeFromEmail(readEnv('SENDGRID_FROM_EMAIL', readEnv('SMTP_FROM_EMAIL')))
     const fromName = readEnv('SENDGRID_FROM_NAME', 'Connekt')
     const replyTo = readEnv('SENDGRID_REPLY_TO', '')
     if (!isValidEmail(fromEmail)) return json(res, 500, { error: 'invalid_from_email', fromEmail: String(fromEmail || '') })
