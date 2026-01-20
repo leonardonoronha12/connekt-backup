@@ -65,7 +65,7 @@ async function generateRecoveryLink({ email, redirectTo }) {
   const body = {
     type: 'recovery',
     email,
-    options: redirectTo ? { redirectTo } : undefined,
+    options: redirectTo ? { redirect_to: redirectTo } : undefined,
   }
 
   const r = await fetch(url, {
