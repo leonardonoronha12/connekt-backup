@@ -105,9 +105,22 @@ export const AuthProvider = ({ children }) => {
         }
 
         if (isRecoveryUrl() && window.location.pathname !== '/reset-password') {
+          try { sessionStorage.setItem('connekt_pending_recovery', '1') } catch (_) {}
           window.history.replaceState({}, '', `/reset-password${window.location.search || ''}${window.location.hash || ''}`);
           window.dispatchEvent(new PopStateEvent('popstate'));
         }
+
+        try {
+          const pending = sessionStorage.getItem('connekt_pending_recovery') === '1'
+          const okEvent = event === 'SIGNED_IN' || event === 'PASSWORD_RECOVERY' || event === 'INITIAL_SESSION'
+          if (pending && okEvent && currentSession && window.location.pathname !== '/reset-password') {
+            window.history.replaceState({}, '', `/reset-password${window.location.search || ''}${window.location.hash || ''}`);
+            window.dispatchEvent(new PopStateEvent('popstate'));
+          }
+          if (pending && okEvent && currentSession) {
+            sessionStorage.removeItem('connekt_pending_recovery')
+          }
+        } catch (_) {}
 
         // Redireciona ao dashboard em SIGNED_IN.
         // Caso tenha vindo da confirmação e caiu na raiz '/', adiciona email_confirmed=true.
