@@ -177,6 +177,23 @@ function AppContent() {
 
   useEffect(() => {
     const handleLocationChange = () => {
+      try {
+        const rawHash = String(window.location.hash || '')
+        if (rawHash && rawHash !== '#' && rawHash.includes('error=')) {
+          const params = new URLSearchParams(rawHash.startsWith('#') ? rawHash.slice(1) : rawHash)
+          const err = params.get('error')
+          const errCode = params.get('error_code')
+          const errDesc = params.get('error_description')
+          const target = new URL(`${window.location.origin}/login`)
+          if (err) target.searchParams.set('error', err)
+          if (errCode) target.searchParams.set('error_code', errCode)
+          if (errDesc) target.searchParams.set('error_description', errDesc)
+          window.history.replaceState({}, '', `${target.pathname}${target.search}`)
+          window.dispatchEvent(new PopStateEvent('popstate'))
+          return
+        }
+      } catch (_) {}
+
       const currentUrl = `${window.location.pathname}${window.location.search}`;
       if (isUploadInProgress() && currentUrl !== lastStableUrlRef.current) {
         toast({ description: 'Upload em andamento. Aguarde concluir para sair desta página.', variant: 'destructive' });
