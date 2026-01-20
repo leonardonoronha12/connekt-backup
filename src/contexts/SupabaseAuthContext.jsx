@@ -304,6 +304,7 @@ export const AuthProvider = ({ children }) => {
       const origin = getAuthRedirectOrigin()
       const redirectTo = `${origin}/reset-password`;
       let emailAttemptError = null
+      let emailAttemptDetails = null
       try {
         const r = await fetch('/api/auth/password-recovery', {
           method: 'POST',
@@ -314,13 +315,18 @@ export const AuthProvider = ({ children }) => {
         try {
           const body = await r.json()
           if (body?.error) emailAttemptError = String(body.error)
+          if (body?.details) emailAttemptDetails = body.details
         } catch (_) {}
       } catch (_) {}
 
+      if (emailAttemptError && emailAttemptError !== 'missing_supabase_admin' && emailAttemptError !== 'supabase_generate_link_failed') {
+        const extra = emailAttemptDetails ? ` (${typeof emailAttemptDetails === 'string' ? emailAttemptDetails : JSON.stringify(emailAttemptDetails)})` : ''
+        return { error: { message: `Falha ao enviar email de recuperação. (${emailAttemptError})${extra}` } }
+      }
+
       const { error } = await supabase.auth.resetPasswordForEmail(trimmed, { redirectTo });
       if (!error) return { error: null, mode: 'supabase' };
-      const hint = emailAttemptError ? ` (email: ${emailAttemptError})` : ''
-      return { error: { message: String(error?.message || 'Falha ao enviar recuperação de senha.') + hint } };
+      return { error: { message: String(error?.message || 'Falha ao enviar recuperação de senha.') } };
     } catch (error) {
       console.error('Erro ao enviar recuperação de senha:', error);
       return { error: { message: error?.message || String(error) } };
