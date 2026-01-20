@@ -94,6 +94,21 @@ export const AuthProvider = ({ children }) => {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, currentSession) => {
+        const isRecoveryUrl = () => {
+          try {
+            const h = String(window.location.hash || '').toLowerCase()
+            const s = String(window.location.search || '').toLowerCase()
+            return h.includes('type=recovery') || s.includes('type=recovery')
+          } catch (_) {
+            return false
+          }
+        }
+
+        if (isRecoveryUrl() && window.location.pathname !== '/reset-password') {
+          window.history.replaceState({}, '', `/reset-password${window.location.search || ''}${window.location.hash || ''}`);
+          window.dispatchEvent(new PopStateEvent('popstate'));
+        }
+
         // Redireciona ao dashboard em SIGNED_IN.
         // Caso tenha vindo da confirmação e caiu na raiz '/', adiciona email_confirmed=true.
         if (event === 'PASSWORD_RECOVERY') {
