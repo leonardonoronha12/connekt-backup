@@ -303,6 +303,15 @@ export const AuthProvider = ({ children }) => {
       }
       const origin = getAuthRedirectOrigin()
       const redirectTo = `${origin}/reset-password`;
+      try {
+        const r = await fetch('/api/auth/password-recovery', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: trimmed, redirectTo }),
+        })
+        if (r.ok) return { error: null, mode: 'email' }
+      } catch (_) {}
+
       const { error } = await supabase.auth.resetPasswordForEmail(trimmed, { redirectTo });
       if (!error) return { error: null, mode: 'supabase' };
 
