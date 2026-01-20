@@ -104,8 +104,11 @@ async function sendSendgridEmail({ to, fromEmail, fromName, replyTo, subject, ht
   })
 
   if (!r.ok) {
-    const msg = await r.text().catch(() => '')
-    return { ok: false, error: 'sendgrid_send_failed', details: msg }
+    const raw = await r.text().catch(() => '')
+    let parsed = null
+    try { parsed = JSON.parse(raw || '{}') } catch (_) { parsed = null }
+    const details = parsed && typeof parsed === 'object' ? parsed : raw
+    return { ok: false, error: 'sendgrid_send_failed', status: r.status, details }
   }
   return { ok: true }
 }
