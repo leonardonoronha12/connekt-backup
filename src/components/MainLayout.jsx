@@ -36,10 +36,11 @@ const MainLayout = ({ children }) => {
 
   const isAproveitamento = currentPath === '/simulados-aproveitamento';
   const isSimuladoResposta = currentPath === '/reposta-correta-simulado';
-  const isSimuladosNovo = currentPath === '/simulados/novo';
+  const isSimuladosNovo = currentPath === '/simulados/novo' || currentPath === '/produtos/novo';
+  const isFullWidthPage = currentPath === '/dashboard' || currentPath === '/banco-de-questoes';
 
   return (
-    <div className="flex bg-gray-50" style={{ height: '100dvh', minHeight: '100vh' }}>
+    <div className="flex bg-[#F5F6FA]" style={{ height: '100dvh', minHeight: '100vh' }}>
       {/* Sidebar - largura fixa, não rola */}
       {!isSimuladoResposta && !isSimuladosNovo && <CollapsibleSidebar />}
       
@@ -56,13 +57,31 @@ const MainLayout = ({ children }) => {
           <main 
             className={`flex-1 scroll-area ${isMobile ? 'main-content-mobile' : ''}`}
             style={{ 
-              minHeight: 0, 
-              overflow: 'auto', 
-              backgroundColor: isAproveitamento ? '#FFFFFF' : undefined 
+              // Main como área rolável geral
+              minHeight: 0,
+              overflow: 'auto',
+              backgroundColor: isAproveitamento ? '#FFFFFF' : undefined
             }}
           >
             <div className="w-full flex justify-center">
-              <div className="w-full" style={{ maxWidth: '1348px', maxHeight: '900px' }}>
+              <div 
+                style={{ 
+                  // Dimensões solicitadas para o div interno
+                  width: '100%',
+                  maxWidth: isFullWidthPage ? '100%' : '1180px',
+                  height: '100%',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: isFullWidthPage ? '0' : '22px',
+                  paddingTop: isFullWidthPage ? '0' : '32px',
+                  paddingRight: isFullWidthPage ? '0' : (isMobile ? '20px' : '52px'),
+                  paddingLeft: isFullWidthPage ? '0' : (isMobile ? '20px' : '52px'),
+                  opacity: 1,
+                  transform: 'rotate(0deg)',
+                  boxSizing: 'border-box',
+                  margin: '0 auto'
+                }}
+              >
                 {children}
               </div>
             </div>

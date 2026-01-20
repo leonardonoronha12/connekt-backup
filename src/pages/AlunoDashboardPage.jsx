@@ -1,0 +1,1246 @@
+import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { BookOpen, ChevronLeft, ChevronRight, Database, FileText, GraduationCap, Monitor, PlayCircle, Search, Settings, Star, Menu, X } from 'lucide-react'
+import Header from '@/components/Header'
+import CourseFooter from '@/components/CourseFooter'
+import { supabase } from '@/lib/supabaseClient'
+import { useAuth } from '@/contexts/SupabaseAuthContext'
+
+const navSections = [
+  {
+    title: 'MENU',
+    items: [
+      { label: 'Painel', Icon: GraduationCap, path: '/aluno' },
+      { label: 'Simulados', Icon: Monitor, path: '/aluno/simulados' },
+      { label: 'Banco de Questões', Icon: Database, path: '/banco-de-questoes' },
+    ],
+  },
+  {
+    title: 'GERAL',
+    items: [
+      { label: 'Configurações', Icon: Settings, path: '/aluno/configuracoes' },
+    ],
+  },
+]
+
+function navigateTo(path) {
+  window.history.pushState({}, '', path)
+  window.dispatchEvent(new PopStateEvent('popstate'))
+}
+
+function SectionTitle({ title, onMore, showMoreInline = false, icon: Icon = null }) {
+  return (
+    <div className="flex items-center justify-between">
+      <div className="flex items-center gap-2">
+        <div className="w-5 h-5 rounded-[6px] bg-[#EEF2FF] flex items-center justify-center">
+          {Icon ? <Icon className="w-4 h-4 text-[#0047BB]" /> : <div className="w-2.5 h-2.5 rounded-[3px] bg-[#0047BB]" />}
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="text-[14px] font-semibold text-[#22252B]">{title}</div>
+          {onMore && showMoreInline ? (
+            <button
+              type="button"
+              className="inline-flex items-center gap-2 h-8 px-4 rounded-[8px] bg-[#EEF2FF] text-[#0047BB] text-[12px] font-semibold"
+              onClick={onMore}
+            >
+              <span className="text-[16px] leading-none">+</span>
+              Ver mais
+            </button>
+          ) : null}
+        </div>
+      </div>
+      {onMore && !showMoreInline ? (
+        <button
+          type="button"
+          className="text-[12px] font-semibold text-[#0047BB] hover:underline"
+          onClick={onMore}
+        >
+          Ver mais
+        </button>
+      ) : (
+        <div className="w-16" />
+      )}
+    </div>
+  )
+}
+
+function CourseCard({ cover, title, progress, locked, onClick }) {
+  const p = Math.max(0, Math.min(100, Number(progress || 0)))
+  return (
+    <div className="w-[252px] flex-shrink-0">
+      <button
+        type="button"
+        disabled={!onClick}
+        onClick={onClick}
+        className={`relative w-[252px] h-[326px] rounded-[12px] overflow-hidden border border-[#E3E4E5] bg-[#F8FAFC] text-left ${
+          !onClick ? 'cursor-not-allowed' : 'cursor-pointer'
+        }`}
+      >
+        <img
+          src={cover}
+          alt=""
+          className={`absolute inset-0 w-full h-full object-cover ${locked ? 'grayscale opacity-70' : ''}`}
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-transparent to-transparent" />
+        {locked ? (
+          <div className="absolute top-3 right-3 text-[10px] font-semibold bg-black/55 text-white px-2 py-1 rounded-full">
+            BLOQUEADO
+          </div>
+        ) : null}
+        <div className="absolute inset-0 px-3 pb-5 flex flex-col items-center justify-end text-center pointer-events-none">
+          <img src="/logo-expanded.svg" alt="" className="w-[110px] h-auto" />
+          <div className="mt-2 h-[2px] w-10 bg-white/70 rounded" />
+          <div className="mt-3 text-[14px] font-semibold text-white truncate w-full">{title}</div>
+        </div>
+      </button>
+      {locked ? null : (
+        <div className="mt-2">
+          <div className="h-1.5 w-full rounded-full bg-[#EEF2FF] overflow-hidden">
+            <div className="h-full bg-[#0047BB]" style={{ width: `${p}%` }} />
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ContinueCard({ cover, category, title, progress, lessonsDone, lessonsTotal, onClick }) {
+  const p = Math.max(0, Math.min(100, Number(progress || 0)))
+  const hasLessons = Number.isFinite(Number(lessonsDone)) && Number.isFinite(Number(lessonsTotal)) && Number(lessonsTotal) > 0
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={!onClick}
+      className={`w-[300px] flex-shrink-0 rounded-[12px] border border-[#E3E4E5] bg-white overflow-hidden shadow-sm text-left ${
+        onClick ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'
+      }`}
+    >
+      <div className="relative h-[170px] bg-[#F8FAFC]">
+        <img src={cover} alt="" className="absolute inset-0 w-full h-full object-cover" />
+        <div className="absolute inset-0 bg-black/10" />
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="w-12 h-12 rounded-full bg-white/90 flex items-center justify-center">
+            <div className="w-0 h-0 border-t-[7px] border-t-transparent border-b-[7px] border-b-transparent border-l-[12px] border-l-[#0047BB] ml-1" />
+          </div>
+        </div>
+      </div>
+
+      <div className="px-5 pt-4 pb-3">
+        <div className="text-[16px] font-medium text-[#22252B]">{category}</div>
+        <div className="mt-1 text-[16px] text-[#22252B] line-clamp-1">{title}</div>
+
+        <div className="mt-4 flex items-center justify-between text-[12px] text-[#737780]">
+          <div>{p}%</div>
+          {hasLessons ? <div>{Number(lessonsDone)}/{Number(lessonsTotal)} aulas</div> : <div />}
+        </div>
+
+        <div className="mt-2 h-1.5 w-full rounded-full bg-[#E3E4E5] overflow-hidden">
+          <div className="h-full bg-[#0047BB]" style={{ width: `${p}%` }} />
+        </div>
+
+        <div className="mt-4 flex items-center justify-center gap-3 text-[#0047BB]">
+          <span className="text-[14px] font-semibold">Continuar</span>
+          <div className="w-6 h-6 rounded-full border border-[#0047BB] flex items-center justify-center">
+            <div className="w-0 h-0 border-t-[4px] border-t-transparent border-b-[4px] border-b-transparent border-l-[7px] border-l-[#0047BB] ml-[1px]" />
+          </div>
+        </div>
+      </div>
+    </button>
+  )
+}
+
+function SimuladoCard({ title, progress, isPaid, price, onClick }) {
+  const p = Math.max(0, Math.min(100, Number(progress || 0)))
+  const paid =
+    typeof isPaid === 'boolean'
+      ? isPaid
+      : Math.max(0, Number(price || 0)) > 0
+  const renderApprovalIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0047BB" strokeWidth="2">
+      <circle cx="12" cy="12" r="10" opacity="0.3" />
+      <path d="M12 2 a10 10 0 0 1 0 20" />
+    </svg>
+  )
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={!onClick}
+      className={`bg-white border border-[#E3E4E5] rounded-[4px] p-4 w-[252px] h-[230px] flex flex-col flex-shrink-0 text-left ${
+        onClick ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'
+      }`}
+    >
+      <div className="flex items-start justify-between">
+        <div className="flex items-center gap-2">
+          <img src="/t simulados 1.png" alt="Simulado" className="w-[85px] h-[85px] rounded-md object-cover" />
+        </div>
+        <div className="flex flex-col items-end gap-4">
+          <span className="inline-flex items-center justify-center w-[80px] h-[18px] px-3 text-[10px] rounded-[54px] leading-none font-medium bg-[#E9FFEF] text-[#06C270]">
+            Publicado
+          </span>
+          <span className={`inline-flex items-center justify-center w-[80px] h-[18px] px-3 text-[10px] rounded-[54px] leading-none font-medium ${paid ? 'bg-[#FEF3C7] text-[#92400E]' : 'bg-[#EEF2FF] text-[#0047BB]'}`}>
+            {paid ? 'Pago' : 'Gratuito'}
+          </span>
+        </div>
+      </div>
+
+      <div className="mt-0">
+        <div className="flex items-center justify-between">
+          <h4 className="text-[12px] font-medium text-[#1E1B39] font-inter">{title}</h4>
+        </div>
+        <p className="text-[10px] text-[#9291A5] font-inter font-[400] mt-1">Simulado criado por você</p>
+      </div>
+
+      <div className="mt-3 flex items-center gap-2">
+        <span
+          className="inline-flex items-center gap-1 text-[12px] font-normal h-[20px] px-2 py-0 rounded-[4px]"
+          style={{ backgroundColor: 'rgba(173,137,247,0.1)', color: '#22252B' }}
+        >
+          <span className="leading-none text-[7px] text-[#AD89F7]">🟪</span>
+          <span className="text-[10px] text-[#22252B] font-normal not-italic">Categoria</span>
+        </span>
+      </div>
+
+      <div className="mt-4 flex items-center justify-between">
+        <div className="flex flex-col w-full">
+          <span className="text-[12px] text-[#1E1B39] font-inter font-bold">Aprovação (%)</span>
+        </div>
+        <div className="flex items-center gap-1 text-[#0047BB]">
+          {renderApprovalIcon()}
+          <span className="text-[12px] font-bold text-[#0047BB]">{p}%</span>
+        </div>
+      </div>
+    </button>
+  )
+}
+
+function ProducerSimuladosModal({ open, onClose, simulados, onSelectSimulado }) {
+  const [query, setQuery] = useState('')
+
+  useEffect(() => {
+    if (!open) return
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [open, onClose])
+
+  const list = useMemo(() => {
+    const q = String(query || '').trim().toLowerCase()
+    const base = Array.isArray(simulados) ? simulados : []
+    if (!q) return base
+    return base.filter((s) => String(s?.title || '').toLowerCase().includes(q))
+  }, [query, simulados])
+
+  if (!open) return null
+
+  return (
+    <div className="fixed inset-0 z-[80]">
+      <button type="button" className="absolute inset-0 bg-black/40" aria-label="Fechar" onClick={onClose} />
+      <div
+        role="dialog"
+        aria-modal="true"
+        className="absolute left-1/2 top-1/2 w-[calc(100%-24px)] max-w-[980px] -translate-x-1/2 -translate-y-1/2 rounded-[14px] bg-white border border-[#E3E4E5] shadow-xl overflow-hidden"
+      >
+        <div className="px-5 py-4 border-b border-[#E3E4E5] flex items-center justify-between gap-4">
+          <div className="min-w-0">
+            <div className="text-[14px] font-semibold text-[#22252B] truncate">Simulados do produtor</div>
+            <div className="text-[12px] text-[#737780]">Todos os simulados disponíveis</div>
+          </div>
+          <button
+            type="button"
+            className="h-9 w-9 rounded-full border border-[#E3E4E5] bg-white flex items-center justify-center"
+            aria-label="Fechar"
+            onClick={onClose}
+          >
+            <X className="w-4 h-4 text-[#22252B]" />
+          </button>
+        </div>
+
+        <div className="p-5">
+          <div className="flex items-center gap-3">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 w-full" style={{ height: '36px', padding: '0 12px', borderRadius: '8px', border: '1px solid rgb(227, 228, 229)', backgroundColor: 'rgb(249, 250, 251)' }}>
+                <Search className="w-4 h-4 text-[#737780]" />
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  className="flex-1 bg-transparent outline-none text-[12px] text-[#22252B]"
+                  placeholder="Buscar simulado"
+                />
+              </div>
+            </div>
+            <div className="text-[12px] text-[#737780] whitespace-nowrap">{list.length}</div>
+          </div>
+
+          <div className="mt-4 max-h-[60vh] overflow-auto pr-1">
+            {list.length === 0 ? (
+              <div className="text-[12px] text-[#737780] py-10 text-center">Nenhum simulado encontrado</div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {list.map((s) => {
+                  const paid = typeof (s?.is_paid ?? s?.isPaid) === 'boolean'
+                    ? (s.is_paid ?? s.isPaid)
+                    : Math.max(0, Number(s?.price || 0)) > 0
+                  return (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => onSelectSimulado?.(s)}
+                      className="bg-white border border-[#E3E4E5] rounded-[12px] p-4 w-full text-left hover:bg-[#F9FAFB] transition-colors"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-10 h-10 rounded-[10px] bg-[#EEF2FF] flex items-center justify-center flex-shrink-0">
+                            <FileText className="w-5 h-5 text-[#0047BB]" />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-[12px] font-semibold text-[#1E1B39] font-inter truncate">{s.title}</div>
+                            <div className="text-[10px] text-[#9291A5] font-inter">Simulado criado por você</div>
+                          </div>
+                        </div>
+                        <span className={`inline-flex items-center justify-center h-[18px] px-3 text-[10px] rounded-[54px] leading-none font-medium ${paid ? 'bg-[#FEF3C7] text-[#92400E]' : 'bg-[#EEF2FF] text-[#0047BB]'}`}>
+                          {paid ? 'Pago' : 'Gratuito'}
+                        </span>
+                      </div>
+                      <div className="mt-4 flex items-center justify-between text-[12px] text-[#737780]">
+                        <div>Aprovação</div>
+                        <div className="flex items-center gap-1 text-[#0047BB]">
+                          <span className="text-[12px] font-bold text-[#0047BB]">{Math.max(0, Math.min(100, Number(s.progress || 0)))}%</span>
+                        </div>
+                      </div>
+                      <div className="mt-2 h-1.5 w-full rounded-full bg-[#E3E4E5] overflow-hidden">
+                        <div className="h-full bg-[#0047BB]" style={{ width: `${Math.max(0, Math.min(100, Number(s.progress || 0)))}%` }} />
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function FeaturedCoursesModal({ open, onClose, courses, onSelectCourse }) {
+  const [query, setQuery] = useState('')
+
+  useEffect(() => {
+    if (!open) return
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [open, onClose])
+
+  const list = useMemo(() => {
+    const q = String(query || '').trim().toLowerCase()
+    const base = Array.isArray(courses) ? courses : []
+    if (!q) return base
+    return base.filter((c) => String(c?.title || '').toLowerCase().includes(q))
+  }, [courses, query])
+
+  if (!open) return null
+
+  return (
+    <div className="fixed inset-0 z-[80]">
+      <button type="button" className="absolute inset-0 bg-black/40" aria-label="Fechar" onClick={onClose} />
+      <div
+        role="dialog"
+        aria-modal="true"
+        className="absolute left-1/2 top-1/2 w-[calc(100%-24px)] max-w-[980px] -translate-x-1/2 -translate-y-1/2 rounded-[14px] bg-white border border-[#E3E4E5] shadow-xl overflow-hidden"
+      >
+        <div className="px-5 py-4 border-b border-[#E3E4E5] flex items-center justify-between gap-4">
+          <div className="min-w-0">
+            <div className="text-[14px] font-semibold text-[#22252B] truncate">Cursos em destaque</div>
+            <div className="text-[12px] text-[#737780]">Veja todos os cursos em destaque</div>
+          </div>
+          <button
+            type="button"
+            className="h-9 w-9 rounded-full border border-[#E3E4E5] bg-white flex items-center justify-center"
+            aria-label="Fechar"
+            onClick={onClose}
+          >
+            <X className="w-4 h-4 text-[#22252B]" />
+          </button>
+        </div>
+
+        <div className="p-5">
+          <div className="flex items-center gap-3">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 w-full" style={{ height: '36px', padding: '0 12px', borderRadius: '8px', border: '1px solid rgb(227, 228, 229)', backgroundColor: 'rgb(249, 250, 251)' }}>
+                <Search className="w-4 h-4 text-[#737780]" />
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  className="flex-1 bg-transparent outline-none text-[12px] text-[#22252B]"
+                  placeholder="Buscar curso"
+                />
+              </div>
+            </div>
+            <div className="text-[12px] text-[#737780] whitespace-nowrap">{list.length}</div>
+          </div>
+
+          <div className="mt-4 max-h-[60vh] overflow-auto pr-1">
+            {list.length === 0 ? (
+              <div className="text-[12px] text-[#737780] py-10 text-center">Nenhum curso encontrado</div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {list.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => onSelectCourse?.(c)}
+                    className="bg-white border border-[#E3E4E5] rounded-[12px] overflow-hidden w-full text-left hover:bg-[#F9FAFB] transition-colors"
+                  >
+                    <div className="relative h-[130px] w-full bg-[#EEF2FF]">
+                      {c.cover ? (
+                        <img src={c.cover} alt={c.title || 'Curso'} className="w-full h-full object-cover" />
+                      ) : null}
+                      <div className="absolute left-3 top-3 inline-flex items-center gap-2 h-[22px] px-2 rounded-[54px] bg-white/90 border border-[#E3E4E5] text-[10px] font-semibold text-[#22252B]">
+                        <Star className="w-3.5 h-3.5 text-[#0047BB]" />
+                        Destaque
+                      </div>
+                    </div>
+                    <div className="p-4">
+                      <div className="text-[12px] font-semibold text-[#1E1B39] font-inter truncate">{c.title || 'Nome do curso'}</div>
+                      <div className="mt-3 flex items-center justify-between text-[12px] text-[#737780]">
+                        <div>Progresso</div>
+                        <div className="text-[12px] font-bold text-[#0047BB]">{Math.max(0, Math.min(100, Number(c.progress || 0)))}%</div>
+                      </div>
+                      <div className="mt-2 h-1.5 w-full rounded-full bg-[#E3E4E5] overflow-hidden">
+                        <div className="h-full bg-[#0047BB]" style={{ width: `${Math.max(0, Math.min(100, Number(c.progress || 0)))}%` }} />
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default function AlunoDashboardPage() {
+  const { user } = useAuth()
+  const [loading, setLoading] = useState(true)
+  const [student, setStudent] = useState(null)
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  const [simuladosModalOpen, setSimuladosModalOpen] = useState(false)
+  const [featuredModalOpen, setFeaturedModalOpen] = useState(false)
+  const continueScrollRef = useRef(null)
+  const [canScrollContinueLeft, setCanScrollContinueLeft] = useState(false)
+  const [canScrollContinueRight, setCanScrollContinueRight] = useState(false)
+  const myCoursesScrollRef = useRef(null)
+  const [canScrollMyCoursesLeft, setCanScrollMyCoursesLeft] = useState(false)
+  const [canScrollMyCoursesRight, setCanScrollMyCoursesRight] = useState(false)
+  const featuredScrollRef = useRef(null)
+  const [canScrollFeaturedLeft, setCanScrollFeaturedLeft] = useState(false)
+  const [canScrollFeaturedRight, setCanScrollFeaturedRight] = useState(false)
+  const courseIdCacheRef = useRef(new Map())
+  const simuladosScrollRef = useRef(null)
+  const [canScrollSimuladosLeft, setCanScrollSimuladosLeft] = useState(false)
+  const [canScrollSimuladosRight, setCanScrollSimuladosRight] = useState(false)
+  const [producerCoversByTitle, setProducerCoversByTitle] = useState({})
+  const isDemoStudent = useMemo(() => {
+    try {
+      const host = String(window.location.hostname || '').toLowerCase()
+      const allowed = host === 'localhost' || host === '127.0.0.1'
+      if (!allowed) return false
+      const params = new URLSearchParams(window.location.search || '')
+      if (params.get('demo') === '1') return true
+      return String(localStorage.getItem('connekt_demo_student') || '') === '1'
+    } catch (_) {
+      return false
+    }
+  }, [])
+
+  const email = useMemo(() => String(user?.email || '').trim().toLowerCase(), [user?.email])
+
+  const resolveCourseIdByTitle = async (title) => {
+    const key = String(title || '').trim().toLowerCase()
+    if (!key) return null
+
+    const cache = courseIdCacheRef.current
+    if (cache.has(key)) return cache.get(key)
+
+    let foundId = null
+    try {
+      const { data, error } = await supabase.from('courses').select('id,title').eq('title', String(title || '')).limit(1)
+      if (!error && Array.isArray(data) && data[0]?.id) foundId = data[0].id
+    } catch (_) {}
+
+    if (!foundId) {
+      try {
+        const { data, error } = await supabase.from('courses').select('id,title').ilike('title', String(title || '')).limit(1)
+        if (!error && Array.isArray(data) && data[0]?.id) foundId = data[0].id
+      } catch (_) {}
+    }
+
+    cache.set(key, foundId)
+    return foundId
+  }
+
+  useEffect(() => {
+    let cancelled = false
+    const run = async () => {
+      if (!user?.id && isDemoStudent) {
+        setLoading(false)
+        setStudent({
+          id: 'demo',
+          name: 'Aluno Demo',
+          email: 'demo@connektco.com',
+          avatar_url: null,
+          courses: [
+            { course_name: 'Cardiologia', progress: 62, cover_image_url: '/Preview.png' },
+            { course_name: 'Cardiologia', progress: 62, cover_image_url: '/Preview.png' },
+            { course_name: 'Cardiologia', progress: 62, cover_image_url: '/Preview.png' },
+            { course_name: 'Nome do curso', progress: 0, cover_image_url: '/Preview.png' },
+          ],
+        })
+        return
+      }
+      if (!user?.id) return
+      setLoading(true)
+      setStudent(null)
+      try {
+        const attempts = [
+          () =>
+            supabase
+              .from('students')
+              .select('id,name,email,avatar_url,courses:student_courses(course_name,progress,tag,cover_image_url)')
+              .eq('email', email)
+              .maybeSingle(),
+          () =>
+            supabase
+              .from('students')
+              .select('id,name,email,avatar_url,courses:student_courses(course_name,progress,tag,cover_image_url)')
+              .eq('user_id', user.id)
+              .maybeSingle(),
+        ]
+        let found = null
+        for (const fn of attempts) {
+          const { data } = await fn()
+          if (data) {
+            found = data
+            break
+          }
+        }
+        if (cancelled) return
+        setStudent(found)
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    run()
+    return () => {
+      cancelled = true
+    }
+  }, [user?.id, email, isDemoStudent])
+
+  const updateContinueScrollState = () => {
+    const el = continueScrollRef.current
+    if (!el) return
+    const left = el.scrollLeft || 0
+    const maxLeft = Math.max(0, (el.scrollWidth || 0) - (el.clientWidth || 0))
+    setCanScrollContinueLeft(left > 2)
+    setCanScrollContinueRight(left < maxLeft - 2)
+  }
+
+  const updateMyCoursesScrollState = () => {
+    const el = myCoursesScrollRef.current
+    if (!el) return
+    const left = el.scrollLeft || 0
+    const maxLeft = Math.max(0, (el.scrollWidth || 0) - (el.clientWidth || 0))
+    setCanScrollMyCoursesLeft(left > 2)
+    setCanScrollMyCoursesRight(left < maxLeft - 2)
+  }
+
+  const updateFeaturedScrollState = () => {
+    const el = featuredScrollRef.current
+    if (!el) return
+    const left = el.scrollLeft || 0
+    const maxLeft = Math.max(0, (el.scrollWidth || 0) - (el.clientWidth || 0))
+    setCanScrollFeaturedLeft(left > 2)
+    setCanScrollFeaturedRight(left < maxLeft - 2)
+  }
+
+  const updateSimuladosScrollState = () => {
+    const el = simuladosScrollRef.current
+    if (!el) return
+    const left = el.scrollLeft || 0
+    const maxLeft = Math.max(0, (el.scrollWidth || 0) - (el.clientWidth || 0))
+    setCanScrollSimuladosLeft(left > 2)
+    setCanScrollSimuladosRight(left < maxLeft - 2)
+  }
+
+  useEffect(() => {
+    updateContinueScrollState()
+    updateMyCoursesScrollState()
+    updateFeaturedScrollState()
+    updateSimuladosScrollState()
+    const onResize = () => {
+      updateContinueScrollState()
+      updateMyCoursesScrollState()
+      updateFeaturedScrollState()
+      updateSimuladosScrollState()
+    }
+    window.addEventListener('resize', onResize)
+    const t = window.setTimeout(() => {
+      updateContinueScrollState()
+      updateMyCoursesScrollState()
+      updateFeaturedScrollState()
+      updateSimuladosScrollState()
+    }, 0)
+    return () => {
+      window.clearTimeout(t)
+      window.removeEventListener('resize', onResize)
+    }
+  }, [student, loading])
+
+  const scrollContinueBy = (dir) => {
+    const el = continueScrollRef.current
+    if (!el) return
+    const amount = 340
+    el.scrollBy({ left: dir * amount, behavior: 'smooth' })
+    window.setTimeout(updateContinueScrollState, 150)
+  }
+
+  const scrollMyCoursesBy = (dir) => {
+    const el = myCoursesScrollRef.current
+    if (!el) return
+    const amount = 220
+    el.scrollBy({ left: dir * amount, behavior: 'smooth' })
+    window.setTimeout(updateMyCoursesScrollState, 150)
+  }
+
+  const scrollFeaturedBy = (dir) => {
+    const el = featuredScrollRef.current
+    if (!el) return
+    const amount = 220
+    el.scrollBy({ left: dir * amount, behavior: 'smooth' })
+    window.setTimeout(updateFeaturedScrollState, 150)
+  }
+
+  const scrollSimuladosBy = (dir) => {
+    const el = simuladosScrollRef.current
+    if (!el) return
+    const amount = 360
+    el.scrollBy({ left: dir * amount, behavior: 'smooth' })
+    window.setTimeout(updateSimuladosScrollState, 150)
+  }
+
+  const toPublicCoursesMediaUrl = (value) => {
+    const raw = value == null ? '' : String(value)
+    if (!raw) return null
+    if (raw.startsWith('data:')) return raw
+    const marker = '/storage/v1/object/sign/courses-media/'
+    const idx = raw.indexOf(marker)
+    if (idx >= 0) {
+      const withoutQuery = raw.split('?')[0] || ''
+      const path = withoutQuery.slice(idx + marker.length)
+      const { data } = supabase.storage.from('courses-media').getPublicUrl(path)
+      return data?.publicUrl || null
+    }
+    return raw
+  }
+
+  const mergeMeta = (row) => {
+    let dataMeta = null
+    try { dataMeta = typeof row?.data === 'string' ? JSON.parse(row.data) : row?.data || null } catch (_) {}
+    let modulesMeta = null
+    if (row?.modules) {
+      try {
+        const parsed = typeof row.modules === 'string' ? JSON.parse(row.modules) : row.modules
+        modulesMeta = parsed && typeof parsed === 'object' ? (parsed.meta || null) : null
+      } catch (_) {}
+    }
+    return { ...(modulesMeta || {}), ...(dataMeta || {}) }
+  }
+
+  const deriveCourseCoverUrl = (row) => {
+    const meta = mergeMeta(row)
+    let cover = row?.cover_image_url || meta?.cover_image_url || row?.module_layout_image_url || meta?.module_layout_image_url || null
+    cover = toPublicCoursesMediaUrl(cover) || cover
+    const coverPath = meta?.cover_image_path || meta?.coverImagePath || null
+    if (!cover && coverPath) {
+      const { data } = supabase.storage.from('courses-media').getPublicUrl(String(coverPath))
+      return data?.publicUrl || null
+    }
+    return cover
+  }
+
+  useEffect(() => {
+    let active = true
+    const run = async () => {
+      try {
+        const { data } = await supabase
+          .from('courses')
+          .select('id,title,cover_image_url,data,modules,module_layout_image_url')
+          .limit(200)
+        const map = {}
+        for (const row of Array.isArray(data) ? data : []) {
+          const t = String(row?.title || '').trim().toLowerCase()
+          if (!t) continue
+          const url = deriveCourseCoverUrl(row)
+          if (url) map[t] = url
+        }
+        if (active) setProducerCoversByTitle(map)
+      } catch (_) {}
+    }
+    run()
+    return () => { active = false }
+  }, [])
+
+  const connektCourseCoverOptions = useMemo(() => {
+    const svgToDataUrl = (svg) => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
+    const base = (opts) =>
+      svgToDataUrl(`
+        <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="600" viewBox="0 0 1200 600">
+          <defs>
+            <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0" stop-color="${opts.a}"/>
+              <stop offset="0.55" stop-color="${opts.b}"/>
+              <stop offset="1" stop-color="${opts.c}"/>
+            </linearGradient>
+            <radialGradient id="r" cx="0.2" cy="0.25" r="0.9">
+              <stop offset="0" stop-color="#ffffff" stop-opacity="0.22"/>
+              <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+            </radialGradient>
+          </defs>
+          <rect width="1200" height="600" fill="url(#g)"/>
+          <rect width="1200" height="600" fill="url(#r)"/>
+          <g opacity="0.16" fill="#fff">
+            <circle cx="140" cy="120" r="82"/>
+            <circle cx="310" cy="270" r="52"/>
+            <circle cx="980" cy="130" r="110"/>
+            <circle cx="1030" cy="390" r="75"/>
+            <circle cx="760" cy="480" r="46"/>
+          </g>
+          <g opacity="0.22" stroke="#fff" stroke-width="18" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            ${opts.icon}
+          </g>
+        </svg>
+      `)
+    return [
+      { id: 'med-1', label: 'Cardiologia', src: base({ a: '#0EA5E9', b: '#1D4ED8', c: '#0F172A', icon: '<path d="M280 350c80-120 160 20 240-90 70-95 185-40 190 55 4 78-65 145-150 200-85-55-170-120-210-165-35-41-55-84-70-100z"/>' }) },
+      { id: 'med-2', label: 'Neurologia', src: base({ a: '#7C3AED', b: '#2563EB', c: '#0F172A', icon: '<path d="M420 360c0-85 70-155 155-155 95 0 175 80 175 175 0 70-45 130-110 160"/><path d="M520 250c20 25 20 55 0 80"/><path d="M610 230c25 35 25 75 0 110"/><path d="M700 250c20 25 20 55 0 80"/>' }) },
+      { id: 'med-3', label: 'Radiologia', src: base({ a: '#06B6D4', b: '#0EA5E9', c: '#0B1220', icon: '<rect x="410" y="210" width="380" height="250" rx="22"/><path d="M520 280h160"/><path d="M600 250v220"/><circle cx="520" cy="360" r="32"/><circle cx="680" cy="360" r="32"/>' }) },
+      { id: 'med-4', label: 'Emergência', src: base({ a: '#EF4444', b: '#F97316', c: '#111827', icon: '<path d="M560 230h80v80h80v80h-80v80h-80v-80h-80v-80h80z"/>' }) },
+      { id: 'med-5', label: 'Pediatria', src: base({ a: '#22C55E', b: '#0EA5E9', c: '#0F172A', icon: '<path d="M520 430c35 35 125 35 160 0"/><circle cx="560" cy="320" r="18"/><circle cx="680" cy="320" r="18"/><path d="M600 210c-60 0-110 50-110 110 0 35 18 68 45 88"/><path d="M600 210c60 0 110 50 110 110 0 35-18 68-45 88"/>' }) },
+      { id: 'med-6', label: 'Ortopedia', src: base({ a: '#64748B', b: '#334155', c: '#0F172A', icon: '<path d="M520 220c35-15 70 15 55 50l-28 66c-10 24 6 52 32 52h42c26 0 42 28 32 52l-20 48c-10 24-38 40-62 34"/><path d="M670 220c-35-15-70 15-55 50l28 66c10 24-6 52-32 52h-42c-26 0-42 28-32 52l20 48c10 24 38 40 62 34"/>' }) },
+      { id: 'med-7', label: 'Cirurgia', src: base({ a: '#14B8A6', b: '#0EA5E9', c: '#0B1220', icon: '<path d="M520 250l160 160"/><path d="M680 250L520 410"/><path d="M500 230l-60-60"/><path d="M700 230l60-60"/>' }) },
+      { id: 'med-8', label: 'Dermatologia', src: base({ a: '#F59E0B', b: '#EF4444', c: '#0F172A', icon: '<path d="M600 210c70 60 130 140 130 220 0 85-60 140-130 140s-130-55-130-140c0-80 60-160 130-220z"/><path d="M600 330c0 40 30 70 70 70"/>' }) },
+      { id: 'med-9', label: 'Farmacologia', src: base({ a: '#A78BFA', b: '#38BDF8', c: '#0B1220', icon: '<path d="M520 260l160 160"/><path d="M560 220l-40 40"/><path d="M720 380l-40 40"/><rect x="470" y="310" width="260" height="120" rx="60"/><path d="M600 310v120"/>' }) },
+      { id: 'med-10', label: 'Odontologia', src: base({ a: '#60A5FA', b: '#22C55E', c: '#0F172A', icon: '<path d="M520 230c-40 30-50 95-30 150 25 70 10 160 60 160 25 0 30-55 50-55s25 55 50 55c50 0 35-90 60-160 20-55 10-120-30-150-25-20-60-10-80 10-20-20-55-30-80-10z"/>' }) },
+    ]
+  }, [])
+
+  const courses = useMemo(() => (Array.isArray(student?.courses) ? student.courses : []), [student?.courses])
+  const name = student?.name || user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email || 'Aluno'
+  const coverFallback = connektCourseCoverOptions[0]?.src || '/Preview.png'
+  const pickCoverForCourse = (titleValue, idx) => {
+    const options = connektCourseCoverOptions
+    if (!Array.isArray(options) || options.length === 0) return coverFallback
+    const t = String(titleValue || '').trim()
+    let hash = 0
+    for (let i = 0; i < t.length; i += 1) hash = (hash * 31 + t.charCodeAt(i)) >>> 0
+    const pos = (hash + Number(idx || 0)) % options.length
+    return options[pos]?.src || coverFallback
+  }
+
+  const continueItems = useMemo(() => {
+    const list = courses.slice(0, 6).map((c, idx) => ({
+      id: `${c?.course_name || 'curso'}-${idx}`,
+      courseId: c?.course_id || c?.courseId || c?.id || null,
+      courseTitle: c?.course_name || '',
+      category: c?.course_name || 'Cardiologia',
+      title: 'Nome da aula aqui....',
+      cover: (() => {
+        const t = String(c?.course_name || '').trim().toLowerCase()
+        return producerCoversByTitle[t] || c?.cover_image_url || coverFallback
+      })(),
+      progress: c?.progress || 0,
+      lessonsDone: 20,
+      lessonsTotal: 45,
+    }))
+    if (list.length > 0) return list
+    return [
+      { id: 'c1', courseId: null, courseTitle: 'Cardiologia', category: 'Cardiologia', title: 'Nome da aula aqui....', cover: coverFallback, progress: 67, lessonsDone: 20, lessonsTotal: 45 },
+      { id: 'c2', courseId: null, courseTitle: 'Cardiologia', category: 'Cardiologia', title: 'Nome da aula aqui....', cover: coverFallback, progress: 67, lessonsDone: 20, lessonsTotal: 45 },
+      { id: 'c3', courseId: null, courseTitle: 'Cardiologia', category: 'Cardiologia', title: 'Nome da aula aqui....', cover: coverFallback, progress: 67, lessonsDone: 20, lessonsTotal: 45 },
+    ]
+  }, [courses, coverFallback, producerCoversByTitle])
+
+  const myCourses = useMemo(() => {
+    const list = courses.slice(0, 8).map((c, idx) => ({
+      id: `${c?.course_name || 'curso'}-${idx}`,
+      courseId: c?.course_id || c?.courseId || c?.id || null,
+      title: c?.course_name || 'Nome do curso',
+      cover: (() => {
+        const t = String(c?.course_name || '').trim().toLowerCase()
+        return producerCoversByTitle[t] || c?.cover_image_url || pickCoverForCourse(c?.course_name || 'Nome do curso', idx)
+      })(),
+      progress: c?.progress || 0,
+    }))
+    if (list.length > 0) return list
+    return [
+      { id: 'm1', title: 'Nome do curso', cover: pickCoverForCourse('Nome do curso', 0), progress: 0 },
+      { id: 'm2', title: 'Nome do curso', cover: pickCoverForCourse('Nome do curso', 1), progress: 0 },
+      { id: 'm3', title: 'Nome do curso', cover: pickCoverForCourse('Nome do curso', 2), progress: 0 },
+      { id: 'm4', title: 'Nome do curso', cover: pickCoverForCourse('Nome do curso', 3), progress: 0 },
+    ]
+  }, [courses, coverFallback, connektCourseCoverOptions, producerCoversByTitle])
+
+  const featuredCourses = useMemo(() => {
+    const base = myCourses.slice(0, 6)
+    if (base.length > 0) return base
+    return [
+      { id: 'f1', title: 'Nome do curso', cover: pickCoverForCourse('Nome do curso', 10), progress: 0 },
+      { id: 'f2', title: 'Nome do curso', cover: pickCoverForCourse('Nome do curso', 11), progress: 0 },
+      { id: 'f3', title: 'Nome do curso', cover: pickCoverForCourse('Nome do curso', 12), progress: 0 },
+      { id: 'f4', title: 'Nome do curso', cover: pickCoverForCourse('Nome do curso', 13), progress: 0 },
+    ]
+  }, [myCourses, coverFallback, connektCourseCoverOptions])
+
+  const featuredCoursesAll = useMemo(() => {
+    if (Array.isArray(myCourses) && myCourses.length > 0) return myCourses
+    return featuredCourses
+  }, [featuredCourses, myCourses])
+
+  const simulados = useMemo(() => {
+    return [
+      { id: 's1', title: 'Nome do simulado', progress: 60, is_paid: false, price: 0 },
+      { id: 's2', title: 'Nome do simulado', progress: 60, is_paid: true, price: 49.9 },
+      { id: 's3', title: 'Nome do simulado', progress: 60, is_paid: false, price: 0 },
+      { id: 's4', title: 'Nome do simulado', progress: 60, is_paid: true, price: 29.9 },
+    ]
+  }, [])
+
+  const currentPath = typeof window !== 'undefined' ? window.location.pathname : '/aluno'
+
+  useEffect(() => {
+    if (!mobileNavOpen && !simuladosModalOpen && !featuredModalOpen) return
+    const prev = document?.body?.style?.overflow
+    if (document?.body?.style) document.body.style.overflow = 'hidden'
+    return () => {
+      if (document?.body?.style) document.body.style.overflow = prev || ''
+    }
+  }, [mobileNavOpen, simuladosModalOpen, featuredModalOpen])
+
+  return (
+    <div className="min-h-screen lg:h-screen w-full bg-[#EEF2FF] flex lg:overflow-hidden">
+      {mobileNavOpen ? (
+        <div className="lg:hidden fixed inset-0 z-[70]">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/40"
+            aria-label="Fechar menu"
+            onClick={() => setMobileNavOpen(false)}
+          />
+          <div className="absolute left-0 top-0 h-full w-[280px] max-w-[86vw] flex flex-col" style={{ background: 'linear-gradient(180deg, rgb(15, 6, 39) 0%, rgb(0, 0, 104) 100%)' }}>
+            <div className="flex items-center justify-between px-4 py-5">
+              <img src="/logo-expanded.svg" alt="Connekt" className="w-[110px] h-auto" />
+              <button
+                type="button"
+                className="h-10 w-10 rounded-full bg-white/10 text-white flex items-center justify-center"
+                aria-label="Fechar"
+                onClick={() => setMobileNavOpen(false)}
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="h-px mx-6" style={{ backgroundColor: 'rgb(47, 58, 86)' }} />
+            <nav className="flex-1 overflow-y-auto px-4 py-5 space-y-6">
+              {navSections.map((section, idx) => (
+                <div key={`${section.title}-${idx}`}>
+                  <div className="text-[11px] font-semibold text-white/50 uppercase tracking-wider px-2 mb-3">
+                    {section.title}
+                  </div>
+                  <div className="space-y-1">
+                    {section.items.map((item) => {
+                      const itemPathname = String(item.path || '').split('?')[0] || '/'
+                      const isActive = itemPathname === '/aluno'
+                        ? (currentPath === '/aluno' || currentPath.startsWith('/aluno/aula') || currentPath.startsWith('/aluno/curso'))
+                        : (itemPathname === '/aluno/simulados' ? currentPath.startsWith('/aluno/simulados') || currentPath === '/aluno/reposta-correta-simulado' : currentPath === itemPathname)
+                      return (
+                        <button
+                          key={item.label}
+                          type="button"
+                          onClick={() => {
+                            setMobileNavOpen(false)
+                            navigateTo(item.path)
+                          }}
+                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-[10px] text-[13px] font-semibold transition-colors ${
+                            isActive ? 'bg-[#0047BB] text-white' : 'text-white/80 hover:bg-white/10'
+                          }`}
+                        >
+                          <item.Icon className="w-5 h-5" />
+                          <span className="truncate">{item.label}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
+            </nav>
+          </div>
+        </div>
+      ) : null}
+      <ProducerSimuladosModal
+        open={simuladosModalOpen}
+        onClose={() => setSimuladosModalOpen(false)}
+        simulados={simulados}
+        onSelectSimulado={(s) => {
+          setSimuladosModalOpen(false)
+          const demoSuffix = isDemoStudent ? '&demo=1' : ''
+          navigateTo(`/aluno/simulados/acesso?simId=${encodeURIComponent(String(s.id))}${demoSuffix}`)
+        }}
+      />
+
+      <FeaturedCoursesModal
+        open={featuredModalOpen}
+        onClose={() => setFeaturedModalOpen(false)}
+        courses={featuredCoursesAll}
+        onSelectCourse={async (c) => {
+          setFeaturedModalOpen(false)
+          let cid = c?.courseId || null
+          if (!cid) cid = isDemoStudent ? 'demo' : await resolveCourseIdByTitle(c?.title)
+          if (!cid) return
+          const base = `/aluno/curso/${encodeURIComponent(String(cid))}`
+          navigateTo(isDemoStudent ? `${base}?demo=1` : base)
+        }}
+      />
+
+      <aside
+        className="hidden lg:flex w-[260px] h-screen flex-col"
+        style={{ background: 'linear-gradient(180deg, rgb(15, 6, 39) 0%, rgb(0, 0, 104) 100%)' }}
+      >
+        <div className="flex justify-center py-5">
+          <img src="/logo-expanded.svg" alt="Connekt" className="w-[119px] h-[35px]" />
+        </div>
+        <div
+          className="h-px mx-10"
+          style={{
+            backgroundColor: 'rgb(47, 58, 86)',
+          }}
+        />
+        <nav className="flex-1 overflow-y-auto px-4 py-5 space-y-6">
+          {navSections.map((section, idx) => (
+            <div key={`${section.title}-${idx}`}>
+              <div className="text-[11px] font-semibold text-white/50 uppercase tracking-wider px-2 mb-3">
+                {section.title}
+              </div>
+              <div className="space-y-1">
+                {section.items.map((item) => {
+                  const itemPathname = String(item.path || '').split('?')[0] || '/'
+                  const isActive = itemPathname === '/aluno'
+                    ? (currentPath === '/aluno' || currentPath.startsWith('/aluno/aula') || currentPath.startsWith('/aluno/curso'))
+                    : (itemPathname === '/aluno/simulados' ? currentPath.startsWith('/aluno/simulados') || currentPath === '/aluno/reposta-correta-simulado' : currentPath === itemPathname)
+                  return (
+                    <button
+                      key={item.label}
+                      type="button"
+                      onClick={() => navigateTo(item.path)}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-[10px] text-[13px] font-semibold transition-colors ${
+                        isActive ? 'bg-[#0047BB] text-white' : 'text-white/80 hover:bg-white/10'
+                      }`}
+                    >
+                      <item.Icon className="w-5 h-5" />
+                      <span className="truncate">{item.label}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+        </nav>
+      </aside>
+
+      <div className="flex-1 min-h-screen lg:h-screen flex flex-col overflow-hidden">
+        <button
+          type="button"
+          className="lg:hidden fixed top-3 left-3 z-[60] h-10 w-10 rounded-full bg-white border border-[#E3E4E5] flex items-center justify-center shadow-sm"
+          aria-label="Abrir menu"
+          onClick={() => setMobileNavOpen(true)}
+        >
+          <Menu className="w-5 h-5 text-[#22252B]" />
+        </button>
+        <Header />
+
+        <main className="flex-1 overflow-y-auto">
+          <div className="pb-6">
+            <div className="px-6 max-[1250px]:px-0">
+              <div className="max-w-[1180px] mx-auto max-[1250px]:max-w-none max-[1250px]:mx-0">
+                <div className="w-full h-[220px] overflow-hidden bg-white relative">
+                  <img src="/DSC06289%201.png" alt="" className="w-full h-full object-cover" />
+                  <div className="absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-white to-transparent pointer-events-none" />
+                </div>
+              </div>
+            </div>
+
+            <div className="px-6">
+              <div className="max-w-[1180px] mx-auto">
+                <div className="mt-6">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-5 h-5 rounded-[6px] bg-[#EEF2FF] flex items-center justify-center">
+                        <PlayCircle className="w-4 h-4 text-[#0047BB]" />
+                      </div>
+                      <div className="text-[14px] font-semibold text-[#22252B]">Continue assistindo</div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        className="w-9 h-9 rounded-full border border-[#22252B] bg-transparent flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+                        disabled={!canScrollContinueLeft}
+                        onClick={() => scrollContinueBy(-1)}
+                        aria-label="Anterior"
+                      >
+                        <ChevronLeft className="w-4 h-4 text-[#22252B]" />
+                      </button>
+                      <button
+                        type="button"
+                        className="w-9 h-9 rounded-full border border-[#22252B] bg-transparent flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+                        disabled={!canScrollContinueRight}
+                        onClick={() => scrollContinueBy(1)}
+                        aria-label="Próximo"
+                      >
+                        <ChevronRight className="w-4 h-4 text-[#22252B]" />
+                      </button>
+                    </div>
+                  </div>
+                  <div
+                    ref={continueScrollRef}
+                    onScroll={updateContinueScrollState}
+                    className="mt-3 flex gap-4 overflow-x-auto pb-2 scrollbar-hide"
+                  >
+                    {continueItems.map((it) => (
+                      <ContinueCard
+                        key={it.id}
+                        cover={it.cover}
+                        category={it.category}
+                        title={it.title}
+                        progress={it.progress}
+                        lessonsDone={it.lessonsDone}
+                        lessonsTotal={it.lessonsTotal}
+                        onClick={async () => {
+                          let cid = it.courseId || null
+                          if (!cid) cid = isDemoStudent ? 'demo' : await resolveCourseIdByTitle(it.courseTitle || it.category)
+                          if (!cid) return
+                          const qs = new URLSearchParams()
+                          qs.set('courseId', String(cid))
+                          if (isDemoStudent) qs.set('demo', '1')
+                          navigateTo(`/aluno/aula?${qs.toString()}`)
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <div className="mt-8">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-5 h-5 rounded-[6px] bg-[#EEF2FF] flex items-center justify-center">
+                        <BookOpen className="w-4 h-4 text-[#0047BB]" />
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="text-[14px] font-semibold text-[#22252B]">Meus cursos</div>
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-2 h-8 px-4 rounded-[8px] bg-[#EEF2FF] text-[#0047BB] text-[12px] font-semibold"
+                          onClick={() => navigateTo('/aluno/cursos')}
+                        >
+                          <span className="text-[16px] leading-none">+</span>
+                          Ver mais
+                        </button>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        className="w-9 h-9 rounded-full border border-[#22252B] bg-transparent flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+                        disabled={!canScrollMyCoursesLeft}
+                        onClick={() => scrollMyCoursesBy(-1)}
+                        aria-label="Anterior"
+                      >
+                        <ChevronLeft className="w-4 h-4 text-[#22252B]" />
+                      </button>
+                      <button
+                        type="button"
+                        className="w-9 h-9 rounded-full border border-[#22252B] bg-transparent flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+                        disabled={!canScrollMyCoursesRight}
+                        onClick={() => scrollMyCoursesBy(1)}
+                        aria-label="Próximo"
+                      >
+                        <ChevronRight className="w-4 h-4 text-[#22252B]" />
+                      </button>
+                    </div>
+                  </div>
+                  <div
+                    ref={myCoursesScrollRef}
+                    onScroll={updateMyCoursesScrollState}
+                    className="mt-3 flex gap-4 overflow-x-auto pb-2 scrollbar-hide"
+                  >
+                    {myCourses.map((c) => (
+                      <CourseCard
+                        key={c.id}
+                        cover={c.cover}
+                        title={c.title}
+                        progress={c.progress}
+                        onClick={async () => {
+                          let cid = c.courseId || null
+                          if (!cid) cid = isDemoStudent ? 'demo' : await resolveCourseIdByTitle(c.title)
+                          if (!cid) return
+                          const base = `/aluno/curso/${encodeURIComponent(String(cid))}`
+                          navigateTo(isDemoStudent ? `${base}?demo=1` : base)
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <div className="mt-8">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-5 h-5 rounded-[6px] bg-[#EEF2FF] flex items-center justify-center">
+                        <Star className="w-4 h-4 text-[#0047BB]" />
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="text-[14px] font-semibold text-[#22252B]">Cursos em destaque</div>
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-2 h-8 px-4 rounded-[8px] bg-[#EEF2FF] text-[#0047BB] text-[12px] font-semibold"
+                          onClick={() => setFeaturedModalOpen(true)}
+                        >
+                          <span className="text-[16px] leading-none">+</span>
+                          Ver mais
+                        </button>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        className="w-9 h-9 rounded-full border border-[#22252B] bg-transparent flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+                        disabled={!canScrollFeaturedLeft}
+                        onClick={() => scrollFeaturedBy(-1)}
+                        aria-label="Anterior"
+                      >
+                        <ChevronLeft className="w-4 h-4 text-[#22252B]" />
+                      </button>
+                      <button
+                        type="button"
+                        className="w-9 h-9 rounded-full border border-[#22252B] bg-transparent flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+                        disabled={!canScrollFeaturedRight}
+                        onClick={() => scrollFeaturedBy(1)}
+                        aria-label="Próximo"
+                      >
+                        <ChevronRight className="w-4 h-4 text-[#22252B]" />
+                      </button>
+                    </div>
+                  </div>
+                  <div
+                    ref={featuredScrollRef}
+                    onScroll={updateFeaturedScrollState}
+                    className="mt-3 flex gap-4 overflow-x-auto pb-2 scrollbar-hide"
+                  >
+                    {featuredCourses.map((c) => (
+                      <CourseCard
+                        key={c.id}
+                        cover={c.cover}
+                        title={c.title}
+                        progress={c.progress}
+                        locked
+                        onClick={async () => {
+                          let cid = c.courseId || null
+                          if (!cid) cid = isDemoStudent ? 'demo' : await resolveCourseIdByTitle(c.title)
+                          if (!cid) return
+                          const base = `/aluno/curso/${encodeURIComponent(String(cid))}`
+                          navigateTo(isDemoStudent ? `${base}?demo=1` : base)
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <div className="mt-8">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-5 h-5 rounded-[6px] bg-[#EEF2FF] flex items-center justify-center">
+                        <FileText className="w-4 h-4 text-[#0047BB]" />
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="text-[14px] font-semibold text-[#22252B]">Simulados</div>
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-2 h-8 px-4 rounded-[8px] bg-[#EEF2FF] text-[#0047BB] text-[12px] font-semibold"
+                          onClick={() => setSimuladosModalOpen(true)}
+                        >
+                          <span className="text-[16px] leading-none">+</span>
+                          Ver mais
+                        </button>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        className="w-9 h-9 rounded-full border border-[#22252B] bg-transparent flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+                        disabled={!canScrollSimuladosLeft}
+                        onClick={() => scrollSimuladosBy(-1)}
+                        aria-label="Anterior"
+                      >
+                        <ChevronLeft className="w-4 h-4 text-[#22252B]" />
+                      </button>
+                      <button
+                        type="button"
+                        className="w-9 h-9 rounded-full border border-[#22252B] bg-transparent flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+                        disabled={!canScrollSimuladosRight}
+                        onClick={() => scrollSimuladosBy(1)}
+                        aria-label="Próximo"
+                      >
+                        <ChevronRight className="w-4 h-4 text-[#22252B]" />
+                      </button>
+                    </div>
+                  </div>
+                  <div
+                    ref={simuladosScrollRef}
+                    onScroll={updateSimuladosScrollState}
+                    className="mt-3 flex gap-4 overflow-x-auto pb-2 scrollbar-hide"
+                  >
+                    {simulados.map((s) => (
+                      <SimuladoCard
+                        key={s.id}
+                        title={s.title}
+                        progress={s.progress}
+                        isPaid={s.is_paid ?? s.isPaid}
+                        price={s.price}
+                        onClick={() => {
+                          const demoSuffix = isDemoStudent ? '&demo=1' : ''
+                          navigateTo(`/aluno/simulados/acesso?simId=${encodeURIComponent(String(s.id))}${demoSuffix}`)
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                {loading ? (
+                  <div className="pb-6 text-[12px] text-[#737780]">Carregando...</div>
+                ) : null}
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-10">
+            <CourseFooter />
+          </div>
+        </main>
+      </div>
+    </div>
+  )
+}

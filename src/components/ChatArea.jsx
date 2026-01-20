@@ -1,12 +1,12 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useMemo, useRef, useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Heart, Edit2, Trash2, ChevronDown, Wand2, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 const ChatArea = ({ conversation, onAddReply, onLikePost, onLikeReply, onEditReply, onDeleteReply, onToggleStudentInfo, activeFilterData, currentUser, error, onRetry }) => {
   const [message, setMessage] = useState('');
-  const [showReplies, setShowReplies] = useState(false);
-  const [isComposerVisible, setComposerVisible] = useState(false);
+  const [showRepliesByPostId, setShowRepliesByPostId] = useState({});
+  const [replyingToPostId, setReplyingToPostId] = useState(null);
   const [editingReply, setEditingReply] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState(false);
@@ -19,12 +19,12 @@ const ChatArea = ({ conversation, onAddReply, onLikePost, onLikeReply, onEditRep
     if (threadRef.current) {
       threadRef.current.scrollTop = threadRef.current.scrollHeight;
     }
-  }, [conversation, showReplies, isComposerVisible, editingReply]);
+  }, [conversation, showRepliesByPostId, replyingToPostId, editingReply]);
   
   useEffect(() => {
     if (conversation?.id) {
-        setShowReplies(false);
-        setComposerVisible(false);
+        setShowRepliesByPostId({});
+        setReplyingToPostId(null);
         setEditingReply(null);
         setMessage('');
         setIsSubmitting(false);
@@ -34,10 +34,10 @@ const ChatArea = ({ conversation, onAddReply, onLikePost, onLikeReply, onEditRep
   }, [conversation?.id]);
 
   useEffect(() => {
-    if ((isComposerVisible || editingReply) && textareaRef.current) {
+    if ((replyingToPostId || editingReply) && textareaRef.current) {
       textareaRef.current.focus();
     }
-  }, [isComposerVisible, editingReply]);
+  }, [replyingToPostId, editingReply]);
 
   if (error) {
     return (
@@ -60,17 +60,7 @@ const ChatArea = ({ conversation, onAddReply, onLikePost, onLikeReply, onEditRep
     );
   }
   
-  const post = conversation.posts ? conversation.posts[0] : null;
-
-  if (!post) {
-      return (
-      <section className="flex flex-col h-full" aria-label="Área do chat">
-         <div className="flex-1 rounded-[14px] p-5 grid place-items-center text-[#6b7280]">
-           Carregando detalhes da conversa...
-        </div>
-      </section>
-      )
-  }
+  const posts = useMemo(() => (Array.isArray(conversation.posts) ? conversation.posts : []), [conversation.posts]);
 
   const headerData = activeFilterData || {
       courseName: conversation.subject || 'Curso',
@@ -81,6 +71,8 @@ const ChatArea = ({ conversation, onAddReply, onLikePost, onLikeReply, onEditRep
   const handleAction = async () => {
     const msg = message.trim();
     if (!msg || isSubmitting || submitSuccess || !currentUser) return;
+    const postId = replyingToPostId || (posts[posts.length - 1]?.id ?? null);
+    if (!postId && !editingReply) return;
   
     setIsSubmitting(true);
   
@@ -88,7 +80,7 @@ const ChatArea = ({ conversation, onAddReply, onLikePost, onLikeReply, onEditRep
       if (editingReply) {
         await onEditReply(editingReply.id, msg);
       } else {
-        await onAddReply(msg);
+        await onAddReply(postId, msg);
       }
       setSubmitSuccess(true);
     } catch (error) {
@@ -99,8 +91,8 @@ const ChatArea = ({ conversation, onAddReply, onLikePost, onLikeReply, onEditRep
     
     setTimeout(() => {
         setMessage('');
-        setShowReplies(true);
-        setComposerVisible(false);
+        if (postId) setShowRepliesByPostId((prev) => ({ ...prev, [postId]: true }));
+        setReplyingToPostId(null);
         setEditingReply(null);
         setSubmitSuccess(false);
     }, 1500);
@@ -109,12 +101,12 @@ const ChatArea = ({ conversation, onAddReply, onLikePost, onLikeReply, onEditRep
   const handleEditClick = (reply) => {
     setEditingReply(reply);
     setMessage(reply.content);
-    setComposerVisible(false);
+    setReplyingToPostId(null);
   };
 
   const handleCancel = () => {
     setMessage('');
-    setComposerVisible(false);
+    setReplyingToPostId(null);
     setEditingReply(null);
   };
   
@@ -123,9 +115,7 @@ const ChatArea = ({ conversation, onAddReply, onLikePost, onLikeReply, onEditRep
     setReplyToDeleteId(null);
   };
 
-
-  const composerOpen = isComposerVisible || editingReply;
-  const replies = post.replies || [];
+  const composerOpen = Boolean(replyingToPostId || editingReply);
 
   return (
     <section className="flex flex-col h-full" aria-label="Área do chat">
@@ -156,127 +146,145 @@ const ChatArea = ({ conversation, onAddReply, onLikePost, onLikeReply, onEditRep
         ref={threadRef}
         className="flex-1 rounded-[14px] p-5 flex flex-col min-h-0 overflow-auto"
       >
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="bg-[#F9FAFB] rounded-[8px] p-4"
-        >
-          <div className="flex items-start gap-4">
-            <img className="w-8 h-8 rounded-full object-cover" alt={post.author.name} src={conversation.student.avatar_url} />
-            <div className="flex-1">
-              <span className="font-semibold text-sm text-[#0f172a]">{post.author.name}</span>
-              <p className="my-2 text-[#737780] font-normal text-[14px] leading-relaxed">{post.text}</p>
-              <div className="flex items-center gap-2 text-gray-500 text-xs mt-3">
-                <button
-                  className="flex items-center gap-1.5 hover:text-red-500 transition-colors"
-                  onClick={() => onLikePost(post.id)}
-                >
-                  <Heart size={14} className={post.liked ? 'text-red-500 fill-current' : ''}/>
-                  Curtir {post.likes > 0 && `(${post.likes})`}
-                </button>
-                <span className="text-gray-300">•</span>
-                <button
-                  className="flex items-center gap-1.5 hover:text-indigo-600 transition-colors"
-                  onClick={() => { setComposerVisible(!isComposerVisible); setEditingReply(null); setMessage(''); }}
-                >
-                  <img src={`data:image/svg+xml;base64,${btoa('<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none"><path fill-rule="evenodd" clip-rule="evenodd" d="M10 12.6668H7.33333C6.59667 12.6668 6 12.0702 6 11.3335V7.66683C6 6.93016 6.59667 6.3335 7.33333 6.3335H12.6667C13.4033 6.3335 14 6.93016 14 7.66683V11.3335C14 12.0702 13.4033 12.6668 12.6667 12.6668H12V14.0002L10 12.6668Z" stroke="#6B7588" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M11.7393 6.33333V3.62333C11.7393 2.72667 11.0127 2 10.116 2H3.62333C2.72667 2 2 2.72667 2 3.62333V8.08733C2 8.984 2.72667 9.71067 3.62333 9.71067H4.43467V11.3333L6 10.29" stroke="#6B7588" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>')}`} alt="Responder" className="w-4 h-4" />
-                  Responder
-                </button>
-              </div>
-
-               {replies.length > 0 && (
-                <div 
-                  className="flex items-center gap-2 text-xs text-indigo-600 font-semibold mt-4 cursor-pointer hover:underline"
-                  onClick={() => setShowReplies(!showReplies)}
-                >
-                  <span>{showReplies ? 'Ocultar' : 'Ver'} {replies.length} respostas</span>
-                  <motion.div animate={{ rotate: showReplies ? 180 : 0 }}>
-                    <ChevronDown size={14} />
-                  </motion.div>
-                </div>
-              )}
-            </div>
+        {posts.length === 0 ? (
+          <div className="flex-1 rounded-[14px] p-5 grid place-items-center text-[#6b7280]">
+            Carregando detalhes da conversa...
           </div>
-          
-          <AnimatePresence>
-            {showReplies && (
+        ) : (
+          <div className="flex flex-col gap-4">
+            {posts.map((post, postIdx) => {
+              const replies = post.replies || [];
+              const showReplies = !!showRepliesByPostId[post.id];
+              const isReplyTarget = replyingToPostId === post.id;
+              return (
                 <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  exit={{ opacity: 0, height: 0 }}
-                  transition={{ duration: 0.3 }}
-                  className="mt-4 pl-12 flex flex-col gap-4 overflow-hidden"
+                  key={post.id}
+                  initial={{ opacity: 0, scale: 0.98 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ delay: postIdx * 0.03 }}
+                  className="bg-[#F9FAFB] rounded-[8px] p-4"
                 >
-                {replies.map((reply, idx) => (
-                  <motion.div
-                    key={reply.id}
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: idx * 0.05 }}
-                    className="p-0"
-                  >
-                  {editingReply?.id === reply.id ? (
-                    <div className="w-full"></div>
-                  ) : (
-                    <div className="flex items-start gap-3">
-                        <img className="w-8 h-8 rounded-full object-cover" alt={reply.author.name} src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHZpZXdCb3g9IjAgMCAzMiAzMiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iMTYiIGZpbGw9IiNGM0Y0RjYiLz4KPGNpcmNsZSBjeD0iMTYiIGN5PSIxMiIgcj0iNCIgZmlsbD0iIzlCOUI5OSIvPgo8cGF0aCBkPSJNOSAyNEM5IDIxIDEyIDE5IDE2IDE5UzIzIDIxIDIzIDI0SDI2QzI2IDIxIDIzIDE4IDE2IDE4UzYgMjEgNiAyNEg5WiIgZmlsbD0iIzlCOUI5OSIvPgo8L3N2Zz4K" />
-                        <div className="flex-1">
-                          <span className="font-semibold text-sm text-[#0f172a]">{reply.author.name}</span>
-                          <div className="mt-1.5 mb-2 text-[#737780] font-normal text-[14px] leading-relaxed">{reply.content}</div>
-                          <div className="flex items-center gap-2 text-gray-500 text-xs">
-                            {replyToDeleteId === reply.id ? (
-                                <div className="flex items-center gap-2 text-xs">
-                                    <span className="text-red-500 font-semibold">Excluir?</span>
-                                    <button
-                                        className="font-semibold text-red-500 hover:underline"
-                                        onClick={() => confirmDeleteReply(reply.id)}
-                                    >
-                                        Sim
-                                    </button>
-                                    <span className="text-gray-300">•</span>
-                                    <button
-                                        className="font-semibold text-gray-500 hover:underline"
-                                        onClick={() => setReplyToDeleteId(null)}
-                                    >
-                                        Não
-                                    </button>
-                                </div>
-                            ) : (
-                            <>
-                              <button
-                                className="flex items-center gap-1.5 hover:text-red-500 transition-colors"
-                                onClick={() => onLikeReply(reply.id)}
-                              >
-                                <Heart size={14} className={reply.liked_by_user ? "text-red-500 fill-current" : ""} />
-                                {reply.likes || 0} curtidas
-                              </button>
-                              <span className="text-gray-300">•</span>
-                              <button
-                                className="flex items-center gap-1.5 hover:text-indigo-600 transition-colors"
-                                onClick={() => handleEditClick(reply)}
-                              >
-                                <Edit2 size={14} />
-                                Editar
-                              </button>
-                              <span className="text-gray-300">•</span>
-                              <button 
-                                className="flex items-center gap-1.5 hover:text-red-500 transition-colors"
-                                onClick={() => setReplyToDeleteId(reply.id)}
-                              >
-                                <Trash2 size={14} />
-                                Excluir
-                              </button>
-                            </>
-                            )}
-                          </div>
+                  <div className="flex items-start gap-4">
+                    <img className="w-8 h-8 rounded-full object-cover" alt={post.author?.name || conversation.student?.name || 'Aluno'} src={conversation.student?.avatar_url} />
+                    <div className="flex-1">
+                      <span className="font-semibold text-sm text-[#0f172a]">{conversation.student?.name || post.author?.name || 'Aluno'}</span>
+                      <p className="my-2 text-[#737780] font-normal text-[14px] leading-relaxed">{post.text}</p>
+                      <div className="flex items-center gap-2 text-gray-500 text-xs mt-3">
+                        <button
+                          className="flex items-center gap-1.5 hover:text-red-500 transition-colors"
+                          onClick={() => onLikePost(post.id)}
+                        >
+                          <Heart size={14} className={post.liked ? 'text-red-500 fill-current' : ''}/>
+                          Curtir {post.likes > 0 && `(${post.likes})`}
+                        </button>
+                        <span className="text-gray-300">•</span>
+                        <button
+                          className="flex items-center gap-1.5 hover:text-indigo-600 transition-colors"
+                          onClick={() => { setReplyingToPostId(post.id); setEditingReply(null); setMessage(''); }}
+                        >
+                          <img src={`data:image/svg+xml;base64,${btoa('<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none"><path fill-rule="evenodd" clip-rule="evenodd" d="M10 12.6668H7.33333C6.59667 12.6668 6 12.0702 6 11.3335V7.66683C6 6.93016 6.59667 6.3335 7.33333 6.3335H12.6667C13.4033 6.3335 14 6.93016 14 7.66683V11.3335C14 12.0702 13.4033 12.6668 12.6667 12.6668H12V14.0002L10 12.6668Z" stroke="#6B7588" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/><path d="M11.7393 6.33333V3.62333C11.7393 2.72667 11.0127 2 10.116 2H3.62333C2.72667 2 2 2.72667 2 3.62333V8.08733C2 8.984 2.72667 9.71067 3.62333 9.71067H4.43467V11.3333L6 10.29" stroke="#6B7588" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>')}`} alt="Responder" className="w-4 h-4" />
+                          Responder
+                        </button>
+                      </div>
+
+                      {replies.length > 0 && (
+                        <div
+                          className="flex items-center gap-2 text-xs text-indigo-600 font-semibold mt-4 cursor-pointer hover:underline"
+                          onClick={() => setShowRepliesByPostId((s) => ({ ...s, [post.id]: !showReplies }))}
+                        >
+                          <span>{showReplies ? 'Ocultar' : 'Ver'} {replies.length} respostas</span>
+                          <motion.div animate={{ rotate: showReplies ? 180 : 0 }}>
+                            <ChevronDown size={14} />
+                          </motion.div>
                         </div>
+                      )}
                     </div>
-                  )}
-                  </motion.div>
-                ))}
-              </motion.div>
-            )}
-          </AnimatePresence>
+                  </div>
+
+                  <AnimatePresence>
+                    {showReplies && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        transition={{ duration: 0.3 }}
+                        className="mt-4 pl-12 flex flex-col gap-4 overflow-hidden"
+                      >
+                        {replies.map((reply, idx) => (
+                          <motion.div
+                            key={reply.id}
+                            initial={{ opacity: 0, x: -10 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            transition={{ delay: idx * 0.05 }}
+                            className="p-0"
+                          >
+                            {editingReply?.id === reply.id ? (
+                              <div className="w-full"></div>
+                            ) : (
+                              <div className="flex items-start gap-3">
+                                <img className="w-8 h-8 rounded-full object-cover" alt={reply.author?.name || 'Professor'} src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMzIiIGhlaWdodD0iMzIiIHZpZXdCb3g9IjAgMCAzMiAzMiIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHJlY3Qgd2lkdGg9IjMyIiBoZWlnaHQ9IjMyIiByeD0iMTYiIGZpbGw9IiNGM0Y0RjYiLz4KPGNpcmNsZSBjeD0iMTYiIGN5PSIxMiIgcj0iNCIgZmlsbD0iIzlCOUI5OSIvPgo8cGF0aCBkPSJNOSAyNEM5IDIxIDEyIDE5IDE2IDE5UzIzIDIxIDIzIDI0SDI2QzI2IDIxIDIzIDE4IDE2IDE4UzYgMjEgNiAyNEg5WiIgZmlsbD0iIzlCOUI5OSIvPgo8L3N2Zz4K" />
+                                <div className="flex-1">
+                                  <span className="font-semibold text-sm text-[#0f172a]">{reply.author?.name || 'Professor'}</span>
+                                  <div className="mt-1.5 mb-2 text-[#737780] font-normal text-[14px] leading-relaxed">{reply.content}</div>
+                                  <div className="flex items-center gap-2 text-gray-500 text-xs">
+                                    {replyToDeleteId === reply.id ? (
+                                      <div className="flex items-center gap-2 text-xs">
+                                        <span className="text-red-500 font-semibold">Excluir?</span>
+                                        <button
+                                          className="font-semibold text-red-500 hover:underline"
+                                          onClick={() => confirmDeleteReply(reply.id)}
+                                        >
+                                          Sim
+                                        </button>
+                                        <span className="text-gray-300">•</span>
+                                        <button
+                                          className="font-semibold text-gray-500 hover:underline"
+                                          onClick={() => setReplyToDeleteId(null)}
+                                        >
+                                          Não
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <>
+                                        <button
+                                          className="flex items-center gap-1.5 hover:text-red-500 transition-colors"
+                                          onClick={() => onLikeReply(reply.id)}
+                                        >
+                                          <Heart size={14} className={reply.liked_by_user ? "text-red-500 fill-current" : ""} />
+                                          {reply.likes || 0} curtidas
+                                        </button>
+                                        <span className="text-gray-300">•</span>
+                                        <button
+                                          className="flex items-center gap-1.5 hover:text-indigo-600 transition-colors"
+                                          onClick={() => handleEditClick(reply)}
+                                        >
+                                          <Edit2 size={14} />
+                                          Editar
+                                        </button>
+                                        <span className="text-gray-300">•</span>
+                                        <button
+                                          className="flex items-center gap-1.5 hover:text-red-500 transition-colors"
+                                          onClick={() => setReplyToDeleteId(reply.id)}
+                                        >
+                                          <Trash2 size={14} />
+                                          Excluir
+                                        </button>
+                                      </>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </motion.div>
+                        ))}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </motion.div>
+              )
+            })}
+          </div>
+        )}
 
           <AnimatePresence>
             {composerOpen && (
@@ -335,7 +343,6 @@ const ChatArea = ({ conversation, onAddReply, onLikePost, onLikeReply, onEditRep
               </motion.div>
             )}
           </AnimatePresence>
-        </motion.div>
       </div>
     </section>
   );

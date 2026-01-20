@@ -1,12 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, X } from 'lucide-react';
+import { ArrowLeft, X, HelpCircle, Bell, ChevronDown, User, Search } from 'lucide-react';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
+import SystemNotificationsModal from '@/components/SystemNotificationsModal.jsx';
+import { notificationsService } from '@/services/notificationsService.js';
+import ContentSearchModal from '@/components/ContentSearchModal.jsx';
 
 const Header = () => {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [searchValue, setSearchValue] = useState('');
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
   const [currentSearch, setCurrentSearch] = useState(window.location.search);
-  const { signOut } = useAuth();
+  const { signOut, user } = useAuth();
 
   const toggleDropdown = () => {
     setIsDropdownOpen(!isDropdownOpen);
@@ -28,8 +35,26 @@ const Header = () => {
     return () => window.removeEventListener('popstate', handleLocationChange);
   }, []);
 
+  useEffect(() => {
+    const userId = user?.id || null
+    const isAlunoPath = String(currentPath || '').startsWith('/aluno')
+    if (isAlunoPath) {
+      setUnreadCount(0)
+      return
+    }
+    if (!userId) {
+      setUnreadCount(0)
+      return
+    }
+    const unsub = notificationsService.subscribe(userId, (items) => {
+      setUnreadCount((Array.isArray(items) ? items : []).filter(n => n && !n.readAt).length)
+    })
+    return () => { try { unsub && unsub() } catch (_) {} }
+  }, [user?.id, currentPath])
+
   const isAproveitamento = currentPath === '/simulados-aproveitamento';
   const isSimuladoResposta = currentPath === '/reposta-correta-simulado';
+  const isAlunoPath = String(currentPath || '').startsWith('/aluno')
   const isFromPreview = new URLSearchParams(currentSearch).get('source') === 'preview';
   const goToSimulados = () => {
     window.history.pushState({}, '', '/simulados');
@@ -45,22 +70,73 @@ const Header = () => {
       }
       setIsDropdownOpen(false);
       // Garantir redirecionamento imediato para login
-      window.history.replaceState({}, '', '/login');
+      const isAluno = String(window.location.pathname || '').startsWith('/aluno')
+      window.history.replaceState({}, '', isAluno ? '/login-aluno' : '/login');
       window.dispatchEvent(new PopStateEvent('popstate'));
     } catch (e) {
       console.error('Exceção ao deslogar:', e?.message || String(e));
     }
   };
 
+  const navigateTo = (path) => {
+    try {
+      window.history.pushState({}, '', path);
+      setCurrentPath(window.location.pathname);
+      setCurrentSearch(window.location.search);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    } catch (_) {
+      window.location.assign(path);
+    }
+  }
+
+  const handleGoToProfile = () => {
+    setIsDropdownOpen(false)
+    const isAluno = String(window.location.pathname || '').startsWith('/aluno')
+    navigateTo(isAluno ? '/aluno/configuracoes?tab=perfil' : '/configuracoes?tab=perfil')
+  }
+
+  const handleGoToSettings = () => {
+    setIsDropdownOpen(false)
+    const isAluno = String(window.location.pathname || '').startsWith('/aluno')
+    navigateTo(isAluno ? '/aluno/configuracoes' : '/configuracoes')
+  }
+
+  useEffect(() => {
+    const q = String(searchValue || '').trim()
+    if (q.length > 0) {
+      setIsSearchOpen(true)
+      return
+    }
+    setIsSearchOpen(false)
+  }, [searchValue])
+
+  const handleSelectSearchResult = (item) => {
+    setIsSearchOpen(false)
+    if (!item) return
+    const isAluno = String(window.location.pathname || '').startsWith('/aluno')
+    if (item.type === 'Simulado') {
+      navigateTo(isAluno ? '/aluno/simulados/acesso?simId=s1' : '/simulados/acesso?simId=s1')
+      return
+    }
+    if (item.type === 'Curso') {
+      navigateTo(isAluno ? '/aluno' : '/produtos')
+      return
+    }
+    if (item.type === 'Aula') {
+      navigateTo(isAluno ? '/aluno/aula' : '/produtos')
+      return
+    }
+  }
+
   return (
     <header 
-      className={`sticky top-0 w-full flex items-center ${isAproveitamento ? 'justify-between' : 'justify-end'}`}
+      className={`sticky top-0 w-full flex items-center ${isSimuladoResposta ? 'justify-end' : 'justify-between'}`}
       style={{
         height: isSimuladoResposta ? '48px' : '60px',
         backgroundColor: 'rgb(255, 255, 255)',
         border: '1px solid rgb(227, 228, 229)',
         paddingRight: isSimuladoResposta ? '18px' : '22px',
-        paddingLeft: isAproveitamento ? '22px' : undefined,
+        paddingLeft: isSimuladoResposta ? undefined : '22px',
         zIndex: 2
       }}
     >
@@ -87,6 +163,26 @@ const Header = () => {
             Voltar aos simulados
           </button>
         </div>
+      )}
+
+      {!isSimuladoResposta && !isAproveitamento ? (
+        <div className="flex items-center gap-3 flex-1">
+          <div className="flex items-center gap-2 w-full max-w-[420px]" style={{ height: '36px', padding: '0 12px', borderRadius: '8px', border: '1px solid rgb(227, 228, 229)', backgroundColor: 'rgb(249, 250, 251)' }}>
+            <Search className="w-4 h-4 text-[#737780]" />
+            <input
+              value={searchValue}
+              onChange={(e) => setSearchValue(e.target.value)}
+              className="flex-1 bg-transparent outline-none text-[12px] text-[#22252B]"
+              placeholder="Busque por um termo desejado"
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') setSearchValue('')
+                if (e.key === 'Enter') setIsSearchOpen(true)
+              }}
+            />
+          </div>
+        </div>
+      ) : (
+        <div />
       )}
 
       {/* Centro (apenas rota de resposta do simulado): texto + imagem pequena */}
@@ -165,32 +261,32 @@ const Header = () => {
             aria-label="Ajuda"
             title="Ajuda"
           >
-            <img 
-              src="https://f1925bd3031c7289927c33dbfff0ab8f.cdn.bubble.io/f1758656816291x534640535926265100/Subtract.svg"
-              alt="Ajuda"
-              style={{ width: '12px', height: '12px' }}
-            />
+            <HelpCircle className="w-3 h-3 text-[#22252B]" />
           </button>
 
           {/* Botão 2 - Notificações */}
-          <button
-            className="flex items-center justify-center transition-all duration-200 hover:bg-black hover:bg-opacity-5"
-            style={{
-              width: '24px',
-              height: '24px',
-              backgroundColor: 'rgb(243, 244, 245)',
-              borderRadius: '2px',
-              cursor: 'pointer'
-            }}
-            aria-label="Notificações"
-            title="Notificações"
-          >
-            <img 
-              src="https://f1925bd3031c7289927c33dbfff0ab8f.cdn.bubble.io/f1758657103732x225759737813068900/Union.svg"
-              alt="Notificações"
-              style={{ width: '12px', height: '12px' }}
-            />
-          </button>
+          {!isAlunoPath ? (
+            <button
+              className="flex items-center justify-center transition-all duration-200 hover:bg-black hover:bg-opacity-5"
+              style={{
+                width: '24px',
+                height: '24px',
+                backgroundColor: 'rgb(243, 244, 245)',
+                borderRadius: '2px',
+                cursor: 'pointer'
+              }}
+              aria-label="Notificações"
+              title="Notificações"
+              onClick={() => setIsNotificationsOpen(v => !v)}
+            >
+              <span className="relative">
+                <Bell className="w-3 h-3 text-[#22252B]" />
+                {unreadCount > 0 ? (
+                  <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-[#0047BB]" />
+                ) : null}
+              </span>
+            </button>
+          ) : null}
 
           {/* Avatar + Caret */}
           <div
@@ -203,18 +299,13 @@ const Header = () => {
             onClick={toggleDropdown}
             onKeyDown={handleKeyDown}
           >
-            {/* Avatar */}
-            <img 
-              src="https://f1925bd3031c7289927c33dbfff0ab8f.cdn.bubble.io/cdn-cgi/image/w=32,h=32,f=auto,dpr=1.5,fit=contain/f1758657000108x375355944655553200/17495777b6f375488fdef0cd10bfe5a730b103ac.jpg"
-              alt="Avatar do usuário"
-              style={{ width: '28px', height: '28px', borderRadius: '100px' }}
-            />
-            {/* Caret */}
-            <img 
-              src="https://f1925bd3031c7289927c33dbfff0ab8f.cdn.bubble.io/f1758657042906x525379221023984260/Component%203.svg"
-              alt="Menu"
-              style={{ width: '12px', height: '12px' }}
-            />
+            <span
+              className="inline-flex items-center justify-center"
+              style={{ width: '28px', height: '28px', borderRadius: '100px', backgroundColor: 'rgb(243, 244, 245)' }}
+            >
+              <User className="w-4 h-4 text-[#22252B]" />
+            </span>
+            <ChevronDown className="w-3 h-3 text-[#22252B]" />
           </div>
 
           {/* Dropdown Menu (placeholder) */}
@@ -223,14 +314,30 @@ const Header = () => {
               className="absolute top-full right-0 mt-2 bg-white border border-gray-200 rounded-lg shadow-lg py-2 min-w-48"
               style={{ zIndex: 10 }}
             >
-              <button className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm">Perfil</button>
-              <button className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm">Configurações</button>
+              <button type="button" onClick={handleGoToProfile} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm">Perfil</button>
+              <button type="button" onClick={handleGoToSettings} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm">Configurações</button>
               <hr className="my-1" />
               <button onClick={handleLogout} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm text-red-600">Sair</button>
             </div>
           )}
+
+          {!isAlunoPath ? (
+            <SystemNotificationsModal
+              open={isNotificationsOpen}
+              onClose={() => setIsNotificationsOpen(false)}
+              user={user}
+            />
+          ) : null}
         </div>
       )}
+
+      <ContentSearchModal
+        open={isSearchOpen && !isSimuladoResposta && !isAproveitamento}
+        query={searchValue}
+        onChangeQuery={setSearchValue}
+        onClose={() => setIsSearchOpen(false)}
+        onSelect={handleSelectSearchResult}
+      />
     </header>
   );
 };

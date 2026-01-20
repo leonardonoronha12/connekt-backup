@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabaseClient'
+import { canUploadBytes, resolvePlanKey } from '@/services/planEntitlements'
 
 function isImage(file) {
   return !!file && typeof file.type === 'string' && file.type.startsWith('image/');
@@ -33,6 +34,17 @@ export async function uploadImageWithLog({ file, contentId = null, title = null 
   const maxBytes = 5 * 1024 * 1024; // 5MB
   if (typeof file.size === 'number' && file.size > maxBytes) {
     throw new Error('Tamanho máximo de 5MB excedido.');
+  }
+
+  try {
+    const { data } = await supabase.auth.getUser()
+    const uid = data?.user?.id || null
+    if (uid) {
+      const allowed = await canUploadBytes(uid, file.size, resolvePlanKey())
+      if (!allowed.ok) throw new Error('Limite de armazenamento atingido. Faça upgrade do seu plano para continuar.')
+    }
+  } catch (e) {
+    if (String(e?.message || '').toLowerCase().includes('limite de armazenamento')) throw e
   }
 
   // Em dev, usar proxy com Service Role para evitar bloqueios de RLS

@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Helmet } from 'react-helmet-async';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { Plus, Search, ChevronDown, Award, CalendarDays, ListFilter, X, Hash, Tag, Hourglass, Pencil, Trash, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
+import { useTaxonomy } from '@/contexts/TaxonomyContext';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -203,6 +205,15 @@ const QuestionBankPage = () => {
   const [isFormModified, setIsFormModified] = useState(false);
   const [originalFormData, setOriginalFormData] = useState(null);
 
+  useEffect(() => {
+    if (!isPopupOpen) return;
+    const prevOverflow = document?.body?.style?.overflow;
+    if (document?.body?.style) document.body.style.overflow = 'hidden';
+    return () => {
+      if (document?.body?.style) document.body.style.overflow = prevOverflow || '';
+    };
+  }, [isPopupOpen]);
+
   // Estados para controlar dropdowns
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const [showSubcategoryDropdown, setShowSubcategoryDropdown] = useState(false);
@@ -254,27 +265,20 @@ const QuestionBankPage = () => {
   const [editTagDescription, setEditTagDescription] = useState('');
   const [pendingDeleteTagId, setPendingDeleteTagId] = useState(null);
 
-  // Dados mockados para as opções
-  const [categories, setCategories] = useState([
-    { id: 1, name: 'Neurologia', color: '#8B5CF6', description: 'Especialidade médica que trata do sistema nervoso' },
-    { id: 2, name: 'Cardiologia', color: '#EF4444', description: 'Especialidade médica que trata do coração e sistema cardiovascular' },
-    { id: 3, name: 'Pediatria', color: '#10B981', description: 'Especialidade médica que cuida da saúde de crianças e adolescentes' },
-    { id: 4, name: 'Ortopedia', color: '#F59E0B', description: 'Especialidade médica que trata do sistema musculoesquelético' },
-    { id: 5, name: 'Dermatologia', color: '#06B6D4', description: 'Especialidade médica que trata da pele e seus anexos' }
-  ]);
-  const [subcategories, setSubcategories] = useState([
-    { id: 1, name: 'Subcategoria A', color: '#22C55E', description: 'Descrição da Subcategoria A' },
-    { id: 2, name: 'Subcategoria B', color: '#10B981', description: 'Descrição da Subcategoria B' },
-    { id: 3, name: 'Subcategoria C', color: '#34D399', description: 'Descrição da Subcategoria C' },
-    { id: 4, name: 'Subcategoria D', color: '#059669', description: 'Descrição da Subcategoria D' },
-  ]);
-  const [availableTags, setAvailableTags] = useState([
-    { id: 1, name: 'Tag', color: '#FFC107', description: 'Marcador genérico' },
-    { id: 2, name: 'Tag', color: '#2196F3', description: 'Etiqueta azul' },
-    { id: 3, name: 'Tag', color: '#F44336', description: 'Etiqueta vermelha' },
-    { id: 4, name: 'Tag Adicional', color: '#4CAF50', description: 'Etiqueta verde adicional' },
-    { id: 5, name: 'Outra Tag', color: '#9C27B0', description: 'Outra etiqueta roxa' }
-  ]);
+  const {
+    categories,
+    subcategories,
+    tags: availableTags,
+    createCategory,
+    updateCategory,
+    deleteCategory,
+    createSubcategory,
+    updateSubcategory,
+    deleteSubcategory,
+    createTag,
+    updateTag,
+    deleteTag,
+  } = useTaxonomy();
 
   useEffect(() => {
     loadQuestionBanks();
@@ -353,13 +357,12 @@ const QuestionBankPage = () => {
       return;
     }
 
-    const newCategory = {
-      id: categories.length + 1,
+    createCategory({
       name,
       color: newCategoryColor,
-      description: newCategoryDescription.trim()
-    };
-    setCategories(prev => [...prev, newCategory]);
+      description: newCategoryDescription.trim(),
+      tagIds: [],
+    });
     setFormData(prev => ({ ...prev, category: name }));
     setNewCategoryName('');
     setNewCategoryColor('#8B5CF6');
@@ -394,12 +397,13 @@ const QuestionBankPage = () => {
 
   const handleSaveEditCategory = () => {
     if (!editCategoryName.trim() || !editCategoryDescription.trim() || !editingCategoryId) return;
-    const oldName = categories.find(c => c.id === editingCategoryId)?.name;
-    setCategories(prev => prev.map(cat => (
-      cat.id === editingCategoryId
-        ? { ...cat, name: editCategoryName.trim(), color: editCategoryColor, description: editCategoryDescription.trim() }
-        : cat
-    )));
+    const id = String(editingCategoryId);
+    const oldName = categories.find(c => String(c.id) === id)?.name;
+    updateCategory(id, {
+      name: editCategoryName.trim(),
+      color: editCategoryColor,
+      description: editCategoryDescription.trim(),
+    });
     // Atualiza seleção se necessário
     setFormData(prev => ({ ...prev, category: prev.category === oldName ? editCategoryName.trim() : prev.category }));
     setEditingCategoryId(null);
@@ -410,9 +414,9 @@ const QuestionBankPage = () => {
   };
 
   const handleDeleteCategory = (id) => {
-    const cat = categories.find(c => c.id === id);
+    const cat = categories.find(c => String(c.id) === String(id));
     if (!cat) return;
-    setCategories(prev => prev.filter(c => c.id !== id));
+    deleteCategory(String(id));
     setFormData(prev => ({ ...prev, category: prev.category === cat.name ? '' : prev.category }));
     setPendingDeleteCategoryId(null);
     toast({ description: 'Categoria removida com sucesso!' });
@@ -422,13 +426,14 @@ const QuestionBankPage = () => {
   const handleCreateNewSubcategory = () => {
     if (newSubcategoryName.trim() && newSubcategoryDescription.trim() &&
         !subcategories.some(sub => sub.name === newSubcategoryName.trim())) {
-      const newSubcategory = {
-        id: subcategories.length + 1,
+      createSubcategory({
         name: newSubcategoryName.trim(),
         color: newSubcategoryColor,
-        description: newSubcategoryDescription.trim()
-      };
-      setSubcategories(prev => [...prev, newSubcategory]);
+        description: newSubcategoryDescription.trim(),
+        categoryIds: [],
+        tagIds: [],
+        productsCount: 0,
+      });
       setFormData(prev => ({ ...prev, subcategory: newSubcategoryName.trim() }));
       setNewSubcategoryName('');
       setNewSubcategoryColor('#22C55E');
@@ -463,12 +468,13 @@ const QuestionBankPage = () => {
 
   const handleSaveEditSubcategory = () => {
     if (!editSubcategoryName.trim() || !editSubcategoryDescription.trim() || !editingSubcategoryId) return;
-    const oldName = subcategories.find(s => s.id === editingSubcategoryId)?.name;
-    setSubcategories(prev => prev.map(sub => (
-      sub.id === editingSubcategoryId
-        ? { ...sub, name: editSubcategoryName.trim(), color: editSubcategoryColor, description: editSubcategoryDescription.trim() }
-        : sub
-    )));
+    const id = String(editingSubcategoryId);
+    const oldName = subcategories.find(s => String(s.id) === id)?.name;
+    updateSubcategory(id, {
+      name: editSubcategoryName.trim(),
+      color: editSubcategoryColor,
+      description: editSubcategoryDescription.trim(),
+    });
     // Atualiza seleção se necessário
     setFormData(prev => ({ ...prev, subcategory: prev.subcategory === oldName ? editSubcategoryName.trim() : prev.subcategory }));
     setEditingSubcategoryId(null);
@@ -479,9 +485,9 @@ const QuestionBankPage = () => {
   };
 
   const handleDeleteSubcategory = (id) => {
-    const sub = subcategories.find(s => s.id === id);
+    const sub = subcategories.find(s => String(s.id) === String(id));
     if (!sub) return;
-    setSubcategories(prev => prev.filter(s => s.id !== id));
+    deleteSubcategory(String(id));
     setFormData(prev => ({ ...prev, subcategory: prev.subcategory === sub.name ? '' : prev.subcategory }));
     setPendingDeleteSubcategoryId(null);
     toast({ description: 'Subcategoria removida com sucesso!' });
@@ -491,14 +497,12 @@ const QuestionBankPage = () => {
   const handleCreateNewTag = () => {
     if (newTagName.trim() && newTagDescription.trim() &&
         !availableTags.some(t => t.name === newTagName.trim())) {
-      const newTag = {
-        id: availableTags.length + 1,
+      const created = createTag({
         name: newTagName.trim(),
         color: newTagColor,
-        description: newTagDescription.trim()
-      };
-      setAvailableTags(prev => [...prev, newTag]);
-      setFormData(prev => ({ ...prev, tags: [...prev.tags, newTag] }));
+        description: newTagDescription.trim(),
+      });
+      setFormData(prev => ({ ...prev, tags: [...prev.tags, created] }));
       setNewTagName('');
       setNewTagColor('#0EA5E9');
       setNewTagDescription('');
@@ -532,17 +536,13 @@ const QuestionBankPage = () => {
 
   const handleSaveEditTag = () => {
     if (!editTagName.trim() || !editTagDescription.trim() || !editingTagId) return;
-    const updatedTag = {
-      id: editingTagId,
-      name: editTagName.trim(),
-      color: editTagColor,
-      description: editTagDescription.trim()
-    };
-    setAvailableTags(prev => prev.map(t => (t.id === editingTagId ? updatedTag : t)));
+    const id = String(editingTagId);
+    const updatedTag = { id, name: editTagName.trim(), color: editTagColor, description: editTagDescription.trim() };
+    updateTag(id, updatedTag);
     // Atualiza seleção se necessário
     setFormData(prev => ({
       ...prev,
-      tags: prev.tags.map(t => (t.id === editingTagId ? updatedTag : t))
+      tags: prev.tags.map(t => (String(t.id) === id ? updatedTag : t))
     }));
     setEditingTagId(null);
     setEditTagName('');
@@ -552,10 +552,10 @@ const QuestionBankPage = () => {
   };
 
   const handleDeleteTag = (id) => {
-    const tag = availableTags.find(t => t.id === id);
+    const tag = availableTags.find(t => String(t.id) === String(id));
     if (!tag) return;
-    setAvailableTags(prev => prev.filter(t => t.id !== id));
-    setFormData(prev => ({ ...prev, tags: prev.tags.filter(t => t.id !== id) }));
+    deleteTag(String(id));
+    setFormData(prev => ({ ...prev, tags: prev.tags.filter(t => String(t.id) !== String(id)) }));
     setPendingDeleteTagId(null);
     toast({ description: 'Tag removida com sucesso!' });
   };
@@ -573,6 +573,11 @@ const QuestionBankPage = () => {
     }, 100);
   };
 
+  const isTransientNetworkError = (err) => {
+    const msg = String(err?.message || err || '').toLowerCase();
+    return msg.includes('failed to fetch') || msg.includes('networkerror') || msg.includes('load failed') || msg.includes('err_network') || msg.includes('network');
+  };
+
   const loadQuestionBanks = async () => {
     setLoading(true);
     try {
@@ -586,9 +591,11 @@ const QuestionBankPage = () => {
         setQuestionBanks(data || []);
       }
     } catch (err) {
-      console.error('Error loading question banks:', err);
+      if (!isTransientNetworkError(err)) {
+        console.error('Error loading question banks:', err);
+      }
       toast({
-        description: "Erro ao conectar com o servidor",
+        description: isTransientNetworkError(err) ? "Sem conexão. Tente novamente em instantes." : "Erro ao conectar com o servidor",
         variant: "destructive"
       });
     } finally {
@@ -779,9 +786,11 @@ const QuestionBankPage = () => {
         }
       }
     } catch (err) {
-      console.error('Error creating question bank:', err);
+      if (!isTransientNetworkError(err)) {
+        console.error('Error creating question bank:', err);
+      }
       toast({
-        description: "Erro ao conectar com o servidor",
+        description: isTransientNetworkError(err) ? "Sem conexão. Tente novamente em instantes." : "Erro ao conectar com o servidor",
         variant: "destructive"
       });
       // Ocultar overlay
@@ -882,7 +891,7 @@ const QuestionBankPage = () => {
         <title>Banco de Questões – Connekt</title>
         <meta name="description" content="Gerencie seu banco de questões para simulados." />
       </Helmet>
-      <div className="flex flex-col bg-[#F8F9FB] overflow-hidden" style={{ height: '950px', minHeight: '950px' }}>
+      <div className="flex flex-col bg-[#F5F6FA]">
         <style dangerouslySetInnerHTML={{
           __html: `
             @media (max-height: 636px) {
@@ -944,7 +953,7 @@ const QuestionBankPage = () => {
           <DecorativeIcons />
         </div>
 
-        <main className="flex-1 py-2 sm:py-3 lg:py-6 w-full pb-3 sm:pb-4 lg:pb-8 compact-main ultra-compact-main" style={{ minHeight: 0, overflow: 'hidden' }}>
+        <main className="flex-1 py-2 sm:py-3 lg:py-6 w-full pb-3 sm:pb-4 lg:pb-8 compact-main ultra-compact-main" style={{ minHeight: 0 }}>
           <div className="max-w-[1076px] mx-auto px-4 sm:px-6">
             {/* Main Content */}
             <div className="flex-1">
@@ -979,9 +988,10 @@ const QuestionBankPage = () => {
       {/* Setup Overlay dentro do modal */}
 
       {/* Popup Modal */}
-      {isPopupOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl w-[800px] max-w-[95vw] max-h-[95vh] overflow-y-auto relative">
+      {isPopupOpen && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[9999] bg-black/50 overflow-y-auto">
+          <div className="min-h-screen flex items-center justify-center p-4">
+            <div className="bg-white rounded-lg shadow-xl w-[800px] max-w-[95vw] max-h-[85vh] overflow-y-auto relative my-8">
             {isSetupModalOpen && (
               <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[60] w-[272px] h-[138px] bg-white rounded-[8px] p-4 flex flex-col items-center justify-center text-center">
                 <Hourglass className="w-8 h-8 text-[#0B57D0] animate-spin" strokeWidth={3} />
@@ -1027,7 +1037,7 @@ const QuestionBankPage = () => {
             </div>
 
             {/* Content (mantém altura; desativa interação quando a div de setup estiver visível) */}
-            <div className={`p-8 space-y-8 max-w-[600px] mx-auto ${isSetupModalOpen ? 'opacity-0 pointer-events-none select-none' : ''}`}>
+            <div className={`p-8 pb-12 space-y-8 max-w-[600px] mx-auto ${isSetupModalOpen ? 'opacity-0 pointer-events-none select-none' : ''}`}>
               {/* Illustration */}
               <div className="flex justify-start mb-8">
                 <img src="/bank-icon.svg" alt="Bank Icon" className="w-20 h-20 mb-6" />
@@ -1053,81 +1063,76 @@ const QuestionBankPage = () => {
                 </div>
 
                 {/* Categoria */}
-                <div className="flex items-center gap-4 mb-6">
-                  <div className="flex-shrink-0 flex items-center gap-2">
-                    <img src="/icons/categorias-popup.svg" alt="Categoria" width="14" height="14" className="text-gray-600" />
-                    <span 
-                      style={{ 
-                        fontFamily: 'Inter', 
-                        fontSize: '14px', 
-                        fontWeight: 400, 
-                        color: '#737780' 
-                      }}
-                    >
-                      Categoria:
-                    </span>
-                  </div>
-                  
-                  <div className="flex-1 flex items-center" style={{ width: 'fit-content', height: 'fit-content' }}>
-                    {/* Categoria selecionada ou botão de adicionar */}
-                    {formData.category ? (
-                      <div className="flex items-center gap-2">
-                      <span 
-                        className="px-2 py-1 text-xs font-medium rounded flex items-center gap-1"
-                        style={{ 
-                          backgroundColor: 'rgba(173, 137, 247, 0.1)',
-                          color: '#AD89F7',
+                <div className="mb-6">
+                  <div className="flex items-center gap-4">
+                    <div className="flex-shrink-0 flex items-center gap-2">
+                      <img src="/icons/categorias-popup.svg" alt="Categoria" width="14" height="14" className="text-gray-600" />
+                      <span
+                        style={{
                           fontFamily: 'Inter',
-                          fontSize: '12px',
-                          fontWeight: 500
+                          fontSize: '14px',
+                          fontWeight: 400,
+                          color: '#737780',
                         }}
                       >
-                        <div 
-                          className="w-[10px] h-[10px]"
-                          style={{ backgroundColor: '#AD89F7' }}
-                        ></div>
-                        {formData.category}
-                        <button 
-                          onClick={() => setFormData(prev => ({ ...prev, category: '' }))}
-                          className="w-4 h-4 rounded-full flex items-center justify-center hover:bg-black hover:bg-opacity-10 transition-colors ml-1"
-                          style={{ color: '#AD89F7' }}
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
+                        Categoria:
                       </span>
                     </div>
-                  ) : (
-                    <div className="relative dropdown-container">
-                      <button 
-                        onClick={() => setShowCategoryDropdown(!showCategoryDropdown)}
-                        className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors" 
-                        style={{ background: 'none' }}
-                      >
-                        <Plus className="w-4 h-4 text-gray-600" />
-                      </button>
-                      
-                      {/* Dropdown de categorias */}
-                      {showCategoryDropdown && (
-                        <div 
-                          ref={categoryDropdownRef}
-                          className="absolute top-8 left-0 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[250px] max-h-80 overflow-y-auto"
-                        >
-                          <div className="p-3">
-                            {/* Campo de pesquisa */}
-                            <div className="mb-3">
-                              <input
-                                type="text"
-                                placeholder="Pesquisar categorias..."
-                                value={categorySearchTerm}
-                                onChange={(e) => setCategorySearchTerm(e.target.value)}
-                                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                style={{ 
-                                  fontFamily: 'Inter',
-                                  fontSize: '14px'
-                                }}
-                                autoFocus
-                              />
-                            </div>
+
+                    <div className="flex-1 flex items-center" style={{ width: 'fit-content', height: 'fit-content' }}>
+                      {formData.category ? (
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="px-2 py-1 text-xs font-medium rounded flex items-center gap-1"
+                            style={{
+                              backgroundColor: 'rgba(173, 137, 247, 0.1)',
+                              color: '#AD89F7',
+                              fontFamily: 'Inter',
+                              fontSize: '12px',
+                              fontWeight: 500,
+                            }}
+                          >
+                            <div className="w-[10px] h-[10px]" style={{ backgroundColor: '#AD89F7' }}></div>
+                            {formData.category}
+                            <button
+                              onClick={() => setFormData(prev => ({ ...prev, category: '' }))}
+                              className="w-4 h-4 rounded-full flex items-center justify-center hover:bg-black hover:bg-opacity-10 transition-colors ml-1"
+                              style={{ color: '#AD89F7' }}
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="relative dropdown-container">
+                          <button
+                            onClick={() => setShowCategoryDropdown(!showCategoryDropdown)}
+                            className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors"
+                            style={{ background: 'none' }}
+                          >
+                            <Plus className="w-4 h-4 text-gray-600" />
+                          </button>
+
+                          {showCategoryDropdown && (
+                            <div
+                              ref={categoryDropdownRef}
+                              className="absolute top-8 left-0 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[250px] max-h-80 overflow-y-auto"
+                            >
+                              <div className="p-3">
+                                <div className="mb-3">
+                                  <input
+                                    type="text"
+                                    placeholder="Pesquisar categorias..."
+                                    value={categorySearchTerm}
+                                    onChange={(e) => setCategorySearchTerm(e.target.value)}
+                                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                    style={{
+                                      fontFamily: 'Inter',
+                                      fontSize: '14px',
+                                    }}
+                                    autoFocus
+                                  />
+                                </div>
                             
                             {/* Lista de categorias filtradas */}
                             <div className="max-h-40 overflow-y-auto">
@@ -1359,72 +1364,70 @@ const QuestionBankPage = () => {
                                 </div>
                               </div>
                             )}
+                            </div>
                           </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
+                        )}
+                      </div>
+                    )}
                   </div>
+                </div>
+                  <div className="mt-1 text-[12px] text-[#9291A5]">Categorias que serão vinculadas</div>
                 </div>
 
                 {/* Subcategoria */}
-                <div className="flex items-center gap-4 mb-6">
-                  <div className="flex-shrink-0 flex items-center gap-2" style={{ width: 'fit-content', height: 'fit-content' }}>
-                    <img src="/icons/subcategoria-popup.svg" alt="Subcategoria" width="14" height="14" className="text-gray-600" />
-                    <span 
-                      style={{ 
-                        fontFamily: 'Inter', 
-                        fontSize: '14px', 
-                        fontWeight: 400, 
-                        color: '#737780' 
-                      }}
-                    >
-                      Subcategoria:
-                    </span>
-                  </div>
-                  
-                  <div className="flex-1 flex flex-row items-center" style={{ width: 'fit-content', height: 'fit-content' }}>
-                    {/* Subcategoria selecionada ou botão de adicionar */}
-                    {formData.subcategory ? (
-                      <div className="flex items-center gap-2">
-                      <span 
-                        className="px-2 py-1 text-xs font-medium rounded flex items-center gap-1"
-                        style={{ 
-                          backgroundColor: 'rgba(34, 197, 94, 0.1)',
-                          color: '#22C55E',
+                <div className="mb-6">
+                  <div className="flex items-center gap-4">
+                    <div className="flex-shrink-0 flex items-center gap-2" style={{ width: 'fit-content', height: 'fit-content' }}>
+                      <img src="/icons/subcategoria-popup.svg" alt="Subcategoria" width="14" height="14" className="text-gray-600" />
+                      <span
+                        style={{
                           fontFamily: 'Inter',
-                          fontSize: '12px',
-                          fontWeight: 500
+                          fontSize: '14px',
+                          fontWeight: 400,
+                          color: '#737780',
                         }}
                       >
-                        <div 
-                          className="w-[10px] h-[10px]"
-                          style={{ backgroundColor: '#22C55E' }}
-                        ></div>
-                        {formData.subcategory}
-                        <button 
-                          onClick={() => setFormData(prev => ({ ...prev, subcategory: '' }))}
-                          className="w-4 h-4 rounded-full flex items-center justify-center hover:bg-black hover:bg-opacity-10 transition-colors ml-1"
-                          style={{ color: '#22C55E' }}
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
+                        Subcategoria:
                       </span>
                     </div>
-                  ) : (
-                    <div className="relative dropdown-container">
-                      <button 
-                        onClick={() => setShowSubcategoryDropdown(!showSubcategoryDropdown)}
-                        className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors" 
-                        style={{ background: 'none' }}
-                      >
-                        <Plus className="w-4 h-4 text-gray-600" />
-                      </button>
-                      
-                      {/* Dropdown de subcategorias */}
-                      {showSubcategoryDropdown && (
-                        <div className="absolute top-8 left-0 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[260px]">
-                          <div className="p-2">
+
+                    <div className="flex-1 flex flex-row items-center" style={{ width: 'fit-content', height: 'fit-content' }}>
+                      {formData.subcategory ? (
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="px-2 py-1 text-xs font-medium rounded flex items-center gap-1"
+                            style={{
+                              backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                              color: '#22C55E',
+                              fontFamily: 'Inter',
+                              fontSize: '12px',
+                              fontWeight: 500,
+                            }}
+                          >
+                            <div className="w-[10px] h-[10px]" style={{ backgroundColor: '#22C55E' }}></div>
+                            {formData.subcategory}
+                            <button
+                              onClick={() => setFormData(prev => ({ ...prev, subcategory: '' }))}
+                              className="w-4 h-4 rounded-full flex items-center justify-center hover:bg-black hover:bg-opacity-10 transition-colors ml-1"
+                              style={{ color: '#22C55E' }}
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="relative dropdown-container">
+                          <button
+                            onClick={() => setShowSubcategoryDropdown(!showSubcategoryDropdown)}
+                            className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors"
+                            style={{ background: 'none' }}
+                          >
+                            <Plus className="w-4 h-4 text-gray-600" />
+                          </button>
+
+                          {showSubcategoryDropdown && (
+                            <div className="absolute top-8 left-0 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[260px]">
+                              <div className="p-2">
                             {/* Busca */}
                             <div className="mb-2">
                               <input
@@ -1635,47 +1638,48 @@ const QuestionBankPage = () => {
                         </div>
                       )}
                     </div>
-                  )}
+                      )}
+                    </div>
                   </div>
+                  <div className="mt-1 text-[12px] text-[#9291A5]">Subcategorias que serão vinculadas</div>
                 </div>
 
                 {/* Seção de Tags */}
-                <div className="flex items-center gap-2 mb-6 mt-2">
-                  <div className="flex-shrink-0 flex items-center gap-2" style={{ width: 'fit-content' }}>
-                    <img src="/icons/tag-popup.svg" alt="Tags" width="14" height="14" className="text-gray-600" />
-                    <span 
-                      style={{ 
-                        fontFamily: 'Inter', 
-                        fontSize: '14px', 
-                        fontWeight: 400, 
-                        color: '#737780' 
-                      }}
-                    >
-                      Tags:
-                    </span>
-                  </div>
-                  
-                  <div className="flex-1 flex flex-row items-center" style={{ width: 'fit-content', height: 'fit-content' }}>
-                    {/* Botão de adicionar tags - só aparece quando há tags disponíveis para selecionar */}
-                    {(() => {
-                      const unselectedTags = availableTags.filter(tag => 
-                        !(formData.tags || []).some(selectedTag => selectedTag && selectedTag.id === tag.id)
-                      );
-                      return unselectedTags.length > 0;
-                    })() && (
-                      <div className="relative dropdown-container">
-                        <button 
-                          onClick={() => setShowTagsDropdown(!showTagsDropdown)}
-                          className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors" 
-                          style={{ background: 'none' }}
-                        >
-                          <Plus className="w-4 h-4 text-gray-600" />
-                        </button>
-                        
-                        {/* Dropdown de tags */}
-                        {showTagsDropdown && (
-                          <div className="absolute top-8 left-0 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[260px]">
-                            <div className="p-2">
+                <div className="mb-6 mt-2">
+                  <div className="flex items-center gap-2">
+                    <div className="flex-shrink-0 flex items-center gap-2" style={{ width: 'fit-content' }}>
+                      <img src="/icons/tag-popup.svg" alt="Tags" width="14" height="14" className="text-gray-600" />
+                      <span
+                        style={{
+                          fontFamily: 'Inter',
+                          fontSize: '14px',
+                          fontWeight: 400,
+                          color: '#737780',
+                        }}
+                      >
+                        Tags:
+                      </span>
+                    </div>
+
+                    <div className="flex-1 flex flex-row items-center" style={{ width: 'fit-content', height: 'fit-content' }}>
+                      {(() => {
+                        const unselectedTags = availableTags.filter(tag =>
+                          !(formData.tags || []).some(selectedTag => selectedTag && selectedTag.id === tag.id)
+                        );
+                        return unselectedTags.length > 0;
+                      })() && (
+                        <div className="relative dropdown-container">
+                          <button
+                            onClick={() => setShowTagsDropdown(!showTagsDropdown)}
+                            className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors"
+                            style={{ background: 'none' }}
+                          >
+                            <Plus className="w-4 h-4 text-gray-600" />
+                          </button>
+
+                          {showTagsDropdown && (
+                            <div className="absolute top-8 left-0 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[260px]">
+                              <div className="p-2">
                               {/* Busca */}
                               <div className="mb-2">
                                 <input
@@ -1957,6 +1961,8 @@ const QuestionBankPage = () => {
                     </div>
                   </div>
                 </div>
+                <div className="mt-1 text-[12px] text-[#9291A5]">Tags que serão vinculadas</div>
+              </div>
 
                 {/* Descrição */}
                 <div>
@@ -1973,8 +1979,10 @@ const QuestionBankPage = () => {
                 </div>
               </div>
             </div>
+            </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   );

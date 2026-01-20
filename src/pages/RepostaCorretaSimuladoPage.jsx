@@ -41,7 +41,7 @@ function QuestionListItem({ index, label, status }) {
       type="button"
       data-action="open-question"
       data-value={index}
-      className="flex w-[220px] h-[36px] items-center justify-between rounded border border-transparent bg-white px-4 py-2 text-left opacity-100 hover:bg-gray-50 rotate-0"
+      className="flex w-full min-h-[36px] items-center justify-between rounded border border-transparent bg-white px-4 py-2 text-left opacity-100 hover:bg-gray-50 rotate-0"
     >
       <div className="flex items-center gap-3">
         <span className={`${statusColor} inline-flex items-center justify-center rounded-full ${statusColor === 'bg-green-500' || statusColor === 'bg-gray-300' || statusColor === 'bg-red-500' ? 'w-[16.250003814697266px] h-[16.250003814697266px]' : 'w-2 h-2'}`}>
@@ -84,6 +84,26 @@ function AproveitamentoCircle({ percent = 0 }) {
 }
 
 function RepostaCorretaSimuladoPage() {
+  const isAlunoView = typeof window !== 'undefined' && String(window.location.pathname || '').startsWith('/aluno/');
+  const params = (() => {
+    try {
+      const sp = new URLSearchParams(window.location.search || '');
+      return {
+        simId: sp.get('simId') || 'preview',
+        demo: sp.get('demo') === '1',
+        resultado: sp.get('resultado') === '1' || sp.get('resultado') === 'true' || sp.get('result') === '1',
+      };
+    } catch (_) {
+      return { simId: 'preview', demo: false, resultado: false };
+    }
+  })();
+  const pauseKey = `connekt_simulado_pause_${params.simId}`;
+  const finishKey = `connekt_simulado_finish_${params.simId}`;
+  const navigateTo = (path) => {
+    window.history.pushState({}, '', path);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  };
+
   const [activeQuestion, setActiveQuestion] = useState(1);
   const [preview, setPreview] = useState({
     title: '',
@@ -96,11 +116,18 @@ function RepostaCorretaSimuladoPage() {
   const [selectedIndices, setSelectedIndices] = useState([]); // índice selecionado por questão
   const [aproveitamentoPercent, setAproveitamentoPercent] = useState(0);
   const [remainingMs, setRemainingMs] = useState(0);
+  const [finishedAt, setFinishedAt] = useState(null);
+  const [finalRemainingMs, setFinalRemainingMs] = useState(null);
   const endTimeRef = useRef(null);
 
   useEffect(() => {
     try {
       const raw = localStorage.getItem('simulationPreview');
+      let paused = null;
+      try {
+        const rawPaused = localStorage.getItem(pauseKey);
+        if (rawPaused) paused = JSON.parse(rawPaused);
+      } catch (_) {}
       if (raw) {
         const parsed = JSON.parse(raw);
         setPreview({
@@ -111,14 +138,39 @@ function RepostaCorretaSimuladoPage() {
           questions: Array.isArray(parsed?.questions) ? parsed.questions : [],
         });
         const total = Array.isArray(parsed?.questions) ? parsed.questions.length : 0;
-        setQuestionStatuses(Array.from({ length: Math.max(total, 1) }, () => 'neutral'));
-        setSelectedIndices(Array.from({ length: Math.max(total, 1) }, () => null));
-        setActiveQuestion(1);
+        const baseStatuses = Array.from({ length: Math.max(total, 1) }, () => 'neutral');
+        const baseSelected = Array.from({ length: Math.max(total, 1) }, () => null);
+
+        const nextActiveQuestion = Math.max(1, Math.min(Number(paused?.activeQuestion) || 1, Math.max(total, 1)));
+        const nextSelected = Array.isArray(paused?.selectedIndices) ? paused.selectedIndices : null;
+        const nextStatuses = Array.isArray(paused?.questionStatuses) ? paused.questionStatuses : null;
+
+        setQuestionStatuses(Array.isArray(nextStatuses) ? baseStatuses.map((_, i) => nextStatuses[i] || 'neutral') : baseStatuses);
+        setSelectedIndices(Array.isArray(nextSelected) ? baseSelected.map((_, i) => (Number.isFinite(Number(nextSelected[i])) ? Number(nextSelected[i]) : null)) : baseSelected);
+        setActiveQuestion(nextActiveQuestion);
+        setAproveitamentoPercent(Math.max(0, Math.min(100, Number(paused?.aproveitamentoPercent) || 0)));
+
+        let finished = null;
+        try {
+          const rawFinished = localStorage.getItem(finishKey);
+          if (rawFinished) finished = JSON.parse(rawFinished);
+        } catch (_) {}
+
+        const fAt = finished?.finishedAt || null;
+        const fRemaining = Number.isFinite(Number(finished?.finalRemainingMs)) ? Number(finished.finalRemainingMs) : null;
+        setFinishedAt(fAt ? String(fAt) : null);
+        setFinalRemainingMs(fRemaining);
 
         // Inicializa o cronômetro com base na duração em minutos
         const durationMs = Math.max(0, (Number(parsed?.durationMinutes) || 0) * 60_000);
-        endTimeRef.current = Date.now() + durationMs;
-        setRemainingMs(durationMs);
+        const startRestMs = Math.max(0, Number(paused?.remainingMs) || durationMs);
+        const restMs = fRemaining != null ? Math.max(0, fRemaining) : startRestMs;
+        if (fRemaining != null || params.resultado) {
+          endTimeRef.current = null;
+        } else {
+          endTimeRef.current = Date.now() + restMs;
+        }
+        setRemainingMs(restMs);
       }
     } catch (err) {
       console.warn('Falha ao carregar simulationPreview:', err);
@@ -140,6 +192,13 @@ function RepostaCorretaSimuladoPage() {
   }, []);
 
   const totalQuestions = Array.isArray(preview.questions) ? preview.questions.length : 0;
+  const correctCount = questionStatuses.filter((s) => s === 'correct').length;
+  const wrongCount = questionStatuses.filter((s) => s === 'wrong').length;
+  const answeredCount = correctCount + wrongCount;
+  const isFinished = params.resultado || (typeof finishedAt === 'string' && finishedAt.length > 0) || (totalQuestions > 0 && answeredCount >= totalQuestions);
+  const durationMs = Math.max(0, (Number(preview.durationMinutes) || 0) * 60_000);
+  const usedMs = Math.max(0, durationMs - Math.max(0, Number(finalRemainingMs != null ? finalRemainingMs : remainingMs) || 0));
+  const resultTitle = isFinished ? 'Resultado final' : 'Simulado';
 
   const handleClick = (e) => {
     const el = e.target.closest('[data-action]');
@@ -149,26 +208,47 @@ function RepostaCorretaSimuladoPage() {
     switch (action) {
       case 'select-option':
         {
+          if (isFinished) break;
           const idx = Number(value);
           const q = preview.questions?.[activeQuestion - 1];
           const choices = Array.isArray(q?.choices) ? q.choices : [];
           const isCorrect = !!choices[idx]?.is_correct;
-          setSelectedIndices((prev) => {
-            const next = [...prev];
-            next[activeQuestion - 1] = idx;
-            return next;
-          });
-          setQuestionStatuses((prev) => {
-            const next = [...prev];
-            next[activeQuestion - 1] = isCorrect ? 'correct' : 'wrong';
-            return next;
-          });
-          // Atualiza aproveitamento
-          setAproveitamentoPercent((prevPct) => {
-            const correctCount = questionStatuses.reduce((acc, st, i) => acc + (i === activeQuestion - 1 ? (isCorrect ? 1 : 0) : (st === 'correct' ? 1 : 0)), 0);
-            const pct = totalQuestions > 0 ? Math.round((correctCount / totalQuestions) * 100) : 0;
-            return pct;
-          });
+          const nextSelected = [...selectedIndices];
+          nextSelected[activeQuestion - 1] = idx;
+          const nextStatuses = [...questionStatuses];
+          nextStatuses[activeQuestion - 1] = isCorrect ? 'correct' : 'wrong';
+          const nextCorrect = nextStatuses.filter((s) => s === 'correct').length;
+          const nextWrong = nextStatuses.filter((s) => s === 'wrong').length;
+          const nextAnswered = nextCorrect + nextWrong;
+          const pct = totalQuestions > 0 ? Math.round((nextCorrect / totalQuestions) * 100) : 0;
+          setSelectedIndices(nextSelected);
+          setQuestionStatuses(nextStatuses);
+          setAproveitamentoPercent(pct);
+
+          if (totalQuestions > 0 && nextAnswered >= totalQuestions && isAlunoView) {
+            try {
+              const fAt = new Date().toISOString();
+              localStorage.setItem(
+                finishKey,
+                JSON.stringify({
+                  finishedAt: fAt,
+                  finalRemainingMs: remainingMs,
+                  aproveitamentoPercent: pct,
+                  selectedIndices: nextSelected,
+                  questionStatuses: nextStatuses,
+                })
+              );
+              localStorage.removeItem(pauseKey);
+              setFinishedAt(fAt);
+              setFinalRemainingMs(remainingMs);
+            } catch (_) {}
+
+            const url = new URL('/aluno/reposta-correta-simulado', window.location.origin);
+            url.searchParams.set('simId', String(params.simId || 'preview'));
+            url.searchParams.set('resultado', '1');
+            if (params.demo) url.searchParams.set('demo', '1');
+            navigateTo(`${url.pathname}${url.search}`);
+          }
         }
         break;
       case 'open-question':
@@ -177,6 +257,30 @@ function RepostaCorretaSimuladoPage() {
       case 'skip':
         // Pular para próxima questão
         setActiveQuestion((q) => Math.min(q + 1, Math.max(totalQuestions, 1)));
+        break;
+      case 'pause':
+        if (!isAlunoView) break;
+        if (isFinished) break;
+        try {
+          localStorage.setItem(
+            pauseKey,
+            JSON.stringify({
+              pausedAt: new Date().toISOString(),
+              remainingMs,
+              activeQuestion,
+              selectedIndices,
+              questionStatuses,
+              aproveitamentoPercent,
+            })
+          );
+        } catch (_) {}
+        try {
+          const url = new URL('/aluno/simulados', window.location.origin);
+          if (params.demo) url.searchParams.set('demo', '1');
+          navigateTo(`${url.pathname}${url.search}`);
+        } catch (_) {
+          navigateTo(`/aluno/simulados${params.demo ? '?demo=1' : ''}`);
+        }
         break;
       default:
         break;
@@ -189,6 +293,212 @@ function RepostaCorretaSimuladoPage() {
   const choicesActive = Array.isArray(qActive?.choices) ? qActive.choices : [];
   const correctIdxActive = choicesActive.findIndex((c) => !!c?.is_correct);
 
+  const isUrl = (v) => typeof v === 'string' && v.trim().length > 0;
+  const normalize = (v) => (typeof v === 'string' ? v.trim() : '');
+  const resolveSupabasePublicUrl = (rawValue) => {
+    const u = normalize(rawValue);
+    if (!u) return u;
+    if (u.startsWith('data:') || u.startsWith('blob:')) return u;
+    try {
+      const parsed = new URL(u);
+      const m = parsed.pathname.match(/\/storage\/v1\/object\/sign\/([^/]+)\/(.+)$/);
+      if (m?.[1] && m?.[2]) {
+        parsed.pathname = `/storage/v1/object/public/${m[1]}/${m[2]}`;
+        parsed.search = '';
+        parsed.hash = '';
+        return parsed.toString();
+      }
+      return u;
+    } catch {
+      const base = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_SUPABASE_URL)
+        ? String(import.meta.env.VITE_SUPABASE_URL)
+        : '';
+      const bucket = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_SUPABASE_QUESTION_IMAGES_BUCKET)
+        ? String(import.meta.env.VITE_SUPABASE_QUESTION_IMAGES_BUCKET)
+        : 'question-images';
+      if (!base) return u;
+      let p = u.replace(/^\/+/, '');
+      if (p.startsWith(`${bucket}/`)) p = p.slice(bucket.length + 1);
+      if (p.startsWith('question-images/')) p = p.slice('question-images/'.length);
+      return `${base.replace(/\/+$/, '')}/storage/v1/object/public/${bucket}/${p}`;
+    }
+  };
+  const getText = (v) => {
+    if (v == null) return '';
+    if (typeof v === 'string') return v;
+    if (typeof v === 'number') return String(v);
+    return '';
+  };
+  const toParagraphs = (text) => {
+    const t = String(text || '').trim();
+    if (!t) return [];
+    return t.split(/\n{2,}/g).map((s) => s.trim()).filter(Boolean);
+  };
+  const extractYoutubeId = (url) => {
+    const u = normalize(url);
+    const m1 = u.match(/[?&]v=([^&]+)/);
+    if (m1?.[1]) return m1[1];
+    const m2 = u.match(/youtu\.be\/([^?&/]+)/);
+    if (m2?.[1]) return m2[1];
+    const m3 = u.match(/youtube\.com\/embed\/([^?&/]+)/);
+    if (m3?.[1]) return m3[1];
+    return null;
+  };
+  const extractVimeoId = (url) => {
+    const u = normalize(url);
+    const m1 = u.match(/vimeo\.com\/(\d+)/);
+    if (m1?.[1]) return m1[1];
+    const m2 = u.match(/player\.vimeo\.com\/video\/(\d+)/);
+    if (m2?.[1]) return m2[1];
+    return null;
+  };
+  const isVideoFile = (url) => /\.(mp4|webm|ogg)(\?|#|$)/i.test(normalize(url));
+
+  const InlineDeferredVideo = ({ src }) => {
+    const [armed, setArmed] = useState(false);
+    useEffect(() => {
+      setArmed(false);
+    }, [src]);
+    if (!src) return null;
+    const finalSrc = (typeof src === 'string' && src.includes('.supabase.co/storage/v1/object/')) ? `/api/media?u=${encodeURIComponent(src)}` : src
+    if (!armed) {
+      return (
+        <button
+          type="button"
+          className="w-full aspect-video rounded-[4px] border border-gray-200 bg-black flex items-center justify-center"
+          onClick={() => setArmed(true)}
+          aria-label="Carregar vídeo"
+        >
+          <div className="w-12 h-12 rounded-full bg-white/90 flex items-center justify-center text-black text-[18px]">
+            ▶
+          </div>
+        </button>
+      );
+    }
+    return (
+      <video
+        className="w-full rounded-[4px] border border-gray-200 bg-black"
+        controls
+        preload="none"
+        src={finalSrc}
+        onError={(e) => {
+          const v = e.currentTarget
+          if (!finalSrc.startsWith('/api/media?u=')) return
+          if (v?.dataset?.fallbackUsed === '1') return
+          v.dataset.fallbackUsed = '1'
+          v.src = src
+          try { v.load() } catch (_) {}
+        }}
+      />
+    );
+  };
+
+  const renderVideo = (url) => {
+    if (!isUrl(url)) return null;
+    const u = normalize(url);
+    const yt = extractYoutubeId(u);
+    if (yt) {
+      return (
+        <div className="w-full rounded-[4px] overflow-hidden border border-gray-200 bg-black">
+          <iframe
+            src={`https://www.youtube.com/embed/${yt}`}
+            title="Vídeo"
+            className="w-full aspect-video"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+          />
+        </div>
+      );
+    }
+    const vm = extractVimeoId(u);
+    if (vm) {
+      return (
+        <div className="w-full rounded-[4px] overflow-hidden border border-gray-200 bg-black">
+          <iframe
+            src={`https://player.vimeo.com/video/${vm}`}
+            title="Vídeo"
+            className="w-full aspect-video"
+            allow="autoplay; fullscreen; picture-in-picture"
+            allowFullScreen
+          />
+        </div>
+      );
+    }
+    if (u.includes('vdocipher') || u.includes('player.vdocipher.com')) {
+      return (
+        <div className="w-full rounded-[4px] overflow-hidden border border-gray-200 bg-black">
+          <iframe
+            src={u}
+            title="Vídeo"
+            className="w-full aspect-video"
+            allow="autoplay; fullscreen"
+            allowFullScreen
+          />
+        </div>
+      );
+    }
+    if (isVideoFile(u)) {
+      const src = resolveSupabasePublicUrl(u);
+      return (
+        <InlineDeferredVideo src={src} />
+      );
+    }
+    return (
+      <a href={u} target="_blank" rel="noreferrer" className="text-[12px] text-[#0047BB] underline">
+        Abrir vídeo
+      </a>
+    );
+  };
+  const renderImage = (url, alt) => {
+    if (!isUrl(url)) return null;
+    const u = normalize(url);
+    const src = resolveSupabasePublicUrl(u);
+    return (
+      <a
+        href={(u.startsWith('http://') || u.startsWith('https://')) ? u : src}
+        target="_blank"
+        rel="noreferrer"
+        className="block w-full overflow-hidden rounded-lg border border-gray-200 bg-white"
+      >
+        <img
+          src={src}
+          alt={alt || 'Imagem'}
+          className="w-full max-h-[420px] object-contain bg-white"
+          loading="lazy"
+          onError={(e) => {
+            const img = e.currentTarget;
+            if (img?.dataset?.fallbackUsed === '1') return;
+            img.dataset.fallbackUsed = '1';
+            if (u.startsWith('http://') || u.startsWith('https://')) img.src = u;
+          }}
+        />
+      </a>
+    );
+  };
+
+  const questionText =
+    getText(qActive?.stem) ||
+    getText(qActive?.body) ||
+    getText(qActive?.text) ||
+    getText(qActive?.statement) ||
+    getText(qActive?.question) ||
+    getText(qActive?.name) ||
+    '';
+
+  const questionImageUrl =
+    qActive?.image_url || qActive?.imageUrl || qActive?.question_image_url || qActive?.questionImageUrl || null;
+  const questionVideoUrl =
+    qActive?.video_url || qActive?.videoUrl || qActive?.question_video_url || qActive?.questionVideoUrl || null;
+  const resolutionText =
+    getText(qActive?.resolution) ||
+    getText(qActive?.resolucao) ||
+    getText(qActive?.explanation) ||
+    getText(qActive?.solution) ||
+    getText(qActive?.commentary) ||
+    '';
+  const resolutionImageUrl = qActive?.resolution_image_url || qActive?.resolutionImageUrl || null;
+  const resolutionVideoUrl = qActive?.resolution_video_url || qActive?.resolutionVideoUrl || null;
+
   function formatTime(ms) {
     const totalSec = Math.floor((Number(ms) || 0) / 1000);
     const h = Math.floor(totalSec / 3600);
@@ -199,20 +509,35 @@ function RepostaCorretaSimuladoPage() {
   }
 
   return (
-      <div className="w-[1374px] h-[908px] mx-auto grid grid-cols-12 items-start gap-[32px] pt-[32px] pl-[22px] pr-[22px] mb-[32px] rotate-0 opacity-100" onClick={handleClick}>
-        {/* Sidebar esquerdo */}
-        <div className="col-span-3 rounded-[4px] bg-white border-r border-transparent w-[280px] h-[577.6222534179688px] py-[44px] px-4 flex flex-col gap-[32px] m-0 ml-[-20px] rotate-0 opacity-100">
+    <div className="min-h-screen bg-[#F8F9FB] overflow-x-hidden" onClick={handleClick}>
+      <div className="mx-auto w-full max-w-[1400px] px-3 sm:px-4 py-4 sm:py-6">
+        {isAlunoView ? (
+          <div className="flex items-center justify-end mb-4">
+            <button
+              type="button"
+              data-action="pause"
+              disabled={isFinished}
+              className="h-[36px] px-4 rounded-[4px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#22252B] hover:bg-[#F6F5FA] w-full sm:w-auto"
+            >
+              Pausar simulado
+            </button>
+          </div>
+        ) : null}
+
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <aside className="lg:col-span-3 order-2 lg:order-none">
+          <div className="rounded-lg bg-white p-4 sm:p-6 flex flex-col gap-6">
             <div className="flex flex-col items-center gap-2">
               <div className="h-16 w-16 overflow-hidden rounded-full bg-gray-100">
-                <img src="/perfil rc.png" alt="Avatar" className="h-full w-full" />
+                <img src="/perfil rc.png" alt="Avatar" className="h-full w-full object-cover" />
               </div>
               <div className="text-center">
-            <p className="font-inter font-semibold text-[16px] leading-[24px] tracking-[0px] text-gray-800">{preview.title || 'Simulado'}</p>
-            <p className="font-inter font-normal text-[12px] leading-[20px] tracking-[0px] text-gray-500">Preview</p>
+                <p className="font-inter font-semibold text-[16px] leading-[24px] tracking-[0px] text-gray-800">{preview.title || 'Simulado'}</p>
+                <p className="font-inter font-normal text-[12px] leading-[20px] tracking-[0px] text-gray-500">Preview</p>
               </div>
             </div>
 
-            <div className="flex items-center justify-end w-[207px] h-[92px] gap-[32px] mx-auto rotate-0 opacity-100">
+            <div className="grid grid-cols-3 gap-3 sm:flex sm:items-center sm:justify-between sm:gap-6">
               <StatItem
                 label="Questões"
                 value={totalQuestions}
@@ -221,169 +546,236 @@ function RepostaCorretaSimuladoPage() {
               />
               <StatItem
                 label="Certas"
-                value={0}
+                value={correctCount}
                 color="text-green-600"
                 icon={<img src="/certas.png" alt="Certas" className="w-[44px] h-[44px] object-contain" />}
                 labelFirst
               />
               <StatItem
                 label="Erradas"
-                value={0}
+                value={wrongCount}
                 color="text-red-600"
                 icon={<img src="/erradas.png" alt="Erradas" className="w-[44px] h-[44px] object-contain" />}
                 labelFirst
               />
             </div>
 
-            <div>
-              <div className="w-[207px] h-[40px] rounded-[4px] bg-[#F6F5FA] p-[12px] flex items-center justify-between gap-[8px] rotate-0 opacity-100 mx-auto">
-                <span className="inline-flex items-center gap-[1px] font-inter font-medium text-[12px] leading-[16px] tracking-[0px] text-[#22252B]">
-                  <img src="/pontos.png" alt="Pontos" className="w-[14px] h-[14px] rounded-[600px] p-[1px] rotate-0 opacity-100 object-contain" />
-                  Total de pontos
-                </span>
-              <span className="inline-block w-[0.5px] h-[30px] bg-gray-200"></span>
-                <span className="text-sm font-semibold text-gray-800">{preview.totalPoints}</span>
-              </div>
+            <div className="rounded-md bg-[#F6F5FA] p-3 flex items-center justify-between gap-3">
+              <span className="inline-flex items-center gap-1 font-inter font-medium text-[12px] leading-[16px] tracking-[0px] text-[#22252B]">
+                <img src="/pontos.png" alt="Pontos" className="w-[14px] h-[14px] rounded-[600px] p-[1px] object-contain" />
+                Total de pontos
+              </span>
+              <span className="text-sm font-semibold text-gray-800">{preview.totalPoints}</span>
             </div>
 
-            <div>
-              {/* Label "Pular de ponto" removido conforme solicitado */}
-            </div>
-
-            <div className="w-[207px] h-[97px] rounded-[4px] border border-transparent bg-[#F6F5FA] p-[12px] flex flex-col gap-[16px] rotate-0 opacity-100 mx-auto">
-              <div className="w-[183px] h-[26px] flex flex-col gap-[8px] rotate-0 opacity-100">
-                <p className="font-inter font-medium text-[12px] leading-[16px] tracking-[0px] text-[#22252B]"><img src="/Tempo.png" alt="Tempo" className="inline-block h-[14px] w-[14px] mr-[1px] align-middle rotate-0 opacity-100 rounded-[600px] p-[1px]" /> Tempo restante</p>
-                <hr className="w-full border-t border-gray-200" />
-              </div>
-              <p className="font-inter font-semibold text-[24px] leading-[24px] tracking-[0px] text-center text-[#0047BB]">{formatTime(remainingMs)}</p>
-            </div>
-          </div>
-
-        {/* Conteúdo principal restaurado */}
-        <main className="col-span-6 -ml-[32px]">
-        <div className="w-[810px] h-[908px] rounded-[4px] pt-[16px] pr-[22px] pb-[16px] pl-[22px] flex flex-col gap-[18px] rotate-0 opacity-100 border border-transparent bg-white">
-            {/* Bloco conteúdo: cabeçalho movido para dentro deste container */}
-            <div className="w-[766px] h-[541px] rotate-0 opacity-100 flex flex-col gap-[18px]">
-              {/* Cabeçalho + linha agrupados em contêiner 766x48 */}
-              <div className="w-[766px] h-[48px] rotate-0 opacity-100 flex flex-col justify-between pb-[8px] border-b border-gray-200">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="inline-flex items-center justify-center h-[28px] min-w-[28px] rounded-[4px] bg-blue-600 px-2 text-[14px] leading-[16px] tracking-[0px] font-medium text-[#F6F5FA]">{activeQuestion}</span>
-                    <span className="text-sm font-semibold text-gray-800">Questão</span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="flex items-center w-[117px] h-[40px] gap-[8px] rounded-[4px] bg-[#F6F5FA] p-[12px] rotate-0 opacity-100">
-                      <span className="text-sm font-semibold text-gray-800">{preview.totalPoints}</span>
-                      <span className="inline-block w-[0.5px] h-[30px] bg-gray-200"></span>
-                      <span className="font-inter font-medium text-[12px] leading-[16px] tracking-[0px] text-[#22252B]">Pontos</span>
-                      <img src="/pontos.png" alt="Pontos" className="h-[14px] w-[14px] rotate-0 opacity-100 rounded-[600px] p-[1px]" />
-                    </div>
-                    <div className="flex items-center w-[117px] h-[40px] gap-[8px] rounded-[4px] bg-[#F6F5FA] p-[12px] rotate-0 opacity-100">
-                      <span className="text-sm font-semibold text-gray-800">{preview.attempts}</span>
-                      <span className="inline-block w-[0.5px] h-[30px] bg-gray-200"></span>
-                      <span className="font-inter font-medium text-[12px] leading-[16px] tracking-[0px] text-[#22252B]">Tentativas</span>
-                      <img src="/Tentativas.png" alt="Tentativas" className="h-[14px] w-[14px] rotate-0 opacity-100 rounded-[600px] p-[1px]" />
-                    </div>
-                  </div>
-                </div>
-                <hr className="w-full border-t border-transparent" />
-              </div>
-      <div className="text-sm leading-[22px] text-gray-800 w-[746px] h-[150px] rotate-0 opacity-100 flex flex-col justify-between">
-                <p className="font-inter font-normal text-[14px] leading-[22px] tracking-[0px] text-[#22252B]">
-                  {(() => {
-                    const q = preview.questions?.[activeQuestion - 1]
-                    return q?.stem || q?.name || 'Selecione questões no criador para visualizar aqui.'
-                  })()}
+            <div className="rounded-md bg-[#F6F5FA] p-3 flex flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <p className="font-inter font-medium text-[12px] leading-[16px] tracking-[0px] text-[#22252B] inline-flex items-center gap-1">
+                  <img src="/Tempo.png" alt="Tempo" className="h-[14px] w-[14px] rounded-[600px] p-[1px] object-contain" />
+                  {isFinished ? 'Tempo final' : 'Tempo restante'}
                 </p>
               </div>
-
-              {/* Imagem da questão */}
-              <img src="/resposta correta.png" alt="Imagem da questão" className="w-full h-[360px] rounded-[4px] object-cover" />
+              <hr className="w-full border-t border-gray-200" />
+              <p className="font-inter font-semibold text-[20px] sm:text-[24px] leading-[24px] tracking-[0px] text-center text-[#0047BB]">{formatTime(isFinished ? usedMs : remainingMs)}</p>
             </div>
-        <div className="w-[766px] min-h-[120px] rotate-0 opacity-100 flex flex-col gap-[12px] pb-[22px]">
-          {(() => {
-            const choices = choicesActive;
-            if (choices.length === 0) {
-              return (
-                <div className="text-virtualBlack text-sm">Nenhuma alternativa disponível para esta questão.</div>
-              )
-            }
-            return (
-              <>
-                {choices.map((c, i) => {
-                  const isSelected = selectedForActive === i;
-                  const isCorrect = !!c?.is_correct;
-                  const borderColor = isSelected ? (isCorrect ? 'border-green-500' : 'border-red-500') : 'border-transparent';
-                  const bgColor = isSelected ? (isCorrect ? 'bg-green-50' : 'bg-red-50') : 'bg-[#F6F5FA]';
-                  return (
-                    <div key={i} className="w-[766px] h-[46px] flex flex-row items-center gap-[18px] rotate-0 opacity-100">
-                      <button
-                        type="button"
-                        data-action="select-option"
-                        data-value={i}
-                        className={`inline-flex items-center justify-center w-[34px] h-[46px] rounded-[4px] border ${borderColor} ${bgColor} px-[8px] py-[8px] gap-[12px] rotate-0 opacity-100 text-[#22252B] text-[14px] leading-[20px] tracking-[0px] font-semibold`}
-                      >
-                        {String.fromCharCode(65 + i)}
-                      </button>
-                      <button
-                        type="button"
-                        data-action="select-option"
-                        data-value={i}
-                        className={`inline-flex items-center justify-between w-[714px] h-[46px] rounded-[4px] ${bgColor} pt-[8px] pb-[8px] pr-[12px] pl-[12px] gap-[12px] rotate-0 opacity-100 text-[#22252B] text-[14px] leading-[20px] tracking-[0px] font-normal text-left border ${borderColor}`}
-                      >
-                        {c?.label || ''}
-                      </button>
+          </div>
+        </aside>
+
+        <main className="lg:col-span-6 order-1 lg:order-none">
+          <div className="rounded-lg bg-white p-4 sm:p-6 flex flex-col gap-6">
+            {isFinished ? (
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-gray-200 pb-4">
+                <div className="text-[16px] font-semibold text-[#22252B]">{resultTitle}</div>
+                {isAlunoView ? (
+                  <button
+                    type="button"
+                    className="h-[36px] px-4 rounded-[4px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#22252B] hover:bg-[#F6F5FA]"
+                    onClick={() => {
+                      const url = new URL('/aluno/simulados', window.location.origin)
+                      if (params.demo) url.searchParams.set('demo', '1')
+                      navigateTo(`${url.pathname}${url.search}`)
+                    }}
+                  >
+                    Sair do simulado
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-b border-gray-200 pb-4">
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center justify-center h-[28px] min-w-[28px] rounded-[6px] bg-blue-600 px-2 text-[14px] leading-[16px] font-medium text-[#F6F5FA]">
+                  {activeQuestion}
+                </span>
+                <span className="text-sm font-semibold text-gray-800">Questão</span>
+              </div>
+              <div className="flex items-center gap-3 flex-wrap w-full sm:w-auto justify-start sm:justify-end">
+                <div className="flex items-center gap-2 rounded-md bg-[#F6F5FA] px-3 py-2">
+                  <span className="text-sm font-semibold text-gray-800">{preview.totalPoints}</span>
+                  <span className="text-[12px] text-[#22252B]">Pontos</span>
+                  <img src="/pontos.png" alt="Pontos" className="h-[14px] w-[14px] rounded-[600px] p-[1px]" />
+                </div>
+                <div className="flex items-center gap-2 rounded-md bg-[#F6F5FA] px-3 py-2">
+                  <span className="text-sm font-semibold text-gray-800">{preview.attempts}</span>
+                  <span className="text-[12px] text-[#22252B]">Tentativas</span>
+                  <img src="/Tentativas.png" alt="Tentativas" className="h-[14px] w-[14px] rounded-[600px] p-[1px]" />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-3">
+              {questionText ? (
+                <div className="text-sm leading-[22px] text-gray-800">
+                  {toParagraphs(questionText).length > 0 ? (
+                    <div className="flex flex-col gap-2">
+                      {toParagraphs(questionText).map((p, idx) => (
+                        <p key={idx} className="font-inter font-normal text-[14px] leading-[22px] tracking-[0px] text-[#22252B]">
+                          {p}
+                        </p>
+                      ))}
                     </div>
-                  );
-                })}
-                {typeof selectedForActive === 'number' && questionStatuses[activeQuestion - 1] === 'wrong' && correctIdxActive >= 0 && (
-                  <div className="mt-2 text-sm text-red-700">
-                    Resposta correta: {String.fromCharCode(65 + correctIdxActive)} — {choicesActive[correctIdxActive]?.label || ''}
+                  ) : (
+                    <p className="font-inter font-normal text-[14px] leading-[22px] tracking-[0px] text-[#22252B]">
+                      {questionText}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="text-sm leading-[22px] text-gray-800">
+                  <p className="font-inter font-normal text-[14px] leading-[22px] tracking-[0px] text-[#22252B]">
+                    Selecione questões no criador para visualizar aqui.
+                  </p>
+                </div>
+              )}
+
+              {questionVideoUrl ? renderVideo(questionVideoUrl) : null}
+              {questionImageUrl ? renderImage(questionImageUrl, 'Imagem da questão') : null}
+            </div>
+
+            <div className="flex flex-col gap-3">
+              {(() => {
+                const choices = choicesActive;
+                if (choices.length === 0) {
+                  return <div className="text-virtualBlack text-sm">Nenhuma alternativa disponível para esta questão.</div>;
+                }
+                return (
+                  <>
+                    {choices.map((c, i) => {
+                      const isSelected = selectedForActive === i;
+                      const isCorrect = !!c?.is_correct;
+                      const borderColor = isSelected ? (isCorrect ? 'border-green-500' : 'border-red-500') : 'border-transparent';
+                      const bgColor = isSelected ? (isCorrect ? 'bg-green-50' : 'bg-red-50') : 'bg-[#F6F5FA]';
+                      const optionText =
+                        getText(c?.label) ||
+                        getText(c?.text) ||
+                        getText(c?.name) ||
+                        getText(c?.value) ||
+                        '';
+                      const optionImageUrl = c?.image_url || c?.imageUrl || c?.image || c?.img_url || c?.imgUrl || null;
+                      const optionVideoUrl =
+                        c?.video_url ||
+                        c?.videoUrl ||
+                        c?.video ||
+                        c?.vimeo_url ||
+                        c?.vimeoUrl ||
+                        c?.youtube_url ||
+                        c?.youtubeUrl ||
+                        null;
+                      return (
+                        <div key={i} className="flex items-start gap-3">
+                          <button
+                            type="button"
+                            data-action="select-option"
+                            data-value={i}
+                            className={`inline-flex items-center justify-center h-9 w-9 sm:h-10 sm:w-10 rounded-md border ${borderColor} ${bgColor} text-[#22252B] text-[13px] sm:text-[14px] leading-[20px] font-semibold shrink-0`}
+                          >
+                            {String.fromCharCode(65 + i)}
+                          </button>
+                          <div className="flex-1 flex flex-col gap-2">
+                            <button
+                              type="button"
+                              data-action="select-option"
+                              data-value={i}
+                              className={`w-full rounded-md ${bgColor} px-3 py-2.5 sm:py-3 text-[#22252B] text-[13px] sm:text-[14px] leading-[20px] font-normal text-left border ${borderColor}`}
+                            >
+                              <span className="whitespace-pre-wrap break-words">{optionText}</span>
+                            </button>
+                            {optionImageUrl ? renderImage(optionImageUrl, `Imagem da alternativa ${String.fromCharCode(65 + i)}`) : null}
+                            {optionVideoUrl ? renderVideo(optionVideoUrl) : null}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {typeof selectedForActive === 'number' && questionStatuses[activeQuestion - 1] === 'wrong' && correctIdxActive >= 0 && (
+                      <div className="text-sm text-red-700">
+                        Resposta correta: {String.fromCharCode(65 + correctIdxActive)} — {getText(choicesActive[correctIdxActive]?.label) || getText(choicesActive[correctIdxActive]?.text) || getText(choicesActive[correctIdxActive]?.name) || getText(choicesActive[correctIdxActive]?.value) || ''}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
+
+            {(resolutionText || resolutionImageUrl || resolutionVideoUrl) ? (
+              <div className="rounded-lg bg-[#F6F5FA] p-3 sm:p-4 flex flex-col gap-3">
+                <div className="font-inter font-semibold text-[14px] leading-[20px] tracking-[0px] text-[#22252B]">
+                  Resolução
+                </div>
+                {resolutionText ? (
+                  <div className="text-[13px] leading-[20px] text-[#22252B] whitespace-pre-wrap break-words">
+                    {resolutionText}
                   </div>
-                )}
-              </>
-            )
-          })()}
-        </div>
-              {/* Nova div adicionada conforme solicitado, com um botão dentro */}
-              <div className="w-[766px] h-[46px] relative flex flex-row items-center justify-end gap-[18px] rotate-0 opacity-100">
-                <span className="absolute left-0 bottom-0 font-inter font-normal text-[12px] leading-[20px] tracking-[0px] text-[#737780]">Questão {activeQuestion} / {totalQuestions || 1}</span>
+                ) : null}
+                {resolutionVideoUrl ? renderVideo(resolutionVideoUrl) : null}
+                {resolutionImageUrl ? renderImage(resolutionImageUrl, 'Imagem da resolução') : null}
+              </div>
+            ) : null}
+
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <span className="font-inter font-normal text-[12px] leading-[20px] tracking-[0px] text-[#737780]">
+                Questão {activeQuestion} / {totalQuestions || 1}
+              </span>
+              {!isFinished ? (
                 <button
                   type="button"
                   data-action="skip"
-                  className="inline-flex items-center justify-center w-[75px] h-[35px] rounded-[4px] border-[1px] border-[#0047BB] bg-[#F6F5FA] pt-[10px] pr-[20px] pb-[10px] pl-[20px] gap-[8px] rotate-0 opacity-100 font-inter text-center text-[#0047BB] text-[14px] leading-[20px] tracking-[0px] font-semibold"
+                  className="inline-flex items-center justify-center h-[36px] w-full sm:w-auto rounded-md border border-[#0047BB] bg-[#F6F5FA] px-5 font-inter text-center text-[#0047BB] text-[14px] leading-[20px] font-semibold"
                 >
                   Pular
                 </button>
-              </div>
+              ) : null}
+            </div>
           </div>
-
-          {/* Estatísticas removidas do main: restauradas na sidebar esquerda */}
         </main>
 
-        {/* Sidebar direito (wrapper removido) */}
-          <div className="col-span-3 w-[220px] h-[908px] ml-auto mr-[-22px] flex flex-col gap-[32px] rotate-0 opacity-100">
-            <div className="rounded-xl border border-transparent bg-white p-4 text-center">
-              <div className="mx-auto mt-2 relative w-[170.59893798828125px] h-[88.31529235839844px]">
+        <aside className="lg:col-span-3 order-3 lg:order-none">
+          <div className="flex flex-col gap-6">
+            <div className="rounded-lg bg-white p-4 text-center">
+              <div className="mx-auto mt-2 relative w-[160px] h-[88px] sm:w-[180px] sm:h-[96px]">
                 <AproveitamentoCircle percent={aproveitamentoPercent} />
                 <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                  <span className="font-inter font-bold text-[31.99px] leading-[34.45px] tracking-[0px] text-center text-[#22252B]">{aproveitamentoPercent}%</span>
+                  <span className="font-inter font-bold text-[32px] leading-[34px] tracking-[0px] text-center text-[#22252B]">{aproveitamentoPercent}%</span>
                 </div>
               </div>
               <p className="font-inter font-medium text-[12px] leading-[16px] tracking-[0px] text-center text-[#22252B] mt-[10px]">Aproveitamento</p>
-              <img src="/logo connekt.png" alt="Connekt" className="mx-auto mt-3 w-[99.375px] h-[29.71004867553711px] rotate-0 opacity-100" />
+              <img src="/logo connekt.png" alt="Connekt" className="mx-auto mt-3 w-[99px] h-[30px]" />
             </div>
 
-            <div className="flex flex-col gap-2">
-              {(Array.isArray(preview?.questions) && preview.questions.length > 0
-                ? preview.questions
-                : Array.from({ length: Math.max(totalQuestions || 1, 1) }))
-                .map((_, i) => (
-                  <QuestionListItem key={i} index={i + 1} status={questionStatuses[i] || 'neutral'} />
-                ))}
+            <div className="rounded-lg bg-white p-3">
+              <div className="flex flex-col gap-2">
+                {(Array.isArray(preview?.questions) && preview.questions.length > 0
+                  ? preview.questions
+                  : Array.from({ length: Math.max(totalQuestions || 1, 1) }))
+                  .map((_, i) => (
+                    <QuestionListItem key={i} index={i + 1} status={questionStatuses[i] || 'neutral'} />
+                  ))}
+              </div>
             </div>
           </div>
+        </aside>
+        </div>
       </div>
+    </div>
   );
 }
 
