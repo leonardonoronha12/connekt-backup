@@ -168,6 +168,12 @@ function AppContent() {
   // Chave de localização para forçar remontagem em mudanças de query (ex.: bankId)
   const [locationKey, setLocationKey] = useState(() => window.location.search);
   const lastStableUrlRef = useRef(`${window.location.pathname}${window.location.search}`);
+  let forceResetPassword = false
+  try {
+    forceResetPassword = String(window.location.pathname || '').startsWith('/reset-password')
+  } catch (_) {
+    forceResetPassword = false
+  }
 
   useEffect(() => {
     const handleLocationChange = () => {
@@ -381,7 +387,7 @@ function AppContent() {
     }
   };
 
-  const isPublicView = useMemo(() => currentView === 'login' || currentView === 'loginAluno' || currentView === 'verifyEmail' || currentView === 'resetPassword' || currentView === 'termos', [currentView]);
+  const isPublicView = useMemo(() => (forceResetPassword || currentView === 'login' || currentView === 'loginAluno' || currentView === 'verifyEmail' || currentView === 'resetPassword' || currentView === 'termos'), [currentView, forceResetPassword]);
   const isDemoStudent = useMemo(() => {
     try {
       const host = String(window.location.hostname || '').toLowerCase()
@@ -430,7 +436,7 @@ function AppContent() {
           : currentView === 'loginAluno'
             ? <LoginAlunoPage />
             : <EmailVerificationPage />
-      ) : currentView === 'resetPassword' ? (
+      ) : (forceResetPassword || currentView === 'resetPassword') ? (
         <ResetPasswordPage />
       ) : currentView === 'termos' ? (
         <TermosPrivacidadePage />
