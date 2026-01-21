@@ -92,6 +92,7 @@ const Header = () => {
   const isAproveitamento = currentPath === '/simulados-aproveitamento';
   const isSimuladoResposta = currentPath === '/reposta-correta-simulado';
   const isAlunoPath = String(currentPath || '').startsWith('/aluno')
+  const showSearch = isAlunoPath
   const isFromPreview = new URLSearchParams(currentSearch).get('source') === 'preview';
   const goToSimulados = () => {
     window.history.pushState({}, '', '/simulados');
@@ -140,12 +141,17 @@ const Header = () => {
 
   useEffect(() => {
     const q = String(searchValue || '').trim()
+    if (!showSearch) {
+      if (q.length > 0) setSearchValue('')
+      setIsSearchOpen(false)
+      return
+    }
     if (q.length > 0) {
       setIsSearchOpen(true)
       return
     }
     setIsSearchOpen(false)
-  }, [searchValue])
+  }, [searchValue, showSearch])
 
   const handleSelectSearchResult = (item) => {
     setIsSearchOpen(false)
@@ -202,7 +208,7 @@ const Header = () => {
         </div>
       )}
 
-      {!isSimuladoResposta && !isAproveitamento ? (
+      {!isSimuladoResposta && !isAproveitamento && showSearch ? (
         <div className="flex items-center gap-3 flex-1">
           <div className="flex items-center gap-2 w-full max-w-[420px]" style={{ height: '36px', padding: '0 12px', borderRadius: '8px', border: '1px solid rgb(227, 228, 229)', backgroundColor: 'rgb(249, 250, 251)' }}>
             <Search className="w-4 h-4 text-[#737780]" />
@@ -379,7 +385,7 @@ const Header = () => {
       )}
 
       <ContentSearchModal
-        open={isSearchOpen && !isSimuladoResposta && !isAproveitamento}
+        open={showSearch && isSearchOpen && !isSimuladoResposta && !isAproveitamento}
         query={searchValue}
         onChangeQuery={setSearchValue}
         onClose={() => setIsSearchOpen(false)}
