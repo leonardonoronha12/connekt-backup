@@ -8,6 +8,8 @@ import CourseFooter from '@/components/CourseFooter'
 import { supabase } from '@/lib/supabaseClient'
 import { fetchConversationFeed } from '@/services/conversationService'
 
+const DEMO_PROMO_VIDEO_URL = 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4'
+
 const navSections = [
   {
     title: 'MENU',
@@ -28,6 +30,59 @@ const navSections = [
 function navigateTo(path) {
   window.history.pushState({}, '', path)
   window.dispatchEvent(new PopStateEvent('popstate'))
+}
+
+function parseJsonMaybe(value) {
+  if (!value) return null
+  if (typeof value === 'object') return value
+  if (typeof value !== 'string') return null
+  try { return JSON.parse(value) } catch (_) { return null }
+}
+
+function getCourseModules(row) {
+  const parsed = parseJsonMaybe(row?.modules)
+  if (Array.isArray(parsed)) return parsed
+  if (parsed && typeof parsed === 'object') {
+    if (Array.isArray(parsed.modules)) return parsed.modules
+    if (Array.isArray(parsed.items)) return parsed.items
+  }
+  const fromData = parseJsonMaybe(row?.data)
+  if (fromData && typeof fromData === 'object' && Array.isArray(fromData.modules)) return fromData.modules
+  return []
+}
+
+function getCourseMeta(row) {
+  const fromData = parseJsonMaybe(row?.data) || null
+  const parsedModules = parseJsonMaybe(row?.modules) || null
+  const fromModulesMeta = parsedModules && typeof parsedModules === 'object' ? (parsedModules.meta || null) : null
+  return { ...(fromModulesMeta || {}), ...(fromData || {}) }
+}
+
+function isNonEmptyString(v) {
+  return typeof v === 'string' && v.trim().length > 0
+}
+
+function toPublicCoursesMediaUrl(value) {
+  const raw = value == null ? '' : String(value)
+  if (!raw) return null
+  if (raw.startsWith('data:')) return raw
+  if (raw.startsWith('http://') || raw.startsWith('https://')) return raw
+  if (raw.includes('/')) {
+    const { data } = supabase.storage.from('courses-media').getPublicUrl(raw)
+    return data?.publicUrl || null
+  }
+  return raw
+}
+
+function vimeoEmbedUrlFromAny(value) {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+  if (raw.includes('player.vimeo.com/video/')) return raw
+  const idFromPlayer = raw.match(/player\.vimeo\.com\/video\/(\d+)/i)?.[1]
+  if (idFromPlayer) return `https://player.vimeo.com/video/${idFromPlayer}`
+  const idFromUrl = raw.match(/vimeo\.com\/(?:video\/)?(\d+)/i)?.[1]
+  if (idFromUrl) return `https://player.vimeo.com/video/${idFromUrl}`
+  return ''
 }
 
 function ProgressRing({ value }) {
@@ -796,6 +851,10 @@ export default function AlunoAulaPage() {
   const [isRecommendedOpen, setIsRecommendedOpen] = useState(true)
   const [openModules, setOpenModules] = useState({ m1: false, m2: false, m3: false })
   const [activeTab, setActiveTab] = useState('Sobre a aula')
+  const [courseRow, setCourseRow] = useState(null)
+  const [courseLoading, setCourseLoading] = useState(false)
+  const [courseError, setCourseError] = useState('')
+  const [resolvedPromoUrl, setResolvedPromoUrl] = useState('')
   const simuladosScrollRef = useRef(null)
   const [canScrollSimuladosLeft, setCanScrollSimuladosLeft] = useState(false)
   const [canScrollSimuladosRight, setCanScrollSimuladosRight] = useState(false)
@@ -824,6 +883,91 @@ export default function AlunoAulaPage() {
       return false
     }
   }, [])
+
+  useEffect(() => {
+    let active = true
+    const run = async () => {
+      const cid = String(courseId || '').trim()
+      if (!cid || cid === 'demo' || isDemoStudent) {
+        if (active) {
+          setCourseRow(null)
+          setCourseError('')
+          setCourseLoading(false)
+          setResolvedPromoUrl(DEMO_PROMO_VIDEO_URL)
+        }
+        return
+      }
+      setCourseLoading(true)
+      setCourseError('')
+      setResolvedPromoUrl('')
+      try {
+        const { data, error } = await supabase.from('courses').select('*').eq('id', cid).single()
+        if (!active) return
+        if (error) throw error
+        setCourseRow(data || null)
+      } catch (e) {
+        if (!active) return
+        setCourseRow(null)
+        setCourseError(String(e?.message || 'Erro ao carregar curso'))
+        setResolvedPromoUrl(DEMO_PROMO_VIDEO_URL)
+      } finally {
+        if (active) setCourseLoading(false)
+      }
+    }
+    run()
+    return () => { active = false }
+  }, [courseId, isDemoStudent])
+
+  useEffect(() => {
+    const meta = getCourseMeta(courseRow)
+    const promoPath = meta?.promo_video_path || meta?.promoVideoPath || null
+    const promoUrl = courseRow?.promo_video_url || meta?.promo_video_url || meta?.promoVideoUrl || null
+    const candidates = []
+    if (isNonEmptyString(promoPath)) candidates.push(toPublicCoursesMediaUrl(promoPath))
+    if (isNonEmptyString(promoUrl)) candidates.push(toPublicCoursesMediaUrl(promoUrl))
+    const found = candidates.find((v) => isNonEmptyString(v))
+    setResolvedPromoUrl(found ? String(found) : (isDemoStudent ? DEMO_PROMO_VIDEO_URL : ''))
+  }, [courseRow, isDemoStudent])
+
+  const resolved = useMemo(() => {
+    const meta = getCourseMeta(courseRow)
+    const modules = getCourseModules(courseRow)
+    const pickedModule =
+      (Array.isArray(modules) ? modules : []).find((m) => String(m?.id || '') === String(moduleId || '')) ||
+      (Array.isArray(modules) ? modules : [])[0] ||
+      null
+    const lessons = Array.isArray(pickedModule?.lessons) ? pickedModule.lessons : []
+    const pickedLesson =
+      lessons.find((l) => String(l?.id || '') === String(lessonId || '')) ||
+      lessons[0] ||
+      null
+
+    const lessonTitle = String(pickedLesson?.title || '').trim() || 'Aula'
+    const courseTitle = String(courseRow?.title || meta?.title || meta?.course_title || '').trim()
+    const teacherName = String(meta?.teacher_name || meta?.professor || meta?.teacher || '').trim()
+
+    const lessonVideoCandidates = [
+      pickedLesson?.video_url,
+      pickedLesson?.videoUrl,
+      pickedLesson?.video_src,
+      pickedLesson?.videoSrc,
+      pickedLesson?.url,
+    ].filter((v) => isNonEmptyString(v)).map((v) => toPublicCoursesMediaUrl(v))
+
+    const rawVideo = lessonVideoCandidates.find((v) => isNonEmptyString(v)) || resolvedPromoUrl || ''
+    const isMp4Like = /\.(mp4|webm|ogg)(\?.*)?$/i.test(String(rawVideo || ''))
+    const isHlsLike = /\.(m3u8)(\?.*)?$/i.test(String(rawVideo || ''))
+    const vimeoEmbed = vimeoEmbedUrlFromAny(rawVideo)
+    const mode = vimeoEmbed ? 'vimeo' : (isMp4Like || isHlsLike ? 'video' : (rawVideo ? 'video' : 'none'))
+
+    return {
+      courseTitle: courseTitle || 'Curso',
+      lessonTitle,
+      teacherName,
+      videoMode: mode,
+      videoUrl: mode === 'vimeo' ? vimeoEmbed : String(rawVideo || ''),
+    }
+  }, [courseRow, moduleId, lessonId, resolvedPromoUrl])
 
   useEffect(() => {
     const syncTabFromSearch = () => {
@@ -1027,7 +1171,7 @@ export default function AlunoAulaPage() {
                     Meus cursos
                   </button>
                   <span>{'>'}</span>
-                  <div className="text-[#737780]">Aula 03 - Prática clínica</div>
+                  <div className="text-[#737780]">{resolved.lessonTitle}</div>
                 </div>
                 <button
                   type="button"
@@ -1041,14 +1185,31 @@ export default function AlunoAulaPage() {
               <div className="mt-4 grid grid-cols-12 gap-6 items-start">
                 <div className="col-span-12 lg:col-span-8">
                   <div className="w-full rounded-[10px] overflow-hidden bg-black relative">
-                    <video className="w-full h-[330px] bg-black" controls poster="/Preview.png">
-                    </video>
+                    {resolved.videoMode === 'vimeo' ? (
+                      <iframe
+                        title="Aula"
+                        src={resolved.videoUrl}
+                        className="w-full h-[330px] bg-black"
+                        allow="autoplay; fullscreen; picture-in-picture"
+                        allowFullScreen
+                      />
+                    ) : resolved.videoMode === 'video' ? (
+                      <video className="w-full h-[330px] bg-black" controls poster="/Preview.png">
+                        {resolved.videoUrl ? <source src={resolved.videoUrl} /> : null}
+                      </video>
+                    ) : (
+                      <div className="w-full h-[330px] bg-black flex items-center justify-center px-6 text-center">
+                        <div className="text-[12px] text-white/80">
+                          {courseLoading ? 'Carregando vídeo…' : (courseError ? 'Não foi possível carregar o vídeo.' : 'Vídeo não encontrado para esta aula.')}
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <div className="mt-3">
-                    <div className="text-[12px] text-[#737780]">Aula 03 - Práticas clínicas</div>
+                    <div className="text-[12px] text-[#737780]">{resolved.courseTitle}</div>
                     <div className="mt-1 flex items-center gap-3 text-[10px] text-[#737780]">
-                      <div>Professor: Dr. Francisco Guerra</div>
+                      {resolved.teacherName ? <div>Professor: {resolved.teacherName}</div> : null}
                       <div className="flex items-center gap-1">
                         <span className="text-[#F59E0B]">★</span>
                         <span className="text-[#22252B] font-semibold">4.8</span>
