@@ -217,16 +217,20 @@ export const AuthProvider = ({ children }) => {
     return { error };
   }, []);
 
-  const sendSignupConfirmationEmail = useCallback(async (email) => {
+  const sendSignupConfirmationEmail = useCallback(async (email, password, redirectPath = '/dashboard?email_confirmed=true') => {
     try {
       const em = String(email || '').trim().toLowerCase()
       if (!em) return { ok: false, error: 'missing_email' }
+      const pwd = String(password || '').trim()
+      if (!pwd) return { ok: false, error: 'missing_password' }
       const origin = getAuthRedirectOrigin()
-      const redirectTo = `${origin}/dashboard?email_confirmed=true`
+      const safePath = String(redirectPath || '/dashboard?email_confirmed=true')
+      const normalizedPath = safePath.startsWith('/') ? safePath : `/${safePath}`
+      const redirectTo = `${origin}${normalizedPath}`
       const r = await fetch('/api/auth/confirmation-email', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: em, redirectTo }),
+        body: JSON.stringify({ email: em, password: pwd, redirectTo }),
       })
       if (!r.ok) return { ok: false, error: 'send_failed' }
       return { ok: true }

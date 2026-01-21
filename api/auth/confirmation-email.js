@@ -59,7 +59,7 @@ function supabaseServiceRoleKey() {
   return readEnv('SUPABASE_SERVICE_ROLE_KEY', readEnv('SUPABASE_SERVICE_ROLE', ''))
 }
 
-async function generateSignupLink({ email, redirectTo }) {
+async function generateSignupLink({ email, password, redirectTo }) {
   const baseUrl = supabaseBaseUrl()
   const serviceKey = supabaseServiceRoleKey()
   if (!baseUrl || !serviceKey) return { ok: false, error: 'missing_supabase_admin' }
@@ -68,6 +68,7 @@ async function generateSignupLink({ email, redirectTo }) {
   const body = {
     type: 'signup',
     email,
+    password,
     options: redirectTo ? { redirect_to: redirectTo } : undefined,
   }
 
@@ -162,13 +163,15 @@ export default async function handler(req, res) {
       const payload = await readJsonBody(req)
       const email = String(payload.email || '').trim().toLowerCase()
       if (!isValidEmail(email)) return json(res, 400, { error: 'invalid_email' })
+      const password = String(payload.password || '').trim()
+      if (!password) return json(res, 400, { error: 'missing_password' })
 
       const siteUrl = readEnv('SITE_URL', readEnv('VITE_SITE_URL', readEnv('VITE_APP_BASE_URL', '')))
       const siteOrigin = safeOriginFromUrl(siteUrl)
       const defaultRedirectTo = siteOrigin ? `${siteOrigin}/dashboard?email_confirmed=true` : ''
       const redirectTo = String(payload.redirectTo || defaultRedirectTo || '').trim()
 
-      const link = await generateSignupLink({ email, redirectTo })
+      const link = await generateSignupLink({ email, password, redirectTo })
       if (!link.ok) return json(res, 500, { error: link.error, details: link.details || null })
       if (!link.actionLink) return json(res, 500, { error: 'missing_action_link' })
 
@@ -191,4 +194,3 @@ export default async function handler(req, res) {
     return json(res, 500, { error: 'internal_error', message: e?.message || String(e) })
   }
 }
-
