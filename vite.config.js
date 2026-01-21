@@ -377,7 +377,12 @@ export default defineConfig(({ mode }) => {
                     '@babel/traverse',
                     '@babel/generator',
                     '@babel/types'
-                ]
+                ],
+                output: {
+                    generatedCode: {
+                        constBindings: false,
+                    },
+                },
             }
         }
     };
