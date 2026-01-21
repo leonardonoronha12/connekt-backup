@@ -9,3 +9,5 @@ node_modules
 dist
 .vercel
 .env*.local
+backups/*.zip
+backups/*.7z
