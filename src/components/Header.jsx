@@ -65,8 +65,22 @@ const Header = () => {
 
   useEffect(() => {
     const handleLocationChange = () => {
-      setCurrentPath(window.location.pathname);
+      const path = window.location.pathname
+      setCurrentPath(path);
       setCurrentSearch(window.location.search);
+      try {
+        const isAluno =
+          path === '/login-aluno' ||
+          path === '/aluno/login' ||
+          path === '/aluno' ||
+          String(path || '').startsWith('/aluno/')
+        const isProdutor = path === '/login'
+        if (isAluno) {
+          try { localStorage.setItem('connekt_login_mode', 'aluno') } catch (_) {}
+        } else if (isProdutor) {
+          try { localStorage.setItem('connekt_login_mode', 'produtor') } catch (_) {}
+        }
+      } catch (_) {}
     };
     window.addEventListener('popstate', handleLocationChange);
     return () => window.removeEventListener('popstate', handleLocationChange);
@@ -108,7 +122,10 @@ const Header = () => {
       }
       setIsDropdownOpen(false);
       // Garantir redirecionamento imediato para login
-      const isAluno = String(window.location.pathname || '').startsWith('/aluno')
+      let mode = ''
+      try { mode = String(sessionStorage.getItem('connekt_login_mode') || localStorage.getItem('connekt_login_mode') || '') } catch (_) { mode = '' }
+      const path = String(window.location.pathname || '')
+      const isAluno = mode === 'aluno' || path === '/aluno' || path.startsWith('/aluno/')
       window.history.replaceState({}, '', isAluno ? '/login-aluno' : '/login');
       window.dispatchEvent(new PopStateEvent('popstate'));
     } catch (e) {

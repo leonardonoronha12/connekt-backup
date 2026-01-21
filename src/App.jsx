@@ -212,6 +212,22 @@ function AppContent() {
       }
       const nextView = getViewFromLocation();
       setCurrentView(nextView);
+      try {
+        const path = String(window.location.pathname || '')
+        const isAluno =
+          path === '/login-aluno' ||
+          path === '/aluno/login' ||
+          path === '/aluno' ||
+          path.startsWith('/aluno/') ||
+          String(nextView || '').startsWith('aluno') ||
+          nextView === 'loginAluno'
+        const isProdutor = path === '/login' || nextView === 'login'
+        if (isAluno) {
+          try { localStorage.setItem('connekt_login_mode', 'aluno') } catch (_) {}
+        } else if (isProdutor) {
+          try { localStorage.setItem('connekt_login_mode', 'produtor') } catch (_) {}
+        }
+      } catch (_) {}
       // Atualiza chave quando a query muda sem alterar o path
       setLocationKey(window.location.search);
       document.title = 'Connekt - Plataforma de Cursos de Medicina';
