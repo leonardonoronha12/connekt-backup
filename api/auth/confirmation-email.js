@@ -143,6 +143,7 @@ function loadConfirmationTemplateHtml(confirmationUrl) {
 }
 
 export default async function handler(req, res) {
+  return json(res, 410, { error: 'gone' })
   try {
     if (req.method === 'OPTIONS') {
       res.statusCode = 204

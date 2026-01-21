@@ -290,28 +290,6 @@ export const AuthProvider = ({ children }) => {
     }
   }, [])
 
-  const sendSignupConfirmationEmail = useCallback(async (email, password, redirectPath = '/dashboard?email_confirmed=true') => {
-    try {
-      const em = String(email || '').trim().toLowerCase()
-      if (!em) return { ok: false, error: 'missing_email' }
-      const pwd = String(password || '').trim()
-      if (!pwd) return { ok: false, error: 'missing_password' }
-      const origin = getAuthRedirectOrigin()
-      const safePath = String(redirectPath || '/dashboard?email_confirmed=true')
-      const normalizedPath = safePath.startsWith('/') ? safePath : `/${safePath}`
-      const redirectTo = `${origin}${normalizedPath}`
-      const r = await fetch('/api/auth/confirmation-email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: em, password: pwd, redirectTo }),
-      })
-      if (!r.ok) return { ok: false, error: 'send_failed' }
-      return { ok: true }
-    } catch (_) {
-      return { ok: false, error: 'send_failed' }
-    }
-  }, [])
-
   const signIn = useCallback(async (email, password) => {
     const { error } = await supabase.auth.signInWithPassword({
       email,
@@ -410,10 +388,7 @@ export const AuthProvider = ({ children }) => {
         const extra = emailAttemptDetails ? ` (${typeof emailAttemptDetails === 'string' ? emailAttemptDetails : JSON.stringify(emailAttemptDetails)})` : ''
         return { error: { message: `Falha ao enviar email de recuperação. (${emailAttemptError})${extra}` } }
       }
-
-      const { error } = await supabase.auth.resetPasswordForEmail(trimmed, { redirectTo });
-      if (!error) return { error: null, mode: 'supabase' };
-      return { error: { message: String(error?.message || 'Falha ao enviar recuperação de senha.') } };
+      return { error: { message: 'Falha ao enviar email de recuperação. Tente novamente.' } }
     } catch (error) {
       console.error('Erro ao enviar recuperação de senha:', error);
       return { error: { message: error?.message || String(error) } };
@@ -496,14 +471,13 @@ export const AuthProvider = ({ children }) => {
     resolveDeviceLock,
     signUp,
     signUpWithEmailConfirmation,
-    sendSignupConfirmationEmail,
     signIn,
     signOut,
     signInWithOAuth,
     resetPassword,
     verifyEmailCode,
     resendVerificationCode,
-  }), [user, session, loading, deviceLock, resolveDeviceLock, signUp, signUpWithEmailConfirmation, sendSignupConfirmationEmail, signIn, signOut, signInWithOAuth, resetPassword, verifyEmailCode, resendVerificationCode]);
+  }), [user, session, loading, deviceLock, resolveDeviceLock, signUp, signUpWithEmailConfirmation, signIn, signOut, signInWithOAuth, resetPassword, verifyEmailCode, resendVerificationCode]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
