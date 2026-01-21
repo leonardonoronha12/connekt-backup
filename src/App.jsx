@@ -428,11 +428,24 @@ function AppContent() {
     }
   }, [currentView, locationKey]);
 
+  const loginMode = useMemo(() => {
+    try {
+      return String(sessionStorage.getItem('connekt_login_mode') || localStorage.getItem('connekt_login_mode') || '')
+    } catch (_) {
+      return ''
+    }
+  }, [currentView, locationKey])
+
+  const isAlunoFlow = useMemo(() => {
+    const path = String(window.location.pathname || '')
+    return loginMode === 'aluno' || path === '/aluno' || path.startsWith('/aluno/') || path === '/login-aluno' || path === '/aluno/login'
+  }, [loginMode, currentView, locationKey])
+
   useEffect(() => {
     if (loading) return;
     if (user) return;
     if (isPublicView) return;
-    const isAlunoPath = window.location.pathname === '/aluno' || window.location.pathname.startsWith('/aluno/')
+    const isAlunoPath = isAlunoFlow
     if ((isAlunoPath || currentView === 'cursoPreviewAluno') && isDemoStudent) return
     const target = isAlunoPath ? '/login-aluno' : '/login'
     if (window.location.pathname !== target) {
@@ -441,7 +454,7 @@ function AppContent() {
     } else {
       setCurrentView(isAlunoPath ? 'loginAluno' : 'login');
     }
-  }, [user, loading, isPublicView, isDemoStudent, currentView]);
+  }, [user, loading, isPublicView, isDemoStudent, currentView, isAlunoFlow]);
 
   if (loading) {
     return (
@@ -456,7 +469,7 @@ function AppContent() {
   }
 
   if (!user && !isPublicView && !(isDemoStudent && (currentView === 'alunoDashboard' || currentView === 'alunoAula' || currentView === 'alunoCurso' || currentView === 'alunoSimulados' || currentView === 'alunoSimuladoAcesso' || currentView === 'alunoConfiguracoes' || currentView === 'alunoRepostaCorretaSimulado' || currentView === 'cursoPreviewAluno'))) {
-    return <LoginPage />;
+    return isAlunoFlow ? <LoginAlunoPage /> : <LoginPage />;
   }
 
   if (user && deviceLock) {
