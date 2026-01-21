@@ -27,7 +27,7 @@ const translateErrorMessage = (errorMessage) => {
 };
 
 const RegisterForm = ({ onBackToLogin, onShowLogin }) => {
-  const { signUp, signInWithOAuth } = useAuth();
+  const { signUp, signInWithOAuth, sendSignupConfirmationEmail } = useAuth();
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -142,6 +142,7 @@ const RegisterForm = ({ onBackToLogin, onShowLogin }) => {
         const translatedMessage = translateErrorMessage(error.message);
         showAlert(`Erro no cadastro: ${translatedMessage}`);
       } else {
+        try { await sendSignupConfirmationEmail(formData.email); } catch (_) {}
         showAlert('Cadastro realizado com sucesso! Verifique seu email para confirmar a conta.', 'success');
         // Limpar o formulário após sucesso
         setFormData({

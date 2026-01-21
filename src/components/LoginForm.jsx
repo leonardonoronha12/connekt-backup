@@ -66,11 +66,23 @@ const LoginForm = ({ onShowRegister, mode = 'producer' }) => {
   React.useEffect(() => {
     let error = null
     let errorDesc = null
+    let emailConfirmed = null
     try {
       const params = new URLSearchParams(window.location.search || '')
       error = params.get('error')
       errorDesc = params.get('error_description')
+      emailConfirmed = params.get('email_confirmed')
     } catch (_) {}
+
+    if (String(emailConfirmed || '') === 'true') {
+      showAlert('Email confirmado com sucesso! Faça login para continuar.', 'success')
+      try {
+        const url = new URL(window.location.href)
+        url.searchParams.delete('email_confirmed')
+        window.history.replaceState({}, '', `${url.pathname}${url.search}`)
+      } catch (_) {}
+      return
+    }
 
     const msg = String(errorDesc || error || '').trim()
     if (!msg) return

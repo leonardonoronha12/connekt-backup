@@ -217,6 +217,24 @@ export const AuthProvider = ({ children }) => {
     return { error };
   }, []);
 
+  const sendSignupConfirmationEmail = useCallback(async (email) => {
+    try {
+      const em = String(email || '').trim().toLowerCase()
+      if (!em) return { ok: false, error: 'missing_email' }
+      const origin = getAuthRedirectOrigin()
+      const redirectTo = `${origin}/dashboard?email_confirmed=true`
+      const r = await fetch('/api/auth/confirmation-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: em, redirectTo }),
+      })
+      if (!r.ok) return { ok: false, error: 'send_failed' }
+      return { ok: true }
+    } catch (_) {
+      return { ok: false, error: 'send_failed' }
+    }
+  }, [getAuthRedirectOrigin])
+
   const signIn = useCallback(async (email, password) => {
     const { error } = await supabase.auth.signInWithPassword({
       email,
@@ -436,13 +454,14 @@ export const AuthProvider = ({ children }) => {
     deviceLock,
     resolveDeviceLock,
     signUp,
+    sendSignupConfirmationEmail,
     signIn,
     signOut,
     signInWithOAuth,
     resetPassword,
     verifyEmailCode,
     resendVerificationCode,
-  }), [user, session, loading, deviceLock, resolveDeviceLock, signUp, signIn, signOut, signInWithOAuth, resetPassword, verifyEmailCode, resendVerificationCode]);
+  }), [user, session, loading, deviceLock, resolveDeviceLock, signUp, sendSignupConfirmationEmail, signIn, signOut, signInWithOAuth, resetPassword, verifyEmailCode, resendVerificationCode]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };

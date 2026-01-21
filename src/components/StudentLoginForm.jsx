@@ -3,7 +3,7 @@ import { ArrowLeft, Eye, EyeOff } from 'lucide-react'
 import { useAuth } from '@/contexts/SupabaseAuthContext'
 
 export default function StudentLoginForm() {
-  const { signIn, signInWithOAuth, resetPassword, signUp } = useAuth()
+  const { signIn, signInWithOAuth, resetPassword, signUp, sendSignupConfirmationEmail } = useAuth()
   const [view, setView] = useState('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -248,6 +248,7 @@ export default function StudentLoginForm() {
         setErrorMsg(error?.message || String(error))
         return
       }
+      try { await sendSignupConfirmationEmail(emailValue); } catch (_) {}
       const r = await signIn(emailValue, registerData.password)
       if (r?.error) {
         setSuccessMsg('Cadastro realizado com sucesso! Verifique seu email para confirmar a conta.')
