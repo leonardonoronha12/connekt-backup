@@ -217,6 +217,32 @@ export const AuthProvider = ({ children }) => {
     return { error };
   }, []);
 
+  const signUpWithEmailConfirmation = useCallback(async ({ email, password, userMetadata, redirectTo }) => {
+    try {
+      const em = String(email || '').trim().toLowerCase()
+      const pwd = String(password || '')
+      if (!em) return { ok: false, error: 'missing_email' }
+      if (!pwd) return { ok: false, error: 'missing_password' }
+      const r = await fetch('/api/auth/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: em,
+          password: pwd,
+          user_metadata: userMetadata && typeof userMetadata === 'object' ? userMetadata : undefined,
+          redirectTo: redirectTo || undefined,
+        }),
+      })
+      const text = await r.text()
+      let data = null
+      try { data = JSON.parse(text || '{}') } catch (_) { data = null }
+      if (!r.ok) return { ok: false, error: data?.message || data?.error || text || 'send_failed' }
+      return { ok: true }
+    } catch (_) {
+      return { ok: false, error: 'send_failed' }
+    }
+  }, [])
+
   const sendSignupConfirmationEmail = useCallback(async (email, password, redirectPath = '/dashboard?email_confirmed=true') => {
     try {
       const em = String(email || '').trim().toLowerCase()
@@ -458,6 +484,7 @@ export const AuthProvider = ({ children }) => {
     deviceLock,
     resolveDeviceLock,
     signUp,
+    signUpWithEmailConfirmation,
     sendSignupConfirmationEmail,
     signIn,
     signOut,
@@ -465,7 +492,7 @@ export const AuthProvider = ({ children }) => {
     resetPassword,
     verifyEmailCode,
     resendVerificationCode,
-  }), [user, session, loading, deviceLock, resolveDeviceLock, signUp, sendSignupConfirmationEmail, signIn, signOut, signInWithOAuth, resetPassword, verifyEmailCode, resendVerificationCode]);
+  }), [user, session, loading, deviceLock, resolveDeviceLock, signUp, signUpWithEmailConfirmation, sendSignupConfirmationEmail, signIn, signOut, signInWithOAuth, resetPassword, verifyEmailCode, resendVerificationCode]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
