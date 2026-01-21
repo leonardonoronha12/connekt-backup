@@ -14,6 +14,42 @@ function withTimeout(promise, ms) {
   })
 }
 
+function getAuthRedirectOrigin() {
+  const readEnvUrl = () => {
+    try {
+      const v = import.meta?.env?.VITE_SITE_URL || import.meta?.env?.VITE_APP_BASE_URL
+      if (v) return String(v).trim()
+    } catch (_) {}
+    return ''
+  }
+
+  const isLocalhostOrigin = (origin) => {
+    try {
+      const u = new URL(origin)
+      const host = String(u.hostname || '').toLowerCase()
+      return host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0'
+    } catch (_) {
+      return false
+    }
+  }
+
+  const envUrl = readEnvUrl()
+  if (envUrl) {
+    try {
+      const envOrigin = new URL(envUrl).origin
+      const currentOrigin = window.location.origin
+      if (!isLocalhostOrigin(currentOrigin) && isLocalhostOrigin(envOrigin)) return currentOrigin
+      return envOrigin
+    } catch (_) {}
+  }
+
+  try {
+    return window.location.origin
+  } catch (_) {
+    return ''
+  }
+}
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [session, setSession] = useState(null);
@@ -274,7 +310,7 @@ export const AuthProvider = ({ children }) => {
     } catch (_) {
       return { ok: false, error: 'send_failed' }
     }
-  }, [getAuthRedirectOrigin])
+  }, [])
 
   const signIn = useCallback(async (email, password) => {
     const { error } = await supabase.auth.signInWithPassword({
@@ -324,42 +360,6 @@ export const AuthProvider = ({ children }) => {
     }
   }, [session?.user?.id, signOut])
 
-  const getAuthRedirectOrigin = useCallback(() => {
-    const readEnvUrl = () => {
-      try {
-        const v = import.meta?.env?.VITE_SITE_URL || import.meta?.env?.VITE_APP_BASE_URL
-        if (v) return String(v).trim()
-      } catch (_) {}
-      return ''
-    }
-
-    const isLocalhostOrigin = (origin) => {
-      try {
-        const u = new URL(origin)
-        const host = String(u.hostname || '').toLowerCase()
-        return host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0'
-      } catch (_) {
-        return false
-      }
-    }
-
-    const envUrl = readEnvUrl()
-    if (envUrl) {
-      try {
-        const envOrigin = new URL(envUrl).origin
-        const currentOrigin = window.location.origin
-        if (!isLocalhostOrigin(currentOrigin) && isLocalhostOrigin(envOrigin)) return currentOrigin
-        return envOrigin
-      } catch (_) {}
-    }
-
-    try {
-      return window.location.origin
-    } catch (_) {
-      return ''
-    }
-  }, [])
-
   const signInWithOAuth = useCallback(async (provider, redirectPath = '/login') => {
     const origin = getAuthRedirectOrigin()
     const safePath = String(redirectPath || '/login').startsWith('/') ? String(redirectPath || '/login') : `/${String(redirectPath || 'login')}`
@@ -380,7 +380,7 @@ export const AuthProvider = ({ children }) => {
       } catch (_) {}
     }
     return { data, error };
-  }, [getAuthRedirectOrigin]);
+  }, []);
 
   const resetPassword = useCallback(async (email) => {
     try {
