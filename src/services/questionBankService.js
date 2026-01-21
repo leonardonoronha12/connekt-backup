@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabaseClient'
 import { canCreateQuestion as canCreateQuestionByPlan, canUploadBytes, resolvePlanKey } from '@/services/planEntitlements'
 import { beginUpload } from '@/services/uploadGuard'
+import { getActiveProducerUserId } from '@/services/producerScope'
 
 // Dados mock para o frontend (fallback)
 const mockQuestionBanks = [
@@ -83,6 +84,32 @@ async function getCurrentUserExternalId() {
   }
 }
 
+function getLoginMode() {
+  try {
+    const v = localStorage.getItem('connekt_login_mode')
+    return v ? String(v) : ''
+  } catch (_) {
+    return ''
+  }
+}
+
+async function getScopedProducerExternalId() {
+  const current = await getCurrentUserExternalId()
+  const mode = getLoginMode()
+  const scoped = getActiveProducerUserId()
+  if (mode === 'aluno' && scoped) return scoped
+  return current
+}
+
+async function isStudentScopedToDifferentProducer() {
+  const mode = getLoginMode()
+  if (mode !== 'aluno') return false
+  const scoped = getActiveProducerUserId()
+  if (!scoped) return false
+  const current = await getCurrentUserExternalId()
+  return !!current && String(scoped) !== String(current)
+}
+
 async function getBearerAuthHeader() {
   try {
     const { data: { session } } = await supabase.auth.getSession()
@@ -162,7 +189,7 @@ class QuestionBankService {
 
   async getQuestionBanks() {
     try {
-      const producerExternalId = await getCurrentUserExternalId();
+      const producerExternalId = await getScopedProducerExternalId();
       let query = supabase
         .from('question_banks')
         .select('id,name,description,tags,category,subcategory,question_count,created_at,updated_at,producer_external_id')
@@ -811,6 +838,9 @@ class QuestionBankService {
     };
 
     try {
+      if (await isStudentScopedToDifferentProducer()) {
+        return { data: null, error: 'forbidden' }
+      }
       const { data, error } = await supabase
         .from('question_banks')
         .insert(payload)
@@ -861,6 +891,9 @@ class QuestionBankService {
     }
 
     try {
+      if (await isStudentScopedToDifferentProducer()) {
+        return { data: null, error: 'forbidden' }
+      }
       const { data, error } = await supabase
         .from('question_banks')
         .update({
@@ -932,6 +965,9 @@ class QuestionBankService {
 
   async deleteQuestionBank(id) {
     try {
+      if (await isStudentScopedToDifferentProducer()) {
+        return { data: null, error: 'forbidden' }
+      }
       const { error } = await supabase
         .from('question_banks')
         .delete()
@@ -954,6 +990,9 @@ class QuestionBankService {
 
   async createQuestion(questionBankId, question) {
     try {
+      if (await isStudentScopedToDifferentProducer()) {
+        return { data: null, error: 'forbidden' }
+      }
       if (!isUuid(questionBankId)) {
         throw new Error('Invalid question bank id');
       }
@@ -1061,6 +1100,9 @@ class QuestionBankService {
 
   async updateQuestion(questionId, updates = {}) {
     try {
+      if (await isStudentScopedToDifferentProducer()) {
+        return { data: null, error: 'forbidden' }
+      }
       if (!isUuid(questionId)) {
         throw new Error('Invalid question id');
       }
@@ -1234,6 +1276,9 @@ class QuestionBankService {
 
   async deleteQuestion(questionId) {
     try {
+      if (await isStudentScopedToDifferentProducer()) {
+        return { data: null, error: 'forbidden' }
+      }
       if (!isUuid(questionId)) {
         throw new Error('Invalid question id');
       }

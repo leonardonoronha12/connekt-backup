@@ -4,6 +4,7 @@ import Header from '@/components/Header'
 import CourseFooter from '@/components/CourseFooter'
 import { supabase } from '@/lib/supabaseClient'
 import { useAuth } from '@/contexts/SupabaseAuthContext'
+import { getActiveProducerUserId } from '@/services/producerScope'
 
 const navSections = [
   {
@@ -431,6 +432,7 @@ export default function AlunoDashboardPage() {
   const { user } = useAuth()
   const [loading, setLoading] = useState(true)
   const [student, setStudent] = useState(null)
+  const [producerCourses, setProducerCourses] = useState([])
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [simuladosModalOpen, setSimuladosModalOpen] = useState(false)
   const [featuredModalOpen, setFeaturedModalOpen] = useState(false)
@@ -462,6 +464,28 @@ export default function AlunoDashboardPage() {
   }, [])
 
   const email = useMemo(() => String(user?.email || '').trim().toLowerCase(), [user?.email])
+  const activeProducerUserId = useMemo(() => {
+    try { return getActiveProducerUserId() } catch (_) { return '' }
+  }, [])
+
+  useEffect(() => {
+    let active = true
+    const run = async () => {
+      const pid = String(activeProducerUserId || '').trim()
+      if (!pid || isDemoStudent) return
+      try {
+        const { data, error } = await supabase.from('courses').select('id,title,cover_url,data,user_id').eq('user_id', pid).order('created_at', { ascending: false }).limit(200)
+        if (!active) return
+        if (error) throw error
+        setProducerCourses(Array.isArray(data) ? data : [])
+      } catch (_) {
+        if (!active) return
+        setProducerCourses([])
+      }
+    }
+    run()
+    return () => { active = false }
+  }, [activeProducerUserId, isDemoStudent])
 
   const resolveCourseIdByTitle = async (title) => {
     const key = String(title || '').trim().toLowerCase()
@@ -472,13 +496,17 @@ export default function AlunoDashboardPage() {
 
     let foundId = null
     try {
-      const { data, error } = await supabase.from('courses').select('id,title').eq('title', String(title || '')).limit(1)
+      let q = supabase.from('courses').select('id,title').eq('title', String(title || '')).limit(1)
+      if (activeProducerUserId) q = q.eq('user_id', activeProducerUserId)
+      const { data, error } = await q
       if (!error && Array.isArray(data) && data[0]?.id) foundId = data[0].id
     } catch (_) {}
 
     if (!foundId) {
       try {
-        const { data, error } = await supabase.from('courses').select('id,title').ilike('title', String(title || '')).limit(1)
+        let q = supabase.from('courses').select('id,title').ilike('title', String(title || '')).limit(1)
+        if (activeProducerUserId) q = q.eq('user_id', activeProducerUserId)
+        const { data, error } = await q
         if (!error && Array.isArray(data) && data[0]?.id) foundId = data[0].id
       } catch (_) {}
     }
@@ -680,10 +708,12 @@ export default function AlunoDashboardPage() {
     let active = true
     const run = async () => {
       try {
-        const { data } = await supabase
+        let q = supabase
           .from('courses')
-          .select('id,title,cover_image_url,data,modules,module_layout_image_url')
+          .select('id,title,cover_image_url,data,modules,module_layout_image_url,user_id')
           .limit(200)
+        if (activeProducerUserId) q = q.eq('user_id', activeProducerUserId)
+        const { data } = await q
         const map = {}
         for (const row of Array.isArray(data) ? data : []) {
           const t = String(row?.title || '').trim().toLowerCase()
@@ -696,7 +726,7 @@ export default function AlunoDashboardPage() {
     }
     run()
     return () => { active = false }
-  }, [])
+  }, [activeProducerUserId])
 
   const connektCourseCoverOptions = useMemo(() => {
     const svgToDataUrl = (svg) => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
@@ -742,7 +772,18 @@ export default function AlunoDashboardPage() {
     ]
   }, [])
 
-  const courses = useMemo(() => (Array.isArray(student?.courses) ? student.courses : []), [student?.courses])
+  const courses = useMemo(() => {
+    if (activeProducerUserId && Array.isArray(producerCourses) && producerCourses.length > 0) {
+      return producerCourses.map((row) => ({
+        course_id: row?.id || null,
+        courseId: row?.id || null,
+        course_name: row?.title || 'Curso',
+        cover_image_url: deriveCourseCoverUrl(row) || null,
+        progress: 0,
+      }))
+    }
+    return Array.isArray(student?.courses) ? student.courses : []
+  }, [activeProducerUserId, producerCourses, student?.courses])
   const name = student?.name || user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email || 'Aluno'
   const coverFallback = connektCourseCoverOptions[0]?.src || '/Preview.png'
   const pickCoverForCourse = (titleValue, idx) => {

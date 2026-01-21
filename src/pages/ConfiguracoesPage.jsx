@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Camera, Bell, X, ExternalLink, Info, AlertTriangle, UploadCloud, Monitor, Smartphone, Tablet, Trash2, LogOut, Shield, Globe } from 'lucide-react';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { supabase } from '@/lib/supabaseClient.js';
@@ -35,6 +35,16 @@ const ConfiguracoesPage = () => {
   const devicesReqRef = useRef(0);
   const [profileAvatarUrl, setProfileAvatarUrl] = useState('');
   const [avatarUploading, setAvatarUploading] = useState(false);
+  const studentPortalLink = useMemo(() => {
+    try {
+      const uid = user?.id ? String(user.id).trim() : ''
+      if (!uid) return ''
+      const origin = window.location.origin
+      return `${origin}/login-aluno?producer_uid=${encodeURIComponent(uid)}`
+    } catch (_) {
+      return ''
+    }
+  }, [user?.id])
 
   const [profileFullName, setProfileFullName] = useState(userName || '');
   const [profilePhone, setProfilePhone] = useState('');
@@ -1048,6 +1058,44 @@ const ConfiguracoesPage = () => {
                         placeholder="Digite o nome da categoria"
                         className="w-full px-3 py-2 border border-[#E3E4E5] rounded-[6px] text-[14px] focus:outline-none focus:border-[#0047BB] bg-[#F8FAFC]"
                       />
+                    </div>
+                  </div>
+
+                  <div className="rounded-[8px] border border-[#E3E4E5] bg-[#F8FAFC] p-4">
+                    <div className="text-[14px] font-semibold text-[#1E1B39]">Link de acesso do aluno</div>
+                    <div className="text-[12px] text-[#737780] mt-1">Compartilhe este link para o aluno entrar no seu ambiente.</div>
+                    <div className="mt-3 flex items-center gap-2">
+                      <input
+                        type="text"
+                        readOnly
+                        value={studentPortalLink}
+                        className="flex-1 px-3 py-2 border border-[#E3E4E5] rounded-[6px] text-[12px] bg-white text-[#22252B]"
+                      />
+                      <button
+                        type="button"
+                        className="h-[36px] px-3 rounded-[6px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#22252B]"
+                        onClick={async () => {
+                          try {
+                            if (!studentPortalLink) return
+                            await navigator.clipboard.writeText(studentPortalLink)
+                            toast({ title: 'Copiado', description: 'Link copiado para a área de transferência.', duration: 4000 })
+                          } catch (_) {
+                            toast({ title: 'Erro', description: 'Não foi possível copiar o link.', duration: 4000, variant: 'destructive' })
+                          }
+                        }}
+                      >
+                        Copiar
+                      </button>
+                      <button
+                        type="button"
+                        className="h-[36px] px-3 rounded-[6px] bg-[#0047BB] text-white text-[12px] font-semibold"
+                        onClick={() => {
+                          if (!studentPortalLink) return
+                          window.open(studentPortalLink, '_blank', 'noopener,noreferrer')
+                        }}
+                      >
+                        Abrir
+                      </button>
                     </div>
                   </div>
 
