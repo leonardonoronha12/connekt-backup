@@ -126,6 +126,7 @@ const LoginForm = ({ onShowRegister, mode = 'producer' }) => {
     setLoading(true);
     
     try {
+      try { sessionStorage.setItem('connekt_login_mode', 'produtor') } catch (_) { try { localStorage.setItem('connekt_login_mode', 'produtor') } catch (_) {} }
       const { error } = await signIn(formData.email, formData.password);
 
       if (error) {
@@ -236,6 +237,7 @@ const LoginForm = ({ onShowRegister, mode = 'producer' }) => {
         showAlert('Provedor de login não suportado.');
         return;
       }
+      try { sessionStorage.setItem('connekt_login_mode', 'produtor') } catch (_) { try { localStorage.setItem('connekt_login_mode', 'produtor') } catch (_) {} }
       setOauthLoading(p)
       const { error } = await signInWithOAuth(p, '/login');
       if (error) {

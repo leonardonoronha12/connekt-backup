@@ -216,7 +216,10 @@ export const AuthProvider = ({ children }) => {
         if (event === 'SIGNED_OUT') {
           setDeviceLock(null)
           const path = window.location.pathname || ''
-          const target = (path === '/aluno' || path.startsWith('/aluno/') || path === '/login-aluno') ? '/login-aluno' : '/login'
+          let mode = ''
+          try { mode = String(sessionStorage.getItem('connekt_login_mode') || localStorage.getItem('connekt_login_mode') || '') } catch (_) { mode = '' }
+          const isAlunoFlow = mode === 'aluno' || path === '/aluno' || path.startsWith('/aluno/') || path === '/login-aluno' || path === '/aluno/login'
+          const target = isAlunoFlow ? '/login-aluno' : '/login'
           window.history.replaceState({}, '', target);
           window.dispatchEvent(new PopStateEvent('popstate'));
         }

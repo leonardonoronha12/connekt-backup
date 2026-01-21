@@ -159,6 +159,7 @@ export default function StudentLoginForm() {
     setSuccessMsg('')
     setLoading(true)
     try {
+      try { sessionStorage.setItem('connekt_login_mode', 'aluno') } catch (_) { try { localStorage.setItem('connekt_login_mode', 'aluno') } catch (_) {} }
       const { error } = await signIn(cleanEmail, password)
       if (error) {
         setErrorMsg(translateErrorMessage(error?.message || String(error)))
@@ -176,6 +177,7 @@ export default function StudentLoginForm() {
     try {
       localStorage.setItem('connekt_demo_student', '1')
     } catch (_) {}
+    try { sessionStorage.setItem('connekt_login_mode', 'aluno') } catch (_) { try { localStorage.setItem('connekt_login_mode', 'aluno') } catch (_) {} }
     window.history.pushState({}, '', '/aluno?demo=1')
     window.dispatchEvent(new PopStateEvent('popstate'))
   }
@@ -184,6 +186,7 @@ export default function StudentLoginForm() {
     setErrorMsg('')
     setSuccessMsg('')
     try {
+      try { sessionStorage.setItem('connekt_login_mode', 'aluno') } catch (_) { try { localStorage.setItem('connekt_login_mode', 'aluno') } catch (_) {} }
       const { error } = await signInWithOAuth(provider, '/login-aluno')
       if (error) setErrorMsg(translateErrorMessage(error?.message || String(error)))
     } catch (err) {
@@ -236,6 +239,7 @@ export default function StudentLoginForm() {
     setRegisterLoading(true)
     try {
       const fullName = `${String(registerData.firstName || '').trim()} ${String(registerData.lastName || '').trim()}`.trim()
+      try { sessionStorage.setItem('connekt_login_mode', 'aluno') } catch (_) { try { localStorage.setItem('connekt_login_mode', 'aluno') } catch (_) {} }
       const result = await signUpWithEmailConfirmation({
         email: emailValue,
         password: registerData.password,
