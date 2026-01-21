@@ -19,6 +19,17 @@ function translateResetErrorMessage(message) {
   return msg
 }
 
+function validatePassword(passwordValue) {
+  const p = String(passwordValue || '')
+  const minLength = p.length >= 6
+  const hasNumber = /\d/.test(p)
+  const hasLetter = /[a-zA-Z]/.test(p)
+  if (!minLength) return 'A senha deve ter no mínimo 6 caracteres'
+  if (!hasNumber) return 'A senha deve conter pelo menos um número'
+  if (!hasLetter) return 'A senha deve conter pelo menos uma letra'
+  return null
+}
+
 export default function ResetPasswordPage() {
   const [loading, setLoading] = useState(true);
   const [hasSession, setHasSession] = useState(false);
@@ -29,7 +40,6 @@ export default function ResetPasswordPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [redirecting, setRedirecting] = useState(false);
-  const [redirectCountdown, setRedirectCountdown] = useState(10);
 
   useEffect(() => {
     let active = true;
@@ -61,28 +71,21 @@ export default function ResetPasswordPage() {
 
   useEffect(() => {
     if (!redirecting) return;
-    if (redirectCountdown <= 0) return;
-    const t = window.setTimeout(() => setRedirectCountdown((v) => Math.max(0, Number(v || 0) - 1)), 1000);
-    return () => window.clearTimeout(t);
-  }, [redirecting, redirectCountdown]);
-
-  useEffect(() => {
-    if (!redirecting) return;
-    if (redirectCountdown > 0) return;
     let cancelled = false;
-    (async () => {
+    const t = window.setTimeout(async () => {
       try { await supabase.auth.signOut(); } catch (_) {}
-      if (cancelled) return;
+      if (cancelled) return
       window.history.replaceState({}, '', '/login');
       window.dispatchEvent(new PopStateEvent('popstate'));
-    })();
+    }, 1200)
     return () => { cancelled = true; };
-  }, [redirecting, redirectCountdown]);
+  }, [redirecting]);
 
   const canSubmit = useMemo(() => {
     const p = String(password || '');
     const c = String(confirm || '');
-    return hasSession && !saving && !redirecting && p.length >= 6 && p === c;
+    const pwdErr = validatePassword(p)
+    return hasSession && !saving && !redirecting && !pwdErr && p === c;
   }, [password, confirm, hasSession, saving, redirecting]);
 
   const goToLogin = () => {
@@ -100,12 +103,18 @@ export default function ResetPasswordPage() {
       return;
     }
     if (String(password || '').length < 6) {
-      setError('A senha deve ter no mínimo 6 caracteres.');
+      const pwdErr = validatePassword(password)
+      setError(pwdErr || 'A senha deve ter no mínimo 6 caracteres.');
       return;
     }
     if (password !== confirm) {
       setError('As senhas não coincidem.');
       return;
+    }
+    const pwdErr = validatePassword(password)
+    if (pwdErr) {
+      setError(pwdErr)
+      return
     }
 
     setSaving(true);
@@ -116,7 +125,6 @@ export default function ResetPasswordPage() {
         return;
       }
       setSuccess('Senha redefinida com sucesso.');
-      setRedirectCountdown(10);
       setRedirecting(true);
     } catch (err) {
       setError(err?.message || 'Erro ao redefinir senha.');
@@ -197,7 +205,7 @@ export default function ResetPasswordPage() {
               </svg>
               <div className="text-center">
                 <div className="font-medium">Senha alterada com sucesso.</div>
-                <div className="text-green-700/80">Redirecionando para o login em {redirectCountdown}s…</div>
+                <div className="text-green-700/80">Redirecionando para o login…</div>
               </div>
             </div>
           ) : null}

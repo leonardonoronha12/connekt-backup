@@ -223,10 +223,12 @@ export default async function handler(req, res) {
       
           const password = String(passwordEl.value || '')
           const confirm = String(confirmEl.value || '')
-          if (password.length < 6) {
-            setMessage('error', 'A senha deve ter no mínimo 6 caracteres.')
-            return
-          }
+          const minLength = password.length >= 6
+          const hasNumber = /\\d/.test(password)
+          const hasLetter = /[a-zA-Z]/.test(password)
+          if (!minLength) { setMessage('error', 'A senha deve ter no mínimo 6 caracteres.'); return }
+          if (!hasNumber) { setMessage('error', 'A senha deve conter pelo menos um número.'); return }
+          if (!hasLetter) { setMessage('error', 'A senha deve conter pelo menos uma letra.'); return }
           if (password !== confirm) {
             setMessage('error', 'As senhas não coincidem.')
             return
@@ -268,7 +270,6 @@ export default async function handler(req, res) {
               return
             }
 
-            let countdown = 10
             const msgEl = qs('message')
             if (msgEl) {
               msgEl.style.display = 'block'
@@ -281,22 +282,16 @@ export default async function handler(req, res) {
                 '</svg>' +
                 '<div class="t">' +
                   '<strong>Senha alterada com sucesso.</strong>' +
-                  '<span id="redir">Redirecionando para o login em 10s…</span>' +
+                  '<span id="redir">Redirecionando para o login…</span>' +
                 '</div>' +
               '</div>'
             }
 
             submit.textContent = 'Senha salva'
-            const redirEl = qs('redir')
-            const interval = window.setInterval(() => {
-              countdown -= 1
-              if (redirEl) redirEl.textContent = 'Redirecionando para o login em ' + String(Math.max(0, countdown)) + 's…'
-              if (countdown <= 0) {
-                window.clearInterval(interval)
-                if (siteOrigin) window.location.assign(siteOrigin + '/login')
-                else window.location.assign('/login')
-              }
-            }, 1000)
+            window.setTimeout(() => {
+              if (siteOrigin) window.location.assign(siteOrigin + '/login')
+              else window.location.assign('/login')
+            }, 1200)
           } finally {
             setTimeout(() => {
               submit.disabled = false
