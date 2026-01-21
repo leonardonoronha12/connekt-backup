@@ -345,9 +345,13 @@ export const AuthProvider = ({ children }) => {
     if (!origin) {
       return { data: null, error: { message: 'Origem de redirect inválida' } };
     }
+    const providerKey = typeof provider === 'string' ? provider.toLowerCase() : provider
+    const queryParams = providerKey === 'google'
+      ? { prompt: 'select_account' }
+      : undefined
     const { data, error } = await supabase.auth.signInWithOAuth({
-      provider,
-      options: { redirectTo, skipBrowserRedirect: true },
+      provider: providerKey,
+      options: { redirectTo, skipBrowserRedirect: true, queryParams },
     });
     if (!error && !data?.url) {
       return { data, error: { message: 'Não foi possível obter a URL de autenticação' } }
