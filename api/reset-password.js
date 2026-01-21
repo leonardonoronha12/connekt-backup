@@ -51,6 +51,13 @@ export default async function handler(req, res) {
       .msg.success{background:#ECFDF5;border:1px solid #A7F3D0;color:#065F46}
       .link{display:inline-block;margin-top:12px;color:#0047BB;text-decoration:underline;font-size:13px}
       .small{margin-top:14px;color:#9CA3AF;font-size:12px}
+      .ok{display:flex;gap:12px;align-items:center;justify-content:center}
+      .ok svg{flex:0 0 auto}
+      .ok .t{display:flex;flex-direction:column;gap:2px}
+      .ok .t strong{font-weight:700}
+      .ok .t span{opacity:.85}
+      @keyframes connekt-check-draw{from{stroke-dashoffset:60}to{stroke-dashoffset:0}}
+      @keyframes connekt-pop{0%{transform:scale(.92);opacity:0}100%{transform:scale(1);opacity:1}}
     </style>
   </head>
   <body>
@@ -187,6 +194,7 @@ export default async function handler(req, res) {
         const cfg = window.__CONNEKT__ || {}
         const supabaseUrl = String(cfg.supabaseUrl || '')
         const supabaseAnonKey = String(cfg.supabaseAnonKey || '')
+        const siteOrigin = String(cfg.siteOrigin || '')
         if (!supabaseUrl || !supabaseAnonKey) {
           setMessage('error', 'Configuração do Supabase ausente. Contate o suporte.')
           return
@@ -259,9 +267,36 @@ export default async function handler(req, res) {
               setMessage('error', up.error || 'Erro ao redefinir senha.')
               return
             }
-      
-            setMessage('success', 'Senha redefinida com sucesso. Você já pode fazer login.')
+
+            let countdown = 10
+            const msgEl = qs('message')
+            if (msgEl) {
+              msgEl.style.display = 'block'
+              msgEl.className = 'msg success'
+              msgEl.style.animation = 'connekt-pop 260ms ease-out both'
+              msgEl.innerHTML = '<div class="ok">' +
+                '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true">' +
+                  '<circle cx="12" cy="12" r="10" stroke="#16A34A" stroke-width="2" opacity="0.25" />' +
+                  '<path d="M7 12.5l3 3 7-7" stroke="#16A34A" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="stroke-dasharray:60;stroke-dashoffset:60;animation:connekt-check-draw 520ms ease-out 120ms forwards" />' +
+                '</svg>' +
+                '<div class="t">' +
+                  '<strong>Senha alterada com sucesso.</strong>' +
+                  '<span id="redir">Redirecionando para o login em 10s…</span>' +
+                '</div>' +
+              '</div>'
+            }
+
             submit.textContent = 'Senha salva'
+            const redirEl = qs('redir')
+            const interval = window.setInterval(() => {
+              countdown -= 1
+              if (redirEl) redirEl.textContent = 'Redirecionando para o login em ' + String(Math.max(0, countdown)) + 's…'
+              if (countdown <= 0) {
+                window.clearInterval(interval)
+                if (siteOrigin) window.location.assign(siteOrigin + '/login')
+                else window.location.assign('/login')
+              }
+            }, 1000)
           } finally {
             setTimeout(() => {
               submit.disabled = false
