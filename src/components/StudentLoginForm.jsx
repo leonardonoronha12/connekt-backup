@@ -3,7 +3,7 @@ import { ArrowLeft, Eye, EyeOff } from 'lucide-react'
 import { useAuth } from '@/contexts/SupabaseAuthContext'
 
 export default function StudentLoginForm() {
-  const { signIn, signInWithOAuth, resetPassword, signUp, sendSignupConfirmationEmail } = useAuth()
+  const { signIn, signInWithOAuth, resetPassword, signUpWithEmailConfirmation } = useAuth()
   const [view, setView] = useState('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -236,26 +236,21 @@ export default function StudentLoginForm() {
     setRegisterLoading(true)
     try {
       const fullName = `${String(registerData.firstName || '').trim()} ${String(registerData.lastName || '').trim()}`.trim()
-      const { error } = await signUp(emailValue, registerData.password, {
-        data: {
+      const result = await signUpWithEmailConfirmation({
+        email: emailValue,
+        password: registerData.password,
+        userMetadata: {
           first_name: String(registerData.firstName || '').trim(),
           last_name: String(registerData.lastName || '').trim(),
           full_name: fullName,
         },
-        emailRedirectTo: `${window.location.origin}/login-aluno`,
+        redirectTo: `${window.location.origin}/login-aluno?email_confirmed=true`,
       })
-      if (error) {
-        setErrorMsg(error?.message || String(error))
+      if (!result?.ok) {
+        setErrorMsg(translateErrorMessage(String(result?.error || 'Erro no cadastro.')))
         return
       }
-      try { await sendSignupConfirmationEmail(emailValue, registerData.password, '/login-aluno'); } catch (_) {}
-      const r = await signIn(emailValue, registerData.password)
-      if (r?.error) {
-        setSuccessMsg('Cadastro realizado com sucesso! Verifique seu email para confirmar a conta.')
-        setErrorMsg(translateErrorMessage(r.error?.message || String(r.error)))
-        return
-      }
-      setSuccessMsg('Cadastro realizado com sucesso!')
+      setSuccessMsg('Cadastro realizado com sucesso! Verifique seu email para confirmar a conta.')
       setRegisterData({
         firstName: '',
         lastName: '',
