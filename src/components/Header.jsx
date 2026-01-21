@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { ArrowLeft, X, HelpCircle, Bell, ChevronDown, User, Search } from 'lucide-react';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import SystemNotificationsModal from '@/components/SystemNotificationsModal.jsx';
@@ -13,7 +13,44 @@ const Header = () => {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
   const [currentSearch, setCurrentSearch] = useState(window.location.search);
+  const [avatarLoadFailed, setAvatarLoadFailed] = useState(false);
   const { signOut, user } = useAuth();
+
+  const avatarUrl = useMemo(() => {
+    try {
+      const meta = user && typeof user === 'object' ? (user.user_metadata || {}) : {}
+      const candidates = [
+        meta.avatar_url,
+        meta.picture,
+        meta.avatar,
+        meta.photoURL,
+        meta.profile_picture,
+        meta.profile_image_url,
+      ]
+      const direct = candidates.find((v) => typeof v === 'string' && v.trim())
+      if (direct) return String(direct).trim()
+
+      const identities = Array.isArray(user?.identities) ? user.identities : []
+      for (const identity of identities) {
+        const data = identity && typeof identity === 'object' ? (identity.identity_data || {}) : {}
+        const idCandidates = [
+          data.avatar_url,
+          data.picture,
+          data.avatar,
+          data.picture_url,
+          data.profile_picture,
+          data.profile_image_url,
+        ]
+        const found = idCandidates.find((v) => typeof v === 'string' && v.trim())
+        if (found) return String(found).trim()
+      }
+    } catch (_) {}
+    return ''
+  }, [user]);
+
+  useEffect(() => {
+    setAvatarLoadFailed(false);
+  }, [avatarUrl]);
 
   const toggleDropdown = () => {
     setIsDropdownOpen(!isDropdownOpen);
@@ -303,7 +340,17 @@ const Header = () => {
               className="inline-flex items-center justify-center"
               style={{ width: '28px', height: '28px', borderRadius: '100px', backgroundColor: 'rgb(243, 244, 245)' }}
             >
-              <User className="w-4 h-4 text-[#22252B]" />
+              {avatarUrl && !avatarLoadFailed ? (
+                <img
+                  src={avatarUrl}
+                  alt="Foto de perfil"
+                  className="w-full h-full object-cover"
+                  style={{ borderRadius: '100px' }}
+                  onError={() => setAvatarLoadFailed(true)}
+                />
+              ) : (
+                <User className="w-4 h-4 text-[#22252B]" />
+              )}
             </span>
             <ChevronDown className="w-3 h-3 text-[#22252B]" />
           </div>
