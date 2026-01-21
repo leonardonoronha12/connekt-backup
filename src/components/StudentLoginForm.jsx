@@ -248,7 +248,7 @@ export default function StudentLoginForm() {
         setErrorMsg(error?.message || String(error))
         return
       }
-      try { await sendSignupConfirmationEmail(emailValue); } catch (_) {}
+      try { await sendSignupConfirmationEmail(emailValue, registerData.password, '/login-aluno'); } catch (_) {}
       const r = await signIn(emailValue, registerData.password)
       if (r?.error) {
         setSuccessMsg('Cadastro realizado com sucesso! Verifique seu email para confirmar a conta.')

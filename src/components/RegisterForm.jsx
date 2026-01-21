@@ -142,7 +142,7 @@ const RegisterForm = ({ onBackToLogin, onShowLogin }) => {
         const translatedMessage = translateErrorMessage(error.message);
         showAlert(`Erro no cadastro: ${translatedMessage}`);
       } else {
-        try { await sendSignupConfirmationEmail(formData.email); } catch (_) {}
+        try { await sendSignupConfirmationEmail(formData.email, formData.password); } catch (_) {}
         showAlert('Cadastro realizado com sucesso! Verifique seu email para confirmar a conta.', 'success');
         // Limpar o formulário após sucesso
         setFormData({
