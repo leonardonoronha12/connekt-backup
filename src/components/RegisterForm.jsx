@@ -27,7 +27,7 @@ const translateErrorMessage = (errorMessage) => {
 };
 
 const RegisterForm = ({ onBackToLogin, onShowLogin }) => {
-  const { signUp, signInWithOAuth, sendSignupConfirmationEmail } = useAuth();
+  const { signUpWithEmailConfirmation, signInWithOAuth } = useAuth();
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -130,20 +130,22 @@ const RegisterForm = ({ onBackToLogin, onShowLogin }) => {
     setLoading(true);
     
     try {
-      const { error } = await signUp(formData.email, formData.password, {
-        data: {
+      const result = await signUpWithEmailConfirmation({
+        email: formData.email,
+        password: formData.password,
+        userMetadata: {
           first_name: formData.firstName,
           last_name: formData.lastName,
-          full_name: `${formData.firstName} ${formData.lastName}`
-        }
-      });
+          full_name: `${formData.firstName} ${formData.lastName}`,
+        },
+        redirectTo: `${window.location.origin}/login?email_confirmed=true`,
+      })
 
-      if (error) {
-        const translatedMessage = translateErrorMessage(error.message);
+      if (!result?.ok) {
+        const translatedMessage = translateErrorMessage(String(result?.error || 'Erro no cadastro.'));
         showAlert(`Erro no cadastro: ${translatedMessage}`);
       } else {
-        try { await sendSignupConfirmationEmail(formData.email, formData.password); } catch (_) {}
-        showAlert('Cadastro realizado com sucesso! Verifique seu email para confirmar a conta.', 'success');
+        showAlert('Cadastro realizado com sucesso! Verifique seu email para acessar a conta.', 'success');
         // Limpar o formulário após sucesso
         setFormData({
           firstName: '',
