@@ -28,7 +28,8 @@ try {
   window.addEventListener('error', (e) => {
     const msg = e?.message || 'Erro inesperado'
     const file = e?.filename ? ` (${e.filename}:${e.lineno || 0}:${e.colno || 0})` : ''
-    renderFatal(String(msg) + String(file), '')
+    const stack = e?.error?.stack || ''
+    renderFatal(String(msg) + String(file), String(stack || ''))
   })
   window.addEventListener('unhandledrejection', (e) => {
     const r = e?.reason
