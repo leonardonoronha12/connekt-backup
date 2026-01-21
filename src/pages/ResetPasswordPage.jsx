@@ -1,6 +1,24 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 
+function translateResetErrorMessage(message) {
+  const msg = String(message || '').trim()
+  if (!msg) return msg
+  const map = {
+    'New password should be different from the old password.': 'A nova senha deve ser diferente da senha atual.',
+    'Password should be at least 6 characters.': 'A senha deve ter pelo menos 6 caracteres.',
+    'Password should be at least 6 characters': 'A senha deve ter pelo menos 6 caracteres.',
+    'Password is too weak': 'Senha muito fraca.',
+    'Invalid refresh token': 'Link de redefinição expirado. Solicite um novo.',
+    'JWT expired': 'Link de redefinição expirado. Solicite um novo.',
+  }
+  if (map[msg]) return map[msg]
+  if (msg.toLowerCase().includes('new password') && msg.toLowerCase().includes('old password')) {
+    return 'A nova senha deve ser diferente da senha atual.'
+  }
+  return msg
+}
+
 export default function ResetPasswordPage() {
   const [loading, setLoading] = useState(true);
   const [hasSession, setHasSession] = useState(false);
@@ -72,7 +90,7 @@ export default function ResetPasswordPage() {
     try {
       const { error: updateError } = await supabase.auth.updateUser({ password });
       if (updateError) {
-        setError(updateError.message || 'Erro ao redefinir senha.');
+        setError(translateResetErrorMessage(updateError.message) || 'Erro ao redefinir senha.');
         return;
       }
       setSuccess('Senha redefinida com sucesso.');
