@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Bem-vindo(a) - Connekt</title>
+    <style>
+      body { font-family: Inter, Arial, sans-serif; margin: 0; padding: 0; background-color: #f8fafc; }
+      .container { max-width: 600px; margin: 0 auto; background-color: white; border: 1px solid #e3e4e5; border-radius: 12px; overflow: hidden; }
+      .header { background: linear-gradient(135deg, #0047BB 0%, #321A88 100%); padding: 32px 20px; text-align: center; color: white; }
+      .logo { font-size: 30px; font-weight: 800; margin: 0; }
+      .subtitle { margin-top: 6px; font-size: 14px; opacity: .9; }
+      .content { padding: 28px 20px; }
+      .title { color: #1E1B39; font-size: 22px; font-weight: 700; margin: 0 0 12px; text-align: center; }
+      .message { color: #404040; font-size: 15px; line-height: 1.6; margin: 0 0 18px; text-align: center; }
+      .button { display: inline-block; background: linear-gradient(135deg, #0047BB 0%, #321A88 100%); color: white; padding: 14px 22px; text-decoration: none; border-radius: 10px; font-weight: 700; font-size: 15px; }
+      .button:hover { opacity: 0.95; }
+      .footer { background-color: #f8fafc; padding: 22px 18px; text-align: center; border-top: 1px solid #e3e4e5; }
+      .footer-text { color: #9291A5; font-size: 12px; line-height: 1.5; margin: 0; }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <div class="logo">Connekt</div>
+        <div class="subtitle">Plataforma de Cursos de Medicina</div>
+      </div>
+      <div class="content">
+        <h1 class="title">Seu cadastro foi criado</h1>
+        <p class="message">
+          Seja bem-vindo(a) à Connekt. Você já pode acessar sua conta.
+        </p>
+        <div style="text-align: center; margin: 18px 0 10px;">
+          <a href="{{ .LoginURL }}" class="button">Acessar minha conta</a>
+        </div>
+        <p class="message" style="font-size: 12px; color: #9291A5;">
+          Se você não se cadastrou, ignore este email com segurança.
+        </p>
+      </div>
+      <div class="footer">
+        <p class="footer-text">
+          © Connekt. Todos os direitos reservados.<br />
+          <a href="https://appconnekt.com.br" style="color: #0047BB;">appconnekt.com.br</a>
+        </p>
+      </div>
+    </div>
+  </body>
+</html>
+

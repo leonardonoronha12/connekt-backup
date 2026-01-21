@@ -250,7 +250,7 @@ export default function StudentLoginForm() {
         setErrorMsg(translateErrorMessage(String(result?.error || 'Erro no cadastro.')))
         return
       }
-      setSuccessMsg('Cadastro realizado com sucesso! Verifique seu email para confirmar a conta.')
+      setSuccessMsg('Cadastro realizado com sucesso! Verifique seu email para acessar a conta.')
       setRegisterData({
         firstName: '',
         lastName: '',
