@@ -91,28 +91,25 @@ async function supabaseAdminRequest({ url, body }) {
   return { ok: r.ok, status: r.status, data: data || text }
 }
 
-async function generateSignupLink({ email, password, userMetadata, redirectTo }) {
+async function adminCreateUser({ email, password, userMetadata }) {
   const r = await supabaseAdminRequest({
-    url: '/auth/v1/admin/generate_link',
+    url: '/auth/v1/admin/users',
     body: {
-      type: 'signup',
       email,
       password,
-      data: userMetadata && typeof userMetadata === 'object' ? userMetadata : undefined,
-      options: redirectTo ? { redirect_to: redirectTo } : undefined,
+      email_confirm: true,
+      user_metadata: userMetadata && typeof userMetadata === 'object' ? userMetadata : undefined,
     },
   })
 
-  if (!r.ok) return { ok: false, error: 'supabase_generate_link_failed', details: r.data }
+  if (r.ok) return { ok: true }
 
-  const data = r.data && typeof r.data === 'object' ? r.data : {}
-  const actionLink =
-    data?.action_link ||
-    data?.properties?.action_link ||
-    data?.data?.properties?.action_link ||
-    ''
+  const msg = JSON.stringify(r.data || '').toLowerCase()
+  if (msg.includes('already') || msg.includes('registered') || msg.includes('exists')) {
+    return { ok: false, error: 'email_already_registered' }
+  }
 
-  return { ok: true, actionLink: String(actionLink || '').trim() }
+  return { ok: false, error: 'create_user_failed', details: r.data }
 }
 
 async function sendSendgridEmail({ to, fromEmail, fromName, replyTo, subject, html }) {
@@ -161,6 +158,23 @@ function loadConfirmationTemplateHtml(confirmationUrl) {
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Confirme seu cadastro - Connekt</title></head><body style="font-family:Inter,Arial,sans-serif;line-height:1.6;color:#22252B;background:#f8fafc;margin:0;padding:24px"><div style="max-width:600px;margin:0 auto;background:#fff;border:1px solid #E3E4E5;border-radius:12px;padding:24px"><h2 style="margin:0 0 12px">Confirme seu cadastro</h2><p style="margin:0 0 18px">Clique no botão abaixo para confirmar seu email e ativar sua conta na Connekt.</p><p style="margin:0 0 18px"><a href="${safeUrl}" style="display:inline-block;background:#0047BB;color:#fff;text-decoration:none;padding:12px 16px;border-radius:8px;font-weight:600">Confirmar meu email</a></p><p style="margin:0;font-size:12px;color:#6b7280">Se você não se cadastrou, ignore este email.</p></div></body></html>`
 }
 
+function loadWelcomeTemplateHtml(loginUrl) {
+  const templatePath = path.join(process.cwd(), 'supabase', 'templates', 'welcome.html')
+  let html = ''
+  try {
+    html = fs.readFileSync(templatePath, 'utf8')
+  } catch (_) {
+    html = ''
+  }
+
+  const safeUrl = escapeHtml(loginUrl)
+  if (html) {
+    return html.replace(/\{\{\s*\.LoginURL\s*\}\}/g, safeUrl)
+  }
+
+  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/><title>Bem-vindo(a) - Connekt</title></head><body style="font-family:Inter,Arial,sans-serif;line-height:1.6;color:#22252B;background:#f8fafc;margin:0;padding:24px"><div style="max-width:600px;margin:0 auto;background:#fff;border:1px solid #E3E4E5;border-radius:12px;overflow:hidden"><div style="background:#fff;padding:18px 20px;text-align:center;border-bottom:1px solid #E3E4E5"><img src="https://app.connektco.com/logo%20connekt.png" alt="Connekt" style="display:block;margin:0 auto;max-width:180px;width:100%;height:auto" /></div><div style="padding:24px"><h2 style="margin:0 0 12px">Seu cadastro foi criado</h2><p style="margin:0 0 18px">Seja bem-vindo(a) à Connekt. Você já pode acessar sua conta.</p><p style="margin:0 0 18px"><a href="${safeUrl}" style="display:inline-block;background:#0047BB;color:#fff;text-decoration:none;padding:12px 16px;border-radius:8px;font-weight:600">Acessar minha conta</a></p><p style="margin:0;font-size:12px;color:#6b7280">Se você não se cadastrou, ignore este email.</p></div></div></body></html>`
+}
+
 export default async function handler(req, res) {
   try {
     if (req.method === 'OPTIONS') {
@@ -191,18 +205,21 @@ export default async function handler(req, res) {
       const siteOrigin = safeOriginFromUrl(siteUrl)
       const defaultRedirectTo = siteOrigin ? `${siteOrigin}/login?email_confirmed=true` : ''
       const redirectTo = String(payload.redirectTo || defaultRedirectTo || '').trim()
+      const loginUrl = redirectTo || (siteOrigin ? `${siteOrigin}/login` : '')
 
-      const link = await generateSignupLink({ email, password, userMetadata, redirectTo })
-      if (!link.ok) return json(res, 500, { error: link.error, details: link.details || null })
-      if (!link.actionLink) return json(res, 500, { error: 'missing_action_link' })
+      const created = await adminCreateUser({ email, password, userMetadata })
+      if (!created.ok) {
+        if (created.error === 'email_already_registered') return json(res, 409, { error: 'email_already_registered' })
+        return json(res, 500, { error: created.error, details: created.details || null })
+      }
 
-      const html = loadConfirmationTemplateHtml(link.actionLink)
+      const html = loadWelcomeTemplateHtml(loginUrl)
       const sent = await sendSendgridEmail({
         to: email,
         fromEmail,
         fromName,
         replyTo: replyTo && isValidEmail(replyTo) ? replyTo : '',
-        subject: 'Confirmar cadastro - Connekt',
+        subject: 'Bem-vindo(a) à Connekt',
         html,
       })
       if (!sent.ok) return json(res, 500, { error: sent.error, details: sent.details || null })
