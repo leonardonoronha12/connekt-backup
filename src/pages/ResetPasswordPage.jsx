@@ -28,6 +28,8 @@ export default function ResetPasswordPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [redirecting, setRedirecting] = useState(false);
+  const [redirectCountdown, setRedirectCountdown] = useState(10);
 
   useEffect(() => {
     let active = true;
@@ -57,11 +59,31 @@ export default function ResetPasswordPage() {
     return () => { active = false; };
   }, []);
 
+  useEffect(() => {
+    if (!redirecting) return;
+    if (redirectCountdown <= 0) return;
+    const t = window.setTimeout(() => setRedirectCountdown((v) => Math.max(0, Number(v || 0) - 1)), 1000);
+    return () => window.clearTimeout(t);
+  }, [redirecting, redirectCountdown]);
+
+  useEffect(() => {
+    if (!redirecting) return;
+    if (redirectCountdown > 0) return;
+    let cancelled = false;
+    (async () => {
+      try { await supabase.auth.signOut(); } catch (_) {}
+      if (cancelled) return;
+      window.history.replaceState({}, '', '/login');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    })();
+    return () => { cancelled = true; };
+  }, [redirecting, redirectCountdown]);
+
   const canSubmit = useMemo(() => {
     const p = String(password || '');
     const c = String(confirm || '');
-    return hasSession && !saving && p.length >= 6 && p === c;
-  }, [password, confirm, hasSession, saving]);
+    return hasSession && !saving && !redirecting && p.length >= 6 && p === c;
+  }, [password, confirm, hasSession, saving, redirecting]);
 
   const goToLogin = () => {
     window.history.replaceState({}, '', '/login');
@@ -94,8 +116,8 @@ export default function ResetPasswordPage() {
         return;
       }
       setSuccess('Senha redefinida com sucesso.');
-      try { await supabase.auth.signOut(); } catch (_) {}
-      setTimeout(() => goToLogin(), 900);
+      setRedirectCountdown(10);
+      setRedirecting(true);
     } catch (err) {
       setError(err?.message || 'Erro ao redefinir senha.');
     } finally {
@@ -109,6 +131,10 @@ export default function ResetPasswordPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+      <style>{`
+        @keyframes connekt-check-draw { from { stroke-dashoffset: 60; } to { stroke-dashoffset: 0; } }
+        @keyframes connekt-pop { 0% { transform: scale(.92); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+      `}</style>
       <div className="w-full max-w-md">
         <button
           type="button"
@@ -153,6 +179,29 @@ export default function ResetPasswordPage() {
             </div>
           ) : null}
 
+          {redirecting ? (
+            <div
+              className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm flex items-center gap-3 justify-center"
+              style={{ animation: 'connekt-pop 260ms ease-out both' }}
+            >
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <circle cx="12" cy="12" r="10" stroke="#16A34A" strokeWidth="2" opacity="0.25" />
+                <path
+                  d="M7 12.5l3 3 7-7"
+                  stroke="#16A34A"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  style={{ strokeDasharray: 60, strokeDashoffset: 60, animation: 'connekt-check-draw 520ms ease-out 120ms forwards' }}
+                />
+              </svg>
+              <div className="text-center">
+                <div className="font-medium">Senha alterada com sucesso.</div>
+                <div className="text-green-700/80">Redirecionando para o login em {redirectCountdown}s…</div>
+              </div>
+            </div>
+          ) : null}
+
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Nova senha</label>
@@ -163,7 +212,7 @@ export default function ResetPasswordPage() {
                 className="w-full h-12 px-3 border border-gray-200 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-200 focus:outline-none transition-all"
                 placeholder="Mínimo 6 caracteres"
                 autoComplete="new-password"
-                disabled={saving}
+                disabled={saving || redirecting}
               />
             </div>
             <div>
@@ -175,7 +224,7 @@ export default function ResetPasswordPage() {
                 className="w-full h-12 px-3 border border-gray-200 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-200 focus:outline-none transition-all"
                 placeholder="Repita a senha"
                 autoComplete="new-password"
-                disabled={saving}
+                disabled={saving || redirecting}
               />
             </div>
 
