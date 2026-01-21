@@ -4,6 +4,16 @@ import { deviceSessionService } from '@/services/deviceSessionService';
 
 const AuthContext = createContext(undefined);
 
+function withTimeout(promise, ms) {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error('timeout')), Math.max(1, Number(ms || 0)))
+    Promise.resolve(promise).then(
+      (v) => { clearTimeout(t); resolve(v) },
+      (e) => { clearTimeout(t); reject(e) },
+    )
+  })
+}
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [session, setSession] = useState(null);
@@ -46,7 +56,7 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     const getSession = async () => {
       try {
-        const { data: { session: currentSession } } = await supabase.auth.getSession();
+        const { data: { session: currentSession } } = await withTimeout(supabase.auth.getSession(), 4500);
         handleSession(currentSession);
       } catch (e) {
         const msg = (e && (e.message || e.error_description || e.msg)) ? (e.message || e.error_description || e.msg) : String(e);
@@ -56,7 +66,8 @@ export const AuthProvider = ({ children }) => {
           msgLower.includes('networkerror') ||
           msgLower.includes('load failed') ||
           msgLower.includes('err_network') ||
-          msgLower.includes('network');
+          msgLower.includes('network') ||
+          msgLower.includes('timeout');
         const isInvalidRefresh = msg.toLowerCase().includes('invalid refresh token');
         if (isNetworkError) {
           const stored = tryReadStoredSession()
