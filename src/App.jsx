@@ -444,7 +444,15 @@ function AppContent() {
   }, [user, loading, isPublicView, isDemoStudent, currentView]);
 
   if (loading) {
-    return null;
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
+        <div className="bg-white rounded-[16px] shadow-sm border border-[#E3E4E5] px-8 py-7 flex flex-col items-center gap-3">
+          <div className="w-12 h-12 rounded-full border-4 border-[#E3E4E5] border-t-[#0047BB] animate-spin" />
+          <div className="text-[14px] font-semibold text-[#22252B]">Carregando…</div>
+          <div className="text-[12px] text-[#6B7280] text-center">Aguarde um instante.</div>
+        </div>
+      </div>
+    );
   }
 
   if (!user && !isPublicView && !(isDemoStudent && (currentView === 'alunoDashboard' || currentView === 'alunoAula' || currentView === 'alunoCurso' || currentView === 'alunoSimulados' || currentView === 'alunoSimuladoAcesso' || currentView === 'alunoConfiguracoes' || currentView === 'alunoRepostaCorretaSimulado' || currentView === 'cursoPreviewAluno'))) {
