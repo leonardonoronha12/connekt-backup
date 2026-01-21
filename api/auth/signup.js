@@ -91,34 +91,14 @@ async function supabaseAdminRequest({ url, body }) {
   return { ok: r.ok, status: r.status, data: data || text }
 }
 
-async function adminCreateUser({ email, password, userMetadata }) {
-  const r = await supabaseAdminRequest({
-    url: '/auth/v1/admin/users',
-    body: {
-      email,
-      password,
-      email_confirm: false,
-      user_metadata: userMetadata && typeof userMetadata === 'object' ? userMetadata : undefined,
-    },
-  })
-
-  if (r.ok) return { ok: true }
-
-  const msg = JSON.stringify(r.data || '').toLowerCase()
-  if (msg.includes('already') || msg.includes('registered') || msg.includes('exists')) {
-    return { ok: true, alreadyExists: true }
-  }
-
-  return { ok: false, error: 'create_user_failed', details: r.data }
-}
-
-async function generateSignupLink({ email, password, redirectTo }) {
+async function generateSignupLink({ email, password, userMetadata, redirectTo }) {
   const r = await supabaseAdminRequest({
     url: '/auth/v1/admin/generate_link',
     body: {
       type: 'signup',
       email,
       password,
+      data: userMetadata && typeof userMetadata === 'object' ? userMetadata : undefined,
       options: redirectTo ? { redirect_to: redirectTo } : undefined,
     },
   })
@@ -212,10 +192,7 @@ export default async function handler(req, res) {
       const defaultRedirectTo = siteOrigin ? `${siteOrigin}/login?email_confirmed=true` : ''
       const redirectTo = String(payload.redirectTo || defaultRedirectTo || '').trim()
 
-      const created = await adminCreateUser({ email, password, userMetadata })
-      if (!created.ok) return json(res, 500, { error: created.error, details: created.details || null })
-
-      const link = await generateSignupLink({ email, password, redirectTo })
+      const link = await generateSignupLink({ email, password, userMetadata, redirectTo })
       if (!link.ok) return json(res, 500, { error: link.error, details: link.details || null })
       if (!link.actionLink) return json(res, 500, { error: 'missing_action_link' })
 
@@ -238,4 +215,3 @@ export default async function handler(req, res) {
     return json(res, 500, { error: 'internal_error', message: e?.message || String(e) })
   }
 }
-
