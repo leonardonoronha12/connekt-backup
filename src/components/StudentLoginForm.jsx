@@ -1,6 +1,7 @@
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, Eye, EyeOff } from 'lucide-react'
 import { useAuth } from '@/contexts/SupabaseAuthContext'
+import { setActiveProducerUserId } from '@/services/producerScope'
 
 export default function StudentLoginForm() {
   const { signIn, signInWithOAuth, resetPassword, signUpWithEmailConfirmation } = useAuth()
@@ -37,6 +38,14 @@ export default function StudentLoginForm() {
     } catch (_) {
       return false
     }
+  }, [])
+
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search || '')
+      const producerUid = params.get('producer_uid') || params.get('producerUserId') || params.get('producer_uid'.toUpperCase()) || ''
+      if (producerUid) setActiveProducerUserId(producerUid)
+    } catch (_) {}
   }, [])
   const isRegisterValid = useMemo(() => {
     const firstName = String(registerData.firstName || '').trim()

@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import Header from '@/components/Header'
 import { Database, FileText, GraduationCap, LayoutGrid, Menu, Monitor, Search, Settings, X } from 'lucide-react'
+import { supabase } from '@/lib/supabaseClient'
+import { getActiveProducerUserId } from '@/services/producerScope'
 
 const navSections = [
   {
@@ -28,6 +30,8 @@ export default function AlunoSimuladosPage() {
   const currentPath = typeof window !== 'undefined' ? window.location.pathname : '/aluno/simulados'
   const [searchValue, setSearchValue] = useState('')
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  const [simulados, setSimulados] = useState([])
+  const [simuladosLoading, setSimuladosLoading] = useState(false)
   const isDemoStudent = (() => {
     try {
       const host = String(window.location.hostname || '').toLowerCase()
@@ -40,13 +44,42 @@ export default function AlunoSimuladosPage() {
       return false
     }
   })()
-
-  const simulados = useMemo(() => [], [])
+  const activeProducerUserId = useMemo(() => {
+    try { return getActiveProducerUserId() } catch (_) { return '' }
+  }, [])
   const filteredSimulados = useMemo(() => {
     const q = String(searchValue || '').trim().toLowerCase()
     if (!q) return simulados
     return simulados.filter((s) => String(s?.title || '').toLowerCase().includes(q))
   }, [simulados, searchValue])
+
+  useEffect(() => {
+    let active = true
+    const run = async () => {
+      if (isDemoStudent) {
+        if (!active) return
+        setSimulados([])
+        return
+      }
+      const pid = String(activeProducerUserId || '').trim()
+      setSimuladosLoading(true)
+      try {
+        let q = supabase.from('simulados').select('id,title,is_paid,price').order('created_at', { ascending: false }).limit(200)
+        if (pid) q = q.eq('user_id', pid)
+        const { data, error } = await q
+        if (!active) return
+        if (error) throw error
+        setSimulados(Array.isArray(data) ? data : [])
+      } catch (_) {
+        if (!active) return
+        setSimulados([])
+      } finally {
+        if (active) setSimuladosLoading(false)
+      }
+    }
+    run()
+    return () => { active = false }
+  }, [activeProducerUserId, isDemoStudent])
 
   useEffect(() => {
     if (!mobileNavOpen) return
@@ -228,14 +261,41 @@ export default function AlunoSimuladosPage() {
                   </div>
 
                   <div className="mt-4 bg-white border border-[#E3E4E5] rounded-[10px] min-h-[520px] flex items-center justify-center">
-                    {filteredSimulados.length === 0 ? (
+                    {simuladosLoading ? (
+                      <div className="text-[12px] text-[#737780]">Carregando…</div>
+                    ) : filteredSimulados.length === 0 ? (
                       <div className="flex flex-col items-center text-center">
                         <img src="/icone backup simulados.png" alt="" className="w-[64px] h-[64px] object-contain opacity-60" />
                         <div className="mt-3 text-[12px] font-semibold text-[#22252B]">Nenhum simulado</div>
                         <div className="mt-1 text-[11px] text-[#737780] max-w-[260px]">Não encontramos nenhum simulado no momento</div>
                       </div>
                     ) : (
-                      <div />
+                      <div className="w-full h-full p-5">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          {filteredSimulados.map((s) => (
+                            <button
+                              key={s.id}
+                              type="button"
+                              className="text-left rounded-[10px] border border-[#E3E4E5] bg-[#F8FAFC] p-4 hover:bg-white transition-colors"
+                              onClick={() => {
+                                const qs = new URLSearchParams()
+                                qs.set('simId', String(s.id))
+                                navigateTo(`/aluno/simulados/acesso?${qs.toString()}`)
+                              }}
+                            >
+                              <div className="flex items-center justify-between gap-4">
+                                <div className="min-w-0">
+                                  <div className="text-[12px] font-semibold text-[#22252B] truncate">{s.title || 'Simulado'}</div>
+                                  <div className="mt-1 text-[11px] text-[#737780]">{s.is_paid ? `Pago • R$ ${Number(s.price || 0).toFixed(2)}` : 'Gratuito'}</div>
+                                </div>
+                                <div className="h-8 px-3 rounded-[8px] bg-[#EEF2FF] text-[#0047BB] text-[12px] font-semibold inline-flex items-center">
+                                  Acessar
+                                </div>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                     )}
                   </div>
                 </div>
