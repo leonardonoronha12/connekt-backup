@@ -32,11 +32,11 @@
       ]
     }
   ],
-  "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/$1" },
-    { "source": "/reset-password", "destination": "/api/reset-password" },
-    { "source": "/reset-password/(.*)", "destination": "/api/reset-password" },
-    { "source": "/(.*)", "destination": "/index.html" }
+  "routes": [
+    { "handle": "filesystem" },
+    { "src": "/reset-password", "dest": "/api/reset-password" },
+    { "src": "/reset-password/(.*)", "dest": "/api/reset-password" },
+    { "src": "/(.*)", "dest": "/index.html" }
   ]
 }
 
