@@ -156,7 +156,7 @@ export default function CursoPreviewAlunoPage() {
         if (isAlunoView && pid && isBlockedRead(e)) {
           try {
             const token = await getAccessToken()
-            const r = await fetch(`/api/course-by-producer?courseId=${encodeURIComponent(String(courseId))}&producerId=${encodeURIComponent(pid)}`, {
+            const r = await fetch(`/api/producer?type=course&courseId=${encodeURIComponent(String(courseId))}&producerId=${encodeURIComponent(pid)}`, {
               headers: token ? { Authorization: `Bearer ${token}` } : {},
             })
             const body = await r.json().catch(() => ({}))

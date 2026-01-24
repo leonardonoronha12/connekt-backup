@@ -929,7 +929,7 @@ export default function AlunoAulaPage() {
         if (pid && isBlockedRead(e)) {
           try {
             const token = await getAccessToken()
-            const r = await fetch(`/api/course-by-producer?courseId=${encodeURIComponent(cid)}&producerId=${encodeURIComponent(pid)}`, {
+            const r = await fetch(`/api/producer?type=course&courseId=${encodeURIComponent(cid)}&producerId=${encodeURIComponent(pid)}`, {
               headers: token ? { Authorization: `Bearer ${token}` } : {},
             })
             const body = await r.json().catch(() => ({}))
