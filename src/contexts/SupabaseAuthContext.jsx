@@ -242,8 +242,13 @@ export const AuthProvider = ({ children }) => {
           const arrivedFromAuth = pathname === '/login' || pathname === '/verify-email' || pathname === '/login-aluno' || pathname === '/aluno/login';
           const shouldRedirect = (arrivedFromRoot || arrivedFromAuth) && pathname !== '/reset-password';
           if (shouldRedirect && !isLocked) {
+            const producerUidFromUrl =
+              params.get('producer_uid') ||
+              params.get('producerUserId') ||
+              params.get('producer_uid'.toUpperCase()) ||
+              ''
             const target = isStudentFlow
-              ? '/aluno'
+              ? (producerUidFromUrl ? `/aluno?producer_uid=${encodeURIComponent(String(producerUidFromUrl))}` : '/aluno')
               : (hasEmailConfirmedParam || arrivedFromRoot ? '/dashboard?email_confirmed=true' : '/dashboard');
             window.history.replaceState({}, '', target);
             window.dispatchEvent(new PopStateEvent('popstate'));
