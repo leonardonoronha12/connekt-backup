@@ -540,7 +540,7 @@ export default function AlunoDashboardPage() {
         }
         try {
           const token = await getAccessToken()
-          const r = await fetch(`/api/producer-courses?producerId=${encodeURIComponent(pid)}`, {
+          const r = await fetch(`/api/producer?type=courses&producerId=${encodeURIComponent(pid)}`, {
             headers: token ? { Authorization: `Bearer ${token}` } : {},
           })
           const body = await r.json().catch(() => ({}))
@@ -587,7 +587,7 @@ export default function AlunoDashboardPage() {
         }
         try {
           const token = await getAccessToken()
-          const r = await fetch(`/api/producer-simulados?producerId=${encodeURIComponent(pid)}`, {
+          const r = await fetch(`/api/producer?type=simulados&producerId=${encodeURIComponent(pid)}`, {
             headers: token ? { Authorization: `Bearer ${token}` } : {},
           })
           const body = await r.json().catch(() => ({}))

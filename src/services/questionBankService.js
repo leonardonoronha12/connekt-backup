@@ -281,7 +281,8 @@ class QuestionBankService {
       const proxyUpload = async () => {
         const ext = (file.type || '').split('/')[1] || 'bin';
         const safeName = (file.name || `image.${ext}`).replace(/[^a-zA-Z0-9_.-]/g, '_');
-        const u = new URL('/api/upload-question-image', window.location.origin);
+        const u = new URL('/api/upload-question-media', window.location.origin);
+        u.searchParams.set('type', 'image');
         if (bankId) u.searchParams.set('bankId', String(bankId));
         if (questionId) u.searchParams.set('questionId', String(questionId));
         u.searchParams.set('filename', safeName);
@@ -475,7 +476,8 @@ class QuestionBankService {
       const proxyUpload = async () => {
         const ext = (file.type || '').split('/')[1] || 'bin';
         const safeName = (file.name || `video.${ext}`).replace(/[^a-zA-Z0-9_.-]/g, '_');
-        const u = new URL('/api/upload-question-video', window.location.origin);
+        const u = new URL('/api/upload-question-media', window.location.origin);
+        u.searchParams.set('type', 'video');
         if (bankId) u.searchParams.set('bankId', String(bankId));
         if (questionId) u.searchParams.set('questionId', String(questionId));
         u.searchParams.set('filename', safeName);

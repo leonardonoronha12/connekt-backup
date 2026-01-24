@@ -11,12 +11,15 @@ export default async function handler(req, res) {
 
   try {
     const u = new URL(req.url, `http://${req.headers.host}`)
+    const mediaType = String(u.searchParams.get('type') || '').trim().toLowerCase()
     const bankId = u.searchParams.get('bankId')
     const questionId = u.searchParams.get('questionId')
     const filename = u.searchParams.get('filename')
     const contentType = u.searchParams.get('contentType') || req.headers['content-type'] || 'application/octet-stream'
     const buffer = await readRawBody(req)
     if (!filename || !buffer || buffer.length === 0) return json(res, 400, { error: 'missing_filename_or_body' })
+
+    if (mediaType !== 'image' && mediaType !== 'video') return json(res, 400, { error: 'invalid_type' })
 
     if (bankId && isUuid(bankId)) {
       const { data: bank } = await admin
@@ -56,7 +59,9 @@ export default async function handler(req, res) {
         const { data: row } = await admin.from('questions').select('id,metadata').eq('id', questionId).maybeSingle()
         if (row) {
           const meta = (row.metadata && typeof row.metadata === 'object') ? row.metadata : {}
-          const nextMeta = { ...meta, imageUrl: url, imagePath: objectPath }
+          const nextMeta = mediaType === 'image'
+            ? { ...meta, imageUrl: url, imagePath: objectPath }
+            : { ...meta, videoUrl: url, videoPath: objectPath }
           await admin.from('questions').update({ metadata: nextMeta, updated_at: new Date().toISOString() }).eq('id', questionId)
         }
       } catch (_) {}
