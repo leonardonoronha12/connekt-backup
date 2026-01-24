@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { deviceSessionService } from '@/services/deviceSessionService';
+import { setActiveProducerUserId } from '@/services/producerScope'
 
 const AuthContext = createContext(undefined);
 
@@ -60,6 +61,21 @@ function readStoredLoginIntent() {
     if (v) return String(v)
   } catch (_) {}
   return ''
+}
+
+function captureProducerScopeFromUrl() {
+  try {
+    const path = String(window.location.pathname || '')
+    const isAlunoContext = path === '/login-aluno' || path === '/aluno/login' || path === '/aluno' || path.startsWith('/aluno/')
+    if (!isAlunoContext) return
+    const params = new URLSearchParams(window.location.search || '')
+    const producerUid =
+      params.get('producer_uid') ||
+      params.get('producerUserId') ||
+      params.get('producer_uid'.toUpperCase()) ||
+      ''
+    if (producerUid) setActiveProducerUserId(producerUid)
+  } catch (_) {}
 }
 
 export const AuthProvider = ({ children }) => {
@@ -149,10 +165,12 @@ export const AuthProvider = ({ children }) => {
       }
     };
 
+    captureProducerScopeFromUrl()
     getSession();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, currentSession) => {
+        captureProducerScopeFromUrl()
         const isRecoveryUrl = () => {
           try {
             const h = String(window.location.hash || '').toLowerCase()
