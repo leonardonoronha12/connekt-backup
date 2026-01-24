@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
-import { getActiveProducerUserId } from '@/services/producerScope'
+import { useActiveProducerUserId } from '@/hooks/useActiveProducerUserId'
 import { X, Play, ChevronLeft, ChevronRight, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import CourseFooter from '@/components/CourseFooter'
@@ -78,9 +78,7 @@ export default function CursoPreviewAlunoPage() {
     }
   }, [])
 
-  const activeProducerUserId = useMemo(() => {
-    try { return getActiveProducerUserId() } catch (_) { return '' }
-  }, [])
+  const activeProducerUserId = useActiveProducerUserId()
 
   const isBlockedRead = (e) => {
     const msg = String(e?.message || e || '').toLowerCase()

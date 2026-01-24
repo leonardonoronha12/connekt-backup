@@ -1,4 +1,5 @@
 export const PRODUCER_SCOPE_KEY = 'connekt_student_producer_uid'
+export const PRODUCER_SCOPE_EVENT = 'connekt_producer_scope_changed'
 
 export function getActiveProducerUserId() {
   try {
@@ -17,10 +18,11 @@ export function setActiveProducerUserId(value) {
   if (!v) return
   try { sessionStorage.setItem(PRODUCER_SCOPE_KEY, v) } catch (_) {}
   try { localStorage.setItem(PRODUCER_SCOPE_KEY, v) } catch (_) {}
+  try { window.dispatchEvent(new Event(PRODUCER_SCOPE_EVENT)) } catch (_) {}
 }
 
 export function clearActiveProducerUserId() {
   try { sessionStorage.removeItem(PRODUCER_SCOPE_KEY) } catch (_) {}
   try { localStorage.removeItem(PRODUCER_SCOPE_KEY) } catch (_) {}
+  try { window.dispatchEvent(new Event(PRODUCER_SCOPE_EVENT)) } catch (_) {}
 }
-

@@ -4,7 +4,7 @@ import Header from '@/components/Header'
 import CourseFooter from '@/components/CourseFooter'
 import { supabase } from '@/lib/supabaseClient'
 import { useAuth } from '@/contexts/SupabaseAuthContext'
-import { getActiveProducerUserId } from '@/services/producerScope'
+import { useActiveProducerUserId } from '@/hooks/useActiveProducerUserId'
 
 const navSections = [
   {
@@ -497,9 +497,7 @@ export default function AlunoDashboardPage() {
   }, [])
 
   const email = useMemo(() => String(user?.email || '').trim().toLowerCase(), [user?.email])
-  const activeProducerUserId = useMemo(() => {
-    try { return getActiveProducerUserId() } catch (_) { return '' }
-  }, [])
+  const activeProducerUserId = useActiveProducerUserId()
 
   const isBlockedRead = (e) => {
     const msg = String(e?.message || e || '').toLowerCase()
