@@ -7,6 +7,7 @@ import { planService } from '@/services/planService.js';
 import { canConnectVideoProvider, canUseWhitelabel, canUseNpsFeedback, resolvePlanKey } from '@/services/planEntitlements.js';
 import CancelSubscriptionModal from '@/components/CancelSubscriptionModal.jsx';
 import { deviceSessionService } from '@/services/deviceSessionService.js';
+import { getPublicAppOrigin } from '@/services/publicUrl.js';
 
 const ConfiguracoesPage = () => {
   const { user, signOut, session } = useAuth();
@@ -39,7 +40,7 @@ const ConfiguracoesPage = () => {
     try {
       const uid = user?.id ? String(user.id).trim() : ''
       if (!uid) return ''
-      const origin = window.location.origin
+      const origin = getPublicAppOrigin() || window.location.origin
       return `${origin}/login-aluno?producer_uid=${encodeURIComponent(uid)}`
     } catch (_) {
       return ''

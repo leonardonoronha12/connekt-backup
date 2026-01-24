@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import { getActiveProducerUserId } from '@/services/producerScope'
 import { X, Play, ChevronLeft, ChevronRight, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import CourseFooter from '@/components/CourseFooter'
@@ -77,6 +78,25 @@ export default function CursoPreviewAlunoPage() {
     }
   }, [])
 
+  const activeProducerUserId = useMemo(() => {
+    try { return getActiveProducerUserId() } catch (_) { return '' }
+  }, [])
+
+  const isBlockedRead = (e) => {
+    const msg = String(e?.message || e || '').toLowerCase()
+    const sc = String(e?.status || e?.statusCode || '')
+    return sc === '401' || sc === '403' || msg.includes('row-level security') || msg.includes('permission denied') || msg.includes('not allowed')
+  }
+
+  const getAccessToken = async () => {
+    try {
+      const { data } = await supabase.auth.getSession()
+      return data?.session?.access_token || ''
+    } catch (_) {
+      return ''
+    }
+  }
+
   const navigateTo = (path) => {
     window.history.pushState({}, '', path)
     window.dispatchEvent(new PopStateEvent('popstate'))
@@ -134,6 +154,22 @@ export default function CursoPreviewAlunoPage() {
         setCourseRow(data || null);
       } catch (e) {
         if (!active) return;
+        const pid = String(activeProducerUserId || '').trim()
+        if (isAlunoView && pid && isBlockedRead(e)) {
+          try {
+            const token = await getAccessToken()
+            const r = await fetch(`/api/course-by-producer?courseId=${encodeURIComponent(String(courseId))}&producerId=${encodeURIComponent(pid)}`, {
+              headers: token ? { Authorization: `Bearer ${token}` } : {},
+            })
+            const body = await r.json().catch(() => ({}))
+            if (!active) return
+            if (r.ok && body?.data) {
+              setCourseRow(body.data)
+              setError(null)
+              return
+            }
+          } catch (_) {}
+        }
         setError(e?.message || 'Erro ao carregar curso.');
         setCourseRow(null);
       } finally {
@@ -142,7 +178,7 @@ export default function CursoPreviewAlunoPage() {
     };
     run();
     return () => { active = false; };
-  }, [courseId]);
+  }, [courseId, activeProducerUserId, isAlunoView]);
 
   useEffect(() => {
     const trySign = async () => {

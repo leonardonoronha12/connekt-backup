@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, Eye, EyeOff } from 'lucide-react'
 import { useAuth } from '@/contexts/SupabaseAuthContext'
 import { setActiveProducerUserId } from '@/services/producerScope'
+import { getPublicAppOrigin } from '@/services/publicUrl'
 
 export default function StudentLoginForm() {
   const { signIn, signInWithOAuth, resetPassword, signUpWithEmailConfirmation } = useAuth()
@@ -45,6 +46,8 @@ export default function StudentLoginForm() {
       const params = new URLSearchParams(window.location.search || '')
       const producerUid = params.get('producer_uid') || params.get('producerUserId') || params.get('producer_uid'.toUpperCase()) || ''
       if (producerUid) setActiveProducerUserId(producerUid)
+      try { sessionStorage.setItem('connekt_login_intent', 'aluno') } catch (_) {}
+      try { sessionStorage.setItem('connekt_login_mode', 'aluno') } catch (_) { try { localStorage.setItem('connekt_login_mode', 'aluno') } catch (_) {} }
     } catch (_) {}
   }, [])
   const isRegisterValid = useMemo(() => {
@@ -196,7 +199,10 @@ export default function StudentLoginForm() {
     setSuccessMsg('')
     try {
       try { sessionStorage.setItem('connekt_login_mode', 'aluno') } catch (_) { try { localStorage.setItem('connekt_login_mode', 'aluno') } catch (_) {} }
-      const { error } = await signInWithOAuth(provider, '/login-aluno')
+      let producerUid = ''
+      try { producerUid = String(new URLSearchParams(window.location.search || '').get('producer_uid') || '') } catch (_) { producerUid = '' }
+      const suffix = producerUid ? `?producer_uid=${encodeURIComponent(producerUid)}` : ''
+      const { error } = await signInWithOAuth(provider, `/login-aluno${suffix}`)
       if (error) setErrorMsg(translateErrorMessage(error?.message || String(error)))
     } catch (err) {
       setErrorMsg(translateErrorMessage(err?.message || String(err)))
@@ -257,7 +263,7 @@ export default function StudentLoginForm() {
           last_name: String(registerData.lastName || '').trim(),
           full_name: fullName,
         },
-        redirectTo: `${window.location.origin}/login-aluno?email_confirmed=true`,
+        redirectTo: `${getPublicAppOrigin() || window.location.origin}/login-aluno?email_confirmed=true`,
       })
       if (!result?.ok) {
         setErrorMsg(translateErrorMessage(String(result?.error || 'Erro no cadastro.')))

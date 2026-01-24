@@ -28,6 +28,37 @@ function navigateTo(path) {
   window.dispatchEvent(new PopStateEvent('popstate'))
 }
 
+function parseJsonMaybe(value) {
+  if (!value) return null
+  if (typeof value === 'object') return value
+  if (typeof value !== 'string') return null
+  try { return JSON.parse(value) } catch (_) { return null }
+}
+
+function getCourseModules(row) {
+  const parsed = parseJsonMaybe(row?.modules)
+  if (Array.isArray(parsed)) return parsed
+  if (parsed && typeof parsed === 'object') {
+    if (Array.isArray(parsed.modules)) return parsed.modules
+    if (Array.isArray(parsed.items)) return parsed.items
+  }
+  const fromData = parseJsonMaybe(row?.data)
+  if (fromData && typeof fromData === 'object' && Array.isArray(fromData.modules)) return fromData.modules
+  return []
+}
+
+function getFirstLessonInfo(row) {
+  const modules = getCourseModules(row)
+  const firstModule = Array.isArray(modules) ? modules[0] : null
+  const lessons = Array.isArray(firstModule?.lessons) ? firstModule.lessons : []
+  const firstLesson = lessons[0] || null
+  const title = String(firstLesson?.title || firstLesson?.name || '').trim()
+  return {
+    title: title || 'Aula',
+    lessonsTotal: lessons.length,
+  }
+}
+
 function SectionTitle({ title, onMore, showMoreInline = false, icon: Icon = null }) {
   return (
     <div className="flex items-center justify-between">
@@ -433,6 +464,8 @@ export default function AlunoDashboardPage() {
   const [loading, setLoading] = useState(true)
   const [student, setStudent] = useState(null)
   const [producerCourses, setProducerCourses] = useState([])
+  const [producerSimulados, setProducerSimulados] = useState([])
+  const [producerSimuladosLoading, setProducerSimuladosLoading] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [simuladosModalOpen, setSimuladosModalOpen] = useState(false)
   const [featuredModalOpen, setFeaturedModalOpen] = useState(false)
@@ -468,19 +501,110 @@ export default function AlunoDashboardPage() {
     try { return getActiveProducerUserId() } catch (_) { return '' }
   }, [])
 
+  const isBlockedRead = (e) => {
+    const msg = String(e?.message || e || '').toLowerCase()
+    const sc = String(e?.status || e?.statusCode || '')
+    return sc === '401' || sc === '403' || msg.includes('row-level security') || msg.includes('permission denied') || msg.includes('not allowed')
+  }
+
+  const getAccessToken = async () => {
+    try {
+      const { data } = await supabase.auth.getSession()
+      return data?.session?.access_token || ''
+    } catch (_) {
+      return ''
+    }
+  }
+
   useEffect(() => {
     let active = true
     const run = async () => {
       const pid = String(activeProducerUserId || '').trim()
-      if (!pid || isDemoStudent) return
+      if (!pid || isDemoStudent) {
+        if (active) setProducerCourses([])
+        return
+      }
       try {
-        const { data, error } = await supabase.from('courses').select('id,title,cover_url,data,user_id').eq('user_id', pid).order('created_at', { ascending: false }).limit(200)
+        const { data, error } = await supabase
+          .from('courses')
+          .select('id,title,cover_image_url,promo_video_url,module_layout_image_url,modules,data,user_id,created_at,status')
+          .eq('user_id', pid)
+          .order('created_at', { ascending: false })
+          .limit(200)
         if (!active) return
         if (error) throw error
         setProducerCourses(Array.isArray(data) ? data : [])
-      } catch (_) {
+      } catch (e) {
         if (!active) return
-        setProducerCourses([])
+        if (!isBlockedRead(e)) {
+          setProducerCourses([])
+          return
+        }
+        try {
+          const token = await getAccessToken()
+          const r = await fetch(`/api/producer-courses?producerId=${encodeURIComponent(pid)}`, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+          })
+          const body = await r.json().catch(() => ({}))
+          if (!active) return
+          if (!r.ok) {
+            setProducerCourses([])
+            return
+          }
+          setProducerCourses(Array.isArray(body?.data) ? body.data : [])
+        } catch (_) {
+          if (!active) return
+          setProducerCourses([])
+        }
+      }
+    }
+    run()
+    return () => { active = false }
+  }, [activeProducerUserId, isDemoStudent])
+
+  useEffect(() => {
+    let active = true
+    const run = async () => {
+      const pid = String(activeProducerUserId || '').trim()
+      if (!pid || isDemoStudent) {
+        if (active) setProducerSimulados([])
+        return
+      }
+      setProducerSimuladosLoading(true)
+      try {
+        const { data, error } = await supabase
+          .from('simulados')
+          .select('id,title,is_paid,price,created_at,user_id')
+          .eq('user_id', pid)
+          .order('created_at', { ascending: false })
+          .limit(200)
+        if (!active) return
+        if (error) throw error
+        setProducerSimulados(Array.isArray(data) ? data : [])
+      } catch (e) {
+        if (!active) return
+        if (!isBlockedRead(e)) {
+          setProducerSimulados([])
+          return
+        }
+        try {
+          const token = await getAccessToken()
+          const r = await fetch(`/api/producer-simulados?producerId=${encodeURIComponent(pid)}`, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+          })
+          const body = await r.json().catch(() => ({}))
+          if (!active) return
+          if (!r.ok) {
+            setProducerSimulados([])
+            return
+          }
+          setProducerSimulados(Array.isArray(body?.data) ? body.data : [])
+        } catch (_) {
+          if (!active) return
+          setProducerSimulados([])
+        }
+      } finally {
+        if (active) setProducerSimuladosLoading(false)
       }
     }
     run()
@@ -780,6 +904,7 @@ export default function AlunoDashboardPage() {
         course_name: row?.title || 'Curso',
         cover_image_url: deriveCourseCoverUrl(row) || null,
         progress: 0,
+        courseRow: row,
       }))
     }
     return Array.isArray(student?.courses) ? student.courses : []
@@ -802,22 +927,29 @@ export default function AlunoDashboardPage() {
       courseId: c?.course_id || c?.courseId || c?.id || null,
       courseTitle: c?.course_name || '',
       category: c?.course_name || 'Cardiologia',
-      title: 'Nome da aula aqui....',
+      title: (() => {
+        const info = c?.courseRow ? getFirstLessonInfo(c.courseRow) : null
+        return info?.title || 'Aula'
+      })(),
       cover: (() => {
         const t = String(c?.course_name || '').trim().toLowerCase()
         return producerCoversByTitle[t] || c?.cover_image_url || coverFallback
       })(),
       progress: c?.progress || 0,
-      lessonsDone: 20,
-      lessonsTotal: 45,
+      lessonsDone: 0,
+      lessonsTotal: (() => {
+        const info = c?.courseRow ? getFirstLessonInfo(c.courseRow) : null
+        return info?.lessonsTotal || null
+      })(),
     }))
     if (list.length > 0) return list
+    if (activeProducerUserId) return []
     return [
       { id: 'c1', courseId: null, courseTitle: 'Cardiologia', category: 'Cardiologia', title: 'Nome da aula aqui....', cover: coverFallback, progress: 67, lessonsDone: 20, lessonsTotal: 45 },
       { id: 'c2', courseId: null, courseTitle: 'Cardiologia', category: 'Cardiologia', title: 'Nome da aula aqui....', cover: coverFallback, progress: 67, lessonsDone: 20, lessonsTotal: 45 },
       { id: 'c3', courseId: null, courseTitle: 'Cardiologia', category: 'Cardiologia', title: 'Nome da aula aqui....', cover: coverFallback, progress: 67, lessonsDone: 20, lessonsTotal: 45 },
     ]
-  }, [courses, coverFallback, producerCoversByTitle])
+  }, [activeProducerUserId, courses, coverFallback, producerCoversByTitle])
 
   const myCourses = useMemo(() => {
     const list = courses.slice(0, 8).map((c, idx) => ({
@@ -831,13 +963,14 @@ export default function AlunoDashboardPage() {
       progress: c?.progress || 0,
     }))
     if (list.length > 0) return list
+    if (activeProducerUserId) return []
     return [
       { id: 'm1', title: 'Nome do curso', cover: pickCoverForCourse('Nome do curso', 0), progress: 0 },
       { id: 'm2', title: 'Nome do curso', cover: pickCoverForCourse('Nome do curso', 1), progress: 0 },
       { id: 'm3', title: 'Nome do curso', cover: pickCoverForCourse('Nome do curso', 2), progress: 0 },
       { id: 'm4', title: 'Nome do curso', cover: pickCoverForCourse('Nome do curso', 3), progress: 0 },
     ]
-  }, [courses, coverFallback, connektCourseCoverOptions, producerCoversByTitle])
+  }, [activeProducerUserId, courses, coverFallback, connektCourseCoverOptions, producerCoversByTitle])
 
   const featuredCourses = useMemo(() => {
     const base = myCourses.slice(0, 6)
@@ -856,13 +989,20 @@ export default function AlunoDashboardPage() {
   }, [featuredCourses, myCourses])
 
   const simulados = useMemo(() => {
+    if (producerSimuladosLoading) return []
+    if (activeProducerUserId && Array.isArray(producerSimulados)) {
+      return producerSimulados.slice(0, 6).map((s) => ({
+        ...s,
+        progress: 0,
+      }))
+    }
     return [
       { id: 's1', title: 'Nome do simulado', progress: 60, is_paid: false, price: 0 },
       { id: 's2', title: 'Nome do simulado', progress: 60, is_paid: true, price: 49.9 },
       { id: 's3', title: 'Nome do simulado', progress: 60, is_paid: false, price: 0 },
       { id: 's4', title: 'Nome do simulado', progress: 60, is_paid: true, price: 29.9 },
     ]
-  }, [])
+  }, [activeProducerUserId, producerSimulados, producerSimuladosLoading])
 
   const currentPath = typeof window !== 'undefined' ? window.location.pathname : '/aluno'
 
@@ -1083,6 +1223,9 @@ export default function AlunoDashboardPage() {
                       />
                     ))}
                   </div>
+                  {activeProducerUserId && continueItems.length === 0 ? (
+                    <div className="mt-3 text-[12px] text-[#737780]">Nenhum curso encontrado para este produtor.</div>
+                  ) : null}
                 </div>
 
                 <div className="mt-8">
@@ -1145,6 +1288,9 @@ export default function AlunoDashboardPage() {
                       />
                     ))}
                   </div>
+                  {activeProducerUserId && myCourses.length === 0 ? (
+                    <div className="mt-3 text-[12px] text-[#737780]">Nenhum curso encontrado para este produtor.</div>
+                  ) : null}
                 </div>
 
                 <div className="mt-8">
@@ -1268,6 +1414,11 @@ export default function AlunoDashboardPage() {
                       />
                     ))}
                   </div>
+                  {activeProducerUserId && simulados.length === 0 ? (
+                    <div className="mt-3 text-[12px] text-[#737780]">
+                      {producerSimuladosLoading ? 'Carregando simulados…' : 'Nenhum simulado encontrado para este produtor.'}
+                    </div>
+                  ) : null}
                 </div>
 
                 {loading ? (

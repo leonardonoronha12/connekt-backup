@@ -7,6 +7,7 @@ import Header from '@/components/Header'
 import CourseFooter from '@/components/CourseFooter'
 import { supabase } from '@/lib/supabaseClient'
 import { fetchConversationFeed } from '@/services/conversationService'
+import { getActiveProducerUserId } from '@/services/producerScope'
 
 const DEMO_PROMO_VIDEO_URL = 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4'
 
@@ -884,6 +885,25 @@ export default function AlunoAulaPage() {
     }
   }, [])
 
+  const activeProducerUserId = useMemo(() => {
+    try { return getActiveProducerUserId() } catch (_) { return '' }
+  }, [])
+
+  const isBlockedRead = (e) => {
+    const msg = String(e?.message || e || '').toLowerCase()
+    const sc = String(e?.status || e?.statusCode || '')
+    return sc === '401' || sc === '403' || msg.includes('row-level security') || msg.includes('permission denied') || msg.includes('not allowed')
+  }
+
+  const getAccessToken = async () => {
+    try {
+      const { data } = await supabase.auth.getSession()
+      return data?.session?.access_token || ''
+    } catch (_) {
+      return ''
+    }
+  }
+
   useEffect(() => {
     let active = true
     const run = async () => {
@@ -907,6 +927,22 @@ export default function AlunoAulaPage() {
         setCourseRow(data || null)
       } catch (e) {
         if (!active) return
+        const pid = String(activeProducerUserId || '').trim()
+        if (pid && isBlockedRead(e)) {
+          try {
+            const token = await getAccessToken()
+            const r = await fetch(`/api/course-by-producer?courseId=${encodeURIComponent(cid)}&producerId=${encodeURIComponent(pid)}`, {
+              headers: token ? { Authorization: `Bearer ${token}` } : {},
+            })
+            const body = await r.json().catch(() => ({}))
+            if (!active) return
+            if (r.ok && body?.data) {
+              setCourseRow(body.data)
+              setCourseError('')
+              return
+            }
+          } catch (_) {}
+        }
         setCourseRow(null)
         setCourseError(String(e?.message || 'Erro ao carregar curso'))
         setResolvedPromoUrl(DEMO_PROMO_VIDEO_URL)
@@ -916,7 +952,7 @@ export default function AlunoAulaPage() {
     }
     run()
     return () => { active = false }
-  }, [courseId, isDemoStudent])
+  }, [courseId, isDemoStudent, activeProducerUserId])
 
   useEffect(() => {
     const meta = getCourseMeta(courseRow)
