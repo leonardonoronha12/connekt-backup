@@ -7,7 +7,7 @@ import Header from '@/components/Header'
 import CourseFooter from '@/components/CourseFooter'
 import { supabase } from '@/lib/supabaseClient'
 import { fetchConversationFeed } from '@/services/conversationService'
-import { getActiveProducerUserId } from '@/services/producerScope'
+import { useActiveProducerUserId } from '@/hooks/useActiveProducerUserId'
 
 const DEMO_PROMO_VIDEO_URL = 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4'
 
@@ -885,9 +885,7 @@ export default function AlunoAulaPage() {
     }
   }, [])
 
-  const activeProducerUserId = useMemo(() => {
-    try { return getActiveProducerUserId() } catch (_) { return '' }
-  }, [])
+  const activeProducerUserId = useActiveProducerUserId()
 
   const isBlockedRead = (e) => {
     const msg = String(e?.message || e || '').toLowerCase()
