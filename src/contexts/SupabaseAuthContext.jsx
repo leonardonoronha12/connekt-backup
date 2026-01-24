@@ -50,6 +50,18 @@ function getAuthRedirectOrigin() {
   }
 }
 
+function readStoredLoginIntent() {
+  try {
+    const v = sessionStorage.getItem('connekt_login_intent')
+    if (v) return String(v)
+  } catch (_) {}
+  try {
+    const v = sessionStorage.getItem('connekt_login_mode') || localStorage.getItem('connekt_login_mode')
+    if (v) return String(v)
+  } catch (_) {}
+  return ''
+}
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [session, setSession] = useState(null);
@@ -179,7 +191,16 @@ export const AuthProvider = ({ children }) => {
         }
         if (event === 'SIGNED_IN') {
           let isLocked = false
-          if (shouldEnforceDeviceLock) {
+          const intent = readStoredLoginIntent()
+          const pathname = window.location.pathname
+          const isStudentFlow =
+            pathname === '/login-aluno' ||
+            pathname === '/aluno/login' ||
+            pathname === '/aluno' ||
+            pathname.startsWith('/aluno/') ||
+            intent === 'aluno'
+
+          if (shouldEnforceDeviceLock && !isStudentFlow) {
             try {
               const userId = currentSession?.user?.id
               if (userId) {
@@ -199,17 +220,18 @@ export const AuthProvider = ({ children }) => {
 
           const params = new URLSearchParams(window.location.search);
           const hasEmailConfirmedParam = params.get('email_confirmed') === 'true';
-          const pathname = window.location.pathname;
           const arrivedFromRoot = pathname === '/' || pathname === '/index.html';
           const arrivedFromAuth = pathname === '/login' || pathname === '/verify-email' || pathname === '/login-aluno' || pathname === '/aluno/login';
           const shouldRedirect = (arrivedFromRoot || arrivedFromAuth) && pathname !== '/reset-password';
           if (shouldRedirect && !isLocked) {
-            const isStudentFlow = pathname === '/login-aluno' || pathname === '/aluno/login';
             const target = isStudentFlow
               ? '/aluno'
               : (hasEmailConfirmedParam || arrivedFromRoot ? '/dashboard?email_confirmed=true' : '/dashboard');
             window.history.replaceState({}, '', target);
             window.dispatchEvent(new PopStateEvent('popstate'));
+            if (isStudentFlow) {
+              try { sessionStorage.removeItem('connekt_login_intent') } catch (_) {}
+            }
           }
         }
         // Opcional: em SIGNED_OUT, volta para login
@@ -234,6 +256,12 @@ export const AuthProvider = ({ children }) => {
     if (!shouldEnforceDeviceLock) return
     if (!user?.id) return
     if (deviceLock) return
+    try {
+      const intent = readStoredLoginIntent()
+      const path = String(window.location.pathname || '')
+      const isStudentFlow = intent === 'aluno' || path === '/aluno' || path.startsWith('/aluno/') || path === '/login-aluno' || path === '/aluno/login'
+      if (isStudentFlow) return
+    } catch (_) {}
     let cancelled = false
     const userId = user.id
 
