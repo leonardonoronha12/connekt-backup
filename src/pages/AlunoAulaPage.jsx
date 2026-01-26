@@ -604,8 +604,7 @@ function AttachmentsPanel({ courseId, moduleId, lessonId, lessonKey, demo }) {
                   ) : (
                     <button
                       type="button"
-                      className={`h-9 px-3 rounded-[8px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#22252B] inline-flex items-center gap-2 ${resolvingById[String(m.id || '')] ? 'opacity-50 cursor-not-allowed' : ''}`}
-                      disabled={!!resolvingById[String(m.id || '')]}
+                      className={`h-9 px-3 rounded-[8px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#22252B] inline-flex items-center gap-2 cursor-pointer ${resolvingById[String(m.id || '')] ? 'opacity-50 cursor-wait' : ''}`}
                       onClick={() => downloadItem(m)}
                     >
                       <Download className="w-4 h-4 text-[#737780]" />
