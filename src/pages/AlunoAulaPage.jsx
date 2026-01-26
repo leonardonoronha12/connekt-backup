@@ -353,6 +353,8 @@ function NpsModal({ open, onClose, onSubmit }) {
 function AttachmentsPanel({ courseId, moduleId, lessonId, lessonKey, demo }) {
   const [loading, setLoading] = useState(false)
   const [items, setItems] = useState([])
+  const [producerId, setProducerId] = useState('')
+  const [resolvingById, setResolvingById] = useState({})
 
   const toPublicCoursesMediaUrl = (value) => {
     const raw = value == null ? '' : String(value)
@@ -498,7 +500,8 @@ function AttachmentsPanel({ courseId, moduleId, lessonId, lessonKey, demo }) {
         const lessons = Array.isArray(mod?.lessons) ? mod.lessons : []
         const lesson = lessons.find((l) => String(l?.id || '') === String(lessonId || '')) || lessons[0] || null
         const materials = Array.isArray(lesson?.materials) ? lesson.materials : []
-        const producerId = String(data?.user_id || '').trim()
+        const pid = String(data?.user_id || '').trim()
+        if (active) setProducerId(pid)
         const mapped = await Promise.all(materials.map(async (m, idx) => {
           const type = normalizeMaterialType(m?.type)
           const rawName = String(m?.name || '').trim() || `Material ${idx + 1}`
@@ -506,7 +509,7 @@ function AttachmentsPanel({ courseId, moduleId, lessonId, lessonKey, demo }) {
             type === 'link'
               ? (rawName.startsWith('http') ? rawName : null)
               : (toPublicCoursesMediaUrl(m?.url) || toPublicCoursesMediaUrl(m?.path) || null)
-          const url = direct || (type === 'link' ? null : await resolveMaterialDownloadUrl({ courseId, producerId, filename: rawName }))
+          const url = direct || (type === 'link' ? null : await resolveMaterialDownloadUrl({ courseId, producerId: pid, filename: rawName }))
           return { id: String(m?.id || `mat-${idx}`), type, name: rawName, sizeLabel: String(m?.sizeLabel || ''), url }
         }))
         if (active) setItems(mapped)
@@ -525,6 +528,36 @@ function AttachmentsPanel({ courseId, moduleId, lessonId, lessonKey, demo }) {
     run()
     return () => { active = false }
   }, [courseId, moduleId, lessonId, demo])
+
+  const downloadItem = async (m) => {
+    const id = String(m?.id || '')
+    if (!id) return
+    if (resolvingById[id]) return
+    const type = String(m?.type || '').toLowerCase()
+    const name = String(m?.name || '').trim() || 'arquivo'
+    if (type === 'link') return
+    const cid = String(courseId || '').trim()
+    const pid = String(producerId || '').trim()
+    if (!cid || !pid || !name) return
+    setResolvingById((prev) => ({ ...(prev || {}), [id]: true }))
+    try {
+      const resolved = m?.url || await resolveMaterialDownloadUrl({ courseId: cid, producerId: pid, filename: name })
+      if (!resolved) throw new Error('Não foi possível localizar o arquivo.')
+      setItems((prev) => (Array.isArray(prev) ? prev.map((it) => (String(it?.id || '') === id ? { ...it, url: resolved } : it)) : prev))
+      const a = document.createElement('a')
+      a.href = String(resolved)
+      a.download = name
+      a.rel = 'noreferrer'
+      a.target = '_blank'
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+    } catch (e) {
+      toast({ title: 'Não foi possível baixar', description: String(e?.message || 'Tente novamente.') })
+    } finally {
+      setResolvingById((prev) => ({ ...(prev || {}), [id]: false }))
+    }
+  }
 
   return (
     <div className="mt-5">
@@ -571,11 +604,12 @@ function AttachmentsPanel({ courseId, moduleId, lessonId, lessonKey, demo }) {
                   ) : (
                     <button
                       type="button"
-                      className="h-9 px-3 rounded-[8px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#22252B] inline-flex items-center gap-2 opacity-50 cursor-not-allowed"
-                      disabled
+                      className={`h-9 px-3 rounded-[8px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#22252B] inline-flex items-center gap-2 ${resolvingById[String(m.id || '')] ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      disabled={!!resolvingById[String(m.id || '')]}
+                      onClick={() => downloadItem(m)}
                     >
                       <Download className="w-4 h-4 text-[#737780]" />
-                      Baixar
+                      {resolvingById[String(m.id || '')] ? 'Carregando…' : 'Baixar'}
                     </button>
                   )}
                 </div>
