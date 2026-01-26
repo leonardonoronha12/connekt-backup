@@ -8,6 +8,9 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    concurrency:
+      group: vercel-production
+      cancel-in-progress: true
     env:
       VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
       VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
@@ -37,4 +40,8 @@ jobs:
           fi
           npx vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }} $SCOPE_ARG
           npx vercel build --prod --token=${{ secrets.VERCEL_TOKEN }} $SCOPE_ARG
-          npx vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }} $SCOPE_ARG
+          DEPLOY_URL="$(npx vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }} $SCOPE_ARG | tail -n 1)"
+          echo "Deployed: ${DEPLOY_URL}"
+          if [ -n "${{ secrets.VERCEL_PRODUCTION_DOMAIN }}" ]; then
+            npx vercel alias set "${DEPLOY_URL}" "${{ secrets.VERCEL_PRODUCTION_DOMAIN }}" --token=${{ secrets.VERCEL_TOKEN }} $SCOPE_ARG
+          fi
