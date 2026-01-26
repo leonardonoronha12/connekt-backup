@@ -16,7 +16,11 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      - run: npx vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }} --scope=${{ secrets.VERCEL_SCOPE }}
-      - run: npx vercel build --prod --token=${{ secrets.VERCEL_TOKEN }} --scope=${{ secrets.VERCEL_SCOPE }}
-      - run: npx vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }} --scope=${{ secrets.VERCEL_SCOPE }}
-
+      - run: |
+          SCOPE_ARG=""
+          if [ -n "${{ secrets.VERCEL_SCOPE }}" ]; then
+            SCOPE_ARG="--scope=${{ secrets.VERCEL_SCOPE }}"
+          fi
+          npx vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }} $SCOPE_ARG
+          npx vercel build --prod --token=${{ secrets.VERCEL_TOKEN }} $SCOPE_ARG
+          npx vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }} $SCOPE_ARG
