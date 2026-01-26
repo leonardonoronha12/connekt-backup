@@ -502,10 +502,11 @@ function AttachmentsPanel({ courseId, moduleId, lessonId, lessonKey, demo }) {
         const mapped = await Promise.all(materials.map(async (m, idx) => {
           const type = normalizeMaterialType(m?.type)
           const rawName = String(m?.name || '').trim() || `Material ${idx + 1}`
-          const url =
+          const direct =
             type === 'link'
               ? (rawName.startsWith('http') ? rawName : null)
-              : await resolveMaterialDownloadUrl({ courseId, producerId, filename: rawName })
+              : (toPublicCoursesMediaUrl(m?.url) || toPublicCoursesMediaUrl(m?.path) || null)
+          const url = direct || (type === 'link' ? null : await resolveMaterialDownloadUrl({ courseId, producerId, filename: rawName }))
           return { id: String(m?.id || `mat-${idx}`), type, name: rawName, sizeLabel: String(m?.sizeLabel || ''), url }
         }))
         if (active) setItems(mapped)

@@ -14,7 +14,7 @@ import { TaxonomyDropdown, type TaxonomyItem } from "@/components/TaxonomyDropdo
 import { useTaxonomy } from "@/contexts/TaxonomyContext"
 
 type Course = { id: string; name: string }
-type LessonMaterial = { id: string; name: string; sizeLabel: string; type: "pdf" | "doc" | "ppt" | "xls" | "link" }
+type LessonMaterial = { id: string; name: string; sizeLabel: string; type: "pdf" | "doc" | "ppt" | "xls" | "link"; path?: string | null; url?: string | null }
 type Lesson = {
   id: string;
   title: string;
@@ -892,10 +892,44 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
         return next as any
       })()
 
+      const modulesWithUploadedMaterials = await (async () => {
+        const base = Array.isArray(modulesWithUploadedCovers) ? modulesWithUploadedCovers : []
+        const keys = lessonMaterialFilesById ? Object.keys(lessonMaterialFilesById) : []
+        if (keys.length === 0) return base
+        const next = await Promise.all(base.map(async (m: any) => {
+          const lessons = Array.isArray(m?.lessons) ? m.lessons : []
+          if (lessons.length === 0) return m
+          const nextLessons = await Promise.all(lessons.map(async (l: any) => {
+            const mats = Array.isArray(l?.materials) ? l.materials : []
+            if (mats.length === 0) return l
+            const nextMats = await Promise.all(mats.map(async (mat: any) => {
+              const mid = String(mat?.id || '')
+              const file = mid ? lessonMaterialFilesById[mid] : undefined
+              const t = String(mat?.type || '').toLowerCase()
+              if (!file || t === 'link') return mat
+              const uploaded = await uploadCourseMedia(courseId, 'materials', file)
+              return {
+                ...mat,
+                id: mid || mat?.id,
+                name: String(file.name || mat?.name || '').trim() || mat?.name,
+                sizeLabel: String(formatSize(file.size) || mat?.sizeLabel || ''),
+                path: uploaded?.path || null,
+                url: uploaded?.url || null,
+              }
+            }))
+            return { ...l, materials: nextMats }
+          }))
+          return { ...m, lessons: nextLessons }
+        }))
+        setModules(next as any)
+        setLessonMaterialFilesById({})
+        return next as any
+      })()
+
       const payloadData = {
         title,
         description,
-        modules: modulesWithUploadedCovers,
+        modules: modulesWithUploadedMaterials,
         status: 'draft',
         selectedCourses,
         selectedCategories,
@@ -927,7 +961,7 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
         user_id: user.id,
         title,
         description,
-        modules: { modules: modulesWithUploadedCovers, meta: metaForModules },
+        modules: { modules: modulesWithUploadedMaterials, meta: metaForModules },
         cover_image_url: cover?.url || null,
         promo_video_url: promo?.url || null,
         module_layout_image_url: moduleLayout?.url || null,
@@ -1115,10 +1149,44 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
         return next as any
       })()
 
+      const modulesWithUploadedMaterials = await (async () => {
+        const base = Array.isArray(modulesWithUploadedCovers) ? modulesWithUploadedCovers : []
+        const keys = lessonMaterialFilesById ? Object.keys(lessonMaterialFilesById) : []
+        if (keys.length === 0) return base
+        const next = await Promise.all(base.map(async (m: any) => {
+          const lessons = Array.isArray(m?.lessons) ? m.lessons : []
+          if (lessons.length === 0) return m
+          const nextLessons = await Promise.all(lessons.map(async (l: any) => {
+            const mats = Array.isArray(l?.materials) ? l.materials : []
+            if (mats.length === 0) return l
+            const nextMats = await Promise.all(mats.map(async (mat: any) => {
+              const mid = String(mat?.id || '')
+              const file = mid ? lessonMaterialFilesById[mid] : undefined
+              const t = String(mat?.type || '').toLowerCase()
+              if (!file || t === 'link') return mat
+              const uploaded = await uploadCourseMedia(editingCourseId, 'materials', file)
+              return {
+                ...mat,
+                id: mid || mat?.id,
+                name: String(file.name || mat?.name || '').trim() || mat?.name,
+                sizeLabel: String(formatSize(file.size) || mat?.sizeLabel || ''),
+                path: uploaded?.path || null,
+                url: uploaded?.url || null,
+              }
+            }))
+            return { ...l, materials: nextMats }
+          }))
+          return { ...m, lessons: nextLessons }
+        }))
+        setModules(next as any)
+        setLessonMaterialFilesById({})
+        return next as any
+      })()
+
       const payloadData = {
         title,
         description,
-        modules: modulesWithUploadedCovers,
+        modules: modulesWithUploadedMaterials,
         status: courseStatus,
         selectedCourses,
         selectedCategories,
@@ -1148,7 +1216,7 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
       const updatePayload: any = {
         title,
         description,
-        modules: { modules: modulesWithUploadedCovers, meta: metaForModules },
+        modules: { modules: modulesWithUploadedMaterials, meta: metaForModules },
         cover_image_url: finalCoverUrl || null,
         promo_video_url: finalPromoUrl || null,
         module_layout_image_url: finalModuleLayoutUrl || null,
@@ -2436,6 +2504,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
   const [modalNewTagExtra, setModalNewTagExtra] = useState<string>('')
   // Materiais no modal de configuração da aula
   const [newLessonMaterials, setNewLessonMaterials] = useState<LessonMaterial[]>([])
+  const [lessonMaterialFilesById, setLessonMaterialFilesById] = useState<Record<string, File>>({})
   const materialFileInputRef = useRef<HTMLInputElement | null>(null)
   const [pendingMaterialType, setPendingMaterialType] = useState<LessonMaterial['type'] | null>(null)
   const [showLinkInput, setShowLinkInput] = useState<boolean>(false)
@@ -2534,6 +2603,12 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
   }
   const removeModalMaterial = (materialId: string) => {
     setNewLessonMaterials(prev => prev.filter(m => m.id !== materialId))
+    setLessonMaterialFilesById((prev) => {
+      if (!prev || !(materialId in prev)) return prev
+      const next = { ...prev }
+      delete next[materialId]
+      return next
+    })
   }
 
   // Uploader para materiais específicos do modal
@@ -2578,8 +2653,11 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
       name: file.name,
       sizeLabel: formatSize(file.size),
       type: pendingMaterialType,
+      path: null,
+      url: null,
     }
     setNewLessonMaterials(prev => [...prev, newItem])
+    setLessonMaterialFilesById((prev) => ({ ...(prev || {}), [newItem.id]: file }))
     setPendingMaterialType(null)
   }
 
