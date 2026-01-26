@@ -210,15 +210,11 @@ export const AuthProvider = ({ children }) => {
         if (event === 'SIGNED_IN') {
           let isLocked = false
           const pathname = window.location.pathname
-          const intentIsAluno = (() => {
-            try { return sessionStorage.getItem('connekt_login_intent') === 'aluno' } catch (_) { return false }
-          })()
           const isStudentFlow =
             pathname === '/login-aluno' ||
             pathname === '/aluno/login' ||
             pathname === '/aluno' ||
-            pathname.startsWith('/aluno/') ||
-            (pathname !== '/login' && intentIsAluno)
+            pathname.startsWith('/aluno/')
 
           if (shouldEnforceDeviceLock && !isStudentFlow) {
             try {
@@ -249,7 +245,7 @@ export const AuthProvider = ({ children }) => {
               params.get('producerUserId') ||
               params.get('producer_uid'.toUpperCase()) ||
               ''
-            const target = isStudentFlow
+            const target = (isStudentFlow || (arrivedFromRoot && producerUidFromUrl))
               ? (producerUidFromUrl ? `/aluno?producer_uid=${encodeURIComponent(String(producerUidFromUrl))}` : '/aluno')
               : (hasEmailConfirmedParam || arrivedFromRoot ? '/dashboard?email_confirmed=true' : '/dashboard');
             window.history.replaceState({}, '', target);
