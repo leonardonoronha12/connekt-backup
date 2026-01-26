@@ -11,3 +11,4 @@ dist
 .env*.local
 backups/*.zip
 backups/*.7z
+supabase/.temp/

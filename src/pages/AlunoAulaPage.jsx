@@ -9,7 +9,7 @@ import { supabase } from '@/lib/supabaseClient'
 import { fetchConversationFeed } from '@/services/conversationService'
 import { useActiveProducerUserId } from '@/hooks/useActiveProducerUserId'
 
-const DEMO_PROMO_VIDEO_URL = 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4'
+const DEMO_PROMO_VIDEO_URL = ''
 
 const navSections = [
   {
@@ -1024,6 +1024,8 @@ export default function AlunoAulaPage() {
   const [resolvedPromoUrl, setResolvedPromoUrl] = useState('')
   const [vdocipherEmbedUrl, setVdocipherEmbedUrl] = useState('')
   const [progressTick, setProgressTick] = useState(0)
+  const [moduleSimulados, setModuleSimulados] = useState([])
+  const [moduleSimuladosLoading, setModuleSimuladosLoading] = useState(false)
   const simuladosScrollRef = useRef(null)
   const [canScrollSimuladosLeft, setCanScrollSimuladosLeft] = useState(false)
   const [canScrollSimuladosRight, setCanScrollSimuladosRight] = useState(false)
@@ -1157,6 +1159,119 @@ export default function AlunoAulaPage() {
     return pickModuleAndLesson(courseRow, { moduleId, moduleIndex, lessonId, lessonIndex })
   }, [courseRow, moduleId, moduleIndex, lessonId, lessonIndex])
 
+  const currentSimuladosRefs = useMemo(() => {
+    const meta = getCourseMeta(courseRow)
+    const refs = Array.isArray(meta?.selectedSimulados) ? meta.selectedSimulados : []
+    const mid = String(current?.moduleId || '').trim()
+    const normalized = refs
+      .filter((r) => r && typeof r === 'object' && String(r.id || '').trim())
+      .map((r) => ({
+        id: String(r.id || '').trim(),
+        title: String(r.title || '').trim(),
+        scope: String(r.scope || 'curso').trim().toLowerCase(),
+        moduleId: r.moduleId == null ? null : String(r.moduleId || '').trim(),
+        lessonId: r.lessonId == null ? null : String(r.lessonId || '').trim(),
+      }))
+
+    const moduleRefs = normalized.filter((r) => r.scope === 'modulo' && mid && r.moduleId && r.moduleId === mid)
+    const courseRefs = normalized.filter((r) => r.scope === 'curso')
+    const picked = moduleRefs.length > 0 ? moduleRefs : courseRefs
+
+    const seen = new Set()
+    const out = []
+    for (const r of picked) {
+      if (seen.has(r.id)) continue
+      seen.add(r.id)
+      out.push(r)
+    }
+    return out
+  }, [courseRow, current])
+
+  useEffect(() => {
+    let active = true
+    const run = async () => {
+      if (isDemoStudent) {
+        if (active) {
+          setModuleSimulados([])
+          setModuleSimuladosLoading(false)
+        }
+        return
+      }
+
+      const pid = String(activeProducerUserId || '').trim()
+      const ids = currentSimuladosRefs.map((r) => r.id).filter(Boolean)
+      if (ids.length === 0) {
+        if (active) setModuleSimulados([])
+        return
+      }
+
+      setModuleSimuladosLoading(true)
+      try {
+        let rows = null
+
+        try {
+          const { data, error } = await supabase
+            .from('simulados')
+            .select('id,title,is_paid,price')
+            .in('id', ids)
+            .limit(200)
+          if (!error && Array.isArray(data)) rows = data
+        } catch (_) {}
+
+        if (!rows && pid) {
+          const token = await getAccessToken()
+          const r = await fetch(`/api/producer?type=simulados&producerId=${encodeURIComponent(pid)}`, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+          })
+          const body = await r.json().catch(() => ({}))
+          if (r.ok && Array.isArray(body?.data)) rows = body.data
+        }
+
+        if (!rows) {
+          const fallback = currentSimuladosRefs.map((s) => ({
+            id: s.id,
+            title: s.title || 'Simulado',
+            is_paid: false,
+            price: 0,
+            progress: 0,
+          }))
+          if (active) setModuleSimulados(fallback)
+          return
+        }
+
+        const byId = new Map()
+        for (const s of rows) {
+          const id = String(s?.id || '').trim()
+          if (!id) continue
+          byId.set(id, s)
+        }
+
+        const mapped = ids
+          .map((id) => {
+            const row = byId.get(id) || {}
+            const title = String(row?.title || currentSimuladosRefs.find((x) => x.id === id)?.title || 'Simulado').trim()
+            const isPaid = Boolean(row?.is_paid) || Math.max(0, Number(row?.price || 0)) > 0
+            const price = Number(row?.price || 0) || 0
+            const progressKey = `connekt_simulado_progress:${id}`
+            const progress = Number(safeLsGet(progressKey) || 0) || 0
+            return { id, title, is_paid: isPaid, price, progress }
+          })
+          .filter((x) => x && x.id)
+
+        if (active) setModuleSimulados(mapped)
+      } catch (_) {
+        if (active) setModuleSimulados([])
+      } finally {
+        if (active) {
+          setModuleSimuladosLoading(false)
+          window.setTimeout(() => updateSimuladosScrollControls(), 0)
+        }
+      }
+    }
+    run()
+    return () => { active = false }
+  }, [isDemoStudent, activeProducerUserId, currentSimuladosRefs, progressTick])
+
   const resolved = useMemo(() => {
     const meta = getCourseMeta(courseRow)
     const pickedLesson = current?.lesson || null
@@ -1220,7 +1335,14 @@ export default function AlunoAulaPage() {
     const finalVideoUrl = (() => {
       if (mode === 'vimeo') return iframeSrc
       const u = String(rawVideo || '')
-      if (isSupabaseStorageUrl(u)) return `/api/media?u=${encodeURIComponent(u)}`
+      if (isSupabaseStorageUrl(u)) {
+        let isLocal = false
+        try {
+          const h = String(window.location.hostname || '').toLowerCase()
+          isLocal = h === 'localhost' || h === '127.0.0.1'
+        } catch (_) {}
+        return isLocal ? u : `/api/media?u=${encodeURIComponent(u)}`
+      }
       return u
     })()
 
@@ -1739,7 +1861,7 @@ export default function AlunoAulaPage() {
                           </div>
                         </div>
                         <div ref={simuladosScrollRef} onScroll={updateSimuladosScrollControls} className="mt-3 flex gap-4 overflow-x-auto pb-2 scrollbar-hide">
-                          {[{ id: 's1', title: 'SIMULADO 1', progress: 25, is_paid: false, price: 0 }, { id: 's2', title: 'SIMULADO 2', progress: 40, is_paid: true, price: 39.9 }, { id: 's3', title: 'SIMULADO 3', progress: 60, is_paid: false, price: 0 }].map((s) => (
+                          {moduleSimulados.map((s) => (
                             <div
                               key={s.id}
                               className="bg-white border border-[#E3E4E5] rounded-[4px] p-4 w-[252px] h-[230px] flex flex-col flex-shrink-0 cursor-pointer"
@@ -1769,7 +1891,7 @@ export default function AlunoAulaPage() {
                                 <div className="flex items-center justify-between">
                                   <h4 className="text-[12px] font-medium text-[#1E1B39] font-inter">{s.title}</h4>
                                 </div>
-                                <p className="text-[10px] text-[#9291A5] font-inter font-[400] mt-1">Simulado criado por você</p>
+                                <p className="text-[10px] text-[#9291A5] font-inter font-[400] mt-1">{currentSimuladosRefs.length > 0 && currentSimuladosRefs[0]?.scope === 'curso' ? 'Simulado do curso' : 'Simulado do módulo'}</p>
                               </div>
                               <div className="mt-3 flex items-center gap-2">
                                 <span
@@ -1795,6 +1917,12 @@ export default function AlunoAulaPage() {
                             </div>
                           ))}
                         </div>
+                        {!moduleSimuladosLoading && moduleSimulados.length === 0 ? (
+                          <div className="mt-3 text-[12px] text-[#737780]">Nenhum simulado encontrado para este módulo.</div>
+                        ) : null}
+                        {moduleSimuladosLoading ? (
+                          <div className="mt-3 text-[12px] text-[#737780]">Carregando simulados…</div>
+                        ) : null}
                       </div>
                     ) : activeTab === 'Anexos' ? (
                       <AttachmentsPanel courseId={courseId} moduleId={moduleId} lessonId={lessonId} lessonKey="aula-03-pratica-clinica" demo={isDemoStudent} />
