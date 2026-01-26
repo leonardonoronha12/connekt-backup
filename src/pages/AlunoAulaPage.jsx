@@ -384,22 +384,38 @@ function AttachmentsPanel({ courseId, moduleId, lessonId, lessonKey, demo }) {
     if (name.includes('/')) return toPublicCoursesMediaUrl(name)
 
     const root = `users/${pid}/courses/${cid}`
-    const folders = ['materials', 'material', 'anexos', 'attachments', 'files', 'docs', '']
+    const folders = ['materials', 'material', 'anexos', 'attachments', 'files', 'docs', 'lessons', 'aulas', '']
+    const checkExists = async (url) => {
+      try {
+        const res = await fetch(String(url), { method: 'GET', headers: { Range: 'bytes=0-0' } })
+        return res.ok
+      } catch (_) {}
+      return false
+    }
+
+    const candidates = []
     for (const f of folders) {
       const base = f ? `${root}/${f}` : root
+      if (f === 'lessons' || f === 'aulas') {
+        if (lessonId) {
+          candidates.push(`${base}/${lessonId}/${name}`)
+          candidates.push(`${base}/${lessonId}/materials/${name}`)
+          candidates.push(`${base}/${lessonId}/anexos/${name}`)
+        }
+        continue
+      }
+      candidates.push(`${base}/${name}`)
+    }
+
+    for (const path of candidates) {
       try {
-        const { data } = await supabase.storage.from('courses-media').list(base, { limit: 100, search: name })
-        const list = Array.isArray(data) ? data : []
-        const exact = list.find((it) => String(it?.name || '') === name) || null
-        const suffix = list.find((it) => String(it?.name || '').endsWith(`_${name}`)) || null
-        const picked = exact || suffix || null
-        if (!picked?.name) continue
-        const objectPath = `${base}/${picked.name}`
-        const { data: pub } = supabase.storage.from('courses-media').getPublicUrl(objectPath)
+        const { data: pub } = supabase.storage.from('courses-media').getPublicUrl(path)
         const url = pub?.publicUrl || null
-        if (url) return url
+        if (!url) continue
+        if (await checkExists(url)) return url
       } catch (_) {}
     }
+
     return null
   }
 
