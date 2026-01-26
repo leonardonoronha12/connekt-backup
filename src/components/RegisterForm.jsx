@@ -67,6 +67,11 @@ const RegisterForm = ({ onBackToLogin, onShowLogin }) => {
     setAlert({ show: false, message: '', type: 'error' });
   };
 
+  React.useEffect(() => {
+    try { sessionStorage.setItem('connekt_login_intent', 'produtor') } catch (_) {}
+    try { sessionStorage.setItem('connekt_login_mode', 'produtor') } catch (_) { try { localStorage.setItem('connekt_login_mode', 'produtor') } catch (_) {} }
+  }, [])
+
   // Função para validar senha
   const validatePassword = (password) => {
     const minLength = password.length >= 6;
@@ -130,6 +135,7 @@ const RegisterForm = ({ onBackToLogin, onShowLogin }) => {
     setLoading(true);
     
     try {
+      try { sessionStorage.setItem('connekt_login_intent', 'produtor') } catch (_) {}
       try { sessionStorage.setItem('connekt_login_mode', 'produtor') } catch (_) { try { localStorage.setItem('connekt_login_mode', 'produtor') } catch (_) {} }
       const result = await signUpWithEmailConfirmation({
         email: formData.email,
@@ -173,6 +179,7 @@ const RegisterForm = ({ onBackToLogin, onShowLogin }) => {
         showAlert('Provedor de login não suportado.');
         return;
       }
+      try { sessionStorage.setItem('connekt_login_intent', 'produtor') } catch (_) {}
       try { sessionStorage.setItem('connekt_login_mode', 'produtor') } catch (_) { try { localStorage.setItem('connekt_login_mode', 'produtor') } catch (_) {} }
       const { error } = await signInWithOAuth(p, '/login');
       if (error) showAlert(translateErrorMessage(error.message || String(error)));

@@ -64,6 +64,12 @@ const LoginForm = ({ onShowRegister, mode = 'producer' }) => {
   };
 
   React.useEffect(() => {
+    if (isStudentMode) return
+    try { sessionStorage.setItem('connekt_login_intent', 'produtor') } catch (_) {}
+    try { sessionStorage.setItem('connekt_login_mode', 'produtor') } catch (_) { try { localStorage.setItem('connekt_login_mode', 'produtor') } catch (_) {} }
+  }, [isStudentMode])
+
+  React.useEffect(() => {
     let error = null
     let errorDesc = null
     let emailConfirmed = null
@@ -126,6 +132,7 @@ const LoginForm = ({ onShowRegister, mode = 'producer' }) => {
     setLoading(true);
     
     try {
+      try { sessionStorage.setItem('connekt_login_intent', 'produtor') } catch (_) {}
       try { sessionStorage.setItem('connekt_login_mode', 'produtor') } catch (_) { try { localStorage.setItem('connekt_login_mode', 'produtor') } catch (_) {} }
       const { error } = await signIn(formData.email, formData.password);
 
@@ -237,6 +244,7 @@ const LoginForm = ({ onShowRegister, mode = 'producer' }) => {
         showAlert('Provedor de login não suportado.');
         return;
       }
+      try { sessionStorage.setItem('connekt_login_intent', 'produtor') } catch (_) {}
       try { sessionStorage.setItem('connekt_login_mode', 'produtor') } catch (_) { try { localStorage.setItem('connekt_login_mode', 'produtor') } catch (_) {} }
       setOauthLoading(p)
       const { error } = await signInWithOAuth(p, '/login');
