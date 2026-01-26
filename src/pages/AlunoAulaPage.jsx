@@ -383,6 +383,18 @@ function AttachmentsPanel({ courseId, moduleId, lessonId, lessonKey, demo }) {
     if (name.startsWith('http://') || name.startsWith('https://') || name.startsWith('data:')) return name
     if (name.includes('/')) return toPublicCoursesMediaUrl(name)
 
+    try {
+      const { data } = await supabase.auth.getSession()
+      const token = data?.session?.access_token || ''
+      if (token) {
+        const r = await fetch(`/api/resolve-course-media?courseId=${encodeURIComponent(cid)}&producerId=${encodeURIComponent(pid)}&lessonId=${encodeURIComponent(String(lessonId || ''))}&filename=${encodeURIComponent(name)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        const body = await r.json().catch(() => ({}))
+        if (r.ok && body?.url) return String(body.url)
+      }
+    } catch (_) {}
+
     const root = `users/${pid}/courses/${cid}`
     const folders = ['materials', 'material', 'anexos', 'attachments', 'files', 'docs', 'lessons', 'aulas', '']
     const checkExists = async (url) => {
