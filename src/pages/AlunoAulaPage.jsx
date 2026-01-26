@@ -1376,21 +1376,70 @@ export default function AlunoAulaPage() {
     const lessonTitle = String(pickedLesson?.title || '').trim() || 'Aula'
     const courseTitle = String(courseRow?.title || meta?.title || meta?.course_title || '').trim()
     const teacherName = String(meta?.teacher_name || meta?.professor || meta?.teacher || '').trim()
-    const lessonDescription = String(pickedLesson?.description || pickedLesson?.about || pickedLesson?.lesson_description || '').trim()
-    const courseDescription = String(courseRow?.description || meta?.description || meta?.course_description || '').trim()
+    const norm = (v) => {
+      const s = v == null ? '' : String(v)
+      const out = s.trim()
+      if (!out) return ''
+      if (out.toLowerCase() === 'categoria') return ''
+      if (out.toLowerCase() === 'subcategoria') return ''
+      if (out.toLowerCase() === 'tag') return ''
+      return out
+    }
     const pickFirst = (value) => {
       if (!Array.isArray(value)) return ''
       for (const it of value) {
-        const s = String(it || '').trim()
+        const s = norm(it)
         if (s) return s
       }
       return ''
     }
-    const lessonCategory = pickFirst(pickedLesson?.categories)
-    const lessonSubcategory = pickFirst(pickedLesson?.subcategories)
-    const tagFromLesson = String(pickedLesson?.tag || '').trim()
-    const tagFromExtras = pickFirst(pickedLesson?.extraTags)
-    const lessonTag = tagFromLesson || tagFromExtras
+    const pickAny = (...candidates) => {
+      for (const c of candidates) {
+        const s = norm(c)
+        if (s) return s
+      }
+      return ''
+    }
+
+    const lessonDescription = pickAny(
+      pickedLesson?.description,
+      pickedLesson?.about,
+      pickedLesson?.lesson_description,
+      pickedLesson?.metadata?.description,
+      pickedLesson?.metadata?.about,
+      pickedLesson?.meta?.description,
+      pickedLesson?.meta?.about,
+    )
+
+    const lessonCategory = pickAny(
+      pickFirst(pickedLesson?.categories),
+      pickedLesson?.category,
+      pickedLesson?.categoria,
+      pickedLesson?.lessonCategory,
+      pickedLesson?.lesson_category,
+      pickedLesson?.metadata?.category,
+      pickedLesson?.meta?.category,
+    )
+
+    const lessonSubcategory = pickAny(
+      pickFirst(pickedLesson?.subcategories),
+      pickedLesson?.subcategory,
+      pickedLesson?.subcategoria,
+      pickedLesson?.lessonSubcategory,
+      pickedLesson?.lesson_subcategory,
+      pickedLesson?.metadata?.subcategory,
+      pickedLesson?.meta?.subcategory,
+    )
+
+    const lessonTag = pickAny(
+      pickedLesson?.tag,
+      pickFirst(pickedLesson?.extraTags),
+      pickFirst(pickedLesson?.tags),
+      pickedLesson?.tagName,
+      pickedLesson?.tag_name,
+      pickedLesson?.metadata?.tag,
+      pickedLesson?.meta?.tag,
+    )
 
     const mediaObj = (pickedLesson && typeof pickedLesson === 'object') ? (pickedLesson.media || pickedLesson.metadata || null) : null
     let pickedProvider = String(pickedLesson?.videoProvider || pickedLesson?.video_provider || mediaObj?.videoProvider || mediaObj?.video_provider || '').trim().toLowerCase()
@@ -1465,7 +1514,7 @@ export default function AlunoAulaPage() {
       lessonCategory: lessonCategory || 'Sem categoria',
       lessonTag: lessonTag || 'Sem tag',
       lessonSubcategory: lessonSubcategory || 'Sem subcategoria',
-      lessonDescription: lessonDescription || courseDescription || '',
+      lessonDescription: lessonDescription || '',
       videoMode: mode,
       videoUrl: finalVideoUrl,
       videoProvider: pickedProvider,
