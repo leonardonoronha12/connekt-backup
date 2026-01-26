@@ -47,15 +47,36 @@ function getCourseModules(row) {
   return []
 }
 
+function getModuleLessons(mod) {
+  if (!mod) return []
+  if (Array.isArray(mod.lessons)) return mod.lessons
+  if (Array.isArray(mod.aulas)) return mod.aulas
+  if (Array.isArray(mod.items)) return mod.items
+  if (mod && typeof mod === 'object' && Array.isArray(mod.module_lessons)) return mod.module_lessons
+  return []
+}
+
 function getFirstLessonInfo(row) {
   const modules = getCourseModules(row)
-  const firstModule = Array.isArray(modules) ? modules[0] : null
-  const lessons = Array.isArray(firstModule?.lessons) ? firstModule.lessons : []
-  const firstLesson = lessons[0] || null
-  const title = String(firstLesson?.title || firstLesson?.name || '').trim()
+  const list = []
+  let first = null
+  for (const mod of (Array.isArray(modules) ? modules : [])) {
+    const lessons = getModuleLessons(mod)
+    for (const lesson of lessons) {
+      const title = String(lesson?.title || lesson?.name || '').trim()
+      const moduleId = String(mod?.id || mod?.module_id || mod?.moduleId || '').trim()
+      const lessonId = String(lesson?.id || lesson?.lesson_id || lesson?.lessonId || '').trim()
+      const item = { title, moduleId, lessonId }
+      list.push(item)
+      if (!first && title) first = item
+    }
+  }
+  if (!first) first = list[0] || null
   return {
-    title: title || 'Aula',
-    lessonsTotal: lessons.length,
+    title: (first && first.title) ? first.title : 'Aula',
+    lessonsTotal: list.length || null,
+    moduleId: first?.moduleId || '',
+    lessonId: first?.lessonId || '',
   }
 }
 
@@ -920,26 +941,25 @@ export default function AlunoDashboardPage() {
   }
 
   const continueItems = useMemo(() => {
-    const list = courses.slice(0, 6).map((c, idx) => ({
-      id: `${c?.course_name || 'curso'}-${idx}`,
-      courseId: c?.course_id || c?.courseId || c?.id || null,
-      courseTitle: c?.course_name || '',
-      category: c?.course_name || 'Cardiologia',
-      title: (() => {
-        const info = c?.courseRow ? getFirstLessonInfo(c.courseRow) : null
-        return info?.title || 'Aula'
-      })(),
-      cover: (() => {
-        const t = String(c?.course_name || '').trim().toLowerCase()
-        return producerCoversByTitle[t] || c?.cover_image_url || coverFallback
-      })(),
-      progress: c?.progress || 0,
-      lessonsDone: 0,
-      lessonsTotal: (() => {
-        const info = c?.courseRow ? getFirstLessonInfo(c.courseRow) : null
-        return info?.lessonsTotal || null
-      })(),
-    }))
+    const list = courses.slice(0, 6).map((c, idx) => {
+      const info = c?.courseRow ? getFirstLessonInfo(c.courseRow) : null
+      return {
+        id: `${c?.course_name || 'curso'}-${idx}`,
+        courseId: c?.course_id || c?.courseId || c?.id || null,
+        courseTitle: c?.course_name || '',
+        category: c?.course_name || 'Cardiologia',
+        title: info?.title || 'Aula',
+        moduleId: info?.moduleId || '',
+        lessonId: info?.lessonId || '',
+        cover: (() => {
+          const t = String(c?.course_name || '').trim().toLowerCase()
+          return producerCoversByTitle[t] || c?.cover_image_url || coverFallback
+        })(),
+        progress: c?.progress || 0,
+        lessonsDone: 0,
+        lessonsTotal: info?.lessonsTotal || null,
+      }
+    })
     if (list.length > 0) return list
     if (activeProducerUserId) return []
     return [
@@ -1215,6 +1235,8 @@ export default function AlunoDashboardPage() {
                           if (!cid) return
                           const qs = new URLSearchParams()
                           qs.set('courseId', String(cid))
+                          if (it.moduleId) qs.set('moduleId', String(it.moduleId))
+                          if (it.lessonId) qs.set('lessonId', String(it.lessonId))
                           if (isDemoStudent) qs.set('demo', '1')
                           navigateTo(`/aluno/aula?${qs.toString()}`)
                         }}

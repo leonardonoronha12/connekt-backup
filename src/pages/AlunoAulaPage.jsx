@@ -52,6 +52,108 @@ function getCourseModules(row) {
   return []
 }
 
+function getModuleLessons(mod) {
+  if (!mod) return []
+  if (Array.isArray(mod.lessons)) return mod.lessons
+  if (Array.isArray(mod.aulas)) return mod.aulas
+  if (Array.isArray(mod.items)) return mod.items
+  if (mod && typeof mod === 'object' && Array.isArray(mod.module_lessons)) return mod.module_lessons
+  return []
+}
+
+function pickModuleAndLesson(courseRow, { moduleId, moduleIndex, lessonId, lessonIndex }) {
+  const modules = getCourseModules(courseRow)
+  const list = Array.isArray(modules) ? modules : []
+
+  const moduleIndexNum = (() => {
+    const n = Number(moduleIndex)
+    return Number.isFinite(n) ? n : -1
+  })()
+  const lessonIndexNum = (() => {
+    const n = Number(lessonIndex)
+    return Number.isFinite(n) ? n : -1
+  })()
+
+  const targetModuleId = String(moduleId || '').trim()
+  const targetLessonId = String(lessonId || '').trim()
+
+  let pickedModule = null
+  let pickedModuleIndex = -1
+
+  if (targetModuleId) {
+    for (let i = 0; i < list.length; i += 1) {
+      const mid = String(list[i]?.id || list[i]?.module_id || list[i]?.moduleId || '').trim()
+      if (mid && mid === targetModuleId) {
+        pickedModule = list[i]
+        pickedModuleIndex = i
+        break
+      }
+    }
+  }
+
+  if (!pickedModule && targetLessonId) {
+    for (let i = 0; i < list.length; i += 1) {
+      const lessons = getModuleLessons(list[i])
+      for (const l of (Array.isArray(lessons) ? lessons : [])) {
+        const lid = String(l?.id || l?.lesson_id || l?.lessonId || '').trim()
+        if (lid && lid === targetLessonId) {
+          pickedModule = list[i]
+          pickedModuleIndex = i
+          break
+        }
+      }
+      if (pickedModule) break
+    }
+  }
+
+  if (!pickedModule && moduleIndexNum >= 0) {
+    pickedModule = list[moduleIndexNum] || null
+    pickedModuleIndex = moduleIndexNum
+  }
+
+  if (!pickedModule) {
+    pickedModule = list[0] || null
+    pickedModuleIndex = list.length > 0 ? 0 : -1
+  }
+
+  const lessons = getModuleLessons(pickedModule)
+  const lessonsList = Array.isArray(lessons) ? lessons : []
+
+  let pickedLesson = null
+  let pickedLessonIndex = -1
+  if (targetLessonId) {
+    for (let j = 0; j < lessonsList.length; j += 1) {
+      const lid = String(lessonsList[j]?.id || lessonsList[j]?.lesson_id || lessonsList[j]?.lessonId || '').trim()
+      if (lid && lid === targetLessonId) {
+        pickedLesson = lessonsList[j]
+        pickedLessonIndex = j
+        break
+      }
+    }
+  }
+  if (!pickedLesson && lessonIndexNum >= 0) {
+    pickedLesson = lessonsList[lessonIndexNum] || null
+    pickedLessonIndex = lessonIndexNum
+  }
+  if (!pickedLesson) {
+    pickedLesson = lessonsList[0] || null
+    pickedLessonIndex = lessonsList.length > 0 ? 0 : -1
+  }
+
+  const resolvedModuleId = String(pickedModule?.id || pickedModule?.module_id || pickedModule?.moduleId || '').trim()
+  const resolvedLessonId = String(pickedLesson?.id || pickedLesson?.lesson_id || pickedLesson?.lessonId || '').trim()
+
+  return {
+    module: pickedModule,
+    moduleIndex: pickedModuleIndex,
+    moduleId: resolvedModuleId,
+    lessons: lessonsList,
+    lesson: pickedLesson,
+    lessonIndex: pickedLessonIndex,
+    lessonId: resolvedLessonId,
+  }
+}
+
 function getCourseMeta(row) {
   const fromData = parseJsonMaybe(row?.data) || null
   const parsedModules = parseJsonMaybe(row?.modules) || null
@@ -61,6 +163,24 @@ function getCourseMeta(row) {
 
 function isNonEmptyString(v) {
   return typeof v === 'string' && v.trim().length > 0
+}
+
+function lessonProgressKey({ courseId, moduleId, moduleIndex, lessonId, lessonIndex }) {
+  const cid = String(courseId || '').trim()
+  if (!cid) return ''
+  const modKey = String(moduleId || '').trim() || `idx:${String(moduleIndex || '').trim() || '0'}`
+  const lesKey = String(lessonId || '').trim() || `idx:${String(lessonIndex || '').trim() || '0'}`
+  return `connekt_progress:${cid}:${modKey}:${lesKey}`
+}
+
+function safeLsGet(key) {
+  if (!key) return ''
+  try { return String(localStorage.getItem(key) || '') } catch (_) { return '' }
+}
+
+function safeLsSet(key, value) {
+  if (!key) return
+  try { localStorage.setItem(key, String(value)) } catch (_) {}
 }
 
 function toPublicCoursesMediaUrl(value) {
@@ -78,12 +198,36 @@ function toPublicCoursesMediaUrl(value) {
 function vimeoEmbedUrlFromAny(value) {
   const raw = String(value || '').trim()
   if (!raw) return ''
+  const idFromUri = raw.match(/^\/videos\/(\d+)/i)?.[1]
+  if (idFromUri) return `https://player.vimeo.com/video/${idFromUri}`
   if (raw.includes('player.vimeo.com/video/')) return raw
   const idFromPlayer = raw.match(/player\.vimeo\.com\/video\/(\d+)/i)?.[1]
   if (idFromPlayer) return `https://player.vimeo.com/video/${idFromPlayer}`
   const idFromUrl = raw.match(/vimeo\.com\/(?:video\/)?(\d+)/i)?.[1]
   if (idFromUrl) return `https://player.vimeo.com/video/${idFromUrl}`
   return ''
+}
+
+function youtubeEmbedUrlFromAny(value) {
+  const raw = String(value || '').trim()
+  if (!raw) return ''
+  try {
+    const u = new URL(raw)
+    if (u.hostname.includes('youtu.be')) {
+      const id = u.pathname.replace('/', '').trim()
+      return id ? `https://www.youtube.com/embed/${id}` : ''
+    }
+    if (u.hostname.includes('youtube.com')) {
+      const id = u.searchParams.get('v') || ''
+      return id ? `https://www.youtube.com/embed/${id}` : ''
+    }
+  } catch (_) {}
+  const m = raw.match(/(?:youtu\.be\/|youtube\.com\/watch\?v=)([a-zA-Z0-9_-]{6,})/i)?.[1]
+  return m ? `https://www.youtube.com/embed/${m}` : ''
+}
+
+function isSupabaseStorageUrl(u) {
+  try { return String(u || '').includes('.supabase.co/storage/v1/object/') } catch (_) { return false }
 }
 
 function ProgressRing({ value }) {
@@ -772,9 +916,14 @@ function LessonStatusIcon({ completed }) {
   )
 }
 
-function RecommendedLessonRow({ title, subtitle, active, completed }) {
+function RecommendedLessonRow({ title, subtitle, active, completed, onClick }) {
   return (
-    <button type="button" className={`w-full flex items-center gap-3 text-left py-2 ${active ? 'bg-[#F7F7FB] rounded-[10px] px-2' : ''}`}>
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={!onClick}
+      className={`w-full flex items-center gap-3 text-left py-2 ${active ? 'bg-[#F7F7FB] rounded-[10px] px-2' : ''} ${onClick ? 'cursor-pointer' : 'cursor-default opacity-60'}`}
+    >
       <div className="relative w-[46px] h-[34px] rounded-[6px] overflow-hidden bg-[#F3F4F5] flex-shrink-0">
         <img src="/Preview.png" alt="" className="absolute inset-0 w-full h-full object-cover" />
         <div className="absolute inset-0 bg-black/10" />
@@ -793,9 +942,14 @@ function RecommendedLessonRow({ title, subtitle, active, completed }) {
   )
 }
 
-function ModuleLessonRow({ title, subtitle, completed }) {
+function ModuleLessonRow({ title, subtitle, completed, active, onClick }) {
   return (
-    <button type="button" className="w-full flex items-center gap-3 text-left py-2">
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={!onClick}
+      className={`w-full flex items-center gap-3 text-left py-2 ${active ? 'bg-[#F7F7FB] rounded-[10px] px-2' : ''} ${onClick ? 'cursor-pointer' : 'cursor-default opacity-60'}`}
+    >
       <div className="relative w-[38px] h-[28px] rounded-[6px] overflow-hidden bg-[#F3F4F5] flex-shrink-0">
         <img src="/Preview.png" alt="" className="absolute inset-0 w-full h-full object-cover" />
         <div className="absolute inset-0 bg-black/10" />
@@ -814,7 +968,7 @@ function ModuleLessonRow({ title, subtitle, completed }) {
   )
 }
 
-function CollapsibleModuleRow({ title, subtitle, percent, open, onToggle }) {
+function CollapsibleModuleRow({ title, subtitle, percent, open, onToggle, lessons }) {
   return (
     <div className="w-full">
       <button type="button" className="w-full flex items-center justify-between gap-3 py-3 text-left" onClick={onToggle}>
@@ -833,9 +987,18 @@ function CollapsibleModuleRow({ title, subtitle, percent, open, onToggle }) {
         <div className="pb-2 pl-1 pr-1">
           <div className="border-t border-[#F3F4F5]" />
           <div className="mt-1 divide-y divide-[#F3F4F5]">
-            <ModuleLessonRow title="Encontrando e modelando ofertas americanas" subtitle="Aula 1" completed />
-            <ModuleLessonRow title="Encontrando e modelando ofertas americanas" subtitle="Aula 2" completed />
-            <ModuleLessonRow title="Encontrando e modelando ofertas americanas" subtitle="Aula 3" completed={false} />
+            {Array.isArray(lessons) && lessons.length > 0 ? lessons.map((l) => (
+              <ModuleLessonRow
+                key={l.key}
+                title={l.title}
+                subtitle={l.subtitle}
+                completed={!!l.completed}
+                active={!!l.active}
+                onClick={l.onClick}
+              />
+            )) : (
+              <div className="py-3 text-[12px] text-[#737780]">Nenhuma aula encontrada.</div>
+            )}
           </div>
         </div>
       </div>
@@ -845,32 +1008,47 @@ function CollapsibleModuleRow({ title, subtitle, percent, open, onToggle }) {
 
 export default function AlunoAulaPage() {
   const { user } = useAuth()
+  const [locationSearch, setLocationSearch] = useState(() => {
+    try { return window.location.search || '' } catch (_) { return '' }
+  })
   const [studentName, setStudentName] = useState('Aluno')
   const [isCompleted, setIsCompleted] = useState(false)
   const [isNpsOpen, setIsNpsOpen] = useState(false)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [isRecommendedOpen, setIsRecommendedOpen] = useState(true)
-  const [openModules, setOpenModules] = useState({ m1: false, m2: false, m3: false })
+  const [openModules, setOpenModules] = useState({})
   const [activeTab, setActiveTab] = useState('Sobre a aula')
   const [courseRow, setCourseRow] = useState(null)
   const [courseLoading, setCourseLoading] = useState(false)
   const [courseError, setCourseError] = useState('')
   const [resolvedPromoUrl, setResolvedPromoUrl] = useState('')
+  const [vdocipherEmbedUrl, setVdocipherEmbedUrl] = useState('')
+  const [progressTick, setProgressTick] = useState(0)
   const simuladosScrollRef = useRef(null)
   const [canScrollSimuladosLeft, setCanScrollSimuladosLeft] = useState(false)
   const [canScrollSimuladosRight, setCanScrollSimuladosRight] = useState(false)
-  const { courseId, moduleId, lessonId } = useMemo(() => {
+  useEffect(() => {
+    const sync = () => {
+      try { setLocationSearch(window.location.search || '') } catch (_) { setLocationSearch('') }
+    }
+    window.addEventListener('popstate', sync)
+    return () => window.removeEventListener('popstate', sync)
+  }, [])
+
+  const { courseId, moduleId, lessonId, moduleIndex, lessonIndex } = useMemo(() => {
     try {
-      const params = new URLSearchParams(window.location.search || '')
+      const params = new URLSearchParams(locationSearch || '')
       return {
         courseId: params.get('courseId') || params.get('cursoId') || '',
         moduleId: params.get('moduleId') || '',
         lessonId: params.get('lessonId') || '',
+        moduleIndex: params.get('moduleIndex') || '',
+        lessonIndex: params.get('lessonIndex') || '',
       }
     } catch (_) {
-      return { courseId: '', moduleId: '', lessonId: '' }
+      return { courseId: '', moduleId: '', lessonId: '', moduleIndex: '', lessonIndex: '' }
     }
-  }, [])
+  }, [locationSearch])
 
   const isDemoStudent = useMemo(() => {
     try {
@@ -954,8 +1132,20 @@ export default function AlunoAulaPage() {
 
   useEffect(() => {
     const meta = getCourseMeta(courseRow)
-    const promoPath = meta?.promo_video_path || meta?.promoVideoPath || null
-    const promoUrl = courseRow?.promo_video_url || meta?.promo_video_url || meta?.promoVideoUrl || null
+    const promoPath =
+      courseRow?.promo_video_path ||
+      meta?.promo_video_path ||
+      meta?.promoVideoPath ||
+      null
+    const promoUrl =
+      courseRow?.promo_video_url ||
+      meta?.promo_video_url ||
+      meta?.promoVideoUrl ||
+      meta?.promo_url ||
+      meta?.promoUrl ||
+      meta?.video_url ||
+      meta?.videoUrl ||
+      null
     const candidates = []
     if (isNonEmptyString(promoPath)) candidates.push(toPublicCoursesMediaUrl(promoPath))
     if (isNonEmptyString(promoUrl)) candidates.push(toPublicCoursesMediaUrl(promoUrl))
@@ -963,45 +1153,255 @@ export default function AlunoAulaPage() {
     setResolvedPromoUrl(found ? String(found) : (isDemoStudent ? DEMO_PROMO_VIDEO_URL : ''))
   }, [courseRow, isDemoStudent])
 
+  const current = useMemo(() => {
+    return pickModuleAndLesson(courseRow, { moduleId, moduleIndex, lessonId, lessonIndex })
+  }, [courseRow, moduleId, moduleIndex, lessonId, lessonIndex])
+
   const resolved = useMemo(() => {
     const meta = getCourseMeta(courseRow)
-    const modules = getCourseModules(courseRow)
-    const pickedModule =
-      (Array.isArray(modules) ? modules : []).find((m) => String(m?.id || '') === String(moduleId || '')) ||
-      (Array.isArray(modules) ? modules : [])[0] ||
-      null
-    const lessons = Array.isArray(pickedModule?.lessons) ? pickedModule.lessons : []
-    const pickedLesson =
-      lessons.find((l) => String(l?.id || '') === String(lessonId || '')) ||
-      lessons[0] ||
-      null
+    const pickedLesson = current?.lesson || null
 
     const lessonTitle = String(pickedLesson?.title || '').trim() || 'Aula'
     const courseTitle = String(courseRow?.title || meta?.title || meta?.course_title || '').trim()
     const teacherName = String(meta?.teacher_name || meta?.professor || meta?.teacher || '').trim()
 
+    const mediaObj = (pickedLesson && typeof pickedLesson === 'object') ? (pickedLesson.media || pickedLesson.metadata || null) : null
+    let pickedProvider = String(pickedLesson?.videoProvider || pickedLesson?.video_provider || mediaObj?.videoProvider || mediaObj?.video_provider || '').trim().toLowerCase()
+    const pickedVdoVideoId = String(
+      pickedLesson?.videoId ||
+      pickedLesson?.video_id ||
+      pickedLesson?.vdocipherVideoId ||
+      pickedLesson?.vdocipher_video_id ||
+      mediaObj?.videoId ||
+      mediaObj?.video_id ||
+      mediaObj?.vdocipherVideoId ||
+      mediaObj?.vdocipher_video_id ||
+      ''
+    ).trim()
+    if (!pickedProvider && pickedVdoVideoId) pickedProvider = 'vdocipher'
     const lessonVideoCandidates = [
       pickedLesson?.video_url,
       pickedLesson?.videoUrl,
       pickedLesson?.video_src,
       pickedLesson?.videoSrc,
+      pickedLesson?.media_url,
+      pickedLesson?.mediaUrl,
+      pickedLesson?.vimeo_url,
+      pickedLesson?.vimeoUrl,
+      pickedLesson?.vimeoUri,
+      pickedLesson?.vimeo_uri,
+      pickedLesson?.youtube_url,
+      pickedLesson?.youtubeUrl,
+      pickedLesson?.video_path,
+      pickedLesson?.videoPath,
       pickedLesson?.url,
-    ].filter((v) => isNonEmptyString(v)).map((v) => toPublicCoursesMediaUrl(v))
+      mediaObj?.video_url,
+      mediaObj?.videoUrl,
+      mediaObj?.video_path,
+      mediaObj?.videoPath,
+      mediaObj?.vimeo_url,
+      mediaObj?.vimeoUrl,
+      mediaObj?.vimeoUri,
+      mediaObj?.vimeo_uri,
+      mediaObj?.youtube_url,
+      mediaObj?.youtubeUrl,
+    ]
+      .filter((v) => isNonEmptyString(v))
+      .map((v) => toPublicCoursesMediaUrl(v))
 
     const rawVideo = lessonVideoCandidates.find((v) => isNonEmptyString(v)) || resolvedPromoUrl || ''
     const isMp4Like = /\.(mp4|webm|ogg)(\?.*)?$/i.test(String(rawVideo || ''))
     const isHlsLike = /\.(m3u8)(\?.*)?$/i.test(String(rawVideo || ''))
     const vimeoEmbed = vimeoEmbedUrlFromAny(rawVideo)
-    const mode = vimeoEmbed ? 'vimeo' : (isMp4Like || isHlsLike ? 'video' : (rawVideo ? 'video' : 'none'))
+    const ytEmbed = youtubeEmbedUrlFromAny(rawVideo)
+    const isVdoCipher = String(rawVideo || '').includes('vdocipher') || String(rawVideo || '').includes('player.vdocipher.com')
+    const iframeSrc = vimeoEmbed || ytEmbed || (isVdoCipher ? String(rawVideo || '') : '')
+    const mode = iframeSrc ? 'vimeo' : (isMp4Like || isHlsLike ? 'video' : (rawVideo ? 'video' : 'none'))
+    const finalVideoUrl = (() => {
+      if (mode === 'vimeo') return iframeSrc
+      const u = String(rawVideo || '')
+      if (isSupabaseStorageUrl(u)) return `/api/media?u=${encodeURIComponent(u)}`
+      return u
+    })()
 
     return {
       courseTitle: courseTitle || 'Curso',
       lessonTitle,
       teacherName,
       videoMode: mode,
-      videoUrl: mode === 'vimeo' ? vimeoEmbed : String(rawVideo || ''),
+      videoUrl: finalVideoUrl,
+      videoProvider: pickedProvider,
+      vdocipherVideoId: pickedVdoVideoId,
     }
-  }, [courseRow, moduleId, lessonId, resolvedPromoUrl])
+  }, [courseRow, current, resolvedPromoUrl])
+
+  useEffect(() => {
+    let active = true
+    const run = async () => {
+      setVdocipherEmbedUrl('')
+      if (isDemoStudent) return
+      const cid = String(courseId || '').trim()
+      if (!cid) return
+      if (resolved.videoProvider !== 'vdocipher') return
+      if (!resolved.vdocipherVideoId) return
+      try {
+        const { data, error } = await supabase.functions.invoke('vdocipher-otp', {
+          body: {
+            courseId: cid,
+            moduleId: String(current?.moduleId || ''),
+            lessonId: String(current?.lessonId || ''),
+            moduleIndex: Number.isFinite(Number(current?.moduleIndex)) ? Number(current.moduleIndex) : null,
+            lessonIndex: Number.isFinite(Number(current?.lessonIndex)) ? Number(current.lessonIndex) : null,
+          },
+        })
+        if (!active) return
+        if (error || !data?.otp || !data?.playbackInfo) return
+        const src = `https://player.vdocipher.com/v2/?otp=${encodeURIComponent(String(data.otp))}&playbackInfo=${encodeURIComponent(String(data.playbackInfo))}`
+        setVdocipherEmbedUrl(src)
+      } catch (_) {}
+    }
+    run()
+    return () => { active = false }
+  }, [courseId, isDemoStudent, resolved.videoProvider, resolved.vdocipherVideoId, current])
+
+  const player = useMemo(() => {
+    if (vdocipherEmbedUrl) return { videoMode: 'vimeo', videoUrl: vdocipherEmbedUrl }
+    return { videoMode: resolved.videoMode, videoUrl: resolved.videoUrl }
+  }, [resolved.videoMode, resolved.videoUrl, vdocipherEmbedUrl])
+
+  const moduleRecommendedLessons = useMemo(() => {
+    const cid = String(courseId || '').trim()
+    const pickedModule = current?.module || null
+    const moduleTitle = String(pickedModule?.title || pickedModule?.name || pickedModule?.module_title || '').trim()
+    const mid = String(current?.moduleId || '').trim()
+    const moduleIndexNum = Number.isFinite(Number(current?.moduleIndex)) ? Number(current.moduleIndex) : 0
+    const lessons = Array.isArray(current?.lessons) ? current.lessons : []
+
+    const out = []
+    let inModule = 0
+    for (const lesson of lessons) {
+      const title = String(lesson?.title || lesson?.name || '').trim()
+      const lid = String(lesson?.id || lesson?.lesson_id || lesson?.lessonId || '').trim()
+      inModule += 1
+      const key = lessonProgressKey({
+        courseId: cid,
+        moduleId: mid,
+        moduleIndex: moduleIndexNum >= 0 ? moduleIndexNum : 0,
+        lessonId: lid,
+        lessonIndex: inModule - 1,
+      })
+      out.push({
+        key: `${mid || String(moduleIndexNum >= 0 ? moduleIndexNum : 'm')}:${lid || inModule}`,
+        title: title || `Aula ${inModule}`,
+        subtitle: moduleTitle ? `${moduleTitle} • Aula ${inModule}` : `Aula ${inModule}`,
+        moduleId: mid,
+        lessonId: lid,
+        moduleIndex: moduleIndexNum >= 0 ? moduleIndexNum : 0,
+        lessonIndex: inModule - 1,
+        inModule,
+        completed: safeLsGet(key) === '1',
+      })
+    }
+    return out
+  }, [courseId, current, progressTick])
+
+  const recommendedForCurrentLesson = useMemo(() => {
+    const list = Array.isArray(moduleRecommendedLessons) ? moduleRecommendedLessons : []
+    if (list.length === 0) return []
+
+    const lid = String(current?.lessonId || '').trim()
+    const li = Number.isFinite(Number(current?.lessonIndex)) ? Number(current.lessonIndex) : -1
+
+    let idx = -1
+    if (lid) idx = list.findIndex((x) => String(x?.lessonId || '') === lid)
+    if (idx < 0 && Number.isFinite(li)) idx = list.findIndex((x) => Number(x?.lessonIndex) === li)
+    if (idx < 0) idx = 0
+
+    return [...list.slice(idx), ...list.slice(0, idx)]
+  }, [moduleRecommendedLessons, current])
+
+  const currentModuleKey = useMemo(() => {
+    const mid = String(current?.moduleId || '').trim()
+    if (mid) return `id:${mid}`
+    const mi = String(current?.moduleIndex ?? '').trim()
+    return `idx:${mi || '0'}`
+  }, [current])
+
+  const currentLessonKey = useMemo(() => {
+    return lessonProgressKey({
+      courseId,
+      moduleId: current?.moduleId,
+      moduleIndex: current?.moduleIndex,
+      lessonId: current?.lessonId,
+      lessonIndex: current?.lessonIndex,
+    })
+  }, [courseId, current])
+
+  useEffect(() => {
+    setIsCompleted(safeLsGet(currentLessonKey) === '1')
+  }, [currentLessonKey, progressTick])
+
+  useEffect(() => {
+    setOpenModules((prev) => {
+      if (prev && Object.prototype.hasOwnProperty.call(prev, currentModuleKey)) return prev
+      return { ...(prev || {}), [currentModuleKey]: true }
+    })
+  }, [currentModuleKey])
+
+  const sidebarModules = useMemo(() => {
+    const modules = getCourseModules(courseRow)
+    const list = Array.isArray(modules) ? modules : []
+    const cid = String(courseId || '').trim()
+    const out = []
+    for (let i = 0; i < list.length; i += 1) {
+      const mod = list[i]
+      const moduleTitle = String(mod?.title || mod?.name || mod?.module_title || '').trim() || `Módulo ${i + 1}`
+      const mid = String(mod?.id || mod?.module_id || mod?.moduleId || '').trim()
+      const moduleKey = mid ? `id:${mid}` : `idx:${i}`
+      const lessons = getModuleLessons(mod)
+      const lessonRows = []
+      let completedCount = 0
+      let inModule = 0
+      for (const lesson of (Array.isArray(lessons) ? lessons : [])) {
+        const title = String(lesson?.title || lesson?.name || '').trim() || `Aula ${inModule + 1}`
+        const lid = String(lesson?.id || lesson?.lesson_id || lesson?.lessonId || '').trim()
+        const lessonKey = lessonProgressKey({ courseId: cid, moduleId: mid, moduleIndex: i, lessonId: lid, lessonIndex: inModule })
+        const completed = safeLsGet(lessonKey) === '1'
+        if (completed) completedCount += 1
+        const active =
+          (mid && String(mid) === String(current?.moduleId || '') && lid && String(lid) === String(current?.lessonId || '')) ||
+          (!mid && String(i) === String(current?.moduleIndex ?? '') && String(inModule) === String(current?.lessonIndex ?? ''))
+        lessonRows.push({
+          key: `${moduleKey}:${lid || inModule}`,
+          title,
+          subtitle: `Aula ${inModule + 1}`,
+          completed,
+          active,
+          onClick: () => {
+            const qs = new URLSearchParams()
+            qs.set('courseId', String(courseId || ''))
+            if (mid) qs.set('moduleId', String(mid))
+            else qs.set('moduleIndex', String(i))
+            if (lid) qs.set('lessonId', String(lid))
+            else qs.set('lessonIndex', String(inModule))
+            if (isDemoStudent) qs.set('demo', '1')
+            navigateTo(`/aluno/aula?${qs.toString()}`)
+          },
+        })
+        inModule += 1
+      }
+      const total = lessonRows.length
+      const percent = total > 0 ? Math.round((completedCount / total) * 100) : 0
+      out.push({
+        key: moduleKey,
+        title: moduleTitle,
+        subtitle: `${completedCount} de ${total} aulas concluídas`,
+        percent,
+        lessons: lessonRows,
+      })
+    }
+    return out
+  }, [courseRow, courseId, isDemoStudent, progressTick, current])
 
   useEffect(() => {
     const syncTabFromSearch = () => {
@@ -1035,12 +1435,6 @@ export default function AlunoAulaPage() {
     setStudentName(String(name))
   }, [user])
 
-  useEffect(() => {
-    try {
-      setIsCompleted(String(localStorage.getItem('connekt_aluno_aula_completed') || '') === '1')
-    } catch (_) {}
-  }, [])
-
   const handleFinishClick = () => {
     if (isCompleted) {
       toast({ title: 'Aula já concluída', description: 'Essa aula já está marcada como concluída.' })
@@ -1054,7 +1448,9 @@ export default function AlunoAulaPage() {
       localStorage.setItem('connekt_aluno_aula_completed', '1')
       localStorage.setItem('connekt_aluno_aula_nps', JSON.stringify({ rating, comment, allowContact, ts: Date.now() }))
     } catch (_) {}
+    safeLsSet(currentLessonKey, '1')
     setIsCompleted(true)
+    setProgressTick((v) => v + 1)
     setIsNpsOpen(false)
     toast({ title: 'Aula concluída com sucesso!' })
     window.setTimeout(() => {
@@ -1219,22 +1615,26 @@ export default function AlunoAulaPage() {
               <div className="mt-4 grid grid-cols-12 gap-6 items-start">
                 <div className="col-span-12 lg:col-span-8">
                   <div className="w-full rounded-[10px] overflow-hidden bg-black relative">
-                    {resolved.videoMode === 'vimeo' ? (
+                    {player.videoMode === 'vimeo' ? (
                       <iframe
                         title="Aula"
-                        src={resolved.videoUrl}
+                        src={player.videoUrl}
                         className="w-full h-[330px] bg-black"
-                        allow="autoplay; fullscreen; picture-in-picture"
+                        allow="autoplay; fullscreen; picture-in-picture; encrypted-media"
                         allowFullScreen
                       />
-                    ) : resolved.videoMode === 'video' ? (
+                    ) : player.videoMode === 'video' ? (
                       <video className="w-full h-[330px] bg-black" controls poster="/Preview.png">
-                        {resolved.videoUrl ? <source src={resolved.videoUrl} /> : null}
+                        {player.videoUrl ? <source src={player.videoUrl} /> : null}
                       </video>
                     ) : (
                       <div className="w-full h-[330px] bg-black flex items-center justify-center px-6 text-center">
                         <div className="text-[12px] text-white/80">
-                          {courseLoading ? 'Carregando vídeo…' : (courseError ? 'Não foi possível carregar o vídeo.' : 'Vídeo não encontrado para esta aula.')}
+                          {courseLoading ? 'Carregando vídeo…' : (
+                            courseError ? 'Não foi possível carregar o vídeo.' : (
+                              resolved.videoProvider === 'vdocipher' ? 'Carregando vídeo…' : 'Vídeo não encontrado para esta aula.'
+                            )
+                          )}
                         </div>
                       </div>
                     )}
@@ -1410,10 +1810,10 @@ export default function AlunoAulaPage() {
                     <div className="flex items-center justify-between">
                       <div>
                         <div className="text-[12px] font-semibold text-[#22252B]">Aulas recomendadas</div>
-                        <div className="text-[10px] text-[#737780]">2 de 5 aulas concluídas</div>
+                        <div className="text-[10px] text-[#737780]">{moduleRecommendedLessons.filter((l) => l?.completed).length} de {moduleRecommendedLessons.length} aulas concluídas</div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <ProgressRing value={25} />
+                        <ProgressRing value={moduleRecommendedLessons.length > 0 ? Math.round((moduleRecommendedLessons.filter((l) => l?.completed).length / moduleRecommendedLessons.length) * 100) : 0} />
                         <button
                           type="button"
                           className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-[#F3F4F5]"
@@ -1428,37 +1828,51 @@ export default function AlunoAulaPage() {
                       className={`overflow-hidden transition-[max-height,opacity] duration-200 ease-out ${isRecommendedOpen ? 'max-h-[260px] opacity-100' : 'max-h-0 opacity-0'}`}
                     >
                       <div className="mt-3 divide-y divide-[#F3F4F5] max-h-[210px] overflow-y-auto scrollbar-hide pr-1">
-                        <RecommendedLessonRow title="Encontrando e modelando ofertas americanas" subtitle="Aula 1" active completed />
-                        <RecommendedLessonRow title="Encontrando e modelando ofertas americanas" subtitle="Aula 2" completed />
-                        <RecommendedLessonRow title="Encontrando e modelando ofertas americanas" subtitle="Aula 3" completed={false} />
-                        <RecommendedLessonRow title="Encontrando e modelando ofertas americanas" subtitle="Aula 4" completed={false} />
+                        {moduleRecommendedLessons.length > 0 ? recommendedForCurrentLesson.slice(0, 8).map((l) => {
+                          const active =
+                            (l.lessonId && String(l.lessonId) === String(current?.lessonId || '')) ||
+                            (String(l.lessonIndex) === String(current?.lessonIndex ?? ''))
+                          return (
+                            <RecommendedLessonRow
+                              key={l.key}
+                              title={l.title}
+                              subtitle={l.subtitle}
+                              active={active}
+                              completed={!!l.completed}
+                              onClick={(l.moduleId || l.lessonId || String(l.moduleIndex) !== 'undefined') ? (() => {
+                                const qs = new URLSearchParams()
+                                qs.set('courseId', String(courseId || ''))
+                                if (l.moduleId) qs.set('moduleId', String(l.moduleId))
+                                else if (Number.isFinite(Number(l.moduleIndex))) qs.set('moduleIndex', String(l.moduleIndex))
+                                if (l.lessonId) qs.set('lessonId', String(l.lessonId))
+                                else if (Number.isFinite(Number(l.lessonIndex))) qs.set('lessonIndex', String(l.lessonIndex))
+                                if (isDemoStudent) qs.set('demo', '1')
+                                navigateTo(`/aluno/aula?${qs.toString()}`)
+                              }) : null}
+                            />
+                          )
+                        }) : (
+                          <div className="py-3 text-[12px] text-[#737780]">Nenhuma aula encontrada.</div>
+                        )}
                       </div>
                     </div>
                   </div>
 
                   <div className="mt-4 rounded-[10px] border border-[#E3E4E5] bg-white p-4">
                     <div className="divide-y divide-[#F3F4F5]">
-                      <CollapsibleModuleRow
-                        title="Práticas clínicas"
-                        subtitle="2 de 5 aulas concluídas"
-                        percent={25}
-                        open={openModules.m1}
-                        onToggle={() => setOpenModules((s) => ({ ...s, m1: !s.m1 }))}
-                      />
-                      <CollapsibleModuleRow
-                        title="Práticas clínicas"
-                        subtitle="2 de 5 aulas concluídas"
-                        percent={25}
-                        open={openModules.m2}
-                        onToggle={() => setOpenModules((s) => ({ ...s, m2: !s.m2 }))}
-                      />
-                      <CollapsibleModuleRow
-                        title="Práticas clínicas"
-                        subtitle="2 de 5 aulas concluídas"
-                        percent={25}
-                        open={openModules.m3}
-                        onToggle={() => setOpenModules((s) => ({ ...s, m3: !s.m3 }))}
-                      />
+                      {sidebarModules.length > 0 ? sidebarModules.map((m) => (
+                        <CollapsibleModuleRow
+                          key={m.key}
+                          title={m.title}
+                          subtitle={m.subtitle}
+                          percent={m.percent}
+                          open={!!(openModules && openModules[m.key])}
+                          onToggle={() => setOpenModules((s) => ({ ...(s || {}), [m.key]: !(s && s[m.key]) }))}
+                          lessons={m.lessons}
+                        />
+                      )) : (
+                        <div className="py-3 text-[12px] text-[#737780]">Nenhum módulo encontrado.</div>
+                      )}
                     </div>
                   </div>
                 </div>

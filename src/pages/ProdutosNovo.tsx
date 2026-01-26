@@ -27,6 +27,8 @@ type Lesson = {
   subcategories?: string[];
   extraTags?: string[];
   videoProvider?: "vimeo" | "vdocipher" | "upload";
+  videoUrl?: string;
+  videoId?: string;
   materials?: LessonMaterial[];
   commentsEnabled?: boolean;
 }
@@ -1415,6 +1417,13 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
         return
       }
       toast({ title: 'Upload iniciado', description: `Vídeo ${videoId} enviado. O processamento será iniciado.` })
+      try {
+        if (editingModuleId && editingLessonId && videoId) {
+          updateLessonField(editingModuleId, editingLessonId, 'videoProvider', 'vdocipher')
+          updateLessonField(editingModuleId, editingLessonId, 'videoId', String(videoId))
+          updateLessonField(editingModuleId, editingLessonId, 'videoUrl', '')
+        }
+      } catch (_) {}
       setVdoUploadTitle('')
       setVdoUploadFile(null)
       setIsVdoUploading(false)
@@ -1546,6 +1555,15 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
       }
 
       toast({ title: 'Upload Vimeo iniciado', description: `Vídeo criado: ${vimeoUri}. Processamento em andamento.` })
+      try {
+        if (editingModuleId && editingLessonId && vimeoUri) {
+          const id = String(vimeoUri).match(/\/videos\/(\d+)/i)?.[1] || ''
+          const url = id ? `https://player.vimeo.com/video/${id}` : String(vimeoUri)
+          updateLessonField(editingModuleId, editingLessonId, 'videoProvider', 'vimeo')
+          updateLessonField(editingModuleId, editingLessonId, 'videoUrl', url)
+          updateLessonField(editingModuleId, editingLessonId, 'videoId', '')
+        }
+      } catch (_) {}
       setVimeoUploadFile(null)
       setIsVimeoUploading(false)
       setVimeoUploadProgress(0)
