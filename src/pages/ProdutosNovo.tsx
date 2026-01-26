@@ -2645,7 +2645,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
       input.click()
     }
   }
-  const handleMaterialFileSelected: React.ChangeEventHandler<HTMLInputElement> = (e) => {
+  const handleMaterialFileSelected: React.ChangeEventHandler<HTMLInputElement> = async (e) => {
     const file = e.target.files && e.target.files[0]
     if (!file || !pendingMaterialType) return
     const newItem: LessonMaterial = {
@@ -2657,8 +2657,63 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
       url: null,
     }
     setNewLessonMaterials(prev => [...prev, newItem])
-    setLessonMaterialFilesById((prev) => ({ ...(prev || {}), [newItem.id]: file }))
     setPendingMaterialType(null)
+
+    const canUploadNow = Boolean(isEditMode && editingCourseId && user?.id)
+    if (!canUploadNow) {
+      setLessonMaterialFilesById((prev) => ({ ...(prev || {}), [newItem.id]: file }))
+      return
+    }
+
+    try {
+      const allowed = await canUploadBytes(user!.id, file.size, resolvePlanKey())
+      if (!allowed.ok) throw new Error('Limite de armazenamento atingido. Faça upgrade do seu plano para continuar.')
+
+      const sanitizeFilename = (name: string) => (name || 'file').replace(/[^a-zA-Z0-9_.-]/g, '_')
+      const safeName = sanitizeFilename(file.name || `materials`)
+      const envAny = (import.meta as any)?.env || {}
+      const shouldTryProxy = Boolean(envAny.DEV && envAny.VITE_USE_LOCAL_UPLOAD_PROXY)
+      if (shouldTryProxy) {
+        const qs = new URLSearchParams({
+          userId: user!.id,
+          courseId: String(editingCourseId),
+          kind: 'materials',
+          filename: safeName,
+          contentType: file.type || 'application/octet-stream',
+        })
+        const resp = await fetch(`/api/upload-course-media?${qs.toString()}`, {
+          method: 'POST',
+          headers: { 'Content-Type': file.type || 'application/octet-stream', ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}) },
+          body: file,
+        })
+        if (resp.ok) {
+          const json = await resp.json().catch(() => ({}))
+          const nextUrl = json?.url ? String(json.url) : ''
+          const nextPath = json?.path ? String(json.path) : ''
+          if (nextUrl || nextPath) {
+            setNewLessonMaterials((prev) => prev.map((m) => m.id === newItem.id ? { ...m, url: nextUrl || null, path: nextPath || null } : m))
+            toast({ title: 'Anexo enviado', description: 'Arquivo pronto para download após salvar o curso.' })
+            return
+          }
+        }
+      }
+
+      const bucket = 'courses-media'
+      const objectPath = `users/${user!.id}/courses/${String(editingCourseId)}/materials/${Date.now()}_${safeName}`
+      const { data, error } = await supabase.storage.from(bucket).upload(objectPath, file, {
+        upsert: true,
+        contentType: file.type || 'application/octet-stream',
+      })
+      if (error) throw error
+      const storedPath = (data as any)?.path || objectPath
+      const { data: pub } = supabase.storage.from(bucket).getPublicUrl(String(storedPath))
+      const nextUrl = pub?.publicUrl ? String(pub.publicUrl) : null
+      setNewLessonMaterials((prev) => prev.map((m) => m.id === newItem.id ? { ...m, url: nextUrl, path: String(storedPath) } : m))
+      toast({ title: 'Anexo enviado', description: 'Arquivo pronto para download após salvar o curso.' })
+    } catch (err: any) {
+      setLessonMaterialFilesById((prev) => ({ ...(prev || {}), [newItem.id]: file }))
+      toast({ title: 'Erro ao enviar anexo', description: String(err?.message || err || ''), variant: 'destructive' as any })
+    }
   }
 
   // Abrir a página já com o editor de aula visível
