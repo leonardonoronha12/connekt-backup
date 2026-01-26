@@ -1057,6 +1057,7 @@ export default function AlunoAulaPage() {
   const [courseError, setCourseError] = useState('')
   const [resolvedPromoUrl, setResolvedPromoUrl] = useState('')
   const [vdocipherEmbedUrl, setVdocipherEmbedUrl] = useState('')
+  const [videoUrlOverride, setVideoUrlOverride] = useState('')
   const [progressTick, setProgressTick] = useState(0)
   const [moduleSimulados, setModuleSimulados] = useState([])
   const [moduleSimuladosLoading, setModuleSimuladosLoading] = useState(false)
@@ -1425,6 +1426,10 @@ export default function AlunoAulaPage() {
     return { videoMode: resolved.videoMode, videoUrl: resolved.videoUrl }
   }, [resolved.videoMode, resolved.videoUrl, vdocipherEmbedUrl])
 
+  useEffect(() => {
+    setVideoUrlOverride('')
+  }, [player.videoUrl, player.videoMode])
+
   const moduleRecommendedLessons = useMemo(() => {
     const cid = String(courseId || '').trim()
     const pickedModule = current?.module || null
@@ -1780,8 +1785,31 @@ export default function AlunoAulaPage() {
                         allowFullScreen
                       />
                     ) : player.videoMode === 'video' ? (
-                      <video className="w-full h-[330px] bg-black" controls poster="/Preview.png">
-                        {player.videoUrl ? <source src={player.videoUrl} /> : null}
+                      <video
+                        className="w-full h-[330px] bg-black"
+                        controls
+                        poster="/Preview.png"
+                        onError={(e) => {
+                          const v = e.currentTarget
+                          if (v?.dataset?.fallbackUsed === '1') return
+                          const src = String((videoUrlOverride || player.videoUrl) || '')
+                          if (!src.includes('/api/media?u=')) return
+                          let direct = ''
+                          try {
+                            const u = new URL(src, window.location.origin)
+                            direct = u.searchParams.get('u') || ''
+                          } catch (_) {}
+                          if (!direct) return
+                          v.dataset.fallbackUsed = '1'
+                          setVideoUrlOverride(direct)
+                          try {
+                            v.load()
+                            const p = v.play?.()
+                            if (p && typeof p.catch === 'function') p.catch(() => {})
+                          } catch (_) {}
+                        }}
+                      >
+                        {(videoUrlOverride || player.videoUrl) ? <source src={videoUrlOverride || player.videoUrl} /> : null}
                       </video>
                     ) : (
                       <div className="w-full h-[330px] bg-black flex items-center justify-center px-6 text-center">
