@@ -1,16 +1,20 @@
+import { json } from './_supabaseAdmin.js'
+
 export default async function handler(req, res) {
-  res.statusCode = 200
-  res.setHeader('Content-Type', 'application/json')
-  res.setHeader('Cache-Control', 'no-store')
-  res.end(JSON.stringify({
+  if (req.method !== 'GET') return json(res, 405, { error: 'method_not_allowed' })
+
+  const sha =
+    process.env.VERCEL_GIT_COMMIT_SHA ||
+    process.env.GITHUB_SHA ||
+    process.env.COMMIT_SHA ||
+    ''
+
+  return json(res, 200, {
     ok: true,
-    vercel: {
-      env: process.env.VERCEL_ENV || null,
-      gitCommitSha: process.env.VERCEL_GIT_COMMIT_SHA || null,
-      gitCommitRef: process.env.VERCEL_GIT_COMMIT_REF || null,
-      gitRepoSlug: process.env.VERCEL_GIT_REPO_SLUG || null,
-    },
+    sha: sha ? String(sha).slice(0, 12) : '',
+    env: String(process.env.VERCEL_ENV || ''),
+    url: String(process.env.VERCEL_URL || ''),
     now: new Date().toISOString(),
-  }))
+  })
 }
 
