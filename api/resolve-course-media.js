@@ -34,9 +34,16 @@ export default async function handler(req, res) {
     folders.push(root)
 
     for (const folder of folders) {
-      const { data: list, error } = await admin.storage.from(bucket).list(folder, { limit: 200, search: wanted })
-      if (error) continue
-      const items = Array.isArray(list) ? list : []
+      let items = []
+      {
+        const { data: list, error } = await admin.storage.from(bucket).list(folder, { limit: 200, search: wanted })
+        if (!error && Array.isArray(list)) items = list
+      }
+      if (!Array.isArray(items) || items.length === 0) {
+        const { data: listAll, error: errAll } = await admin.storage.from(bucket).list(folder, { limit: 1000 })
+        if (!errAll && Array.isArray(listAll)) items = listAll
+      }
+
       const exact = items.find((it) => String(it?.name || '') === wanted) || null
       const suffix = items.find((it) => String(it?.name || '').endsWith(`_${wanted}`)) || null
       const picked = exact || suffix || null
@@ -60,4 +67,3 @@ export default async function handler(req, res) {
     return json(res, 500, { error: e?.message || String(e) })
   }
 }
-
