@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { execSync } from 'node:child_process';
 import react from '@vitejs/plugin-react';
 import { createLogger, defineConfig, loadEnv } from 'vite';
 import inlineEditPlugin from './plugins/visual-editor/vite-plugin-react-inline-editor.js';
@@ -7,6 +8,20 @@ import iframeRouteRestorationPlugin from './plugins/vite-plugin-iframe-route-res
 import uploadProxyPlugin from './plugins/upload-proxy/vite-plugin-upload-proxy.js';
 
 const isDev = process.env.NODE_ENV !== 'production';
+const buildSha = (() => {
+  const fromEnv =
+    process.env.VERCEL_GIT_COMMIT_SHA ||
+    process.env.GITHUB_SHA ||
+    process.env.COMMIT_SHA ||
+    '';
+  if (fromEnv) return String(fromEnv).slice(0, 12);
+  try {
+    return String(execSync('git rev-parse --short HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }) || '').trim();
+  } catch (_) {
+    return '';
+  }
+})();
+const buildTime = new Date().toISOString();
 
 const configHorizonsViteErrorHandler = `
 const observer = new MutationObserver((mutations) => {
@@ -325,6 +340,10 @@ export default defineConfig(({ mode }) => {
 
     return {
         customLogger: logger,
+        define: {
+            __BUILD_SHA__: JSON.stringify(buildSha),
+            __BUILD_TIME__: JSON.stringify(buildTime),
+        },
         plugins: [
             ...(isDev ? [inlineEditPlugin(), editModeDevPlugin(), iframeRouteRestorationPlugin(), uploadProxyPlugin()] : []),
             react(),

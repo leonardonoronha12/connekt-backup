@@ -1107,6 +1107,14 @@ export default function AlunoAulaPage() {
   const [locationSearch, setLocationSearch] = useState(() => {
     try { return window.location.search || '' } catch (_) { return '' }
   })
+  const debugOn = useMemo(() => {
+    try {
+      const params = new URLSearchParams(window.location.search || '')
+      return params.get('debug') === '1'
+    } catch (_) {
+      return false
+    }
+  }, [])
   const [studentName, setStudentName] = useState('Aluno')
   const [isCompleted, setIsCompleted] = useState(false)
   const [isNpsOpen, setIsNpsOpen] = useState(false)
@@ -1440,6 +1448,9 @@ export default function AlunoAulaPage() {
       pickedLesson?.metadata?.tag,
       pickedLesson?.meta?.tag,
     )
+    const courseCategory = pickFirst(meta?.selectedCategories || meta?.selected_categories || meta?.categories || meta?.course_categories)
+    const courseSubcategory = pickFirst(meta?.selectedSubcategories || meta?.selected_subcategories || meta?.subcategories || meta?.course_subcategories)
+    const courseTag = pickFirst(meta?.selectedTags || meta?.selected_tags || meta?.tags || meta?.course_tags)
 
     const mediaObj = (pickedLesson && typeof pickedLesson === 'object') ? (pickedLesson.media || pickedLesson.metadata || null) : null
     let pickedProvider = String(pickedLesson?.videoProvider || pickedLesson?.video_provider || mediaObj?.videoProvider || mediaObj?.video_provider || '').trim().toLowerCase()
@@ -1511,9 +1522,9 @@ export default function AlunoAulaPage() {
       courseTitle: courseTitle || 'Curso',
       lessonTitle,
       teacherName,
-      lessonCategory: lessonCategory || 'Sem categoria',
-      lessonTag: lessonTag || 'Sem tag',
-      lessonSubcategory: lessonSubcategory || 'Sem subcategoria',
+      lessonCategory: lessonCategory || courseCategory || 'Sem categoria',
+      lessonTag: lessonTag || courseTag || 'Sem tag',
+      lessonSubcategory: lessonSubcategory || courseSubcategory || 'Sem subcategoria',
       lessonDescription: lessonDescription || '',
       videoMode: mode,
       videoUrl: finalVideoUrl,
@@ -1780,6 +1791,16 @@ export default function AlunoAulaPage() {
 
   return (
     <div className="min-h-screen lg:h-screen w-full bg-[#EEF2FF] flex lg:overflow-hidden">
+      {debugOn ? (
+        <div className="fixed bottom-3 right-3 z-[9999] rounded bg-white/90 border border-[#E3E4E5] px-3 py-2 text-[11px] text-[#374151]">
+          <div>build: {String(typeof __BUILD_SHA__ !== 'undefined' ? __BUILD_SHA__ : '')}</div>
+          <div>time: {String(typeof __BUILD_TIME__ !== 'undefined' ? __BUILD_TIME__ : '')}</div>
+          <div>lessonCategory: {String(resolved?.lessonCategory || '')}</div>
+          <div>lessonTag: {String(resolved?.lessonTag || '')}</div>
+          <div>lessonSubcategory: {String(resolved?.lessonSubcategory || '')}</div>
+          <div>lessonDescLen: {String((resolved?.lessonDescription || '').length)}</div>
+        </div>
+      ) : null}
       {mobileNavOpen ? (
         <div className="lg:hidden fixed inset-0 z-[70]">
           <button
