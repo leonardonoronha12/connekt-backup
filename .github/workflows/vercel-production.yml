@@ -17,6 +17,17 @@ jobs:
         with:
           node-version: 20
           cache: npm
+      - name: Check Vercel secrets
+        run: |
+          if [ -z "${{ secrets.VERCEL_TOKEN }}" ]; then
+            echo "Missing secret: VERCEL_TOKEN"
+            exit 1
+          fi
+          if [ -z "${{ secrets.VERCEL_ORG_ID }}" ] || [ -z "${{ secrets.VERCEL_PROJECT_ID }}" ]; then
+            echo "Missing secrets: VERCEL_ORG_ID and/or VERCEL_PROJECT_ID"
+            echo "Add them in GitHub: Settings → Secrets and variables → Actions"
+            exit 1
+          fi
       - run: npm ci
       - run: npm run build
       - run: |
