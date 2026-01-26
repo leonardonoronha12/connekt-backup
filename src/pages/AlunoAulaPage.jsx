@@ -1376,6 +1376,21 @@ export default function AlunoAulaPage() {
     const lessonTitle = String(pickedLesson?.title || '').trim() || 'Aula'
     const courseTitle = String(courseRow?.title || meta?.title || meta?.course_title || '').trim()
     const teacherName = String(meta?.teacher_name || meta?.professor || meta?.teacher || '').trim()
+    const lessonDescription = String(pickedLesson?.description || pickedLesson?.about || pickedLesson?.lesson_description || '').trim()
+    const courseDescription = String(courseRow?.description || meta?.description || meta?.course_description || '').trim()
+    const pickFirst = (value) => {
+      if (!Array.isArray(value)) return ''
+      for (const it of value) {
+        const s = String(it || '').trim()
+        if (s) return s
+      }
+      return ''
+    }
+    const lessonCategory = pickFirst(pickedLesson?.categories)
+    const lessonSubcategory = pickFirst(pickedLesson?.subcategories)
+    const tagFromLesson = String(pickedLesson?.tag || '').trim()
+    const tagFromExtras = pickFirst(pickedLesson?.extraTags)
+    const lessonTag = tagFromLesson || tagFromExtras
 
     const mediaObj = (pickedLesson && typeof pickedLesson === 'object') ? (pickedLesson.media || pickedLesson.metadata || null) : null
     let pickedProvider = String(pickedLesson?.videoProvider || pickedLesson?.video_provider || mediaObj?.videoProvider || mediaObj?.video_provider || '').trim().toLowerCase()
@@ -1447,6 +1462,10 @@ export default function AlunoAulaPage() {
       courseTitle: courseTitle || 'Curso',
       lessonTitle,
       teacherName,
+      lessonCategory: lessonCategory || 'Sem categoria',
+      lessonTag: lessonTag || 'Sem tag',
+      lessonSubcategory: lessonSubcategory || 'Sem subcategoria',
+      lessonDescription: lessonDescription || courseDescription || '',
       videoMode: mode,
       videoUrl: finalVideoUrl,
       videoProvider: pickedProvider,
@@ -1904,15 +1923,15 @@ export default function AlunoAulaPage() {
                     <div className="mt-3 flex items-center gap-2">
                       <span className="inline-flex items-center gap-1 rounded bg-[#EEF2FF] text-[#1D4ED8] px-2 py-0.5 text-[12px]">
                         <span className="h-2 w-2 rounded-[4px] inline-block" style={{ backgroundColor: '#8B5CF6' }} />
-                        Categoria
+                        {resolved.lessonCategory}
                       </span>
                       <span className="inline-flex items-center gap-1 rounded bg-[#F3F4F6] text-[#374151] px-2 py-0.5 text-[12px]">
                         <span className="h-2 w-2 rounded-[4px] inline-block" style={{ backgroundColor: '#10B981' }} />
-                        Tag
+                        {resolved.lessonTag}
                       </span>
                       <span className="inline-flex items-center gap-1 rounded bg-[#FEF9C3] text-[#92400E] px-2 py-0.5 text-[12px]">
                         <span className="h-2 w-2 rounded-[4px] inline-block" style={{ backgroundColor: '#94A3B8' }} />
-                        Subcategoria
+                        {resolved.lessonSubcategory}
                       </span>
                     </div>
 
@@ -1939,18 +1958,16 @@ export default function AlunoAulaPage() {
 
                     {activeTab === 'Sobre a aula' ? (
                       <>
-                        <div className="mt-5 text-[12px] text-[#737780]">
-                          Formação completa, atualizada e baseada em prática clínica real
-                        </div>
-                        <div className="mt-4 text-[12px] leading-[18px] text-[#737780]">
-                          O Curso de Cirurgia Neurológica foi desenvolvido para oferecer uma formação extremamente sólida e aprofundada sobre o diagnóstico,
-                          planejamento cirúrgico e tratamento de doenças do sistema nervoso central e periférico. Ao longo do curso, o aluno terá acesso a uma
-                          abordagem teórico-prática, prática e multidisciplinar, com foco em tomada de decisão cirúrgica, técnicas modernas e neurocirurgia no
-                          manejo no pré, trans e pós-operatório.
-                        </div>
+                        {resolved.lessonDescription ? (
+                          <div className="mt-5 text-[12px] leading-[18px] text-[#737780] whitespace-pre-line">
+                            {resolved.lessonDescription}
+                          </div>
+                        ) : (
+                          <div className="mt-5 text-[12px] text-[#737780]">Sem descrição.</div>
+                        )}
                       </>
                     ) : activeTab === 'Comentários' ? (
-                      <CommentsPanel user={user} studentName={studentName} lessonKey="aula-03-pratica-clinica" />
+                      <CommentsPanel user={user} studentName={studentName} lessonKey={lessonKey} />
                     ) : activeTab === 'Simulados' ? (
                       <div className="mt-5">
                         <div className="flex items-center justify-between">
