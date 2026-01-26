@@ -5,6 +5,7 @@ import CourseFooter from '@/components/CourseFooter'
 import { supabase } from '@/lib/supabaseClient'
 import { useAuth } from '@/contexts/SupabaseAuthContext'
 import { useActiveProducerUserId } from '@/hooks/useActiveProducerUserId'
+import { setActiveProducerUserId } from '@/services/producerScope'
 
 const navSections = [
   {
@@ -519,6 +520,26 @@ export default function AlunoDashboardPage() {
 
   const email = useMemo(() => String(user?.email || '').trim().toLowerCase(), [user?.email])
   const activeProducerUserId = useActiveProducerUserId()
+  const loginMode = useMemo(() => {
+    try {
+      return String(sessionStorage.getItem('connekt_login_mode') || localStorage.getItem('connekt_login_mode') || '')
+    } catch (_) {
+      return ''
+    }
+  }, [])
+
+  useEffect(() => {
+    const pid = String(activeProducerUserId || '').trim()
+    if (pid) return
+    if (isDemoStudent) return
+    const uid = String(user?.id || '').trim()
+    if (!uid) return
+    const mode = String(loginMode || '').trim().toLowerCase()
+    if (mode === 'aluno') return
+    const path = String(window.location.pathname || '')
+    if (!(path === '/aluno' || path.startsWith('/aluno/'))) return
+    setActiveProducerUserId(uid)
+  }, [activeProducerUserId, isDemoStudent, user?.id, loginMode])
 
   const isBlockedRead = (e) => {
     const msg = String(e?.message || e || '').toLowerCase()
