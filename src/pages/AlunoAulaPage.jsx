@@ -374,6 +374,35 @@ function AttachmentsPanel({ courseId, moduleId, lessonId, lessonKey, demo }) {
     return raw
   }
 
+  const resolveMaterialDownloadUrl = async ({ courseId, producerId, filename }) => {
+    const name = String(filename || '').trim()
+    const cid = String(courseId || '').trim()
+    const pid = String(producerId || '').trim()
+    if (!name || !cid || !pid) return null
+
+    if (name.startsWith('http://') || name.startsWith('https://') || name.startsWith('data:')) return name
+    if (name.includes('/')) return toPublicCoursesMediaUrl(name)
+
+    const root = `users/${pid}/courses/${cid}`
+    const folders = ['materials', 'material', 'anexos', 'attachments', 'files', 'docs', '']
+    for (const f of folders) {
+      const base = f ? `${root}/${f}` : root
+      try {
+        const { data } = await supabase.storage.from('courses-media').list(base, { limit: 100, search: name })
+        const list = Array.isArray(data) ? data : []
+        const exact = list.find((it) => String(it?.name || '') === name) || null
+        const suffix = list.find((it) => String(it?.name || '').endsWith(`_${name}`)) || null
+        const picked = exact || suffix || null
+        if (!picked?.name) continue
+        const objectPath = `${base}/${picked.name}`
+        const { data: pub } = supabase.storage.from('courses-media').getPublicUrl(objectPath)
+        const url = pub?.publicUrl || null
+        if (url) return url
+      } catch (_) {}
+    }
+    return null
+  }
+
   const parseJsonMaybe = (value) => {
     if (!value) return null
     if (typeof value === 'object') return value
@@ -434,19 +463,23 @@ function AttachmentsPanel({ courseId, moduleId, lessonId, lessonKey, demo }) {
           return
         }
 
-        const { data, error } = await supabase.from('courses').select('id,modules,data').eq('id', courseId).maybeSingle()
+        const { data, error } = await supabase.from('courses').select('id,user_id,modules,data').eq('id', courseId).maybeSingle()
         if (error) throw error
         const mods = getModulesFromCourse(data)
         const mod = (Array.isArray(mods) ? mods : []).find((m) => String(m?.id || '') === String(moduleId || '')) || mods[0] || null
         const lessons = Array.isArray(mod?.lessons) ? mod.lessons : []
         const lesson = lessons.find((l) => String(l?.id || '') === String(lessonId || '')) || lessons[0] || null
         const materials = Array.isArray(lesson?.materials) ? lesson.materials : []
-        const mapped = materials.map((m, idx) => {
+        const producerId = String(data?.user_id || '').trim()
+        const mapped = await Promise.all(materials.map(async (m, idx) => {
           const type = normalizeMaterialType(m?.type)
           const rawName = String(m?.name || '').trim() || `Material ${idx + 1}`
-          const url = type === 'link' ? (rawName.startsWith('http') ? rawName : null) : toPublicCoursesMediaUrl(rawName)
+          const url =
+            type === 'link'
+              ? (rawName.startsWith('http') ? rawName : null)
+              : await resolveMaterialDownloadUrl({ courseId, producerId, filename: rawName })
           return { id: String(m?.id || `mat-${idx}`), type, name: rawName, sizeLabel: String(m?.sizeLabel || ''), url }
-        })
+        }))
         if (active) setItems(mapped)
       } catch (_) {
         if (demo) {
@@ -499,6 +532,7 @@ function AttachmentsPanel({ courseId, moduleId, lessonId, lessonKey, demo }) {
                         href={m.url}
                         target={m.type === 'link' ? '_blank' : undefined}
                         rel={m.type === 'link' ? 'noreferrer' : undefined}
+                        download={m.type === 'link' ? undefined : String(m.name || 'arquivo')}
                         className="h-9 px-3 rounded-[8px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#22252B] inline-flex items-center gap-2"
                       >
                         {m.type === 'link' ? <ExternalLink className="w-4 h-4 text-[#737780]" /> : <Download className="w-4 h-4 text-[#737780]" />}
