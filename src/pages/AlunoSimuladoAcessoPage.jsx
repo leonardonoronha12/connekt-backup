@@ -5,6 +5,7 @@ import Header from '@/components/Header'
 import CourseFooter from '@/components/CourseFooter'
 import { supabase } from '@/lib/supabaseClient'
 import { useAuth } from '@/contexts/SupabaseAuthContext'
+import { useActiveProducerUserId } from '@/hooks/useActiveProducerUserId'
 
 const navSections = [
   {
@@ -55,12 +56,13 @@ function ApprovalRing({ value }) {
   )
 }
 
-function SimuladoCard({ title, status, approval, isPaid, price }) {
+function SimuladoCard({ title, subtitle, categories, status, approval, isPaid, price }) {
   const p = Math.max(0, Math.min(100, Number(approval || 0)))
   const paid =
     typeof isPaid === 'boolean'
       ? isPaid
       : Math.max(0, Number(price || 0)) > 0
+  const pills = Array.isArray(categories) ? categories.filter(Boolean).slice(0, 2) : []
   return (
     <div className="bg-white border border-[#E3E4E5] rounded-[8px] w-full h-[200px] px-4 py-3 flex flex-col">
       <div className="flex items-start justify-between">
@@ -68,7 +70,7 @@ function SimuladoCard({ title, status, approval, isPaid, price }) {
           <img src="/icone img simulado.png" alt="" className="w-[54px] h-[54px] rounded-[8px] object-cover" />
           <div className="flex flex-col">
             <div className="text-[12px] font-semibold text-[#1E1B39] font-inter leading-[18px]">{title}</div>
-            <div className="text-[10px] text-[#9291A5] font-inter leading-[14px]">Descrição breve do simulado</div>
+            <div className="text-[10px] text-[#9291A5] font-inter leading-[14px]">{subtitle}</div>
           </div>
         </div>
 
@@ -86,8 +88,11 @@ function SimuladoCard({ title, status, approval, isPaid, price }) {
       </div>
 
       <div className="mt-3 flex items-center gap-2">
-        <span className="inline-flex items-center h-[18px] px-2 rounded-[4px] bg-[#EEF2FF] text-[#0047BB] text-[10px] font-medium">Categoria</span>
-        <span className="inline-flex items-center h-[18px] px-2 rounded-[4px] bg-[#EEF2FF] text-[#0047BB] text-[10px] font-medium">Categoria</span>
+        {pills.length > 0 ? pills.map((c) => (
+          <span key={c} className="inline-flex items-center h-[18px] px-2 rounded-[4px] bg-[#EEF2FF] text-[#0047BB] text-[10px] font-medium">{c}</span>
+        )) : (
+          <span className="inline-flex items-center h-[18px] px-2 rounded-[4px] bg-[#EEF2FF] text-[#0047BB] text-[10px] font-medium">Simulado</span>
+        )}
       </div>
 
       <div className="mt-auto flex items-center justify-between pt-3">
@@ -103,8 +108,11 @@ function SimuladoCard({ title, status, approval, isPaid, price }) {
 
 export default function AlunoSimuladoAcessoPage() {
   const { user } = useAuth()
+  const activeProducerUserId = useActiveProducerUserId()
   const [loading, setLoading] = useState(true)
   const [simulado, setSimulado] = useState(null)
+  const [othersLoading, setOthersLoading] = useState(false)
+  const [otherSimulados, setOtherSimulados] = useState([])
 
   const params = useMemo(() => {
     try {
@@ -142,6 +150,21 @@ export default function AlunoSimuladoAcessoPage() {
           }
           return
         }
+        const pid = String(activeProducerUserId || '').trim()
+        const token = (await supabase.auth.getSession().catch(() => ({ data: null })))?.data?.session?.access_token || ''
+        if (pid && token) {
+          try {
+            const r = await fetch(`/api/producer?type=simulado&producerId=${encodeURIComponent(pid)}&simId=${encodeURIComponent(params.simId)}`, {
+              headers: { Authorization: `Bearer ${token}` },
+            })
+            const body = await r.json().catch(() => ({}))
+            if (!active) return
+            if (r.ok && body?.data) {
+              setSimulado(body.data)
+              return
+            }
+          } catch (_) {}
+        }
         const { data } = await supabase.from('simulados').select('*').eq('id', params.simId).maybeSingle()
         if (!active) return
         setSimulado(data || null)
@@ -155,7 +178,71 @@ export default function AlunoSimuladoAcessoPage() {
     return () => {
       active = false
     }
-  }, [params.simId, params.demo, user?.id])
+  }, [params.simId, params.demo, user?.id, activeProducerUserId])
+
+  useEffect(() => {
+    let active = true
+    const run = async () => {
+      if (params.demo) {
+        if (active) {
+          setOtherSimulados([])
+          setOthersLoading(false)
+        }
+        return
+      }
+      const pid = String(activeProducerUserId || '').trim()
+      if (!pid || !user?.id) {
+        if (active) {
+          setOtherSimulados([])
+          setOthersLoading(false)
+        }
+        return
+      }
+      setOthersLoading(true)
+      try {
+        const token = (await supabase.auth.getSession().catch(() => ({ data: null })))?.data?.session?.access_token || ''
+        if (!token) throw new Error('missing_token')
+        const r = await fetch(`/api/producer?type=simulados&producerId=${encodeURIComponent(pid)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        const body = await r.json().catch(() => ({}))
+        if (!active) return
+        if (!r.ok) throw new Error(body?.error || 'fetch_failed')
+        const list = Array.isArray(body?.data) ? body.data : []
+        const currentId = String(params.simId || '').trim()
+        const mapped = list
+          .filter((s) => String(s?.id || '') && String(s.id) !== currentId)
+          .map((s) => {
+            const id = String(s.id)
+            const settings = (s.settings && typeof s.settings === 'object') ? s.settings : null
+            const subtitle = String(s.description || settings?.description || '').trim()
+            const cats = Array.isArray(settings?.categories) ? settings.categories : []
+            const progressKey = `connekt_simulado_progress:${id}`
+            let approval = 0
+            try { approval = Number(localStorage.getItem(progressKey) || 0) || 0 } catch (_) { approval = 0 }
+            const availability = s.availability_date ? new Date(String(s.availability_date)) : null
+            const status = availability && !Number.isNaN(availability.getTime()) && availability.getTime() > Date.now() ? 'Agendado' : 'Publicado'
+            return {
+              id,
+              title: String(s.title || 'Simulado'),
+              subtitle: subtitle || 'Simulado para testar seus conhecimentos.',
+              categories: cats,
+              status,
+              approval,
+              is_paid: s.is_paid,
+              price: s.price,
+            }
+          })
+        setOtherSimulados(mapped)
+      } catch (_) {
+        if (active) setOtherSimulados([])
+      } finally {
+        if (active) setOthersLoading(false)
+      }
+    }
+    run()
+    return () => { active = false }
+  }, [params.demo, params.simId, activeProducerUserId, user?.id])
 
   const title = simulado?.title || 'Simulado'
   const description = useMemo(() => {
@@ -385,16 +472,22 @@ export default function AlunoSimuladoAcessoPage() {
                 </div>
 
                 <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-                  {demoCards.map((s) => (
+                  {(params.demo ? demoCards : otherSimulados).map((s) => (
                     <div
                       key={s.id}
                       className="cursor-pointer"
                       onClick={() => navigateTo(`/aluno/reposta-correta-simulado?simId=${encodeURIComponent(s.id)}${params.demo ? '&demo=1' : ''}`)}
                     >
-                      <SimuladoCard title={s.title} status={s.status} approval={s.approval} isPaid={s.is_paid ?? s.isPaid} price={s.price} />
+                      <SimuladoCard title={s.title} subtitle={s.subtitle || 'Simulado para testar seus conhecimentos.'} categories={s.categories} status={s.status} approval={s.approval} isPaid={s.is_paid ?? s.isPaid} price={s.price} />
                     </div>
                   ))}
                 </div>
+                {!params.demo && othersLoading ? (
+                  <div className="mt-3 text-[12px] text-[#737780]">Carregando simulados…</div>
+                ) : null}
+                {!params.demo && !othersLoading && otherSimulados.length === 0 ? (
+                  <div className="mt-3 text-[12px] text-[#737780]">Nenhum outro simulado disponível.</div>
+                ) : null}
               </div>
 
             </div>

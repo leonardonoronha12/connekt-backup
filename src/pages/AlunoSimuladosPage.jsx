@@ -64,12 +64,15 @@ export default function AlunoSimuladosPage() {
       const pid = String(activeProducerUserId || '').trim()
       setSimuladosLoading(true)
       try {
-        let q = supabase.from('simulados').select('id,title,is_paid,price').order('created_at', { ascending: false }).limit(200)
-        if (pid) q = q.eq('user_id', pid)
-        const { data, error } = await q
+        const token = (await supabase.auth.getSession().catch(() => ({ data: null })))?.data?.session?.access_token || ''
+        if (!token || !pid) throw new Error('missing_scope')
+        const r = await fetch(`/api/producer?type=simulados&producerId=${encodeURIComponent(pid)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        const body = await r.json().catch(() => ({}))
         if (!active) return
-        if (error) throw error
-        setSimulados(Array.isArray(data) ? data : [])
+        if (!r.ok) throw new Error(body?.error || 'fetch_failed')
+        setSimulados(Array.isArray(body?.data) ? body.data : [])
       } catch (_) {
         if (!active) return
         setSimulados([])
