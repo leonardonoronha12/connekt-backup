@@ -1,5 +1,5 @@
 import { Readable } from 'node:stream'
-import { json } from './_supabaseAdmin.js'
+import { json } from '../src/server/supabaseAdmin.js'
 
 function isAllowedTargetUrl(u) {
   try {

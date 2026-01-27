@@ -1,8 +1,0 @@
-<svg width="120" height="32" viewBox="0 0 120 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect x="1" y="1" width="30" height="30" rx="6" fill="#0F172A"/>
-  <path d="M11 21.5L14 10.5H16.5L18 15.5L20.5 10.5H23L18.5 21.5H16L14.5 16.5L13 21.5H11Z" fill="#38BDF8"/>
-  <text x="40" y="20" fill="#0F172A" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" font-weight="600">
-    Vimeo
-  </text>
-</svg>
-

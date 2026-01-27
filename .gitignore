@@ -6,6 +6,7 @@ node_modules
 .env.local
 
 # Build output (if any)
+dist
 .vercel
 .env*.local
 backups/*.zip

@@ -1,4 +1,4 @@
-import { getSupabaseAdmin, getAuthedUser, json, safeName } from './_supabaseAdmin.js'
+import { getSupabaseAdmin, getAuthedUser, json, safeName } from '../src/server/supabaseAdmin.js'
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') return json(res, 405, { error: 'method_not_allowed' })
