@@ -685,6 +685,160 @@ export const planService = {
     }
   },
 
+  async startSimuladoCheckout(simulado, user, options = {}) {
+    const onLog = typeof options?.onLog === 'function' ? options.onLog : null
+    const redirect = options?.redirect !== false
+    const openInNewTab = options?.openInNewTab === true
+    const emit = async (e) => {
+      try { onLog && onLog(e) } catch (_) {}
+      try { await persistCheckoutLog(e, { simuladoId: simulado?.id || null, simuladoCheckout: true }) } catch (_) {}
+    }
+
+    const simId = String(simulado?.id || '').trim()
+    const title = String(simulado?.title || 'Simulado').trim() || 'Simulado'
+    const priceNumber = Number(simulado?.price || 0) || 0
+    const amountCents = Math.round(priceNumber * 100)
+    if (!simId) return { ok: false, error: 'missing_simulado' }
+    if (!amountCents || amountCents <= 0) return { ok: false, error: 'invalid_amount' }
+
+    let resolvedUserId = user?.id || null
+    if (!resolvedUserId && supabase?.auth?.getUser) {
+      try {
+        const { data } = await supabase.auth.getUser()
+        resolvedUserId = data?.user?.id || null
+      } catch (_) {}
+    }
+    if (!resolvedUserId) return { ok: false, error: 'not_authenticated' }
+
+    if (!GATEWAY_URL) return { ok: false, error: 'gateway_not_configured' }
+
+    const appBaseUrl = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_APP_BASE_URL)
+      ? String(import.meta.env.VITE_APP_BASE_URL)
+      : (typeof window !== 'undefined' ? window.location.origin : '')
+    const allowReturnUrl = (() => {
+      try {
+        const u = new URL(appBaseUrl)
+        const host = String(u.hostname || '')
+        return host && host !== 'localhost' && host !== '127.0.0.1'
+      } catch (_) {
+        return false
+      }
+    })()
+    const appendQueryParam = (rawUrl, key, value) => {
+      try {
+        const u = new URL(String(rawUrl))
+        if (!u.searchParams.has(key)) u.searchParams.set(key, String(value))
+        return u.toString()
+      } catch (_) {
+        return String(rawUrl)
+      }
+    }
+    const tryOpenNewTab = (url) => {
+      try {
+        const w = window.open(url, '_blank', 'noopener')
+        return w || null
+      } catch (_) {
+        return null
+      }
+    }
+
+    try {
+      const requestUrl = `${GATEWAY_BASE}/payments/v1/paymentlink`
+
+      const bearerToken = await getGatewayAuthToken(async (log) => { await emit(log) }).catch(() => null)
+      const basicFromEnv = (GATEWAY_AUTH && GATEWAY_AUTH.startsWith('Basic ')) ? GATEWAY_AUTH : (GATEWAY_AUTHDATA ? `Basic ${GATEWAY_AUTHDATA}` : null)
+      const basicFromAuth = __gatewayAuthExtra.basic || null
+      const envAuthFallback = (!bearerToken && !basicFromEnv && GATEWAY_AUTH) ? GATEWAY_AUTH : null
+
+      const baseHeaders = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        ...(GATEWAY_API_KEY ? { 'x-api-key': GATEWAY_API_KEY } : {}),
+      }
+      const authModes = []
+      if (bearerToken) authModes.push({ mode: 'auth_token', value: `${bearerToken}` })
+      if (basicFromAuth) authModes.push({ mode: 'basic_auth_response', value: basicFromAuth })
+      if (basicFromEnv) authModes.push({ mode: 'basic', value: basicFromEnv })
+      if (envAuthFallback) authModes.push({ mode: envAuthFallback.startsWith('Bearer ') ? 'env_bearer' : 'env_basic', value: envAuthFallback })
+
+      const validityHours = Number(import.meta.env.VITE_PAYMENT_LINK_VALIDITY_HOURS || 48)
+      const validUntilDate = new Date(Date.now() + validityHours * 3600 * 1000)
+      const validUntilHuman = formatValidUntil(validUntilDate)
+      const minInstallments = Number(import.meta.env.VITE_MIN_INSTALLMENTS || 1)
+      const maxInstallments = Number(import.meta.env.VITE_MAX_INSTALLMENTS || 12)
+      const maxSales = Number(import.meta.env.VITE_MAX_SALES || 1)
+      const showFormAddress = (import.meta.env.VITE_SHOW_FORM_ADDRESS === 'true') ? 1 : 0
+      const customerInterest = (import.meta.env.VITE_CUSTOMER_INTEREST === 'true') ? 1 : 0
+      const acceptedTypesRaw = (import.meta.env.VITE_ACCEPTED_PAYMENTS_TYPE || 'ALL')
+      const acceptedTypesList = acceptedTypesRaw.split(',').map(s => s.trim()).filter(Boolean)
+      const acceptedPaymentsType = (acceptedTypesList.length === 0 || (acceptedTypesList.length === 1 && acceptedTypesList[0].toUpperCase() === 'ALL'))
+        ? ['PIX', 'Credit', 'Billet']
+        : acceptedTypesList
+
+      const externalOrderNumber = `simulado:${simId}:user:${resolvedUserId}`
+      const requestBody = {
+        value: String(amountCents),
+        title: `Simulado: ${title}`,
+        description: `Compra do simulado ${title}`,
+        validity: validUntilHuman,
+        minimumNumberOfInstallments: minInstallments,
+        maximumQuantityOfInstallments: maxInstallments,
+        numberOfAllowedSales: maxSales,
+        showFormAddress: showFormAddress,
+        customerInterest: customerInterest,
+        acceptedPaymentsType,
+        external_order_number: externalOrderNumber,
+      }
+
+      let res = null
+      let data = null
+      let lastStatus = 0
+      for (let i = 0; i < Math.max(1, authModes.length); i++) {
+        const selected = authModes[i] || { mode: 'none', value: undefined }
+        const requestHeaders = { ...baseHeaders, ...(selected.value ? { 'Authorization': selected.value } : {}) }
+        await emit({ level: 'debug', step: 'simulado_gateway_request', message: 'Criando PaymentLink do simulado', data: { url: requestUrl, auth_mode: selected.mode, body: requestBody } })
+        res = await fetch(requestUrl, { method: 'POST', headers: requestHeaders, body: JSON.stringify(requestBody) })
+        lastStatus = res.status
+        if (res.ok) {
+          data = await res.json().catch(() => ({}))
+          break
+        }
+      }
+      if (!res || !res.ok) return { ok: false, error: 'create_paymentlink_failed', status: lastStatus }
+
+      const paymentUrl =
+        data?.link ||
+        data?.url ||
+        data?.payment_url ||
+        data?.redirectUrl ||
+        data?.href ||
+        data?.checkout_url ||
+        null
+      const linkId = data?.paymentLinkId || data?.linkId || data?.id || null
+      if (!paymentUrl || !linkId) return { ok: false, error: 'checkout_url_missing' }
+
+      let checkoutUrl = String(paymentUrl)
+      if (allowReturnUrl && linkId) {
+        const returnUrl = `${appBaseUrl.replace(/\/$/, '')}/aluno/simulados/acesso?simId=${encodeURIComponent(simId)}&linkId=${encodeURIComponent(String(linkId))}`
+        checkoutUrl = appendQueryParam(checkoutUrl, 'return_url', returnUrl)
+      }
+
+      try { localStorage.setItem(`connekt_simulado_pending_link:${simId}`, String(linkId)) } catch (_) {}
+
+      if (!redirect) return { ok: true, checkout_url: checkoutUrl, linkId }
+      if (openInNewTab) {
+        const w = tryOpenNewTab(checkoutUrl)
+        if (w) return { ok: true, checkout_url: checkoutUrl, linkId, opened: true }
+      }
+      try { await new Promise(r => setTimeout(r, 200)) } catch (_) {}
+      this._forceNavigate(checkoutUrl)
+      return { ok: true, checkout_url: checkoutUrl, linkId, opened: false }
+    } catch (e) {
+      await emit({ level: 'error', step: 'simulado_gateway_error', message: String(e?.message || e) })
+      return { ok: false, error: e?.message || 'gateway_error' }
+    }
+  },
+
   async startTrial(planKey, user, options = {}) {
     const days = Number(options?.days || 7)
     const billingCycle = options?.billingCycle || 'mensal'
