@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Helmet } from 'react-helmet-async'
-import { Database, GraduationCap, Menu, Monitor, MoreVertical, Settings, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Database, GraduationCap, Menu, Monitor, MoreVertical, Settings, X } from 'lucide-react'
 import Header from '@/components/Header'
 import CourseFooter from '@/components/CourseFooter'
 import { supabase } from '@/lib/supabaseClient'
@@ -124,6 +124,9 @@ export default function AlunoSimuladoAcessoPage() {
   const [simulado, setSimulado] = useState(null)
   const [othersLoading, setOthersLoading] = useState(false)
   const [otherSimulados, setOtherSimulados] = useState([])
+  const otherScrollRef = useRef(null)
+  const [canScrollOtherLeft, setCanScrollOtherLeft] = useState(false)
+  const [canScrollOtherRight, setCanScrollOtherRight] = useState(false)
 
   const params = useMemo(() => {
     try {
@@ -297,6 +300,39 @@ export default function AlunoSimuladoAcessoPage() {
       if (document?.body?.style) document.body.style.overflow = prev || ''
     }
   }, [mobileNavOpen])
+
+  const simuladosForCards = params.demo ? demoCards : otherSimulados
+
+  const updateOtherScrollControls = () => {
+    const el = otherScrollRef.current
+    if (!el) {
+      setCanScrollOtherLeft(false)
+      setCanScrollOtherRight(false)
+      return
+    }
+    const left = el.scrollLeft || 0
+    const maxLeft = Math.max(0, (el.scrollWidth || 0) - (el.clientWidth || 0))
+    setCanScrollOtherLeft(left > 2)
+    setCanScrollOtherRight(left < maxLeft - 2)
+  }
+
+  const scrollOtherBy = (dir) => {
+    const el = otherScrollRef.current
+    if (!el) return
+    const delta = 272
+    el.scrollBy({ left: dir * delta, behavior: 'smooth' })
+  }
+
+  useEffect(() => {
+    updateOtherScrollControls()
+    const onResize = () => updateOtherScrollControls()
+    window.addEventListener('resize', onResize)
+    const t = window.setTimeout(() => updateOtherScrollControls(), 0)
+    return () => {
+      window.removeEventListener('resize', onResize)
+      window.clearTimeout(t)
+    }
+  }, [simuladosForCards?.length])
 
   const navigateMenuItem = (path) => {
     if (!params.demo) {
@@ -476,18 +512,46 @@ export default function AlunoSimuladoAcessoPage() {
               </div>
 
               <div className="mt-8">
-                <div className="flex items-center gap-2">
-                  <div className="w-5 h-5 rounded-[6px] bg-[#EEF2FF] flex items-center justify-center">
-                    <img src="/icons/union.svg" alt="" className="w-4 h-4" />
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-2">
+                    <div className="w-5 h-5 rounded-[6px] bg-[#EEF2FF] flex items-center justify-center">
+                      <img src="/icons/union.svg" alt="" className="w-4 h-4" />
+                    </div>
+                    <div className="text-[12px] font-semibold text-[#22252B]">Simulados</div>
                   </div>
-                  <div className="text-[12px] font-semibold text-[#22252B]">Simulados</div>
+                  {Array.isArray(simuladosForCards) && simuladosForCards.length > 4 ? (
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        className="w-9 h-9 rounded-full border border-[#E3E4E5] bg-white flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
+                        onClick={() => scrollOtherBy(-1)}
+                        disabled={!canScrollOtherLeft}
+                        aria-label="Simulados anteriores"
+                      >
+                        <ChevronLeft className="w-4 h-4 text-[#737780]" />
+                      </button>
+                      <button
+                        type="button"
+                        className="w-9 h-9 rounded-full border border-[#E3E4E5] bg-white flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
+                        onClick={() => scrollOtherBy(1)}
+                        disabled={!canScrollOtherRight}
+                        aria-label="Próximos simulados"
+                      >
+                        <ChevronRight className="w-4 h-4 text-[#737780]" />
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
 
-                <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-                  {(params.demo ? demoCards : otherSimulados).map((s) => (
+                <div
+                  ref={otherScrollRef}
+                  onScroll={updateOtherScrollControls}
+                  className="mt-4 flex gap-5 overflow-x-auto pb-2 scrollbar-hide"
+                >
+                  {simuladosForCards.map((s) => (
                     <div
                       key={s.id}
-                      className="cursor-pointer"
+                      className="cursor-pointer flex-shrink-0 w-[252px]"
                       onClick={() => navigateTo(`/aluno/reposta-correta-simulado?simId=${encodeURIComponent(s.id)}${params.demo ? '&demo=1' : ''}`)}
                     >
                       <SimuladoCard title={s.title} subtitle={s.subtitle || 'Simulado para testar seus conhecimentos.'} categories={s.categories} status={s.status} approval={s.approval} isPaid={s.is_paid ?? s.isPaid} price={s.price} imageUrl={s.imageUrl || '/icone img simulado.png'} />
