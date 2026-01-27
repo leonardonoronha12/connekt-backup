@@ -1,4 +1,4 @@
-import { getSupabaseAdmin, getAuthedUser, isUuid, json } from './_supabaseAdmin.js'
+import { getSupabaseAdmin, getAuthedUser, isUuid, json } from '../src/server/supabaseAdmin.js'
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') return json(res, 405, { error: 'method_not_allowed' })
@@ -59,4 +59,3 @@ export default async function handler(req, res) {
     return json(res, 500, { error: e?.message || String(e) })
   }
 }
-
