@@ -2037,7 +2037,7 @@ export default function AlunoAulaPage() {
                         )}
                       </>
                     ) : activeTab === 'Comentários' ? (
-                      <CommentsPanel user={user} studentName={studentName} lessonKey={lessonKey} />
+                      <CommentsPanel user={user} studentName={studentName} lessonKey={currentLessonKey} />
                     ) : activeTab === 'Simulados' ? (
                       <div className="mt-5">
                         <div className="flex items-center justify-between">
@@ -2136,7 +2136,7 @@ export default function AlunoAulaPage() {
                         ) : null}
                       </div>
                     ) : activeTab === 'Anexos' ? (
-                      <AttachmentsPanel courseId={courseId} moduleId={moduleId} lessonId={lessonId} lessonKey="aula-03-pratica-clinica" demo={isDemoStudent} />
+                      <AttachmentsPanel courseId={courseId} moduleId={moduleId} lessonId={lessonId} lessonKey={currentLessonKey} demo={isDemoStudent} />
                     ) : (
                       <div className="mt-5 text-[12px] text-[#737780]">Em breve.</div>
                     )}
