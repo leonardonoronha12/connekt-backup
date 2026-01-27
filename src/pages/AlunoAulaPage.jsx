@@ -1126,6 +1126,13 @@ export default function AlunoAulaPage() {
   const [courseLoading, setCourseLoading] = useState(false)
   const [courseError, setCourseError] = useState('')
   const [resolvedPromoUrl, setResolvedPromoUrl] = useState('')
+  const [courseStats, setCourseStats] = useState(() => ({
+    ratingAvg: null,
+    ratingCount: null,
+    studentsCount: null,
+    level: '',
+  }))
+  const [statsTick, setStatsTick] = useState(0)
   const [vdocipherEmbedUrl, setVdocipherEmbedUrl] = useState('')
   const [videoUrlOverride, setVideoUrlOverride] = useState('')
   const [progressTick, setProgressTick] = useState(0)
@@ -1259,6 +1266,190 @@ export default function AlunoAulaPage() {
     const found = candidates.find((v) => isNonEmptyString(v))
     setResolvedPromoUrl(found ? String(found) : (isDemoStudent ? DEMO_PROMO_VIDEO_URL : ''))
   }, [courseRow, isDemoStudent])
+
+  useEffect(() => {
+    let cancelled = false
+
+    const formatNumberPt = (value) => {
+      const n = Number(value)
+      if (!Number.isFinite(n)) return ''
+      try { return new Intl.NumberFormat('pt-BR').format(n) } catch (_) { return String(n) }
+    }
+
+    const readMetaNumber = (meta, keys) => {
+      if (!meta || typeof meta !== 'object') return null
+      for (const k of keys) {
+        const raw = meta?.[k]
+        const n = Number(raw)
+        if (Number.isFinite(n)) return n
+        if (typeof raw === 'string') {
+          const cleaned = raw.replace(/[^\d.,-]/g, '').replace(/\./g, '').replace(',', '.')
+          const parsed = Number(cleaned)
+          if (Number.isFinite(parsed)) return parsed
+        }
+      }
+      return null
+    }
+
+    const readMetaString = (meta, keys) => {
+      if (!meta || typeof meta !== 'object') return ''
+      for (const k of keys) {
+        const v = String(meta?.[k] || '').trim()
+        if (v) return v
+      }
+      return ''
+    }
+
+    const fetchStudentsCount = async ({ courseIdValue, courseTitle }) => {
+      const cid = String(courseIdValue || '').trim()
+      const title = String(courseTitle || '').trim()
+      const attempts = []
+
+      if (cid) {
+        attempts.push(() => supabase.from('student_courses').select('id', { count: 'exact', head: true }).eq('course_id', cid))
+        attempts.push(() => supabase.from('student_courses').select('id', { count: 'exact', head: true }).eq('courseId', cid))
+        attempts.push(() => supabase.from('student_courses').select('id', { count: 'exact', head: true }).eq('course_uuid', cid))
+        attempts.push(() => supabase.from('student_courses').select('id', { count: 'exact', head: true }).eq('course', cid))
+      }
+
+      if (title) {
+        attempts.push(() => supabase.from('student_courses').select('id', { count: 'exact', head: true }).eq('course_name', title))
+        attempts.push(() => supabase.from('student_courses').select('id', { count: 'exact', head: true }).eq('courseName', title))
+      }
+
+      for (const fn of attempts) {
+        try {
+          const { count, error } = await fn()
+          if (!error && typeof count === 'number') return count
+        } catch (_) {}
+      }
+      return null
+    }
+
+    const fetchRatingFromSummaryView = async ({ viewName, courseIdValue, courseTitle }) => {
+      const cid = String(courseIdValue || '').trim()
+      const title = String(courseTitle || '').trim()
+      const attempts = []
+
+      if (cid) {
+        attempts.push(() => supabase.from(viewName).select('*').eq('course_id', cid).maybeSingle())
+        attempts.push(() => supabase.from(viewName).select('*').eq('courseId', cid).maybeSingle())
+      }
+      if (title) {
+        attempts.push(() => supabase.from(viewName).select('*').eq('course_name', title).maybeSingle())
+        attempts.push(() => supabase.from(viewName).select('*').eq('courseName', title).maybeSingle())
+      }
+
+      for (const fn of attempts) {
+        try {
+          const { data, error } = await fn()
+          if (error || !data) continue
+          const avg = Number(data.avg_rating ?? data.rating_avg ?? data.avg ?? data.rating ?? data.average ?? null)
+          const cnt = Number(data.rating_count ?? data.reviews_count ?? data.count ?? data.total ?? null)
+          if (Number.isFinite(avg) && Number.isFinite(cnt)) return { avg, count: cnt }
+        } catch (_) {}
+      }
+      return null
+    }
+
+    const fetchRatingFromRows = async ({ tableName, courseIdValue, courseTitle }) => {
+      const cid = String(courseIdValue || '').trim()
+      const title = String(courseTitle || '').trim()
+      const attempts = []
+
+      if (cid) {
+        attempts.push(() => supabase.from(tableName).select('rating').eq('course_id', cid).limit(2000))
+        attempts.push(() => supabase.from(tableName).select('rating').eq('courseId', cid).limit(2000))
+      }
+      if (title) {
+        attempts.push(() => supabase.from(tableName).select('rating').eq('course_name', title).limit(2000))
+        attempts.push(() => supabase.from(tableName).select('rating').eq('courseName', title).limit(2000))
+      }
+
+      for (const fn of attempts) {
+        try {
+          const { data, error } = await fn()
+          if (error || !Array.isArray(data) || data.length === 0) continue
+          let sum = 0
+          let count = 0
+          for (const row of data) {
+            const v = Number(row?.rating ?? row?.score ?? null)
+            if (!Number.isFinite(v)) continue
+            sum += v
+            count += 1
+          }
+          if (count > 0) return { avg: sum / count, count }
+        } catch (_) {}
+      }
+      return null
+    }
+
+    const run = async () => {
+      const cid = String(courseId || '').trim()
+      if (!cid || cid === 'demo' || isDemoStudent) {
+        if (!cancelled) setCourseStats((prev) => ({ ...(prev || {}), ratingAvg: null, ratingCount: null, studentsCount: null }))
+        return
+      }
+
+      const meta = getCourseMeta(courseRow)
+      const title = String(courseRow?.title || '').trim()
+
+      const metaRatingAvg = readMetaNumber(meta, ['ratingAvg', 'rating_avg', 'rating', 'courseRating', 'course_rating'])
+      const metaRatingCount = readMetaNumber(meta, ['ratingCount', 'rating_count', 'reviewsCount', 'reviews_count', 'totalReviews', 'total_reviews'])
+      const metaStudentsCount = readMetaNumber(meta, ['studentsCount', 'students_count', 'students', 'totalStudents', 'total_students', 'alunos', 'alunos_count'])
+      const metaLevel = readMetaString(meta, ['level', 'difficulty', 'difficulty_level', 'nivel', 'nível'])
+
+      if (!cancelled) {
+        setCourseStats((prev) => ({
+          ...(prev || {}),
+          ratingAvg: metaRatingAvg,
+          ratingCount: metaRatingCount,
+          studentsCount: metaStudentsCount,
+          level: metaLevel || (prev?.level || ''),
+        }))
+      }
+
+      let rating = null
+      if (!Number.isFinite(Number(metaRatingAvg)) || !Number.isFinite(Number(metaRatingCount))) {
+        rating =
+          (await fetchRatingFromSummaryView({ viewName: 'v_course_ratings_summary', courseIdValue: cid, courseTitle: title })) ||
+          (await fetchRatingFromSummaryView({ viewName: 'course_ratings_summary', courseIdValue: cid, courseTitle: title })) ||
+          (await fetchRatingFromSummaryView({ viewName: 'course_reviews_summary', courseIdValue: cid, courseTitle: title })) ||
+          (await fetchRatingFromRows({ tableName: 'course_ratings', courseIdValue: cid, courseTitle: title })) ||
+          (await fetchRatingFromRows({ tableName: 'course_reviews', courseIdValue: cid, courseTitle: title })) ||
+          null
+      }
+
+      let studentsCount = null
+      if (!Number.isFinite(Number(metaStudentsCount))) {
+        studentsCount = await fetchStudentsCount({ courseIdValue: cid, courseTitle: title })
+      }
+
+      if (cancelled) return
+
+      setCourseStats((prev) => {
+        const avg = rating?.avg
+        const cnt = rating?.count
+        const nextAvg = Number.isFinite(Number(prev?.ratingAvg)) ? prev.ratingAvg : (Number.isFinite(Number(avg)) ? avg : null)
+        const nextCnt = Number.isFinite(Number(prev?.ratingCount)) ? prev.ratingCount : (Number.isFinite(Number(cnt)) ? cnt : null)
+        const nextStudents = Number.isFinite(Number(prev?.studentsCount)) ? prev.studentsCount : (Number.isFinite(Number(studentsCount)) ? studentsCount : null)
+        return {
+          ...(prev || {}),
+          ratingAvg: nextAvg,
+          ratingCount: nextCnt,
+          studentsCount: nextStudents,
+          formatted: {
+            ratingAvg: Number.isFinite(Number(nextAvg)) ? Number(nextAvg).toFixed(1) : '',
+            ratingCount: formatNumberPt(nextCnt),
+            studentsCount: formatNumberPt(nextStudents),
+          },
+        }
+      })
+    }
+
+    run()
+    return () => { cancelled = true }
+  }, [courseId, courseRow, isDemoStudent, statsTick])
 
   const current = useMemo(() => {
     return pickModuleAndLesson(courseRow, { moduleId, moduleIndex, lessonId, lessonIndex })
@@ -1745,11 +1936,42 @@ export default function AlunoAulaPage() {
     setIsNpsOpen(true)
   }
 
-  const handleSubmitNps = ({ rating, comment, allowContact }) => {
+  const handleSubmitNps = async ({ rating, comment, allowContact }) => {
     try {
       localStorage.setItem('connekt_aluno_aula_completed', '1')
       localStorage.setItem('connekt_aluno_aula_nps', JSON.stringify({ rating, comment, allowContact, ts: Date.now() }))
     } catch (_) {}
+
+    try {
+      const cid = String(courseId || '').trim()
+      const uid = String(user?.id || '').trim()
+      const r = Number(rating)
+      const text = String(comment || '').trim() || null
+      if (cid && uid && Number.isFinite(r)) {
+        const lessonKey = String(currentLessonKey || '').trim() || null
+        const title = String(courseRow?.title || '').trim() || null
+        const tries = [
+          () => supabase.from('course_ratings').insert({ course_id: cid, user_id: uid, lesson_key: lessonKey, rating: r, comment: text, allow_contact: !!allowContact, course_name: title }),
+          () => supabase.from('course_ratings').insert({ course_id: cid, user_id: uid, rating: r, comment: text }),
+          () => supabase.from('course_ratings').insert({ course_id: cid, rating: r, comment: text }),
+          () => supabase.from('course_reviews').insert({ course_id: cid, user_id: uid, lesson_key: lessonKey, rating: r, comment: text, allow_contact: !!allowContact, course_name: title }),
+          () => supabase.from('course_reviews').insert({ course_id: cid, user_id: uid, rating: r, comment: text }),
+          () => supabase.from('course_reviews').insert({ course_id: cid, rating: r, comment: text }),
+          () => supabase.from('lesson_ratings').insert({ course_id: cid, lesson_key: lessonKey, user_id: uid, rating: r, comment: text }),
+          () => supabase.from('lesson_reviews').insert({ course_id: cid, lesson_key: lessonKey, user_id: uid, rating: r, comment: text }),
+        ]
+        for (const fn of tries) {
+          try {
+            const { error } = await fn()
+            if (!error) {
+              setStatsTick((v) => v + 1)
+              break
+            }
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
+
     safeLsSet(currentLessonKey, '1')
     setIsCompleted(true)
     setProgressTick((v) => v + 1)
@@ -1789,6 +2011,33 @@ export default function AlunoAulaPage() {
     }
   }, [mobileNavOpen])
 
+  const formatNumberPt = (value) => {
+    const n = Number(value)
+    if (!Number.isFinite(n)) return ''
+    try { return new Intl.NumberFormat('pt-BR').format(n) } catch (_) { return String(n) }
+  }
+
+  const ratingAvgText = (() => {
+    const v = courseStats?.formatted?.ratingAvg || ''
+    if (v) return v
+    const n = Number(courseStats?.ratingAvg)
+    return Number.isFinite(n) ? n.toFixed(1) : ''
+  })()
+
+  const ratingCountText = (() => {
+    const v = courseStats?.formatted?.ratingCount || ''
+    if (v) return v
+    const n = Number(courseStats?.ratingCount)
+    return Number.isFinite(n) ? formatNumberPt(n) : ''
+  })()
+
+  const studentsCountText = (() => {
+    const v = courseStats?.formatted?.studentsCount || ''
+    if (v) return v
+    const n = Number(courseStats?.studentsCount)
+    return Number.isFinite(n) ? formatNumberPt(n) : ''
+  })()
+
   return (
     <div className="min-h-screen lg:h-screen w-full bg-[#EEF2FF] flex lg:overflow-hidden">
       {debugOn ? (
@@ -1799,6 +2048,9 @@ export default function AlunoAulaPage() {
           <div>lessonTag: {String(resolved?.lessonTag || '')}</div>
           <div>lessonSubcategory: {String(resolved?.lessonSubcategory || '')}</div>
           <div>lessonDescLen: {String((resolved?.lessonDescription || '').length)}</div>
+          <div>ratingAvg: {String(ratingAvgText || '')}</div>
+          <div>ratingCount: {String(ratingCountText || '')}</div>
+          <div>students: {String(studentsCountText || '')}</div>
         </div>
       ) : null}
       {mobileNavOpen ? (
@@ -1981,13 +2233,13 @@ export default function AlunoAulaPage() {
                       {resolved.teacherName ? <div>Professor: {resolved.teacherName}</div> : null}
                       <div className="flex items-center gap-1">
                         <span className="text-[#F59E0B]">★</span>
-                        <span className="text-[#22252B] font-semibold">4.8</span>
-                        <span>(1.540)</span>
+                        <span className="text-[#22252B] font-semibold">{ratingAvgText || '—'}</span>
+                        <span>({ratingCountText || '0'})</span>
                       </div>
                       <div className="h-3 w-px bg-[#E3E4E5]" />
-                      <div>Intermediário</div>
+                      <div>{String(courseStats?.level || '').trim() || 'Intermediário'}</div>
                       <div className="h-3 w-px bg-[#E3E4E5]" />
-                      <div>1.200 Alunos</div>
+                      <div>{studentsCountText ? `${studentsCountText} Alunos` : '— Alunos'}</div>
                     </div>
 
                     <div className="mt-3 flex items-center gap-2">
