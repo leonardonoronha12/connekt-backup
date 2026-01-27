@@ -6,6 +6,7 @@ import CourseFooter from '@/components/CourseFooter'
 import { supabase } from '@/lib/supabaseClient'
 import { useAuth } from '@/contexts/SupabaseAuthContext'
 import { useActiveProducerUserId } from '@/hooks/useActiveProducerUserId'
+import { planService } from '@/services/planService.js'
 
 const navSections = [
   {
@@ -335,48 +336,15 @@ export default function AlunoSimuladoAcessoPage() {
     setCheckoutError('')
     setCheckoutLoading(true)
     try {
-      const token = (await supabase.auth.getSession().catch(() => ({ data: null })))?.data?.session?.access_token || ''
-      if (!token) {
-        setCheckoutError('Faça login para comprar.')
-        return
+      const price = Number(simulado?.price || 0) || 0
+      const title = String(simulado?.title || 'Simulado')
+      const r = await planService.startSimuladoCheckout({ id: currentSimId, title, price }, user, { redirect: true })
+      if (!r?.ok) {
+        if (r?.error === 'not_authenticated') setCheckoutError('Faça login para comprar.')
+        else if (r?.error === 'gateway_not_configured') setCheckoutError('Checkout indisponível: gateway não configurado.')
+        else if (r?.error === 'invalid_amount') setCheckoutError('Preço do simulado inválido.')
+        else setCheckoutError('Não foi possível abrir o checkout.')
       }
-      const r = await fetch('/api/simulado-checkout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ simId: currentSimId }),
-      })
-      const body = await r.json().catch(() => ({}))
-      if (!r.ok) {
-        const code = String(body?.error || '').trim()
-        const msg = String(body?.message || '').trim()
-        const hint = String(body?.hint || '').trim()
-        if (r.status === 401) {
-          setCheckoutError('Sessão expirada. Faça login novamente.')
-          return
-        }
-        if (msg) {
-          setCheckoutError(hint ? `${msg} ${hint}` : msg)
-          return
-        }
-        if (code === 'mygateway_not_configured') {
-          setCheckoutError('Checkout indisponível: MyGateway não configurado.')
-          return
-        }
-        if (code === 'proxy_disabled') {
-          setCheckoutError('Checkout indisponível: backend não configurado.')
-          return
-        }
-        setCheckoutError('Não foi possível abrir o checkout.')
-        return
-      }
-      const checkoutUrl = String(body?.checkout_url || '').trim()
-      const linkId = String(body?.link_id || '').trim()
-      if (linkId) safeLsSet(`connekt_simulado_pending_link:${currentSimId}`, linkId)
-      if (!checkoutUrl) {
-        setCheckoutError('Checkout indisponível.')
-        return
-      }
-      window.location.assign(checkoutUrl)
     } catch (_) {
       setCheckoutError('Erro ao abrir checkout.')
     } finally {
@@ -397,14 +365,10 @@ export default function AlunoSimuladoAcessoPage() {
 
       setVerifyLoading(true)
       try {
-        const token = (await supabase.auth.getSession().catch(() => ({ data: null })))?.data?.session?.access_token || ''
-        if (!token) return
-        const r = await fetch(`/api/simulado-checkout-verify?simId=${encodeURIComponent(currentSimId)}&linkId=${encodeURIComponent(linkId)}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        })
-        const body = await r.json().catch(() => ({}))
         if (!active) return
-        if (r.ok && body?.paid === true) {
+        const checked = await planService.checkPaymentLinkPaid(linkId)
+        if (!active) return
+        if (checked?.ok && checked?.paid === true) {
           safeLsSet(ownedKey, '1')
           safeLsSet(`connekt_simulado_pending_link:${currentSimId}`, '')
           setOwnershipTick((v) => v + 1)
