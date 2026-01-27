@@ -2348,6 +2348,14 @@ export default function AlunoAulaPage() {
                                   <span className={`inline-flex items-center justify-center w-[80px] h-[18px] px-3 text-[10px] rounded-[54px] leading-none font-medium ${(s.is_paid || Number(s.price || 0) > 0) ? 'bg-[#FEF3C7] text-[#92400E]' : 'bg-[#EEF2FF] text-[#0047BB]'}`}>
                                     {(s.is_paid || Number(s.price || 0) > 0) ? 'Pago' : 'Gratuito'}
                                   </span>
+                                  {(s.is_paid || Number(s.price || 0) > 0) && Number(s.price || 0) > 0 ? (
+                                    <span className="inline-flex items-center justify-center w-[80px] h-[18px] px-3 text-[10px] rounded-[54px] leading-none font-medium bg-[#FEF3C7] text-[#92400E]">
+                                      {(() => {
+                                        const v = Number(s.price || 0) || 0
+                                        try { return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v) } catch (_) { return `R$ ${v.toFixed(2)}` }
+                                      })()}
+                                    </span>
+                                  ) : null}
                                 </div>
                               </div>
                               <div className="mt-0">
