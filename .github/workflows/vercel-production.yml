@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -42,6 +43,8 @@ jobs:
           npx vercel build --prod --token=${{ secrets.VERCEL_TOKEN }} $SCOPE_ARG
           DEPLOY_URL="$(npx vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }} $SCOPE_ARG | tail -n 1)"
           echo "Deployed: ${DEPLOY_URL}"
-          if [ -n "${{ secrets.VERCEL_PRODUCTION_DOMAIN }}" ]; then
-            npx vercel alias set "${DEPLOY_URL}" "${{ secrets.VERCEL_PRODUCTION_DOMAIN }}" --token=${{ secrets.VERCEL_TOKEN }} $SCOPE_ARG
+          DOMAIN="${{ secrets.VERCEL_PRODUCTION_DOMAIN }}"
+          if [ -z "${DOMAIN}" ]; then
+            DOMAIN="app.connektco.com"
           fi
+          npx vercel alias set "${DEPLOY_URL}" "${DOMAIN}" --token=${{ secrets.VERCEL_TOKEN }} $SCOPE_ARG
