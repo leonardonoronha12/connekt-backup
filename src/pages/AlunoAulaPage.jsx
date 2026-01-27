@@ -1508,7 +1508,7 @@ export default function AlunoAulaPage() {
         try {
           const { data, error } = await supabase
             .from('simulados')
-            .select('id,title,is_paid,price')
+            .select('id,title,cover_image_url,is_paid,price')
             .in('id', ids)
             .limit(200)
           if (!error && Array.isArray(data)) rows = data
@@ -1527,6 +1527,7 @@ export default function AlunoAulaPage() {
           const fallback = currentSimuladosRefs.map((s) => ({
             id: s.id,
             title: s.title || 'Simulado',
+            cover_image_url: '/simulado-cover.svg',
             is_paid: false,
             price: 0,
             progress: 0,
@@ -1546,11 +1547,12 @@ export default function AlunoAulaPage() {
           .map((id) => {
             const row = byId.get(id) || {}
             const title = String(row?.title || currentSimuladosRefs.find((x) => x.id === id)?.title || 'Simulado').trim()
+            const cover_image_url = String(row?.cover_image_url || '').trim() || '/simulado-cover.svg'
             const isPaid = Boolean(row?.is_paid) || Math.max(0, Number(row?.price || 0)) > 0
             const price = Number(row?.price || 0) || 0
             const progressKey = `connekt_simulado_progress:${id}`
             const progress = Number(safeLsGet(progressKey) || 0) || 0
-            return { id, title, is_paid: isPaid, price, progress }
+            return { id, title, cover_image_url, is_paid: isPaid, price, progress }
           })
           .filter((x) => x && x.id)
 
@@ -2339,7 +2341,7 @@ export default function AlunoAulaPage() {
                             >
                               <div className="flex items-start justify-between">
                                 <div className="flex items-center gap-2">
-                                  <img src="/t simulados 1.png" alt="Simulado" className="w-[85px] h-[85px] rounded-md object-cover" />
+                                  <img src={s.cover_image_url || '/simulado-cover.svg'} alt="Simulado" className="w-[85px] h-[85px] rounded-md object-cover" />
                                 </div>
                                 <div className="flex flex-col items-end gap-4">
                                   <span className="inline-flex items-center justify-center w-[80px] h-[18px] px-3 text-[10px] rounded-[54px] leading-none font-medium bg-[#E9FFEF] text-[#06C270]">
