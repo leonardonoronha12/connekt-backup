@@ -59,13 +59,28 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return json(res, 405, { error: 'method_not_allowed' })
 
   const admin = getSupabaseAdmin()
-  if (!admin) return json(res, 501, { error: 'proxy_disabled', hint: 'Configure SUPABASE_SERVICE_ROLE_KEY no ambiente do deploy.' })
+  if (!admin) {
+    return json(res, 501, {
+      error: 'proxy_disabled',
+      message: 'Backend não configurado para validar sessão.',
+      hint: 'Configure SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY no ambiente do deploy (Vercel).',
+    })
+  }
 
   const auth = await getAuthedUser(admin, req)
-  if (!auth.user) return json(res, 401, { error: auth.error || 'unauthorized' })
+  if (!auth.user) {
+    return json(res, 401, {
+      error: auth.error || 'unauthorized',
+      message: 'Sessão inválida ou expirada. Faça login novamente.',
+    })
+  }
 
   if (!MYG_BASE_URL || !MYG_API_KEY || (!MYG_AUTHORIZATION && (!MYG_CLIENT_ID || !MYG_CLIENT_SECRET))) {
-    return json(res, 501, { error: 'mygateway_not_configured' })
+    return json(res, 501, {
+      error: 'mygateway_not_configured',
+      message: 'Checkout indisponível: MyGateway não configurado.',
+      hint: 'Configure MYG_BASE_URL, MYG_API_KEY e (MYG_AUTHORIZATION ou MYG_CLIENT_ID/MYG_CLIENT_SECRET) na Vercel.',
+    })
   }
 
   try {
@@ -79,18 +94,29 @@ export default async function handler(req, res) {
       .select('id,title,is_paid,price')
       .eq('id', simId)
       .maybeSingle()
-    if (simErr) return json(res, 500, { error: simErr.message || String(simErr) })
+    if (simErr) return json(res, 500, { error: 'supabase_query_failed', message: simErr.message || String(simErr) })
     if (!simulado) return json(res, 404, { error: 'not_found' })
 
     const isPaid = Boolean(simulado?.is_paid) || Math.max(0, Number(simulado?.price || 0)) > 0
     const priceNumber = Number(simulado?.price || 0) || 0
-    if (!isPaid || !(priceNumber > 0)) return json(res, 400, { error: 'simulado_not_paid' })
+    if (!isPaid || !(priceNumber > 0)) {
+      return json(res, 400, {
+        error: 'simulado_not_paid',
+        message: 'Este simulado não está configurado como pago (preço precisa ser > 0).',
+      })
+    }
 
     const amountCents = Math.round(priceNumber * 100)
-    if (!amountCents || amountCents <= 0) return json(res, 400, { error: 'invalid_amount' })
+    if (!amountCents || amountCents <= 0) return json(res, 400, { error: 'invalid_amount', message: 'Valor inválido do simulado.' })
 
     const token = MYG_AUTHORIZATION ? null : await getMygAuthToken()
-    if (!MYG_AUTHORIZATION && !token) return json(res, 502, { error: 'auth_failed' })
+    if (!MYG_AUTHORIZATION && !token) {
+      return json(res, 502, {
+        error: 'auth_failed',
+        message: 'Falha ao autenticar no MyGateway.',
+        hint: 'Verifique MYG_API_KEY + MYG_CLIENT_ID/MYG_CLIENT_SECRET (ou MYG_AUTHORIZATION).',
+      })
+    }
 
     const validity = formatValidity(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000))
     const title = String(simulado?.title || 'Simulado').trim() || 'Simulado'
@@ -119,11 +145,24 @@ export default async function handler(req, res) {
     const r = await fetch(url, { method: 'POST', headers, body: JSON.stringify(requestBody) })
     const ct = r.headers.get('Content-Type') || ''
     const payload = ct.includes('application/json') ? await r.json().catch(() => ({})) : await r.text().catch(() => '')
-    if (!r.ok) return json(res, 502, { error: 'create_paymentlink_failed', status: r.status, payload })
+    if (!r.ok) {
+      return json(res, 502, {
+        error: 'create_paymentlink_failed',
+        message: 'Falha ao criar o checkout no MyGateway.',
+        status: r.status,
+        payload: typeof payload === 'string' ? payload.slice(0, 800) : payload,
+      })
+    }
 
     const linkId = payload?.id || null
     const checkoutUrl = String(payload?.link || '').trim()
-    if (!checkoutUrl) return json(res, 502, { error: 'checkout_url_missing', payload })
+    if (!checkoutUrl) {
+      return json(res, 502, {
+        error: 'checkout_url_missing',
+        message: 'O MyGateway não retornou link de checkout.',
+        payload: typeof payload === 'string' ? payload.slice(0, 800) : payload,
+      })
+    }
 
     const allowReturnUrl = (() => {
       if (!APP_BASE_URL) return false
@@ -145,4 +184,3 @@ export default async function handler(req, res) {
     return json(res, 500, { error: 'internal_error', message: e?.message || String(e) })
   }
 }
-

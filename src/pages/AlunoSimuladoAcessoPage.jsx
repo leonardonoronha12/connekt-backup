@@ -347,6 +347,25 @@ export default function AlunoSimuladoAcessoPage() {
       })
       const body = await r.json().catch(() => ({}))
       if (!r.ok) {
+        const code = String(body?.error || '').trim()
+        const msg = String(body?.message || '').trim()
+        const hint = String(body?.hint || '').trim()
+        if (r.status === 401) {
+          setCheckoutError('Sessão expirada. Faça login novamente.')
+          return
+        }
+        if (msg) {
+          setCheckoutError(hint ? `${msg} ${hint}` : msg)
+          return
+        }
+        if (code === 'mygateway_not_configured') {
+          setCheckoutError('Checkout indisponível: MyGateway não configurado.')
+          return
+        }
+        if (code === 'proxy_disabled') {
+          setCheckoutError('Checkout indisponível: backend não configurado.')
+          return
+        }
         setCheckoutError('Não foi possível abrir o checkout.')
         return
       }
