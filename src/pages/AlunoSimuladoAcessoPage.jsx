@@ -136,10 +136,11 @@ export default function AlunoSimuladoAcessoPage() {
       const p = new URLSearchParams(locationSearch || '')
       return {
         simId: p.get('simId') || '',
+        linkId: p.get('linkId') || p.get('paymentLinkId') || '',
         demo: p.get('demo') === '1',
       }
     } catch (_) {
-      return { simId: '', demo: false }
+      return { simId: '', linkId: '', demo: false }
     }
   }, [locationSearch])
 
@@ -304,24 +305,106 @@ export default function AlunoSimuladoAcessoPage() {
   const currentSimId = String(params.simId || '').trim()
   const progressKey = currentSimId ? `connekt_simulado_progress:${currentSimId}` : ''
   const ownedKey = currentSimId ? `connekt_simulado_owned:${currentSimId}` : ''
+  const [ownershipTick, setOwnershipTick] = useState(0)
+  const [checkoutLoading, setCheckoutLoading] = useState(false)
+  const [checkoutError, setCheckoutError] = useState('')
+  const [verifyLoading, setVerifyLoading] = useState(false)
   const progressValue = useMemo(() => {
     const n = Number(safeLsGet(progressKey) || 0)
     return Number.isFinite(n) ? n : 0
-  }, [progressKey])
+  }, [progressKey, ownershipTick])
   const isPaidSimulado = Boolean(simulado?.is_paid) || Math.max(0, Number(simulado?.price || 0)) > 0
   const isOwnedSimulado = !isPaidSimulado || safeLsGet(ownedKey) === '1'
   const isPausedSimulado = isOwnedSimulado && progressValue > 0 && progressValue < 100
   const primaryCtaLabel = (() => {
     if (loading) return 'Carregando...'
+    if (checkoutLoading) return 'Abrindo checkout...'
+    if (verifyLoading) return 'Verificando pagamento...'
     if (!currentSimId) return 'Selecione um simulado'
     if (!simulado && !params.demo) return 'Simulado não encontrado'
     if (!isOwnedSimulado && isPaidSimulado) return 'Comprar simulado'
     if (isPausedSimulado) return 'Voltar para o simulado'
     return 'Fazer simulado'
   })()
-  const primaryCtaDisabled = loading || !currentSimId || (!params.demo && !simulado)
+  const primaryCtaDisabled = loading || checkoutLoading || verifyLoading || !currentSimId || (!params.demo && !simulado)
   const currentPath = typeof window !== 'undefined' ? window.location.pathname : '/aluno/simulados/acesso'
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
+
+  const startSimuladoCheckout = async () => {
+    if (!currentSimId) return
+    setCheckoutError('')
+    setCheckoutLoading(true)
+    try {
+      const token = (await supabase.auth.getSession().catch(() => ({ data: null })))?.data?.session?.access_token || ''
+      if (!token) {
+        setCheckoutError('Faça login para comprar.')
+        return
+      }
+      const r = await fetch('/api/simulado-checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ simId: currentSimId }),
+      })
+      const body = await r.json().catch(() => ({}))
+      if (!r.ok) {
+        setCheckoutError('Não foi possível abrir o checkout.')
+        return
+      }
+      const checkoutUrl = String(body?.checkout_url || '').trim()
+      const linkId = String(body?.link_id || '').trim()
+      if (linkId) safeLsSet(`connekt_simulado_pending_link:${currentSimId}`, linkId)
+      if (!checkoutUrl) {
+        setCheckoutError('Checkout indisponível.')
+        return
+      }
+      window.location.assign(checkoutUrl)
+    } catch (_) {
+      setCheckoutError('Erro ao abrir checkout.')
+    } finally {
+      setCheckoutLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    let active = true
+    const run = async () => {
+      if (params.demo) return
+      if (!user?.id) return
+      if (!currentSimId) return
+      if (isOwnedSimulado) return
+
+      const linkId = String(params.linkId || safeLsGet(`connekt_simulado_pending_link:${currentSimId}`) || '').trim()
+      if (!linkId) return
+
+      setVerifyLoading(true)
+      try {
+        const token = (await supabase.auth.getSession().catch(() => ({ data: null })))?.data?.session?.access_token || ''
+        if (!token) return
+        const r = await fetch(`/api/simulado-checkout-verify?simId=${encodeURIComponent(currentSimId)}&linkId=${encodeURIComponent(linkId)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        const body = await r.json().catch(() => ({}))
+        if (!active) return
+        if (r.ok && body?.paid === true) {
+          safeLsSet(ownedKey, '1')
+          safeLsSet(`connekt_simulado_pending_link:${currentSimId}`, '')
+          setOwnershipTick((v) => v + 1)
+          try {
+            const u = new URL(window.location.href)
+            u.searchParams.delete('linkId')
+            u.searchParams.delete('paymentLinkId')
+            window.history.replaceState({}, '', u.toString())
+            window.dispatchEvent(new PopStateEvent('popstate'))
+          } catch (_) {}
+        }
+      } catch (_) {
+      } finally {
+        if (active) setVerifyLoading(false)
+      }
+    }
+    run()
+    return () => { active = false }
+  }, [params.demo, params.linkId, user?.id, currentSimId, isOwnedSimulado, ownedKey])
 
   const demoCards = useMemo(() => ([
     { id: 's1', title: 'Nome do simulado', subtitle: 'Simulado para testar seus conhecimentos.', categories: [], status: 'Publicado', approval: 60, is_paid: false, price: 0, imageUrl: '/icone img simulado.png' },
@@ -520,7 +603,8 @@ export default function AlunoSimuladoAcessoPage() {
                         const simId = currentSimId || 's1'
                         if (!simId) return
                         if (!isOwnedSimulado && isPaidSimulado) {
-                          safeLsSet(`connekt_simulado_owned:${simId}`, '1')
+                          startSimuladoCheckout()
+                          return
                         }
                         navigateTo(`/aluno/reposta-correta-simulado?simId=${encodeURIComponent(simId)}${demoSuffix}`)
                       }}
@@ -528,7 +612,7 @@ export default function AlunoSimuladoAcessoPage() {
                     >
                       {primaryCtaLabel}
                     </button>
-                    <div className="mt-3 text-[10px] text-[#9AA0AA]">{loading ? 'Carregando...' : ''}</div>
+                    <div className="mt-3 text-[10px] text-[#9AA0AA]">{loading ? 'Carregando...' : (checkoutError || '')}</div>
                   </div>
 
                   <div className="relative h-[300px] lg:h-[340px]">
