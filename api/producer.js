@@ -30,12 +30,28 @@ export default async function handler(req, res) {
     if (type === 'simulados') {
       const { data, error } = await admin
         .from('simulados')
-        .select('id,title,is_paid,price,created_at,user_id')
+        .select('id,title,cover_image_url,is_paid,price,availability_date,duration_minutes,max_grade,settings,created_at,user_id')
         .eq('user_id', producerId)
         .order('created_at', { ascending: false })
         .limit(200)
       if (error) return json(res, 500, { error: error.message || String(error) })
       return json(res, 200, { data: Array.isArray(data) ? data : [] })
+    }
+
+    if (type === 'simulado') {
+      const simId = String(u.searchParams.get('simId') || '').trim()
+      if (!simId || !isUuid(simId)) return json(res, 400, { error: 'invalid_simId' })
+
+      const { data, error } = await admin
+        .from('simulados')
+        .select('*')
+        .eq('id', simId)
+        .maybeSingle()
+
+      if (error) return json(res, 500, { error: error.message || String(error) })
+      if (!data) return json(res, 404, { error: 'not_found' })
+      if (String(data.user_id || '') !== String(producerId)) return json(res, 403, { error: 'forbidden' })
+      return json(res, 200, { data })
     }
 
     if (type === 'course') {
