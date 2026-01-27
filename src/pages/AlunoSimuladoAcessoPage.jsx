@@ -127,10 +127,13 @@ export default function AlunoSimuladoAcessoPage() {
   const otherScrollRef = useRef(null)
   const [canScrollOtherLeft, setCanScrollOtherLeft] = useState(false)
   const [canScrollOtherRight, setCanScrollOtherRight] = useState(false)
+  const [locationSearch, setLocationSearch] = useState(() => {
+    try { return window.location.search || '' } catch (_) { return '' }
+  })
 
   const params = useMemo(() => {
     try {
-      const p = new URLSearchParams(window.location.search || '')
+      const p = new URLSearchParams(locationSearch || '')
       return {
         simId: p.get('simId') || '',
         demo: p.get('demo') === '1',
@@ -138,7 +141,23 @@ export default function AlunoSimuladoAcessoPage() {
     } catch (_) {
       return { simId: '', demo: false }
     }
+  }, [locationSearch])
+
+  useEffect(() => {
+    const sync = () => {
+      try { setLocationSearch(window.location.search || '') } catch (_) { setLocationSearch('') }
+    }
+    window.addEventListener('popstate', sync)
+    return () => window.removeEventListener('popstate', sync)
   }, [])
+
+  const safeLsGet = (key) => {
+    try { return String(localStorage.getItem(String(key || '')) || '') } catch (_) { return '' }
+  }
+
+  const safeLsSet = (key, value) => {
+    try { localStorage.setItem(String(key || ''), String(value)) } catch (_) {}
+  }
 
   useEffect(() => {
     let active = true
@@ -282,6 +301,25 @@ export default function AlunoSimuladoAcessoPage() {
     return parts.join(' ')
   }, [simulado])
   const demoSuffix = params.demo ? '&demo=1' : ''
+  const currentSimId = String(params.simId || '').trim()
+  const progressKey = currentSimId ? `connekt_simulado_progress:${currentSimId}` : ''
+  const ownedKey = currentSimId ? `connekt_simulado_owned:${currentSimId}` : ''
+  const progressValue = useMemo(() => {
+    const n = Number(safeLsGet(progressKey) || 0)
+    return Number.isFinite(n) ? n : 0
+  }, [progressKey])
+  const isPaidSimulado = Boolean(simulado?.is_paid) || Math.max(0, Number(simulado?.price || 0)) > 0
+  const isOwnedSimulado = !isPaidSimulado || safeLsGet(ownedKey) === '1'
+  const isPausedSimulado = isOwnedSimulado && progressValue > 0 && progressValue < 100
+  const primaryCtaLabel = (() => {
+    if (loading) return 'Carregando...'
+    if (!currentSimId) return 'Selecione um simulado'
+    if (!simulado && !params.demo) return 'Simulado não encontrado'
+    if (!isOwnedSimulado && isPaidSimulado) return 'Comprar simulado'
+    if (isPausedSimulado) return 'Voltar para o simulado'
+    return 'Fazer simulado'
+  })()
+  const primaryCtaDisabled = loading || !currentSimId || (!params.demo && !simulado)
   const currentPath = typeof window !== 'undefined' ? window.location.pathname : '/aluno/simulados/acesso'
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
 
@@ -477,13 +515,18 @@ export default function AlunoSimuladoAcessoPage() {
                     </div>
                     <button
                       type="button"
-                      className="mt-5 h-[36px] px-5 bg-[#0047BB] text-white rounded-[4px] text-[12px] font-semibold hover:bg-[#003da0] transition-colors"
+                      className="mt-5 h-[36px] px-5 bg-[#0047BB] text-white rounded-[4px] text-[12px] font-semibold hover:bg-[#003da0] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                       onClick={() => {
-                        const simId = params.simId || 's1'
+                        const simId = currentSimId || 's1'
+                        if (!simId) return
+                        if (!isOwnedSimulado && isPaidSimulado) {
+                          safeLsSet(`connekt_simulado_owned:${simId}`, '1')
+                        }
                         navigateTo(`/aluno/reposta-correta-simulado?simId=${encodeURIComponent(simId)}${demoSuffix}`)
                       }}
+                      disabled={primaryCtaDisabled}
                     >
-                      Comprar simulado
+                      {primaryCtaLabel}
                     </button>
                     <div className="mt-3 text-[10px] text-[#9AA0AA]">{loading ? 'Carregando...' : ''}</div>
                   </div>
@@ -552,7 +595,12 @@ export default function AlunoSimuladoAcessoPage() {
                     <div
                       key={s.id}
                       className="cursor-pointer flex-shrink-0 w-[252px]"
-                      onClick={() => navigateTo(`/aluno/reposta-correta-simulado?simId=${encodeURIComponent(s.id)}${params.demo ? '&demo=1' : ''}`)}
+                      onClick={() => {
+                        const qs = new URLSearchParams()
+                        qs.set('simId', String(s.id))
+                        if (params.demo) qs.set('demo', '1')
+                        navigateTo(`/aluno/simulados/acesso?${qs.toString()}`)
+                      }}
                     >
                       <SimuladoCard title={s.title} subtitle={s.subtitle || 'Simulado para testar seus conhecimentos.'} categories={s.categories} status={s.status} approval={s.approval} isPaid={s.is_paid ?? s.isPaid} price={s.price} imageUrl={s.imageUrl || '/icone img simulado.png'} />
                     </div>
