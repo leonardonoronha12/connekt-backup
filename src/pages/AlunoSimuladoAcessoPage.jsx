@@ -158,6 +158,27 @@ export default function AlunoSimuladoAcessoPage() {
   }, [params.simId, params.demo, user?.id])
 
   const title = simulado?.title || 'Simulado'
+  const description = useMemo(() => {
+    const settings = simulado?.settings && typeof simulado.settings === 'object' ? simulado.settings : null
+    const rawDesc = String(simulado?.description || settings?.description || '').trim()
+    if (rawDesc) return rawDesc
+
+    const paid = Boolean(simulado?.is_paid) || Math.max(0, Number(simulado?.price || 0)) > 0
+    const durationMin = Number(simulado?.duration_minutes || simulado?.durationMinutes || 0) || 0
+    const maxGrade = Number(simulado?.max_grade || simulado?.maxGrade || 0) || 0
+    const categories = Array.isArray(settings?.categories) ? settings.categories : []
+    const categoryText = categories.filter(Boolean).slice(0, 3).join(', ')
+
+    const parts = [
+      'Teste seus conhecimentos com um simulado completo, com tempo e pontuação para medir sua evolução.',
+      'Ao final, confira seu aproveitamento e revise as respostas corretas.',
+    ]
+    if (paid) parts.push('Este simulado é pago.')
+    if (durationMin > 0) parts.push(`Duração estimada: ${durationMin} min.`)
+    if (maxGrade > 0) parts.push(`Pontuação máxima: ${maxGrade}.`)
+    if (categoryText) parts.push(`Categorias: ${categoryText}.`)
+    return parts.join(' ')
+  }, [simulado])
   const demoSuffix = params.demo ? '&demo=1' : ''
   const currentPath = typeof window !== 'undefined' ? window.location.pathname : '/aluno/simulados/acesso'
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
@@ -317,7 +338,7 @@ export default function AlunoSimuladoAcessoPage() {
                   <div className="max-w-[420px]">
                     <img src="/logo connekt.png" alt="Connekt" className="w-[150px] h-auto" />
                     <div className="mt-4 text-[12px] text-[#737780] leading-[18px]">
-                      Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nulla rutrum tincidunt nunc, ac ornare lectus ornare in. Pellentesque scelerisque fermentum purus non mollis.
+                      {description}
                     </div>
                     <button
                       type="button"
