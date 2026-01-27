@@ -56,18 +56,24 @@ function ApprovalRing({ value }) {
   )
 }
 
-function SimuladoCard({ title, subtitle, categories, status, approval, isPaid, price }) {
+function SimuladoCard({ title, subtitle, categories, status, approval, isPaid, price, imageUrl }) {
   const p = Math.max(0, Math.min(100, Number(approval || 0)))
   const paid =
     typeof isPaid === 'boolean'
       ? isPaid
       : Math.max(0, Number(price || 0)) > 0
+  const priceValue = Number(price || 0)
+  const showPrice = paid && Number.isFinite(priceValue) && priceValue > 0
+  const priceText = (() => {
+    if (!showPrice) return ''
+    try { return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(priceValue) } catch (_) { return `R$ ${priceValue.toFixed(2)}` }
+  })()
   const pills = Array.isArray(categories) ? categories.filter(Boolean).slice(0, 2) : []
   return (
     <div className="bg-white border border-[#E3E4E5] rounded-[8px] w-full h-[200px] px-4 py-3 flex flex-col">
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
-          <img src="/icone img simulado.png" alt="" className="w-[54px] h-[54px] rounded-[8px] object-cover" />
+          <img src={imageUrl || '/icone img simulado.png'} alt="" className="w-[54px] h-[54px] rounded-[8px] object-cover" />
           <div className="flex flex-col">
             <div className="text-[12px] font-semibold text-[#1E1B39] font-inter leading-[18px]">{title}</div>
             <div className="text-[10px] text-[#9291A5] font-inter leading-[14px]">{subtitle}</div>
@@ -84,6 +90,11 @@ function SimuladoCard({ title, subtitle, categories, status, approval, isPaid, p
           <span className={`inline-flex items-center justify-center h-[18px] px-3 text-[10px] rounded-[54px] leading-none font-medium ${paid ? 'bg-[#FEF3C7] text-[#92400E]' : 'bg-[#EEF2FF] text-[#0047BB]'}`}>
             {paid ? 'Pago' : 'Gratuito'}
           </span>
+          {showPrice ? (
+            <span className="inline-flex items-center justify-center h-[18px] px-3 text-[10px] rounded-[54px] leading-none font-medium bg-[#FEF3C7] text-[#92400E]">
+              {priceText}
+            </span>
+          ) : null}
         </div>
       </div>
 
@@ -231,6 +242,7 @@ export default function AlunoSimuladoAcessoPage() {
               approval,
               is_paid: s.is_paid,
               price: s.price,
+              imageUrl: String(s.cover_image_url || s.coverImageUrl || '/icone img simulado.png'),
             }
           })
         setOtherSimulados(mapped)
@@ -271,10 +283,10 @@ export default function AlunoSimuladoAcessoPage() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
 
   const demoCards = useMemo(() => ([
-    { id: 's1', title: 'Nome do simulado', status: 'Publicado', approval: 60, is_paid: false, price: 0 },
-    { id: 's2', title: 'Nome do simulado', status: 'Publicado', approval: 60, is_paid: true, price: 49.9 },
-    { id: 's3', title: 'Nome do simulado', status: 'Publicado', approval: 60, is_paid: false, price: 0 },
-    { id: 's4', title: 'Nome do simulado', status: 'Publicado', approval: 60, is_paid: true, price: 29.9 },
+    { id: 's1', title: 'Nome do simulado', subtitle: 'Simulado para testar seus conhecimentos.', categories: [], status: 'Publicado', approval: 60, is_paid: false, price: 0, imageUrl: '/icone img simulado.png' },
+    { id: 's2', title: 'Nome do simulado', subtitle: 'Simulado para testar seus conhecimentos.', categories: [], status: 'Publicado', approval: 60, is_paid: true, price: 49.9, imageUrl: '/icone img simulado.png' },
+    { id: 's3', title: 'Nome do simulado', subtitle: 'Simulado para testar seus conhecimentos.', categories: [], status: 'Publicado', approval: 60, is_paid: false, price: 0, imageUrl: '/icone img simulado.png' },
+    { id: 's4', title: 'Nome do simulado', subtitle: 'Simulado para testar seus conhecimentos.', categories: [], status: 'Publicado', approval: 60, is_paid: true, price: 29.9, imageUrl: '/icone img simulado.png' },
   ]), [])
 
   useEffect(() => {
@@ -478,7 +490,7 @@ export default function AlunoSimuladoAcessoPage() {
                       className="cursor-pointer"
                       onClick={() => navigateTo(`/aluno/reposta-correta-simulado?simId=${encodeURIComponent(s.id)}${params.demo ? '&demo=1' : ''}`)}
                     >
-                      <SimuladoCard title={s.title} subtitle={s.subtitle || 'Simulado para testar seus conhecimentos.'} categories={s.categories} status={s.status} approval={s.approval} isPaid={s.is_paid ?? s.isPaid} price={s.price} />
+                      <SimuladoCard title={s.title} subtitle={s.subtitle || 'Simulado para testar seus conhecimentos.'} categories={s.categories} status={s.status} approval={s.approval} isPaid={s.is_paid ?? s.isPaid} price={s.price} imageUrl={s.imageUrl || '/icone img simulado.png'} />
                     </div>
                   ))}
                 </div>
