@@ -98,6 +98,10 @@ function QuestionResultCard({ index, q, selectedIndex, status, points }) {
     getText(q?.name) ||
     ''
   const resolutionText =
+    getText(q?.resolutionText) ||
+    getText(q?.resolution_text) ||
+    getText(q?.resolucaoText) ||
+    getText(q?.resolucao_text) ||
     getText(q?.resolution) ||
     getText(q?.resolucao) ||
     getText(q?.explanation) ||
@@ -149,7 +153,7 @@ function QuestionResultCard({ index, q, selectedIndex, status, points }) {
         </div>
 
         <div className="mt-3 rounded-[8px] bg-[#EFF6FF] border border-[#BFDBFE] p-4">
-          <div className="text-[12px] font-semibold text-[#0047BB]">Explicação</div>
+          <div className="text-[12px] font-semibold text-[#0047BB]">Resolução</div>
           <div className="mt-2 text-[12px] text-[#1E1B39] leading-relaxed">
             {resolutionText
               ? resolutionText
