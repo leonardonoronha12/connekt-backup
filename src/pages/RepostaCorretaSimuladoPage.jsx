@@ -194,7 +194,7 @@ function RepostaCorretaSimuladoPage() {
       try {
         const token = (await supabase.auth.getSession().catch(() => ({ data: null })))?.data?.session?.access_token || ''
         if (!token) return
-        const r = await fetch(`/api/simulado-runner?simId=${encodeURIComponent(String(params.simId))}&producerId=${encodeURIComponent(producerId)}`, {
+        const r = await fetch(`/api/producer?type=simulado_runner&simId=${encodeURIComponent(String(params.simId))}&producerId=${encodeURIComponent(producerId)}`, {
           headers: { Authorization: `Bearer ${token}` },
         })
         const body = await r.json().catch(() => ({}))
