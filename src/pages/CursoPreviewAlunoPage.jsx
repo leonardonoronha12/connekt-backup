@@ -115,6 +115,10 @@ export default function CursoPreviewAlunoPage() {
   const [videoOpen, setVideoOpen] = useState(false);
   const [signedCover, setSignedCover] = useState(null);
   const [signedPromo, setSignedPromo] = useState(null);
+  const [checkoutLoading, setCheckoutLoading] = useState(false)
+  const [checkoutError, setCheckoutError] = useState('')
+  const [verifyLoading, setVerifyLoading] = useState(false)
+  const [ownershipTick, setOwnershipTick] = useState(0)
 
   const modulesScrollRef = useRef(null);
 
@@ -221,6 +225,138 @@ export default function CursoPreviewAlunoPage() {
 
   const mediaPromo = signedPromo || promoUrl || (showDemo ? DEMO_PROMO_VIDEO_URL : null);
 
+  const safeLsGet = (key) => {
+    try { return String(localStorage.getItem(String(key || '')) || '') } catch (_) { return '' }
+  }
+  const safeLsSet = (key, value) => {
+    try { localStorage.setItem(String(key || ''), String(value)) } catch (_) {}
+  }
+  const safeLsRemove = (key) => {
+    try { localStorage.removeItem(String(key || '')) } catch (_) {}
+  }
+
+  const coursePrice = useMemo(() => {
+    const candidates = [
+      courseRow?.price,
+      courseRow?.course_price,
+      meta?.price,
+      meta?.preco,
+      meta?.coursePrice,
+      meta?.course_price,
+      meta?.productPrice,
+      meta?.product_price,
+      meta?.checkoutPrice,
+      meta?.checkout_price,
+    ]
+    for (const c of candidates) {
+      const n = Number(c)
+      if (Number.isFinite(n) && n > 0) return n
+    }
+    return 0
+  }, [courseRow, meta])
+
+  const isPaidCourse = useMemo(() => {
+    const candidates = [meta?.is_paid, meta?.isPaid, meta?.paid, meta?.pago, meta?.isPaidCourse]
+    for (const c of candidates) {
+      if (typeof c === 'boolean') return c || coursePrice > 0
+    }
+    return coursePrice > 0
+  }, [meta, coursePrice])
+
+  const ownedKey = courseId ? `connekt_course_owned:${String(courseId)}` : ''
+  const isOwnedCourse = useMemo(() => {
+    if (!courseId) return false
+    if (!isPaidCourse) return true
+    return safeLsGet(ownedKey) === '1'
+  }, [courseId, ownedKey, isPaidCourse, ownershipTick])
+
+  const startCourseCheckout = async () => {
+    if (!courseId) return
+    setCheckoutError('')
+    setCheckoutLoading(true)
+    try {
+      const token = await getAccessToken()
+      if (!token) {
+        setCheckoutError('Faça login para comprar.')
+        return
+      }
+      const r = await fetch('/api/simulado-checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ type: 'course', courseId: String(courseId) }),
+      })
+      const body = await r.json().catch(() => ({}))
+      if (!r.ok) {
+        const msg = String(body?.message || body?.error || '').trim()
+        setCheckoutError(msg || 'Não foi possível abrir o checkout.')
+        return
+      }
+      const checkoutUrl = String(body?.checkout_url || '').trim()
+      const linkId = String(body?.link_id || '').trim()
+      if (linkId) safeLsSet(`connekt_course_pending_link:${String(courseId)}`, linkId)
+      if (!checkoutUrl) {
+        setCheckoutError('Checkout indisponível.')
+        return
+      }
+      const w = window.open(checkoutUrl, '_blank', 'noopener')
+      if (!w) setCheckoutError('Seu navegador bloqueou a abertura do checkout. Permita pop-ups e tente novamente.')
+    } catch (_) {
+      setCheckoutError('Erro ao abrir checkout.')
+    } finally {
+      setCheckoutLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    let active = true
+    const run = async () => {
+      if (!isAlunoView) return
+      if (isDemoAluno) return
+      if (!courseId) return
+      if (!isPaidCourse) return
+      if (isOwnedCourse) return
+
+      const params = new URLSearchParams(window.location.search || '')
+      const linkId = String(params.get('linkId') || params.get('paymentLinkId') || safeLsGet(`connekt_course_pending_link:${String(courseId)}`) || '').trim()
+      if (!linkId) return
+
+      setVerifyLoading(true)
+      try {
+        const token = await getAccessToken()
+        if (!token) return
+        const r = await fetch(`/api/simulado-checkout-verify?type=course&courseId=${encodeURIComponent(String(courseId))}&linkId=${encodeURIComponent(linkId)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        const body = await r.json().catch(() => ({}))
+        if (!active) return
+        if (!r.ok) return
+        if (body?.paid) {
+          safeLsSet(ownedKey, '1')
+          safeLsRemove(`connekt_course_pending_link:${String(courseId)}`)
+          setOwnershipTick((v) => v + 1)
+          setCheckoutError('')
+        }
+      } catch (_) {
+      } finally {
+        if (active) setVerifyLoading(false)
+      }
+    }
+    run()
+    return () => { active = false }
+  }, [isAlunoView, isDemoAluno, courseId, isPaidCourse, isOwnedCourse])
+
+  const primaryCtaLabel = (() => {
+    if (loading) return 'Carregando...'
+    if (checkoutLoading) return 'Abrindo checkout...'
+    if (verifyLoading) return 'Verificando pagamento...'
+    if (!isAlunoView) return 'Comprar curso'
+    if (!courseId) return 'Curso indisponível'
+    if (!isPaidCourse) return 'Acessar curso'
+    if (isOwnedCourse) return 'Acessar curso'
+    return 'Comprar curso'
+  })()
+  const primaryCtaDisabled = loading || checkoutLoading || verifyLoading || (isAlunoView && !courseId) || (!isAlunoView && true)
+
   useEffect(() => {
     const t = String(heroTitle || '').trim()
     if (!t) return
@@ -298,9 +434,36 @@ export default function CursoPreviewAlunoPage() {
                       <Button
                         className="h-9 px-5 rounded-[6px] text-[12px] font-medium"
                         style={{ backgroundColor: theme.buttonPrimary, color: '#FFFFFF' }}
+                        disabled={primaryCtaDisabled}
+                        onClick={() => {
+                          if (!isAlunoView) return
+                          if (!courseId) return
+                          if (isDemoAluno) {
+                            const qs = new URLSearchParams()
+                            qs.set('courseId', String(courseId))
+                            qs.set('demo', '1')
+                            navigateTo(`/aluno/aula?${qs.toString()}`)
+                            return
+                          }
+                          if (!isPaidCourse || isOwnedCourse) {
+                            const qs = new URLSearchParams()
+                            qs.set('courseId', String(courseId))
+                            const first = Array.isArray(modules) ? modules[0] : null
+                            const firstId = first?.id || first?.module_id || first?.moduleId || null
+                            if (firstId) qs.set('moduleId', String(firstId))
+                            navigateTo(`/aluno/aula?${qs.toString()}`)
+                            return
+                          }
+                          startCourseCheckout()
+                        }}
                       >
-                        Comprar curso
+                        {primaryCtaLabel}
                       </Button>
+                      {checkoutError ? (
+                        <div className="mt-2 text-[12px] text-[#B91C1C]">
+                          {checkoutError}
+                        </div>
+                      ) : null}
                     </div>
                   </div>
 
@@ -399,21 +562,23 @@ export default function CursoPreviewAlunoPage() {
                 const bg = moduleCardBg(m, idx);
                 const name = m?.name || m?.title || `Módulo ${idx + 1}`;
                 const moduleId = m?.id || m?.module_id || m?.moduleId || null
+                const locked = isAlunoView && !isDemoAluno && isPaidCourse && !isOwnedCourse
                 return (
                   <button
                     key={m?.id || idx}
-                    className="shrink-0 w-[180px] h-[326px] rounded-xl overflow-hidden border border-[#E3E4E5] bg-white shadow-sm"
+                    className={`shrink-0 w-[180px] h-[326px] rounded-xl overflow-hidden border border-[#E3E4E5] bg-white shadow-sm ${locked ? 'opacity-70 grayscale cursor-not-allowed' : ''}`}
                     type="button"
                     onClick={() => {
                       if (!isAlunoView) return
                       if (!courseId) return
+                      if (locked) return
                       const qs = new URLSearchParams()
                       qs.set('courseId', String(courseId))
                       if (moduleId) qs.set('moduleId', String(moduleId))
                       if (isDemoAluno) qs.set('demo', '1')
                       navigateTo(`/aluno/aula?${qs.toString()}`)
                     }}
-                    disabled={!isAlunoView || !courseId}
+                    disabled={!isAlunoView || !courseId || locked}
                   >
                     <div
                       className="w-full h-full flex flex-col justify-end"
