@@ -108,6 +108,10 @@ export default function AlunoSimuladosPage() {
     }
   }
 
+  const safeLsGet = (key) => {
+    try { return String(localStorage.getItem(String(key || '')) || '') } catch (_) { return '' }
+  }
+
   return (
     <div className="min-h-screen lg:h-screen w-full bg-[#EEF2FF] flex lg:overflow-hidden">
       {mobileNavOpen ? (
@@ -274,29 +278,88 @@ export default function AlunoSimuladosPage() {
                       </div>
                     ) : (
                       <div className="w-full h-full p-5">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                          {filteredSimulados.map((s) => (
-                            <button
-                              key={s.id}
-                              type="button"
-                              className="text-left rounded-[10px] border border-[#E3E4E5] bg-[#F8FAFC] p-4 hover:bg-white transition-colors"
-                              onClick={() => {
-                                const qs = new URLSearchParams()
-                                qs.set('simId', String(s.id))
-                                navigateTo(`/aluno/simulados/acesso?${qs.toString()}`)
-                              }}
-                            >
-                              <div className="flex items-center justify-between gap-4">
-                                <div className="min-w-0">
-                                  <div className="text-[12px] font-semibold text-[#22252B] truncate">{s.title || 'Simulado'}</div>
-                                  <div className="mt-1 text-[11px] text-[#737780]">{s.is_paid ? `Pago • R$ ${Number(s.price || 0).toFixed(2)}` : 'Gratuito'}</div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                          {filteredSimulados.map((s) => {
+                            const id = String(s?.id || '').trim()
+                            const paid = Boolean(s?.is_paid) || Math.max(0, Number(s?.price || 0)) > 0
+                            const owned = paid ? safeLsGet(`connekt_simulado_owned:${id}`) === '1' : true
+                            const progress = Math.max(0, Math.min(100, Number(safeLsGet(`connekt_simulado_progress:${id}`) || 0)))
+                            const priceValue = Number(s?.price || 0) || 0
+                            const showPrice = paid && Number.isFinite(priceValue) && priceValue > 0
+                            const priceText = (() => {
+                              if (!showPrice) return ''
+                              try { return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(priceValue) } catch (_) { return `R$ ${priceValue.toFixed(2)}` }
+                            })()
+                            const settings = s?.settings && typeof s.settings === 'object' ? s.settings : null
+                            const categories = Array.isArray(settings?.categories) ? settings.categories : []
+                            const categoryLabel = String(categories?.[0] || 'Categoria')
+                            return (
+                              <div
+                                key={id}
+                                className="bg-white border border-[#E3E4E5] rounded-[4px] p-4 w-full h-[230px] flex flex-col flex-shrink-0 cursor-pointer"
+                                onClick={() => {
+                                  const qs = new URLSearchParams()
+                                  qs.set('simId', id)
+                                  if (isDemoStudent) qs.set('demo', '1')
+                                  navigateTo(`/aluno/simulados/acesso?${qs.toString()}`)
+                                }}
+                              >
+                                <div className="flex items-start justify-between">
+                                  <div className="flex items-center gap-2">
+                                    <img src={String(s?.cover_image_url || '').trim() || '/simulado-cover.svg'} alt="Simulado" className="w-[85px] h-[85px] rounded-md object-cover" />
+                                  </div>
+                                  <div className="flex flex-col items-end gap-4">
+                                    <span className="inline-flex items-center justify-center w-[80px] h-[18px] px-3 text-[10px] rounded-[54px] leading-none font-medium bg-[#E9FFEF] text-[#06C270]">
+                                      Publicado
+                                    </span>
+                                    <span className={`inline-flex items-center justify-center w-[80px] h-[18px] px-3 text-[10px] rounded-[54px] leading-none font-medium ${paid ? 'bg-[#FEF3C7] text-[#92400E]' : 'bg-[#EEF2FF] text-[#0047BB]'}`}>
+                                      {paid ? 'Pago' : 'Gratuito'}
+                                    </span>
+                                    {paid && owned ? (
+                                      <span className="inline-flex items-center justify-center w-[80px] h-[18px] px-3 text-[10px] rounded-[54px] leading-none font-medium bg-[#E9FFEF] text-[#06C270]">
+                                        Adquirido
+                                      </span>
+                                    ) : null}
+                                    {showPrice ? (
+                                      <span className="inline-flex items-center justify-center w-[80px] h-[18px] px-3 text-[10px] rounded-[54px] leading-none font-medium bg-[#FEF3C7] text-[#92400E]">
+                                        {priceText}
+                                      </span>
+                                    ) : null}
+                                  </div>
                                 </div>
-                                <div className="h-8 px-3 rounded-[8px] bg-[#EEF2FF] text-[#0047BB] text-[12px] font-semibold inline-flex items-center">
-                                  Acessar
+
+                                <div className="mt-0">
+                                  <div className="flex items-center justify-between">
+                                    <h4 className="text-[12px] font-medium text-[#1E1B39] font-inter">{String(s?.title || 'Simulado')}</h4>
+                                  </div>
+                                  <p className="text-[10px] text-[#9291A5] font-inter font-[400] mt-1">Simulado do curso</p>
+                                </div>
+
+                                <div className="mt-3 flex items-center gap-2">
+                                  <span
+                                    className="inline-flex items-center gap-1 text-[12px] font-normal h-[20px] px-2 py-0 rounded-[4px]"
+                                    style={{ backgroundColor: 'rgba(173, 137, 247, 0.1)', color: 'rgb(34, 37, 43)' }}
+                                  >
+                                    <span className="leading-none text-[7px] text-[#AD89F7]">🟪</span>
+                                    <span className="text-[10px] text-[#22252B] font-normal not-italic">{categoryLabel}</span>
+                                  </span>
+                                </div>
+
+                                <div className="mt-4 flex items-center justify-between">
+                                  <div className="flex flex-col w-full">
+                                    <span className="text-[12px] text-[#1E1B39] font-inter font-bold">Aprovação (%)</span>
+                                  </div>
+                                  <div className="flex items-center gap-1 text-[#0047BB]">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0047BB" strokeWidth="2">
+                                      <circle cx="12" cy="12" r="10" opacity="0.3"></circle>
+                                      <path d="M12 2 a10 10 0 0 1 0 20"></path>
+                                    </svg>
+                                    <span className="text-[12px] font-bold text-[#0047BB]">{progress}%</span>
+                                  </div>
                                 </div>
                               </div>
-                            </button>
-                          ))}
+                            )
+                          })}
                         </div>
                       </div>
                     )}
