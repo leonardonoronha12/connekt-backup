@@ -33,10 +33,17 @@ export default function AlunoSimuladosPage() {
   const [simulados, setSimulados] = useState([])
   const [simuladosLoading, setSimuladosLoading] = useState(false)
   const [filterOpen, setFilterOpen] = useState(false)
+  const [filterOptionQuery, setFilterOptionQuery] = useState('')
   const [filterOwned, setFilterOwned] = useState('all')
   const [filterCategories, setFilterCategories] = useState([])
   const [filterSubcategories, setFilterSubcategories] = useState([])
   const [filterTags, setFilterTags] = useState([])
+  const [filterOpenGroups, setFilterOpenGroups] = useState({
+    categories: true,
+    subcategories: true,
+    tags: true,
+    ownership: true,
+  })
   const filterRef = useRef(null)
   const isDemoStudent = (() => {
     try {
@@ -57,6 +64,8 @@ export default function AlunoSimuladosPage() {
   const safeLsGet = (key) => {
     try { return String(localStorage.getItem(String(key || '')) || '') } catch (_) { return '' }
   }
+
+  const normalize = (value) => String(value || '').trim().toLowerCase()
 
   const categoryOptions = useMemo(() => {
     const set = new Set()
@@ -133,17 +142,21 @@ export default function AlunoSimuladosPage() {
       label: String(c),
       color: palette[(idx + 2) % palette.length],
     }))
+
+    const q = normalize(filterOptionQuery)
+    const match = (opt) => (!q ? true : normalize(opt?.label || opt?.id).includes(q))
+
     return {
       ownership: [
         { id: 'all', label: 'Todos', color: '#5B4DEA' },
         { id: 'owned', label: 'Adquirido', color: '#0047BB' },
         { id: 'not_owned', label: 'Não adquirido', color: '#E5B800' },
       ],
-      categories,
-      subcategories,
-      tags,
+      categories: categories.filter(match),
+      subcategories: subcategories.filter(match),
+      tags: tags.filter(match),
     }
-  }, [categoryOptions, subcategoryOptions, tagOptions])
+  }, [categoryOptions, subcategoryOptions, tagOptions, filterOptionQuery])
 
   const filterGroups = useMemo(() => {
     const splitTwoCols = (arr) => {
@@ -160,10 +173,10 @@ export default function AlunoSimuladosPage() {
     const subcategories = splitTwoCols(filterOptions.subcategories || [])
     const tags = splitTwoCols(filterOptions.tags || [])
     return [
-      { key: 'categories', group: 'categories', left: categories.left, right: categories.right },
-      { key: 'subcategories', group: 'subcategories', left: subcategories.left, right: subcategories.right },
-      { key: 'tags', group: 'tags', left: tags.left, right: tags.right },
-      { key: 'ownership', group: 'ownership', left: ownership.left, right: ownership.right },
+      { key: 'categories', group: 'categories', title: 'Categorias', left: categories.left, right: categories.right },
+      { key: 'subcategories', group: 'subcategories', title: 'Sub Categorias', left: subcategories.left, right: subcategories.right },
+      { key: 'tags', group: 'tags', title: 'Tags', left: tags.left, right: tags.right },
+      { key: 'ownership', group: 'ownership', title: 'Compra', left: ownership.left, right: ownership.right },
     ]
   }, [filterOptions])
 
@@ -172,6 +185,14 @@ export default function AlunoSimuladosPage() {
     setFilterCategories([])
     setFilterSubcategories([])
     setFilterTags([])
+  }
+
+  const groupActiveCount = (group) => {
+    if (group === 'categories') return Array.isArray(filterCategories) ? filterCategories.length : 0
+    if (group === 'subcategories') return Array.isArray(filterSubcategories) ? filterSubcategories.length : 0
+    if (group === 'tags') return Array.isArray(filterTags) ? filterTags.length : 0
+    if (group === 'ownership') return filterOwned === 'all' ? 0 : 1
+    return 0
   }
 
   const renderFilterRow = (group, opt) => {
@@ -240,6 +261,11 @@ export default function AlunoSimuladosPage() {
     }
     window.addEventListener('mousedown', onDown, true)
     return () => window.removeEventListener('mousedown', onDown, true)
+  }, [filterOpen])
+
+  useEffect(() => {
+    if (filterOpen) return
+    setFilterOptionQuery('')
   }, [filterOpen])
 
   const filteredSimulados = useMemo(() => {
@@ -512,20 +538,73 @@ export default function AlunoSimuladosPage() {
                               </button>
                             </div>
                             <div className="border-t border-[#E3E4E5]" />
-                            <div className="max-h-[340px] overflow-auto">
-                              {filterGroups.map((g, idx) => (
-                                <div key={g.key}>
-                                  {idx > 0 ? <div className="border-t border-[#E3E4E5]" /> : null}
-                                  <div className="grid grid-cols-2">
-                                    <div className="py-1">
-                                      {(g.left || []).map((opt) => renderFilterRow(g.group, opt))}
-                                    </div>
-                                    <div className="py-1 border-l border-[#E3E4E5]">
-                                      {(g.right || []).map((opt) => renderFilterRow(g.group, opt))}
-                                    </div>
+                            <div className="px-4 py-3">
+                              <div className="flex items-center gap-2 w-full h-9 px-3 rounded-[8px] border border-[#E3E4E5] bg-[#F9FAFB]">
+                                <Search className="w-4 h-4 text-[#737780]" aria-hidden="true" />
+                                <input
+                                  value={filterOptionQuery}
+                                  onChange={(e) => setFilterOptionQuery(e.target.value)}
+                                  className="flex-1 bg-transparent outline-none text-[12px] text-[#22252B]"
+                                  placeholder="Buscar nos filtros"
+                                />
+                                {filterOptionQuery ? (
+                                  <button
+                                    type="button"
+                                    className="w-7 h-7 rounded-full hover:bg-white flex items-center justify-center"
+                                    onClick={() => setFilterOptionQuery('')}
+                                    aria-label="Limpar busca"
+                                  >
+                                    <X className="w-4 h-4 text-[#737780]" />
+                                  </button>
+                                ) : null}
+                              </div>
+                            </div>
+                            <div className="border-t border-[#E3E4E5]" />
+                            <div className="max-h-[360px] overflow-auto">
+                              {filterGroups.map((g, idx) => {
+                                const open = !!filterOpenGroups?.[g.group]
+                                const count = groupActiveCount(g.group)
+                                const total = (g.left?.length || 0) + (g.right?.length || 0)
+                                return (
+                                  <div key={g.key}>
+                                    {idx > 0 ? <div className="border-t border-[#E3E4E5]" /> : null}
+                                    <button
+                                      type="button"
+                                      className="w-full px-4 py-3 flex items-center justify-between hover:bg-[#F9FAFB]"
+                                      onClick={() => setFilterOpenGroups((prev) => ({ ...(prev || {}), [g.group]: !open }))}
+                                    >
+                                      <div className="flex items-center gap-2 min-w-0">
+                                        <div className="text-[12px] font-semibold text-[#22252B] truncate">{g.title}</div>
+                                        {count > 0 ? (
+                                          <span className="inline-flex items-center justify-center min-w-6 h-6 px-2 rounded-full bg-[#EEF2FF] text-[#0047BB] text-[11px] font-bold">
+                                            {count}
+                                          </span>
+                                        ) : null}
+                                        {total > 0 ? (
+                                          <span className="text-[11px] text-[#737780]">{total}</span>
+                                        ) : null}
+                                      </div>
+                                      <ChevronDown className={`w-4 h-4 text-[#737780] transition-transform duration-200 ${open ? 'rotate-180' : 'rotate-0'}`} aria-hidden="true" />
+                                    </button>
+                                    {open ? (
+                                      total === 0 ? (
+                                        <div className="px-4 pb-4 text-[12px] text-[#737780]">
+                                          Nenhuma opção disponível
+                                        </div>
+                                      ) : (
+                                        <div className="grid grid-cols-2 border-t border-[#E3E4E5]">
+                                          <div className="py-1">
+                                            {(g.left || []).map((opt) => renderFilterRow(g.group, opt))}
+                                          </div>
+                                          <div className="py-1 border-l border-[#E3E4E5]">
+                                            {(g.right || []).map((opt) => renderFilterRow(g.group, opt))}
+                                          </div>
+                                        </div>
+                                      )
+                                    ) : null}
                                   </div>
-                                </div>
-                              ))}
+                                )
+                              })}
                             </div>
                           </div>
                         ) : null}
