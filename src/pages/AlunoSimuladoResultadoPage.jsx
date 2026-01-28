@@ -290,15 +290,15 @@ export default function AlunoSimuladoResultadoPage() {
               </div>
             </div>
 
-            <div className="flex items-center justify-center">
+            <div className="flex flex-col items-center justify-center">
               <div className="relative w-[140px] h-[140px]">
                 <AproveitamentoCircle percent={percent} />
                 <div className="absolute inset-0 flex flex-col items-center justify-center">
                   <div className="text-[26px] font-bold text-[#22252B]">{percent}%</div>
                   <div className="text-[10px] text-[#737780]">Aproveitamento final</div>
-                  <img src="/logo connekt.png" alt="Connekt" className="mt-2 w-[86px] h-auto" />
                 </div>
               </div>
+              <img src="/logo connekt.png" alt="Connekt" className="mt-3 w-[86px] h-auto" />
             </div>
           </div>
         </div>
