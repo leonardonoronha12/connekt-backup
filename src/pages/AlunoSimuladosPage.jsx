@@ -78,6 +78,100 @@ export default function AlunoSimuladosPage() {
     return n
   }, [filterPaid, filterOwned, filterCategories])
 
+  const filterOptions = useMemo(() => {
+    const palette = ['#5B4DEA', '#E5B800', '#0047BB', '#06C270']
+    const categories = categoryOptions.map((c, idx) => ({
+      id: String(c),
+      label: String(c),
+      color: palette[idx % palette.length],
+    }))
+    return {
+      price: [
+        { id: 'all', label: 'Todos', color: '#5B4DEA' },
+        { id: 'paid', label: 'Pagos', color: '#E5B800' },
+        { id: 'free', label: 'Grátis', color: '#06C270' },
+      ],
+      ownership: [
+        { id: 'all', label: 'Todos', color: '#5B4DEA' },
+        { id: 'owned', label: 'Adquirido', color: '#0047BB' },
+        { id: 'not_owned', label: 'Não adquirido', color: '#E5B800' },
+      ],
+      categories,
+    }
+  }, [categoryOptions])
+
+  const filterGroups = useMemo(() => {
+    const splitTwoCols = (arr) => {
+      const left = []
+      const right = []
+      for (let i = 0; i < arr.length; i++) {
+        if (i % 2 === 0) left.push(arr[i])
+        else right.push(arr[i])
+      }
+      return { left, right }
+    }
+    const price = splitTwoCols(filterOptions.price || [])
+    const ownership = splitTwoCols(filterOptions.ownership || [])
+    const categories = splitTwoCols(filterOptions.categories || [])
+    return [
+      { key: 'price', group: 'price', left: price.left, right: price.right },
+      { key: 'ownership', group: 'ownership', left: ownership.left, right: ownership.right },
+      { key: 'categories', group: 'categories', left: categories.left, right: categories.right },
+    ]
+  }, [filterOptions])
+
+  const clearFilters = () => {
+    setFilterPaid('all')
+    setFilterOwned('all')
+    setFilterCategories([])
+  }
+
+  const renderFilterRow = (group, opt) => {
+    const id = String(opt?.id || '')
+    const checked = (() => {
+      if (group === 'price') return filterPaid === id
+      if (group === 'ownership') return filterOwned === id
+      if (group === 'categories') return Array.isArray(filterCategories) && filterCategories.includes(id)
+      return false
+    })()
+    return (
+      <label
+        key={`${group}:${id}`}
+        className={`flex items-center justify-between gap-3 cursor-pointer select-none px-4 py-2 text-[11px] ${
+          checked ? 'bg-[#F6F5FA]' : 'bg-white hover:bg-[#F9FAFB]'
+        }`}
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="w-2.5 h-2.5 rounded-[3px] shrink-0" style={{ backgroundColor: opt?.color || '#0047BB' }} />
+          <span className="text-[#22252B] font-medium truncate">{String(opt?.label || '')}</span>
+        </div>
+        <input
+          type="checkbox"
+          className="w-4 h-4 accent-[#0047BB]"
+          checked={checked}
+          onChange={() => {
+            if (group === 'price') {
+              if (id === 'all') { setFilterPaid('all'); return }
+              setFilterPaid((prev) => (prev === id ? 'all' : id))
+              return
+            }
+            if (group === 'ownership') {
+              if (id === 'all') { setFilterOwned('all'); return }
+              setFilterOwned((prev) => (prev === id ? 'all' : id))
+              return
+            }
+            if (group === 'categories') {
+              setFilterCategories((prev) => {
+                const list = Array.isArray(prev) ? prev : []
+                return list.includes(id) ? list.filter((x) => x !== id) : [...list, id]
+              })
+            }
+          }}
+        />
+      </label>
+    )
+  }
+
   useEffect(() => {
     if (!filterOpen) return
     const onDown = (e) => {
@@ -332,90 +426,28 @@ export default function AlunoSimuladosPage() {
                           <ChevronDown className={`w-4 h-4 text-[#737780] transition-transform duration-200 ${filterOpen ? 'rotate-180' : 'rotate-0'}`} aria-hidden="true" />
                         </button>
                         {filterOpen ? (
-                          <div className="absolute right-0 mt-2 w-[320px] max-w-[86vw] rounded-[10px] border border-[#E3E4E5] bg-white shadow-xl z-[50]">
-                            <div className="px-4 py-3 border-b border-[#E3E4E5] flex items-center justify-between">
-                              <div className="text-[12px] font-semibold text-[#22252B]">Filtros</div>
-                              <button type="button" className="h-8 px-3 rounded-[8px] bg-[#F6F5FA] text-[#22252B] text-[12px] font-semibold" onClick={() => {
-                                setFilterPaid('all')
-                                setFilterOwned('all')
-                                setFilterCategories([])
-                              }}>
+                          <div className="absolute right-0 top-full mt-2 w-[420px] max-w-[86vw] rounded-[10px] border border-[#E3E4E5] bg-white shadow-xl overflow-hidden z-[10000]">
+                            <div className="px-4 py-3 flex items-center justify-between">
+                              <div className="text-[12px] font-semibold text-[#22252B]">Aplicar filtros de pesquisa</div>
+                              <button type="button" className="text-[11px] font-semibold text-[#0047BB] hover:underline" onClick={clearFilters}>
                                 Limpar
                               </button>
                             </div>
-                            <div className="px-4 py-3 space-y-4">
-                              <div>
-                                <div className="text-[11px] font-semibold text-[#22252B]">Preço</div>
-                                <div className="mt-2 grid grid-cols-3 gap-2">
-                                  {[
-                                    { k: 'all', label: 'Todos' },
-                                    { k: 'paid', label: 'Pagos' },
-                                    { k: 'free', label: 'Grátis' },
-                                  ].map((o) => (
-                                    <button
-                                      key={o.k}
-                                      type="button"
-                                      onClick={() => setFilterPaid(o.k)}
-                                      className={`h-8 rounded-[8px] border text-[12px] font-semibold ${filterPaid === o.k ? 'border-[#0047BB] bg-[#EEF2FF] text-[#0047BB]' : 'border-[#E3E4E5] bg-white text-[#22252B] hover:bg-[#F9FAFB]'}`}
-                                    >
-                                      {o.label}
-                                    </button>
-                                  ))}
-                                </div>
-                              </div>
-
-                              <div>
-                                <div className="text-[11px] font-semibold text-[#22252B]">Compra</div>
-                                <div className="mt-2 grid grid-cols-3 gap-2">
-                                  {[
-                                    { k: 'all', label: 'Todos' },
-                                    { k: 'owned', label: 'Adquiridos' },
-                                    { k: 'not_owned', label: 'Não adquir.' },
-                                  ].map((o) => (
-                                    <button
-                                      key={o.k}
-                                      type="button"
-                                      onClick={() => setFilterOwned(o.k)}
-                                      className={`h-8 rounded-[8px] border text-[12px] font-semibold ${filterOwned === o.k ? 'border-[#0047BB] bg-[#EEF2FF] text-[#0047BB]' : 'border-[#E3E4E5] bg-white text-[#22252B] hover:bg-[#F9FAFB]'}`}
-                                    >
-                                      {o.label}
-                                    </button>
-                                  ))}
-                                </div>
-                              </div>
-
-                              <div>
-                                <div className="flex items-center justify-between gap-3">
-                                  <div className="text-[11px] font-semibold text-[#22252B]">Categorias</div>
-                                  <div className="text-[11px] text-[#737780]">{categoryOptions.length}</div>
-                                </div>
-                                {categoryOptions.length === 0 ? (
-                                  <div className="mt-2 text-[12px] text-[#737780]">Sem categorias</div>
-                                ) : (
-                                  <div className="mt-2 max-h-[160px] overflow-auto pr-1 space-y-2">
-                                    {categoryOptions.map((c) => {
-                                      const checked = Array.isArray(filterCategories) && filterCategories.includes(c)
-                                      return (
-                                        <label key={c} className="flex items-center justify-between gap-3 px-3 py-2 rounded-[8px] border border-[#E3E4E5] bg-white hover:bg-[#F9FAFB] cursor-pointer">
-                                          <span className="text-[12px] text-[#22252B] truncate">{c}</span>
-                                          <input
-                                            type="checkbox"
-                                            className="w-4 h-4 accent-[#0047BB]"
-                                            checked={checked}
-                                            onChange={() => {
-                                              setFilterCategories((prev) => {
-                                                const list = Array.isArray(prev) ? prev : []
-                                                if (list.includes(c)) return list.filter((x) => x !== c)
-                                                return [...list, c]
-                                              })
-                                            }}
-                                          />
-                                        </label>
-                                      )
-                                    })}
+                            <div className="border-t border-[#E3E4E5]" />
+                            <div className="max-h-[340px] overflow-auto">
+                              {filterGroups.map((g, idx) => (
+                                <div key={g.key}>
+                                  {idx > 0 ? <div className="border-t border-[#E3E4E5]" /> : null}
+                                  <div className="grid grid-cols-2">
+                                    <div className="py-1">
+                                      {(g.left || []).map((opt) => renderFilterRow(g.group, opt))}
+                                    </div>
+                                    <div className="py-1 border-l border-[#E3E4E5]">
+                                      {(g.right || []).map((opt) => renderFilterRow(g.group, opt))}
+                                    </div>
                                   </div>
-                                )}
-                              </div>
+                                </div>
+                              ))}
                             </div>
                           </div>
                         ) : null}
