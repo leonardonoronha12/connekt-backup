@@ -161,6 +161,49 @@ function getCourseMeta(row) {
   return { ...(fromModulesMeta || {}), ...(fromData || {}) }
 }
 
+function resolveCoursePriceNumber(courseRow) {
+  const meta = getCourseMeta(courseRow)
+  const candidates = [
+    meta?.price,
+    meta?.preco,
+    meta?.valor,
+    meta?.value,
+    meta?.coursePrice,
+    meta?.course_price,
+    meta?.productPrice,
+    meta?.product_price,
+    meta?.checkoutPrice,
+    meta?.checkout_price,
+    meta?.checkoutValue,
+    meta?.checkout_value,
+    meta?.paymentValue,
+    meta?.payment_value,
+  ]
+  for (const c of candidates) {
+    const n = Number(c)
+    if (Number.isFinite(n) && n > 0) return n
+  }
+  return 0
+}
+
+function isPaidCourseFromMeta(courseRow) {
+  const meta = getCourseMeta(courseRow)
+  const boolCandidates = [
+    meta?.is_paid,
+    meta?.isPaid,
+    meta?.paid,
+    meta?.pago,
+    meta?.course_is_paid,
+    meta?.courseIsPaid,
+  ]
+  for (const c of boolCandidates) {
+    if (typeof c === 'boolean') return c
+    const s = String(c ?? '').trim().toLowerCase()
+    if (s === 'true' || s === '1' || s === 'paid' || s === 'pago' || s === 'sim') return true
+  }
+  return false
+}
+
 function isNonEmptyString(v) {
   return typeof v === 'string' && v.trim().length > 0
 }
@@ -1178,6 +1221,22 @@ export default function AlunoAulaPage() {
   }, [])
 
   const activeProducerUserId = useActiveProducerUserId()
+  const courseOwnedKey = useMemo(() => {
+    const cid = String(courseId || '').trim()
+    return cid ? `connekt_course_owned:${cid}` : ''
+  }, [courseId])
+  const isPaidCourse = useMemo(() => {
+    const price = resolveCoursePriceNumber(courseRow)
+    return price > 0 || isPaidCourseFromMeta(courseRow)
+  }, [courseRow])
+  const isOwnedCourse = useMemo(() => {
+    const cid = String(courseId || '').trim()
+    if (!cid) return false
+    if (isDemoStudent) return true
+    if (!isPaidCourse) return true
+    return safeLsGet(courseOwnedKey) === '1'
+  }, [courseId, courseOwnedKey, isDemoStudent, isPaidCourse])
+  const gateRedirectRef = useRef(false)
 
   const isBlockedRead = (e) => {
     const msg = String(e?.message || e || '').toLowerCase()
@@ -1193,6 +1252,21 @@ export default function AlunoAulaPage() {
       return ''
     }
   }
+
+  useEffect(() => {
+    const cid = String(courseId || '').trim()
+    if (!cid || cid === 'demo') return
+    if (isDemoStudent) return
+    if (!courseRow) return
+    if (!isPaidCourse) return
+    if (isOwnedCourse) return
+    if (gateRedirectRef.current) return
+    gateRedirectRef.current = true
+    try {
+      toast({ title: 'Curso bloqueado', description: 'Compre o curso para acessar as aulas.' })
+    } catch (_) {}
+    navigateTo(`/aluno/curso/${encodeURIComponent(cid)}`)
+  }, [courseId, isDemoStudent, courseRow, isPaidCourse, isOwnedCourse])
 
   useEffect(() => {
     let active = true
