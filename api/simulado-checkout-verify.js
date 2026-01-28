@@ -41,9 +41,17 @@ export default async function handler(req, res) {
 
   try {
     const u = new URL(req.url, 'http://localhost')
+    const rawType = String(u.searchParams.get('type') || u.searchParams.get('itemType') || '').trim().toLowerCase()
+    const courseId = String(u.searchParams.get('courseId') || '').trim()
     const simId = String(u.searchParams.get('simId') || '').trim()
     const linkId = String(u.searchParams.get('linkId') || '').trim()
-    if (!simId || !isUuid(simId)) return json(res, 400, { error: 'invalid_simId' })
+    const type = rawType || (courseId ? 'course' : 'simulado')
+    if (type !== 'course' && type !== 'simulado') return json(res, 400, { error: 'invalid_type' })
+    if (type === 'course') {
+      if (!courseId || !isUuid(courseId)) return json(res, 400, { error: 'invalid_courseId' })
+    } else {
+      if (!simId || !isUuid(simId)) return json(res, 400, { error: 'invalid_simId' })
+    }
     if (!linkId) return json(res, 400, { error: 'missing_linkId' })
 
     const token = await getGatewayAuthToken()
@@ -77,7 +85,7 @@ export default async function handler(req, res) {
       const code = Number(c?.status)
       return s === 'paid' || s === 'succeeded' || s === 'captured' || s === 'aprovado' || c?.paid === true || code === 2
     })
-    return json(res, 200, { ok: true, paid: !!paid, simId, linkId })
+    return json(res, 200, { ok: true, paid: !!paid, simId: simId || null, courseId: courseId || null, linkId, type })
   } catch (e) {
     return json(res, 500, { error: 'internal_error', message: e?.message || String(e) })
   }
