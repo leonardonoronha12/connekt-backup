@@ -31,6 +31,8 @@ import AlunoSimuladoAcessoPage from '@/pages/AlunoSimuladoAcessoPage.jsx';
 import AlunoSimuladosPage from '@/pages/AlunoSimuladosPage.jsx';
 import AlunoConfiguracoesPage from '@/pages/AlunoConfiguracoesPage.jsx';
 import AlunoCursoPage from '@/pages/AlunoCursoPage.jsx';
+import AlunoBancoDeQuestoesPage from '@/pages/AlunoBancoDeQuestoesPage.jsx';
+import AlunoQuestoesPage from '@/pages/AlunoQuestoesPage.jsx';
 import QuestoesPage from '@/pages/QuestoesPage';
 import RepostaCorretaSimuladoPage from '@/pages/RepostaCorretaSimuladoPage';
 import ConfiguracoesPage from '@/pages/ConfiguracoesPage';
@@ -75,6 +77,8 @@ const QUESTION_BANK_PATH = '/banco-de-questoes';
   alunoSimuladoResultado: 'Simulados - Resultado',
   alunoConfiguracoes: 'Configurações',
   alunoCurso: 'Curso',
+  alunoBancoQuestoes: 'Banco de Questões',
+  alunoQuestoes: 'Questões',
 };
 
 try {
@@ -135,6 +139,10 @@ const getViewFromLocation = () => {
     return 'login';
   } else if (path === '/login-aluno' || path === '/aluno/login') {
     return 'loginAluno';
+  } else if (path === '/aluno/banco-de-questoes') {
+    return 'alunoBancoQuestoes';
+  } else if (path === '/aluno/questoes') {
+    return 'alunoQuestoes';
   } else if (path === '/aluno/aula' || path.startsWith('/aluno/aula/')) {
     return 'alunoAula';
   } else if (path.startsWith('/aluno/curso/') || path.startsWith('/aluno/curso-preview/') || path.startsWith('/aluno/cursos/preview/')) {
@@ -390,6 +398,10 @@ function AppContent() {
         );
       case 'alunoConfiguracoes':
         return <AlunoConfiguracoesPage />;
+      case 'alunoBancoQuestoes':
+        return <AlunoBancoDeQuestoesPage />;
+      case 'alunoQuestoes':
+        return <AlunoQuestoesPage key={locationKey} />;
       case 'verifyEmail':
         return <EmailVerificationPage />;
       case 'resetPassword':

@@ -10,7 +10,7 @@ const navSections = [
     items: [
       { label: 'Painel', Icon: GraduationCap, path: '/aluno' },
       { label: 'Simulados', Icon: Monitor, path: '/aluno/simulados' },
-      { label: 'Banco de Questões', Icon: Database, path: '/banco-de-questoes' },
+      { label: 'Banco de Questões', Icon: Database, path: '/aluno/banco-de-questoes' },
     ],
   },
   {
