@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import Header from '@/components/Header'
-import { Database, FileText, GraduationCap, LayoutGrid, Menu, Monitor, Search, Settings, X } from 'lucide-react'
+import { ChevronDown, Database, FileText, GraduationCap, LayoutGrid, Menu, Monitor, Search, Settings, X } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { getActiveProducerUserId } from '@/services/producerScope'
 
@@ -311,11 +311,12 @@ export default function AlunoSimuladosPage() {
                       <div className="relative" ref={filterRef}>
                         <button
                           type="button"
-                          className="h-[36px] px-3 rounded-[4px] border border-[#E3E4E5] bg-white text-[12px] text-[#22252B] inline-flex items-center gap-2"
+                          className="h-9 px-3 rounded-[8px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#22252B] inline-flex items-center gap-2"
                           onClick={() => setFilterOpen((v) => !v)}
                         >
                           <img src="/Filtro simulados 1.png" alt="" className="w-4 h-4 object-contain" />
-                          Filtrar
+                          Filtros
+                          <ChevronDown className={`w-4 h-4 text-[#737780] transition-transform duration-200 ${filterOpen ? 'rotate-180' : 'rotate-0'}`} aria-hidden="true" />
                         </button>
                         {filterOpen ? (
                           <div className="absolute right-0 mt-2 w-[320px] max-w-[86vw] rounded-[10px] border border-[#E3E4E5] bg-white shadow-xl z-[50]">
