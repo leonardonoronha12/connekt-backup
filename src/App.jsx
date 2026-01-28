@@ -72,6 +72,7 @@ const QUESTION_BANK_PATH = '/banco-de-questoes';
   alunoAula: 'Aula',
   alunoSimuladoAcesso: 'Simulados - Acesso',
   alunoSimulados: 'Simulados',
+  alunoSimuladoResultado: 'Simulados - Resultado',
   alunoConfiguracoes: 'Configurações',
   alunoCurso: 'Curso',
 };
@@ -142,6 +143,8 @@ const getViewFromLocation = () => {
     return 'alunoRepostaCorretaSimulado';
   } else if (path === '/aluno/simulados/acesso') {
     return 'alunoSimuladoAcesso';
+  } else if (path === '/aluno/simulados/resultado') {
+    return 'alunoSimuladoResultado';
   } else if (path === '/aluno/simulados') {
     return 'alunoSimulados';
   } else if (path === '/aluno/configuracoes') {
@@ -378,6 +381,13 @@ function AppContent() {
         return <AlunoSimuladoAcessoPage />;
       case 'alunoSimulados':
         return <AlunoSimuladosPage />;
+      case 'alunoSimuladoResultado':
+        const AlunoSimuladoResultadoPage = React.lazy(() => import('@/pages/AlunoSimuladoResultadoPage'));
+        return (
+          <Suspense fallback={<div>Carregando resultado...</div>}>
+            <AlunoSimuladoResultadoPage />
+          </Suspense>
+        );
       case 'alunoConfiguracoes':
         return <AlunoConfiguracoesPage />;
       case 'verifyEmail':
@@ -484,7 +494,7 @@ function AppContent() {
     );
   }
 
-  if (!user && !isPublicView && !(isDemoStudent && (currentView === 'alunoDashboard' || currentView === 'alunoAula' || currentView === 'alunoCurso' || currentView === 'alunoSimulados' || currentView === 'alunoSimuladoAcesso' || currentView === 'alunoConfiguracoes' || currentView === 'alunoRepostaCorretaSimulado' || currentView === 'cursoPreviewAluno'))) {
+  if (!user && !isPublicView && !(isDemoStudent && (currentView === 'alunoDashboard' || currentView === 'alunoAula' || currentView === 'alunoCurso' || currentView === 'alunoSimulados' || currentView === 'alunoSimuladoAcesso' || currentView === 'alunoSimuladoResultado' || currentView === 'alunoConfiguracoes' || currentView === 'alunoRepostaCorretaSimulado' || currentView === 'cursoPreviewAluno'))) {
     return isAlunoFlow ? <LoginAlunoPage /> : <LoginPage />;
   }
 
@@ -504,7 +514,7 @@ function AppContent() {
         <ResetPasswordPage />
       ) : currentView === 'termos' ? (
         <TermosPrivacidadePage />
-      ) : (currentView === 'produtosNovo' || currentView === 'cursoPreviewAluno' || currentView === 'questoes' || currentView === 'alunoDashboard' || currentView === 'alunoAula' || currentView === 'alunoCurso' || currentView === 'alunoSimulados' || currentView === 'alunoSimuladoAcesso' || currentView === 'alunoConfiguracoes' || currentView === 'alunoRepostaCorretaSimulado') ? (
+      ) : (currentView === 'produtosNovo' || currentView === 'cursoPreviewAluno' || currentView === 'questoes' || currentView === 'alunoDashboard' || currentView === 'alunoAula' || currentView === 'alunoCurso' || currentView === 'alunoSimulados' || currentView === 'alunoSimuladoAcesso' || currentView === 'alunoSimuladoResultado' || currentView === 'alunoConfiguracoes' || currentView === 'alunoRepostaCorretaSimulado') ? (
         renderContent()
       ) : (
         <MainLayout>
