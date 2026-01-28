@@ -1,4 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
+import { supabase } from '@/lib/supabaseClient';
+import { useActiveProducerUserId } from '@/hooks/useActiveProducerUserId';
 
 function Badge({ children }) {
   return (
@@ -85,6 +87,7 @@ function AproveitamentoCircle({ percent = 0 }) {
 
 function RepostaCorretaSimuladoPage() {
   const isAlunoView = typeof window !== 'undefined' && String(window.location.pathname || '').startsWith('/aluno/');
+  const activeProducerUserId = useActiveProducerUserId()
   const params = (() => {
     try {
       const sp = new URLSearchParams(window.location.search || '');
@@ -100,6 +103,7 @@ function RepostaCorretaSimuladoPage() {
   const pauseKey = `connekt_simulado_pause_${params.simId}`;
   const finishKey = `connekt_simulado_finish_${params.simId}`;
   const progressKey = `connekt_simulado_progress:${params.simId}`;
+  const previewKey = params.simId && params.simId !== 'preview' ? `connekt_simulationPreview:${params.simId}` : 'simulationPreview'
   const navigateTo = (path) => {
     window.history.pushState({}, '', path);
     window.dispatchEvent(new PopStateEvent('popstate'));
@@ -123,7 +127,7 @@ function RepostaCorretaSimuladoPage() {
 
   useEffect(() => {
     try {
-      const raw = localStorage.getItem('simulationPreview');
+      const raw = localStorage.getItem(previewKey) || localStorage.getItem('simulationPreview');
       let paused = null;
       try {
         const rawPaused = localStorage.getItem(pauseKey);
@@ -177,6 +181,51 @@ function RepostaCorretaSimuladoPage() {
       console.warn('Falha ao carregar simulationPreview:', err);
     }
   }, []);
+
+  useEffect(() => {
+    let cancelled = false
+    const run = async () => {
+      if (!isAlunoView) return
+      if (params.demo) return
+      if (!params.simId || params.simId === 'preview') return
+      if (Array.isArray(preview?.questions) && preview.questions.length > 0) return
+      const producerId = String(activeProducerUserId || '').trim()
+      if (!producerId) return
+      try {
+        const token = (await supabase.auth.getSession().catch(() => ({ data: null })))?.data?.session?.access_token || ''
+        if (!token) return
+        const r = await fetch(`/api/simulado-runner?simId=${encodeURIComponent(String(params.simId))}&producerId=${encodeURIComponent(producerId)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        const body = await r.json().catch(() => ({}))
+        if (cancelled) return
+        if (!r.ok) return
+        const data = body?.data || null
+        if (!data || typeof data !== 'object') return
+        const nextPreview = {
+          title: data?.title || '',
+          totalPoints: Number(data?.totalPoints) || 0,
+          attempts: Number(data?.attempts) || 1,
+          durationMinutes: Number(data?.durationMinutes) || 0,
+          questions: Array.isArray(data?.questions) ? data.questions : [],
+        }
+        setPreview(nextPreview)
+        try { localStorage.setItem(previewKey, JSON.stringify(nextPreview)) } catch (_) {}
+        try { localStorage.setItem('simulationPreview', JSON.stringify(nextPreview)) } catch (_) {}
+        const total = Array.isArray(nextPreview?.questions) ? nextPreview.questions.length : 0
+        if (total > 0) {
+          setQuestionStatuses(Array.from({ length: total }, () => 'neutral'))
+          setSelectedIndices(Array.from({ length: total }, () => null))
+          setActiveQuestion(1)
+          const durationMs = Math.max(0, (Number(nextPreview?.durationMinutes) || 0) * 60_000)
+          endTimeRef.current = durationMs > 0 ? Date.now() + durationMs : null
+          setRemainingMs(durationMs)
+        }
+      } catch (_) {}
+    }
+    run()
+    return () => { cancelled = true }
+  }, [isAlunoView, params.demo, params.simId, activeProducerUserId, previewKey, preview?.questions?.length]);
 
   useEffect(() => {
     if (!isAlunoView) return;
