@@ -99,6 +99,7 @@ function RepostaCorretaSimuladoPage() {
   })();
   const pauseKey = `connekt_simulado_pause_${params.simId}`;
   const finishKey = `connekt_simulado_finish_${params.simId}`;
+  const progressKey = `connekt_simulado_progress:${params.simId}`;
   const navigateTo = (path) => {
     window.history.pushState({}, '', path);
     window.dispatchEvent(new PopStateEvent('popstate'));
@@ -177,6 +178,19 @@ function RepostaCorretaSimuladoPage() {
     }
   }, []);
 
+  useEffect(() => {
+    if (!isAlunoView) return;
+    if (!params.resultado) return;
+    try {
+      const url = new URL('/aluno/simulados/resultado', window.location.origin);
+      url.searchParams.set('simId', String(params.simId || 'preview'));
+      if (params.demo) url.searchParams.set('demo', '1');
+      navigateTo(`${url.pathname}${url.search}`);
+    } catch (_) {
+      navigateTo(`/aluno/simulados/resultado?simId=${encodeURIComponent(String(params.simId || 'preview'))}${params.demo ? '&demo=1' : ''}`);
+    }
+  }, [isAlunoView, params.resultado]);
+
   // Atualiza o cronômetro a cada segundo com base no horário final calculado
   useEffect(() => {
     const tick = () => {
@@ -239,15 +253,19 @@ function RepostaCorretaSimuladoPage() {
                 })
               );
               localStorage.removeItem(pauseKey);
+              try { localStorage.setItem(progressKey, '100'); } catch (_) {}
               setFinishedAt(fAt);
               setFinalRemainingMs(remainingMs);
             } catch (_) {}
 
-            const url = new URL('/aluno/reposta-correta-simulado', window.location.origin);
-            url.searchParams.set('simId', String(params.simId || 'preview'));
-            url.searchParams.set('resultado', '1');
-            if (params.demo) url.searchParams.set('demo', '1');
-            navigateTo(`${url.pathname}${url.search}`);
+            try {
+              const url = new URL('/aluno/simulados/resultado', window.location.origin);
+              url.searchParams.set('simId', String(params.simId || 'preview'));
+              if (params.demo) url.searchParams.set('demo', '1');
+              navigateTo(`${url.pathname}${url.search}`);
+            } catch (_) {
+              navigateTo(`/aluno/simulados/resultado?simId=${encodeURIComponent(String(params.simId || 'preview'))}${params.demo ? '&demo=1' : ''}`);
+            }
           }
         }
         break;
