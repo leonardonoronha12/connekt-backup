@@ -179,7 +179,7 @@ export default function AlunoSimuladoResultadoPage() {
 
   useEffect(() => {
     try {
-      const raw = localStorage.getItem('simulationPreview')
+      const raw = localStorage.getItem(`connekt_simulationPreview:${params.simId}`) || localStorage.getItem('simulationPreview')
       if (raw) {
         const parsed = JSON.parse(raw)
         setPreview({
@@ -318,4 +318,3 @@ export default function AlunoSimuladoResultadoPage() {
     </div>
   )
 }
-
