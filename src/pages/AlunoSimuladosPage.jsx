@@ -207,8 +207,8 @@ export default function AlunoSimuladosPage() {
     return (
       <label
         key={`${group}:${id}`}
-        className={`flex items-center justify-between gap-3 cursor-pointer select-none px-4 py-2 text-[11px] ${
-          checked ? 'bg-[#F6F5FA]' : 'bg-white hover:bg-[#F9FAFB]'
+        className={`flex items-center justify-between gap-3 cursor-pointer select-none px-3 py-2 mx-2 rounded-[8px] text-[11px] ${
+          checked ? 'bg-[#F6F5FA]' : 'bg-transparent hover:bg-[#F9FAFB]'
         }`}
       >
         <div className="flex items-center gap-2 min-w-0">
@@ -530,14 +530,13 @@ export default function AlunoSimuladosPage() {
                           <ChevronDown className={`w-4 h-4 text-[#737780] transition-transform duration-200 ${filterOpen ? 'rotate-180' : 'rotate-0'}`} aria-hidden="true" />
                         </button>
                         {filterOpen ? (
-                          <div className="absolute right-0 top-full mt-2 w-[420px] max-w-[86vw] rounded-[10px] border border-[#E3E4E5] bg-white shadow-xl overflow-hidden z-[10000]">
-                            <div className="px-4 py-3 flex items-center justify-between">
+                          <div className="absolute right-0 top-full mt-2 w-[420px] max-w-[86vw] rounded-[10px] border border-[#E3E4E5] bg-[#F9FAFB] shadow-xl overflow-hidden z-[10000]">
+                            <div className="px-4 py-3 flex items-center justify-between bg-white">
                               <div className="text-[12px] font-semibold text-[#22252B]">Aplicar filtros de pesquisa</div>
                               <button type="button" className="text-[11px] font-semibold text-[#0047BB] hover:underline" onClick={clearFilters}>
                                 Limpar
                               </button>
                             </div>
-                            <div className="border-t border-[#E3E4E5]" />
                             <div className="px-4 py-3">
                               <div className="flex items-center gap-2 w-full h-9 px-3 rounded-[8px] border border-[#E3E4E5] bg-[#F9FAFB]">
                                 <Search className="w-4 h-4 text-[#737780]" aria-hidden="true" />
@@ -559,15 +558,13 @@ export default function AlunoSimuladosPage() {
                                 ) : null}
                               </div>
                             </div>
-                            <div className="border-t border-[#E3E4E5]" />
-                            <div className="max-h-[360px] overflow-auto">
+                            <div className="max-h-[360px] overflow-auto px-3 pb-3 space-y-2">
                               {filterGroups.map((g, idx) => {
                                 const open = !!filterOpenGroups?.[g.group]
                                 const count = groupActiveCount(g.group)
                                 const total = (g.left?.length || 0) + (g.right?.length || 0)
                                 return (
-                                  <div key={g.key}>
-                                    {idx > 0 ? <div className="border-t border-[#E3E4E5]" /> : null}
+                                  <div key={g.key} className="bg-white rounded-[10px] shadow-sm overflow-hidden">
                                     <button
                                       type="button"
                                       className="w-full px-4 py-3 flex items-center justify-between hover:bg-[#F9FAFB]"
@@ -592,11 +589,11 @@ export default function AlunoSimuladosPage() {
                                           Nenhuma opção disponível
                                         </div>
                                       ) : (
-                                        <div className="grid grid-cols-2 border-t border-[#E3E4E5]">
-                                          <div className="py-1">
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 px-2 pb-2">
+                                          <div className="py-1 space-y-1">
                                             {(g.left || []).map((opt) => renderFilterRow(g.group, opt))}
                                           </div>
-                                          <div className="py-1 border-l border-[#E3E4E5]">
+                                          <div className="py-1 space-y-1">
                                             {(g.right || []).map((opt) => renderFilterRow(g.group, opt))}
                                           </div>
                                         </div>
