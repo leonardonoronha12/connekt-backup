@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import Header from '@/components/Header'
 import { Database, FileText, GraduationCap, LayoutGrid, Menu, Monitor, Search, Settings, X } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
@@ -32,6 +32,11 @@ export default function AlunoSimuladosPage() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [simulados, setSimulados] = useState([])
   const [simuladosLoading, setSimuladosLoading] = useState(false)
+  const [filterOpen, setFilterOpen] = useState(false)
+  const [filterPaid, setFilterPaid] = useState('all')
+  const [filterOwned, setFilterOwned] = useState('all')
+  const [filterCategories, setFilterCategories] = useState([])
+  const filterRef = useRef(null)
   const isDemoStudent = (() => {
     try {
       const host = String(window.location.hostname || '').toLowerCase()
@@ -47,11 +52,58 @@ export default function AlunoSimuladosPage() {
   const activeProducerUserId = useMemo(() => {
     try { return getActiveProducerUserId() } catch (_) { return '' }
   }, [])
+
+  const safeLsGet = (key) => {
+    try { return String(localStorage.getItem(String(key || '')) || '') } catch (_) { return '' }
+  }
+
+  const categoryOptions = useMemo(() => {
+    const set = new Set()
+    for (const s of Array.isArray(simulados) ? simulados : []) {
+      const settings = s?.settings && typeof s.settings === 'object' ? s.settings : null
+      const cats = Array.isArray(settings?.categories) ? settings.categories : []
+      for (const c of cats) {
+        const v = String(c || '').trim()
+        if (v) set.add(v)
+      }
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b))
+  }, [simulados])
+
+  useEffect(() => {
+    if (!filterOpen) return
+    const onDown = (e) => {
+      const el = filterRef.current
+      if (!el) return
+      if (el.contains(e.target)) return
+      setFilterOpen(false)
+    }
+    window.addEventListener('mousedown', onDown, true)
+    return () => window.removeEventListener('mousedown', onDown, true)
+  }, [filterOpen])
+
   const filteredSimulados = useMemo(() => {
     const q = String(searchValue || '').trim().toLowerCase()
-    if (!q) return simulados
-    return simulados.filter((s) => String(s?.title || '').toLowerCase().includes(q))
-  }, [simulados, searchValue])
+    const base = Array.isArray(simulados) ? simulados : []
+    const searched = !q ? base : base.filter((s) => String(s?.title || '').toLowerCase().includes(q))
+    return searched.filter((s) => {
+      const id = String(s?.id || '').trim()
+      const paid = Boolean(s?.is_paid) || Math.max(0, Number(s?.price || 0)) > 0
+      const owned = paid ? safeLsGet(`connekt_simulado_owned:${id}`) === '1' : true
+      if (filterPaid === 'paid' && !paid) return false
+      if (filterPaid === 'free' && paid) return false
+      if (filterOwned === 'owned' && !owned) return false
+      if (filterOwned === 'not_owned' && owned) return false
+      const settings = s?.settings && typeof s.settings === 'object' ? s.settings : null
+      const cats = Array.isArray(settings?.categories) ? settings.categories : []
+      const selectedCats = Array.isArray(filterCategories) ? filterCategories : []
+      if (selectedCats.length > 0) {
+        const has = cats.some((c) => selectedCats.includes(String(c || '').trim()))
+        if (!has) return false
+      }
+      return true
+    })
+  }, [simulados, searchValue, filterPaid, filterOwned, filterCategories])
 
   useEffect(() => {
     let active = true
@@ -106,10 +158,6 @@ export default function AlunoSimuladosPage() {
       const sep = String(path || '').includes('?') ? '&' : '?'
       navigateTo(`${path}${sep}demo=1`)
     }
-  }
-
-  const safeLsGet = (key) => {
-    try { return String(localStorage.getItem(String(key || '')) || '') } catch (_) { return '' }
   }
 
   return (
@@ -260,10 +308,104 @@ export default function AlunoSimuladosPage() {
                           placeholder="Buscar simulado"
                         />
                       </div>
-                      <button type="button" className="h-[36px] px-3 rounded-[4px] border border-[#E3E4E5] bg-white text-[12px] text-[#22252B] inline-flex items-center gap-2">
-                        <img src="/Filtro simulados 1.png" alt="" className="w-4 h-4 object-contain" />
-                        Filtrar
-                      </button>
+                      <div className="relative" ref={filterRef}>
+                        <button
+                          type="button"
+                          className="h-[36px] px-3 rounded-[4px] border border-[#E3E4E5] bg-white text-[12px] text-[#22252B] inline-flex items-center gap-2"
+                          onClick={() => setFilterOpen((v) => !v)}
+                        >
+                          <img src="/Filtro simulados 1.png" alt="" className="w-4 h-4 object-contain" />
+                          Filtrar
+                        </button>
+                        {filterOpen ? (
+                          <div className="absolute right-0 mt-2 w-[320px] max-w-[86vw] rounded-[10px] border border-[#E3E4E5] bg-white shadow-xl z-[50]">
+                            <div className="px-4 py-3 border-b border-[#E3E4E5] flex items-center justify-between">
+                              <div className="text-[12px] font-semibold text-[#22252B]">Filtros</div>
+                              <button type="button" className="h-8 px-3 rounded-[8px] bg-[#F6F5FA] text-[#22252B] text-[12px] font-semibold" onClick={() => {
+                                setFilterPaid('all')
+                                setFilterOwned('all')
+                                setFilterCategories([])
+                              }}>
+                                Limpar
+                              </button>
+                            </div>
+                            <div className="px-4 py-3 space-y-4">
+                              <div>
+                                <div className="text-[11px] font-semibold text-[#22252B]">Preço</div>
+                                <div className="mt-2 grid grid-cols-3 gap-2">
+                                  {[
+                                    { k: 'all', label: 'Todos' },
+                                    { k: 'paid', label: 'Pagos' },
+                                    { k: 'free', label: 'Grátis' },
+                                  ].map((o) => (
+                                    <button
+                                      key={o.k}
+                                      type="button"
+                                      onClick={() => setFilterPaid(o.k)}
+                                      className={`h-8 rounded-[8px] border text-[12px] font-semibold ${filterPaid === o.k ? 'border-[#0047BB] bg-[#EEF2FF] text-[#0047BB]' : 'border-[#E3E4E5] bg-white text-[#22252B] hover:bg-[#F9FAFB]'}`}
+                                    >
+                                      {o.label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+
+                              <div>
+                                <div className="text-[11px] font-semibold text-[#22252B]">Compra</div>
+                                <div className="mt-2 grid grid-cols-3 gap-2">
+                                  {[
+                                    { k: 'all', label: 'Todos' },
+                                    { k: 'owned', label: 'Adquiridos' },
+                                    { k: 'not_owned', label: 'Não adquir.' },
+                                  ].map((o) => (
+                                    <button
+                                      key={o.k}
+                                      type="button"
+                                      onClick={() => setFilterOwned(o.k)}
+                                      className={`h-8 rounded-[8px] border text-[12px] font-semibold ${filterOwned === o.k ? 'border-[#0047BB] bg-[#EEF2FF] text-[#0047BB]' : 'border-[#E3E4E5] bg-white text-[#22252B] hover:bg-[#F9FAFB]'}`}
+                                    >
+                                      {o.label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+
+                              <div>
+                                <div className="flex items-center justify-between gap-3">
+                                  <div className="text-[11px] font-semibold text-[#22252B]">Categorias</div>
+                                  <div className="text-[11px] text-[#737780]">{categoryOptions.length}</div>
+                                </div>
+                                {categoryOptions.length === 0 ? (
+                                  <div className="mt-2 text-[12px] text-[#737780]">Sem categorias</div>
+                                ) : (
+                                  <div className="mt-2 max-h-[160px] overflow-auto pr-1 space-y-2">
+                                    {categoryOptions.map((c) => {
+                                      const checked = Array.isArray(filterCategories) && filterCategories.includes(c)
+                                      return (
+                                        <label key={c} className="flex items-center justify-between gap-3 px-3 py-2 rounded-[8px] border border-[#E3E4E5] bg-white hover:bg-[#F9FAFB] cursor-pointer">
+                                          <span className="text-[12px] text-[#22252B] truncate">{c}</span>
+                                          <input
+                                            type="checkbox"
+                                            className="w-4 h-4 accent-[#0047BB]"
+                                            checked={checked}
+                                            onChange={() => {
+                                              setFilterCategories((prev) => {
+                                                const list = Array.isArray(prev) ? prev : []
+                                                if (list.includes(c)) return list.filter((x) => x !== c)
+                                                return [...list, c]
+                                              })
+                                            }}
+                                          />
+                                        </label>
+                                      )
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
                     </div>
                   </div>
 
