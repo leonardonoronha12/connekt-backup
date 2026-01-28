@@ -33,9 +33,10 @@ export default function AlunoSimuladosPage() {
   const [simulados, setSimulados] = useState([])
   const [simuladosLoading, setSimuladosLoading] = useState(false)
   const [filterOpen, setFilterOpen] = useState(false)
-  const [filterPaid, setFilterPaid] = useState('all')
   const [filterOwned, setFilterOwned] = useState('all')
   const [filterCategories, setFilterCategories] = useState([])
+  const [filterSubcategories, setFilterSubcategories] = useState([])
+  const [filterTags, setFilterTags] = useState([])
   const filterRef = useRef(null)
   const isDemoStudent = (() => {
     try {
@@ -70,13 +71,50 @@ export default function AlunoSimuladosPage() {
     return Array.from(set).sort((a, b) => a.localeCompare(b))
   }, [simulados])
 
+  const subcategoryOptions = useMemo(() => {
+    const set = new Set()
+    for (const s of Array.isArray(simulados) ? simulados : []) {
+      const settings = s?.settings && typeof s.settings === 'object' ? s.settings : null
+      const subs =
+        Array.isArray(settings?.subcategories) ? settings.subcategories
+          : Array.isArray(settings?.subCategories) ? settings.subCategories
+            : Array.isArray(settings?.sub_categorias) ? settings.sub_categorias
+              : Array.isArray(settings?.subcategorias) ? settings.subcategorias
+                : Array.isArray(settings?.sub_categories) ? settings.sub_categories
+                  : []
+      for (const c of subs) {
+        const v = String(c || '').trim()
+        if (v) set.add(v)
+      }
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b))
+  }, [simulados])
+
+  const tagOptions = useMemo(() => {
+    const set = new Set()
+    for (const s of Array.isArray(simulados) ? simulados : []) {
+      const settings = s?.settings && typeof s.settings === 'object' ? s.settings : null
+      const tags =
+        Array.isArray(settings?.tags) ? settings.tags
+          : Array.isArray(settings?.tagIds) ? settings.tagIds
+            : Array.isArray(settings?.tag_ids) ? settings.tag_ids
+              : []
+      for (const c of tags) {
+        const v = String(c || '').trim()
+        if (v) set.add(v)
+      }
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b))
+  }, [simulados])
+
   const activeFilterCount = useMemo(() => {
     let n = 0
-    if (filterPaid !== 'all') n += 1
     if (filterOwned !== 'all') n += 1
     n += Array.isArray(filterCategories) ? filterCategories.length : 0
+    n += Array.isArray(filterSubcategories) ? filterSubcategories.length : 0
+    n += Array.isArray(filterTags) ? filterTags.length : 0
     return n
-  }, [filterPaid, filterOwned, filterCategories])
+  }, [filterOwned, filterCategories, filterSubcategories, filterTags])
 
   const filterOptions = useMemo(() => {
     const palette = ['#5B4DEA', '#E5B800', '#0047BB', '#06C270']
@@ -85,20 +123,27 @@ export default function AlunoSimuladosPage() {
       label: String(c),
       color: palette[idx % palette.length],
     }))
+    const subcategories = subcategoryOptions.map((c, idx) => ({
+      id: String(c),
+      label: String(c),
+      color: palette[(idx + 1) % palette.length],
+    }))
+    const tags = tagOptions.map((c, idx) => ({
+      id: String(c),
+      label: String(c),
+      color: palette[(idx + 2) % palette.length],
+    }))
     return {
-      price: [
-        { id: 'all', label: 'Todos', color: '#5B4DEA' },
-        { id: 'paid', label: 'Pagos', color: '#E5B800' },
-        { id: 'free', label: 'Grátis', color: '#06C270' },
-      ],
       ownership: [
         { id: 'all', label: 'Todos', color: '#5B4DEA' },
         { id: 'owned', label: 'Adquirido', color: '#0047BB' },
         { id: 'not_owned', label: 'Não adquirido', color: '#E5B800' },
       ],
       categories,
+      subcategories,
+      tags,
     }
-  }, [categoryOptions])
+  }, [categoryOptions, subcategoryOptions, tagOptions])
 
   const filterGroups = useMemo(() => {
     const splitTwoCols = (arr) => {
@@ -110,28 +155,32 @@ export default function AlunoSimuladosPage() {
       }
       return { left, right }
     }
-    const price = splitTwoCols(filterOptions.price || [])
     const ownership = splitTwoCols(filterOptions.ownership || [])
     const categories = splitTwoCols(filterOptions.categories || [])
+    const subcategories = splitTwoCols(filterOptions.subcategories || [])
+    const tags = splitTwoCols(filterOptions.tags || [])
     return [
-      { key: 'price', group: 'price', left: price.left, right: price.right },
-      { key: 'ownership', group: 'ownership', left: ownership.left, right: ownership.right },
       { key: 'categories', group: 'categories', left: categories.left, right: categories.right },
+      { key: 'subcategories', group: 'subcategories', left: subcategories.left, right: subcategories.right },
+      { key: 'tags', group: 'tags', left: tags.left, right: tags.right },
+      { key: 'ownership', group: 'ownership', left: ownership.left, right: ownership.right },
     ]
   }, [filterOptions])
 
   const clearFilters = () => {
-    setFilterPaid('all')
     setFilterOwned('all')
     setFilterCategories([])
+    setFilterSubcategories([])
+    setFilterTags([])
   }
 
   const renderFilterRow = (group, opt) => {
     const id = String(opt?.id || '')
     const checked = (() => {
-      if (group === 'price') return filterPaid === id
       if (group === 'ownership') return filterOwned === id
       if (group === 'categories') return Array.isArray(filterCategories) && filterCategories.includes(id)
+      if (group === 'subcategories') return Array.isArray(filterSubcategories) && filterSubcategories.includes(id)
+      if (group === 'tags') return Array.isArray(filterTags) && filterTags.includes(id)
       return false
     })()
     return (
@@ -150,11 +199,6 @@ export default function AlunoSimuladosPage() {
           className="w-4 h-4 accent-[#0047BB]"
           checked={checked}
           onChange={() => {
-            if (group === 'price') {
-              if (id === 'all') { setFilterPaid('all'); return }
-              setFilterPaid((prev) => (prev === id ? 'all' : id))
-              return
-            }
             if (group === 'ownership') {
               if (id === 'all') { setFilterOwned('all'); return }
               setFilterOwned((prev) => (prev === id ? 'all' : id))
@@ -162,6 +206,20 @@ export default function AlunoSimuladosPage() {
             }
             if (group === 'categories') {
               setFilterCategories((prev) => {
+                const list = Array.isArray(prev) ? prev : []
+                return list.includes(id) ? list.filter((x) => x !== id) : [...list, id]
+              })
+              return
+            }
+            if (group === 'subcategories') {
+              setFilterSubcategories((prev) => {
+                const list = Array.isArray(prev) ? prev : []
+                return list.includes(id) ? list.filter((x) => x !== id) : [...list, id]
+              })
+              return
+            }
+            if (group === 'tags') {
+              setFilterTags((prev) => {
                 const list = Array.isArray(prev) ? prev : []
                 return list.includes(id) ? list.filter((x) => x !== id) : [...list, id]
               })
@@ -192,20 +250,40 @@ export default function AlunoSimuladosPage() {
       const id = String(s?.id || '').trim()
       const paid = Boolean(s?.is_paid) || Math.max(0, Number(s?.price || 0)) > 0
       const owned = paid ? safeLsGet(`connekt_simulado_owned:${id}`) === '1' : true
-      if (filterPaid === 'paid' && !paid) return false
-      if (filterPaid === 'free' && paid) return false
       if (filterOwned === 'owned' && !owned) return false
       if (filterOwned === 'not_owned' && owned) return false
       const settings = s?.settings && typeof s.settings === 'object' ? s.settings : null
       const cats = Array.isArray(settings?.categories) ? settings.categories : []
+      const subs =
+        Array.isArray(settings?.subcategories) ? settings.subcategories
+          : Array.isArray(settings?.subCategories) ? settings.subCategories
+            : Array.isArray(settings?.sub_categorias) ? settings.sub_categorias
+              : Array.isArray(settings?.subcategorias) ? settings.subcategorias
+                : Array.isArray(settings?.sub_categories) ? settings.sub_categories
+                  : []
+      const tags =
+        Array.isArray(settings?.tags) ? settings.tags
+          : Array.isArray(settings?.tagIds) ? settings.tagIds
+            : Array.isArray(settings?.tag_ids) ? settings.tag_ids
+              : []
       const selectedCats = Array.isArray(filterCategories) ? filterCategories : []
       if (selectedCats.length > 0) {
         const has = cats.some((c) => selectedCats.includes(String(c || '').trim()))
         if (!has) return false
       }
+      const selectedSubs = Array.isArray(filterSubcategories) ? filterSubcategories : []
+      if (selectedSubs.length > 0) {
+        const has = subs.some((c) => selectedSubs.includes(String(c || '').trim()))
+        if (!has) return false
+      }
+      const selectedTags = Array.isArray(filterTags) ? filterTags : []
+      if (selectedTags.length > 0) {
+        const has = tags.some((c) => selectedTags.includes(String(c || '').trim()))
+        if (!has) return false
+      }
       return true
     })
-  }, [simulados, searchValue, filterPaid, filterOwned, filterCategories])
+  }, [simulados, searchValue, filterOwned, filterCategories, filterSubcategories, filterTags])
 
   useEffect(() => {
     let active = true
