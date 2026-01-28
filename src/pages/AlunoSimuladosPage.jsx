@@ -70,6 +70,14 @@ export default function AlunoSimuladosPage() {
     return Array.from(set).sort((a, b) => a.localeCompare(b))
   }, [simulados])
 
+  const activeFilterCount = useMemo(() => {
+    let n = 0
+    if (filterPaid !== 'all') n += 1
+    if (filterOwned !== 'all') n += 1
+    n += Array.isArray(filterCategories) ? filterCategories.length : 0
+    return n
+  }, [filterPaid, filterOwned, filterCategories])
+
   useEffect(() => {
     if (!filterOpen) return
     const onDown = (e) => {
@@ -316,6 +324,11 @@ export default function AlunoSimuladosPage() {
                         >
                           <img src="/Filtro simulados 1.png" alt="" className="w-4 h-4 object-contain" />
                           Filtros
+                          {activeFilterCount > 0 ? (
+                            <span className="ml-1 inline-flex items-center justify-center w-5 h-5 rounded-full bg-[#0047BB] text-white text-[10px] font-bold">
+                              {activeFilterCount}
+                            </span>
+                          ) : null}
                           <ChevronDown className={`w-4 h-4 text-[#737780] transition-transform duration-200 ${filterOpen ? 'rotate-180' : 'rotate-0'}`} aria-hidden="true" />
                         </button>
                         {filterOpen ? (
