@@ -56,7 +56,7 @@ function ApprovalRing({ value }) {
   )
 }
 
-function SimuladoCard({ title, subtitle, categories, status, approval, isPaid, price, imageUrl }) {
+function SimuladoCard({ title, subtitle, categories, status, approval, isPaid, price, imageUrl, isOwned }) {
   const p = Math.max(0, Math.min(100, Number(approval || 0)))
   const paid =
     typeof isPaid === 'boolean'
@@ -90,6 +90,11 @@ function SimuladoCard({ title, subtitle, categories, status, approval, isPaid, p
           <span className={`inline-flex items-center justify-center h-[18px] px-3 text-[10px] rounded-[54px] leading-none font-medium ${paid ? 'bg-[#FEF3C7] text-[#92400E]' : 'bg-[#EEF2FF] text-[#0047BB]'}`}>
             {paid ? 'Pago' : 'Gratuito'}
           </span>
+          {paid && isOwned ? (
+            <span className="inline-flex items-center justify-center h-[18px] px-3 text-[10px] rounded-[54px] leading-none font-medium bg-[#E9FFEF] text-[#06C270]">
+              Adquirido
+            </span>
+          ) : null}
           {showPrice ? (
             <span className="inline-flex items-center justify-center h-[18px] px-3 text-[10px] rounded-[54px] leading-none font-medium bg-[#FEF3C7] text-[#92400E]">
               {priceText}
@@ -359,7 +364,10 @@ export default function AlunoSimuladoAcessoPage() {
         setCheckoutError('Checkout indisponível.')
         return
       }
-      window.location.assign(checkoutUrl)
+      const w = window.open(checkoutUrl, '_blank', 'noopener')
+      if (!w) {
+        setCheckoutError('Seu navegador bloqueou a abertura do checkout. Permita pop-ups e tente novamente.')
+      }
     } catch (_) {
       setCheckoutError('Erro ao abrir checkout.')
     } finally {
@@ -689,7 +697,21 @@ export default function AlunoSimuladoAcessoPage() {
                         navigateTo(`/aluno/simulados/acesso?${qs.toString()}`)
                       }}
                     >
-                      <SimuladoCard title={s.title} subtitle={s.subtitle || 'Simulado para testar seus conhecimentos.'} categories={s.categories} status={s.status} approval={s.approval} isPaid={s.is_paid ?? s.isPaid} price={s.price} imageUrl={s.imageUrl || '/icone img simulado.png'} />
+                      <SimuladoCard
+                        title={s.title}
+                        subtitle={s.subtitle || 'Simulado para testar seus conhecimentos.'}
+                        categories={s.categories}
+                        status={s.status}
+                        approval={s.approval}
+                        isPaid={s.is_paid ?? s.isPaid}
+                        price={s.price}
+                        imageUrl={s.imageUrl || '/icone img simulado.png'}
+                        isOwned={(() => {
+                          const paid = typeof (s?.is_paid ?? s?.isPaid) === 'boolean' ? (s.is_paid ?? s.isPaid) : Math.max(0, Number(s?.price || 0)) > 0
+                          if (!paid) return false
+                          return safeLsGet(`connekt_simulado_owned:${String(s?.id || '')}`) === '1'
+                        })()}
+                      />
                     </div>
                   ))}
                 </div>
