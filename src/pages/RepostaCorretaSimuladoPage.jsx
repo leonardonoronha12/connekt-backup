@@ -557,14 +557,28 @@ function RepostaCorretaSimuladoPage() {
   const questionVideoUrl =
     qActive?.video_url || qActive?.videoUrl || qActive?.question_video_url || qActive?.questionVideoUrl || null;
   const resolutionText =
+    getText(qActive?.resolutionText) ||
+    getText(qActive?.resolution_text) ||
+    getText(qActive?.resolucaoText) ||
+    getText(qActive?.resolucao_text) ||
     getText(qActive?.resolution) ||
     getText(qActive?.resolucao) ||
     getText(qActive?.explanation) ||
     getText(qActive?.solution) ||
     getText(qActive?.commentary) ||
     '';
-  const resolutionImageUrl = qActive?.resolution_image_url || qActive?.resolutionImageUrl || null;
-  const resolutionVideoUrl = qActive?.resolution_video_url || qActive?.resolutionVideoUrl || null;
+  const resolutionImageUrl =
+    qActive?.resolutionImageUrl ||
+    qActive?.resolution_image_url ||
+    qActive?.resolution_image ||
+    qActive?.resolutionImage ||
+    null;
+  const resolutionVideoUrl =
+    qActive?.resolutionVideoUrl ||
+    qActive?.resolution_video_url ||
+    qActive?.resolution_video ||
+    qActive?.resolutionVideo ||
+    null;
 
   function formatTime(ms) {
     const totalSec = Math.floor((Number(ms) || 0) / 1000);

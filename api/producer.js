@@ -150,8 +150,8 @@ export default async function handler(req, res) {
       }
 
       const { data: rows, error: qErr } = await admin
-        .from('v_questions_flat')
-        .select('id,title,question,choices,correct_choice_index,points,attempts,image_url,created_at,updated_at')
+        .from('questions')
+        .select('id,title,body,metadata,created_at,updated_at')
         .in('id', questionIds)
         .limit(500)
       if (qErr) return json(res, 500, { error: qErr.message || String(qErr) })
@@ -167,14 +167,7 @@ export default async function handler(req, res) {
         const row = byId.get(String(id))
         if (!row) continue
         fetchedIds.push(String(id))
-        const meta = {
-          choices: Array.isArray(row?.choices) ? row.choices : [],
-          correctChoiceIndex: Number.isFinite(Number(row?.correct_choice_index)) ? Number(row.correct_choice_index) : null,
-          points: Number.isFinite(Number(row?.points)) ? Number(row.points) : 0,
-          attempts: Number.isFinite(Number(row?.attempts)) ? Number(row.attempts) : 0,
-          imageUrl: row?.image_url || null,
-        }
-        ordered.push(mapQuestionRow({ ...row, metadata: meta }))
+        ordered.push(mapQuestionRow(row))
       }
 
       const settings = simulado?.settings && typeof simulado.settings === 'object' ? simulado.settings : {}
