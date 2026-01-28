@@ -296,6 +296,7 @@ export default function AlunoSimuladoResultadoPage() {
                 <div className="absolute inset-0 flex flex-col items-center justify-center">
                   <div className="text-[26px] font-bold text-[#22252B]">{percent}%</div>
                   <div className="text-[10px] text-[#737780]">Aproveitamento final</div>
+                  <img src="/logo connekt.png" alt="Connekt" className="mt-2 w-[86px] h-auto" />
                 </div>
               </div>
             </div>
