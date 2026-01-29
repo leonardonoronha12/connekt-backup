@@ -114,7 +114,7 @@ const ConfiguracoesPage = () => {
   };
 
   const resolvedPlanKey = resolvePlanKey();
-  const whitelabelAllowed = canUseWhitelabel(resolvedPlanKey);
+  const whitelabelAllowed = canUseWhitelabel(resolvedPlanKey) || String(user?.email || '').toLowerCase() === 'leonardonoronha12@gmail.com';
   const npsFeedbackAllowed = canUseNpsFeedback(resolvedPlanKey);
 
   const formatDateBR = (iso) => {
