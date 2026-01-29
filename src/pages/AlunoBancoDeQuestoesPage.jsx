@@ -141,79 +141,83 @@ export default function AlunoBancoDeQuestoesPage() {
   }
 
   return (
-    <div className="min-h-screen bg-white px-[22px] pt-16 pb-24">
-      <div className="max-w-[1904px] mx-auto w-full">
-        <div className="w-full max-w-[1200px] mx-auto">
-          <div className="grid grid-cols-1 lg:grid-cols-[1.05fr,1.15fr] gap-10 items-start">
-            <div className="min-w-0 pt-6">
-              <img src="/logo connekt.png" alt="Connekt" className="w-[240px] h-auto" />
-              <div className="mt-5 text-[16px] leading-[28px] text-[#9AA3AF] max-w-[420px]">
-                Aprimore seus conhecimentos respondendo questões de múltiplos temas em nosso banco exclusivo. Coloque-se à prova, desafie seus limites e evolua a cada resposta.
-              </div>
+    <div className="w-full flex flex-col gap-6">
+      <div className="bg-white border border-[#E3E4E5] rounded-[12px] p-6 sm:p-8 overflow-hidden">
+        <div className="grid grid-cols-1 lg:grid-cols-[1.05fr,1.15fr] gap-10 items-center">
+          <div className="min-w-0">
+            <img src="/logo connekt.png" alt="Connekt" className="w-[180px] h-auto" />
+            <div className="mt-4 text-[13px] leading-[22px] text-[#737780] max-w-[520px]">
+              Aprimore seus conhecimentos respondendo questões de múltiplos temas em nosso banco exclusivo. Coloque-se à prova, desafie seus limites e evolua a cada resposta.
             </div>
-            <div className="hidden lg:flex justify-end">
-              <img src="/questoes.png" alt="" className="w-full max-w-[760px] h-auto object-contain" />
+          </div>
+          <div className="hidden lg:flex justify-end">
+            <img src="/questoes.png" alt="" className="w-full max-w-[560px] h-auto object-contain" />
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white border border-[#E3E4E5] rounded-[12px] p-6 sm:p-8">
+        <div className="flex flex-col items-center text-center">
+          <div className="text-[16px] font-semibold text-[#1E1B39]">Filtrar</div>
+          <div className="mt-1 text-[12px] text-[#737780]">Aplique os filtros e comece a responder.</div>
+
+          <div className="mt-6 w-full max-w-[860px] grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="relative">
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                className="w-full h-10 px-3 pr-9 rounded-[6px] border border-[#E3E4E5] bg-white text-[12px] text-[#22252B] outline-none appearance-none"
+              >
+                <option value="">Categoria</option>
+                {allCategories.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#737780] pointer-events-none" aria-hidden="true" />
+            </div>
+
+            <div className="relative">
+              <select
+                value={subcategory}
+                onChange={(e) => setSubcategory(e.target.value)}
+                className="w-full h-10 px-3 pr-9 rounded-[6px] border border-[#E3E4E5] bg-white text-[12px] text-[#22252B] outline-none appearance-none disabled:bg-[#F9FAFB]"
+                disabled={allSubcategories.length === 0}
+              >
+                <option value="">Subcategoria</option>
+                {allSubcategories.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#737780] pointer-events-none" aria-hidden="true" />
+            </div>
+
+            <div className="relative">
+              <select
+                value={tag}
+                onChange={(e) => setTag(e.target.value)}
+                className="w-full h-10 px-3 pr-9 rounded-[6px] border border-[#E3E4E5] bg-white text-[12px] text-[#22252B] outline-none appearance-none disabled:bg-[#F9FAFB]"
+                disabled={allTags.length === 0}
+              >
+                <option value="">Tag</option>
+                {allTags.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#737780] pointer-events-none" aria-hidden="true" />
             </div>
           </div>
 
-          <div className="mt-16 flex flex-col items-center text-center">
-            <div className="text-[28px] font-semibold text-[#111827]">Filtrar</div>
-            <div className="mt-2 text-[16px] text-[#6B7280]">Aplique os filtros e comece a responder.</div>
+          <button
+            type="button"
+            className="mt-6 h-9 px-6 rounded-[6px] bg-[#0047BB] text-white text-[12px] font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={loading}
+            onClick={start}
+          >
+            {loading ? 'Carregando...' : 'Iniciar questões'}
+          </button>
 
-            <div className="mt-10 w-full max-w-[860px] grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="relative">
-                <select
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                  className="w-full h-12 px-4 pr-10 rounded-[6px] border border-[#E3E4E5] bg-white text-[14px] text-[#111827] outline-none appearance-none"
-                >
-                  <option value="">Categoria</option>
-                  {allCategories.map((c) => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
-                <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[#737780] pointer-events-none" aria-hidden="true" />
-              </div>
-
-              <div className="relative">
-                <select
-                  value={subcategory}
-                  onChange={(e) => setSubcategory(e.target.value)}
-                  className="w-full h-12 px-4 pr-10 rounded-[6px] border border-[#E3E4E5] bg-white text-[14px] text-[#111827] outline-none appearance-none disabled:bg-[#F9FAFB]"
-                  disabled={allSubcategories.length === 0}
-                >
-                  <option value="">Subcategoria</option>
-                  {allSubcategories.map((c) => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
-                <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[#737780] pointer-events-none" aria-hidden="true" />
-              </div>
-
-              <div className="relative">
-                <select
-                  value={tag}
-                  onChange={(e) => setTag(e.target.value)}
-                  className="w-full h-12 px-4 pr-10 rounded-[6px] border border-[#E3E4E5] bg-white text-[14px] text-[#111827] outline-none appearance-none disabled:bg-[#F9FAFB]"
-                  disabled={allTags.length === 0}
-                >
-                  <option value="">Tag</option>
-                  {allTags.map((c) => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
-                <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[#737780] pointer-events-none" aria-hidden="true" />
-              </div>
-            </div>
-
-            <button
-              type="button"
-              className="mt-12 h-10 px-7 rounded-[4px] bg-[#0047BB] text-white text-[12px] font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-              disabled={loading}
-              onClick={start}
-            >
-              {loading ? 'Carregando...' : 'Iniciar questões'}
-            </button>
+          <div className="mt-3 text-[11px] text-[#737780]">
+            {loading ? 'Buscando bancos disponíveis...' : `${filteredBanks.length} banco(s) disponível(is)`}
           </div>
         </div>
       </div>
