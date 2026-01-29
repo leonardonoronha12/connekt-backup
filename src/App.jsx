@@ -78,6 +78,7 @@ const QUESTION_BANK_PATH = '/banco-de-questoes';
   alunoConfiguracoes: 'Configurações',
   alunoCurso: 'Curso',
   alunoBancoQuestoes: 'Banco de Questões',
+  alunoBancoQuestoesResultado: 'Resultado - Banco de Questões',
   alunoQuestoes: 'Questões',
 };
 
@@ -139,6 +140,8 @@ const getViewFromLocation = () => {
     return 'login';
   } else if (path === '/login-aluno' || path === '/aluno/login') {
     return 'loginAluno';
+  } else if (path === '/aluno/banco-de-questoes/resultado') {
+    return 'alunoBancoQuestoesResultado';
   } else if (path === '/aluno/banco-de-questoes') {
     return 'alunoBancoQuestoes';
   } else if (path === '/aluno/questoes') {
@@ -400,6 +403,13 @@ function AppContent() {
         return <AlunoConfiguracoesPage />;
       case 'alunoBancoQuestoes':
         return <AlunoBancoDeQuestoesPage />;
+      case 'alunoBancoQuestoesResultado':
+        const AlunoBancoQuestoesResultadoPage = React.lazy(() => import('@/pages/AlunoBancoQuestoesResultadoPage'));
+        return (
+          <Suspense fallback={<div>Carregando resultado...</div>}>
+            <AlunoBancoQuestoesResultadoPage key={locationKey} />
+          </Suspense>
+        );
       case 'alunoQuestoes':
         return <AlunoQuestoesPage key={locationKey} />;
       case 'verifyEmail':
