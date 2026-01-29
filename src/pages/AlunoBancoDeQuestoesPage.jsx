@@ -241,7 +241,7 @@ export default function AlunoBancoDeQuestoesPage() {
             </div>
           </div>
           <div className="hidden lg:flex justify-end">
-            <img src="/question-icon.svg" alt="Banco de Questões" className="w-full max-w-[560px] h-auto object-contain" />
+            <img src="/Preview.png" alt="Banco de Questões" className="w-full max-w-[760px] h-auto object-contain" />
           </div>
         </div>
       </div>
