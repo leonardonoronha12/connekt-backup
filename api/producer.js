@@ -85,6 +85,21 @@ export default async function handler(req, res) {
 
     if (!producerId || !isUuid(producerId)) return json(res, 400, { error: 'invalid_producer_id' })
 
+    if (type === 'branding') {
+      let user = null
+      try {
+        const { data } = await admin.auth.admin.getUserById(producerId)
+        user = data?.user || null
+      } catch (_) {
+        user = null
+      }
+      const meta = user?.user_metadata && typeof user.user_metadata === 'object' ? user.user_metadata : {}
+      const wl = meta.whitelabel && typeof meta.whitelabel === 'object'
+        ? meta.whitelabel
+        : (meta.whiteLabel && typeof meta.whiteLabel === 'object' ? meta.whiteLabel : null)
+      return json(res, 200, { producerId, brand: wl || null })
+    }
+
     if (type === 'courses') {
       const { data, error } = await admin
         .from('courses')

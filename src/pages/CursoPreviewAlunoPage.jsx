@@ -4,6 +4,7 @@ import { useActiveProducerUserId } from '@/hooks/useActiveProducerUserId'
 import { X, Play, ChevronLeft, ChevronRight, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import CourseFooter from '@/components/CourseFooter'
+import BrandLogo from '@/components/BrandLogo'
 
 const DEMO_DESCRIPTION = 'Aprenda na prática com módulos organizados, aulas objetivas e conteúdos atualizados para o dia a dia no consultório.';
 const DEMO_PROMO_VIDEO_URL = 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4';
@@ -422,7 +423,7 @@ export default function CursoPreviewAlunoPage() {
                       <div className="truncate">{heroTitle}</div>
                     </div>
                     <div className="flex items-center gap-3">
-                      <img src="/logo%20connekt.png" alt="Logo" className="h-9 w-auto" />
+                      <BrandLogo variant="compact" className="h-9 w-auto" />
                     </div>
                     <div className="mt-6 text-[28px] font-semibold leading-[34px]">{heroTitle}</div>
                     {heroDescription ? (

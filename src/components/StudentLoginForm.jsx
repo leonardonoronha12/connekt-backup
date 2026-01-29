@@ -1,11 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, Eye, EyeOff } from 'lucide-react'
 import { useAuth } from '@/contexts/SupabaseAuthContext'
+import { useBranding } from '@/contexts/BrandingContext'
+import BrandLogo from '@/components/BrandLogo'
 import { setActiveProducerUserId } from '@/services/producerScope'
 import { getPublicAppOrigin } from '@/services/publicUrl'
 
 export default function StudentLoginForm() {
   const { signIn, signInWithOAuth, resetPassword, signUpWithEmailConfirmation } = useAuth()
+  const { brand } = useBranding()
   const [view, setView] = useState('login')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -290,7 +293,7 @@ export default function StudentLoginForm() {
     <div className="min-h-screen flex bg-white">
       <div className="w-full lg:w-[520px] px-8 py-10 flex flex-col">
         <div className="flex items-center justify-center w-full">
-          <img src="/logo connekt.png" alt="Connekt" className="h-8 w-auto" />
+          <BrandLogo variant="compact" className="h-8 w-auto" alt={brand?.name || 'Logo'} />
         </div>
 
         <div className="flex-1 flex items-center w-full">
@@ -299,7 +302,7 @@ export default function StudentLoginForm() {
               <>
                 <button
                   type="button"
-                  className="text-[12px] text-[#0047BB] font-semibold inline-flex items-center gap-2"
+                  className="text-[12px] brand-text font-semibold inline-flex items-center gap-2"
                   onClick={() => {
                     setView('login')
                     setErrorMsg('')
@@ -322,7 +325,7 @@ export default function StudentLoginForm() {
                         value={registerData.firstName}
                         onChange={(e) => setRegisterData((s) => ({ ...s, firstName: e.target.value }))}
                         placeholder="Seu nome"
-                        className="mt-2 w-full h-10 rounded-[4px] border border-[#E3E4E5] bg-[#F8FAFC] px-3 text-[13px] outline-none focus:border-[#0047BB]"
+                        className="mt-2 w-full h-10 rounded-[4px] border border-[#E3E4E5] bg-[#F8FAFC] px-3 text-[13px] outline-none brand-border-focus"
                         required
                       />
                     </div>
@@ -333,7 +336,7 @@ export default function StudentLoginForm() {
                         value={registerData.lastName}
                         onChange={(e) => setRegisterData((s) => ({ ...s, lastName: e.target.value }))}
                         placeholder="Seu sobrenome"
-                        className="mt-2 w-full h-10 rounded-[4px] border border-[#E3E4E5] bg-[#F8FAFC] px-3 text-[13px] outline-none focus:border-[#0047BB]"
+                        className="mt-2 w-full h-10 rounded-[4px] border border-[#E3E4E5] bg-[#F8FAFC] px-3 text-[13px] outline-none brand-border-focus"
                         required
                       />
                     </div>
@@ -346,7 +349,7 @@ export default function StudentLoginForm() {
                       value={registerData.email}
                       onChange={(e) => setRegisterData((s) => ({ ...s, email: e.target.value }))}
                       placeholder="seuemail@gmail.com"
-                      className="mt-2 w-full h-10 rounded-[4px] border border-[#E3E4E5] bg-[#F8FAFC] px-3 text-[13px] outline-none focus:border-[#0047BB]"
+                      className="mt-2 w-full h-10 rounded-[4px] border border-[#E3E4E5] bg-[#F8FAFC] px-3 text-[13px] outline-none brand-border-focus"
                       required
                     />
                   </div>
@@ -359,7 +362,7 @@ export default function StudentLoginForm() {
                         value={registerData.password}
                         onChange={(e) => setRegisterData((s) => ({ ...s, password: e.target.value }))}
                         placeholder="••••••••"
-                        className="w-full h-10 rounded-[4px] border border-[#E3E4E5] bg-[#F8FAFC] px-3 pr-10 text-[13px] outline-none focus:border-[#0047BB]"
+                        className="w-full h-10 rounded-[4px] border border-[#E3E4E5] bg-[#F8FAFC] px-3 pr-10 text-[13px] outline-none brand-border-focus"
                         onFocus={() => setShowRegisterPasswordRequirements(true)}
                         onBlur={() => setShowRegisterPasswordRequirements(false)}
                         required
@@ -407,7 +410,7 @@ export default function StudentLoginForm() {
                         value={registerData.confirmPassword}
                         onChange={(e) => setRegisterData((s) => ({ ...s, confirmPassword: e.target.value }))}
                         placeholder="••••••••"
-                        className="w-full h-10 rounded-[4px] border border-[#E3E4E5] bg-[#F8FAFC] px-3 pr-10 text-[13px] outline-none focus:border-[#0047BB]"
+                        className="w-full h-10 rounded-[4px] border border-[#E3E4E5] bg-[#F8FAFC] px-3 pr-10 text-[13px] outline-none brand-border-focus"
                         required
                       />
                       <button
@@ -451,7 +454,7 @@ export default function StudentLoginForm() {
                   <button
                     type="submit"
                     disabled={registerLoading || !isRegisterValid}
-                    className="w-full h-10 rounded-[4px] bg-[#0047BB] text-white text-[13px] font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="w-full h-10 rounded-[4px] brand-bg brand-bg-hover text-white text-[13px] font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {registerLoading ? 'Criando…' : 'Criar conta'}
                   </button>
@@ -465,7 +468,7 @@ export default function StudentLoginForm() {
                     Já tem conta?{' '}
                     <button
                       type="button"
-                      className="text-[#0047BB] font-semibold"
+                      className="brand-text font-semibold"
                       onClick={() => {
                         setView('login')
                         setErrorMsg('')
@@ -492,7 +495,7 @@ export default function StudentLoginForm() {
                       value={resetEmail}
                       onChange={(e) => setResetEmail(e.target.value)}
                       placeholder="seuemail@gmail.com"
-                      className="mt-2 w-full h-10 rounded-[4px] border border-[#E3E4E5] bg-[#F8FAFC] px-3 text-[13px] outline-none focus:border-[#0047BB]"
+                      className="mt-2 w-full h-10 rounded-[4px] border border-[#E3E4E5] bg-[#F8FAFC] px-3 text-[13px] outline-none brand-border-focus"
                       required
                     />
                   </div>
@@ -507,14 +510,14 @@ export default function StudentLoginForm() {
                   <button
                     type="submit"
                     disabled={resetLoading || !String(resetEmail || '').trim()}
-                    className="w-full h-10 rounded-[4px] bg-[#0047BB] text-white text-[13px] font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="w-full h-10 rounded-[4px] brand-bg brand-bg-hover text-white text-[13px] font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {resetLoading ? 'Enviando…' : 'Enviar'}
                   </button>
 
                   <button
                     type="button"
-                    className="text-[12px] text-[#0047BB] font-semibold"
+                    className="text-[12px] brand-text font-semibold"
                     onClick={() => {
                       setShowForgotPassword(false)
                       setErrorMsg('')
@@ -538,7 +541,7 @@ export default function StudentLoginForm() {
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       placeholder="seuemail@gmail.com"
-                      className="mt-2 w-full h-10 rounded-[4px] border border-[#E3E4E5] bg-[#F8FAFC] px-3 text-[13px] outline-none focus:border-[#0047BB]"
+                      className="mt-2 w-full h-10 rounded-[4px] border border-[#E3E4E5] bg-[#F8FAFC] px-3 text-[13px] outline-none brand-border-focus"
                       required
                     />
                   </div>
@@ -551,7 +554,7 @@ export default function StudentLoginForm() {
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         placeholder="••••••••"
-                        className="w-full h-10 rounded-[4px] border border-[#E3E4E5] bg-[#F8FAFC] px-3 pr-10 text-[13px] outline-none focus:border-[#0047BB]"
+                        className="w-full h-10 rounded-[4px] border border-[#E3E4E5] bg-[#F8FAFC] px-3 pr-10 text-[13px] outline-none brand-border-focus"
                         required
                       />
                       <button
@@ -577,7 +580,7 @@ export default function StudentLoginForm() {
                     </label>
                     <button
                       type="button"
-                      className="text-[11px] text-[#0047BB] font-semibold"
+                      className="text-[11px] brand-text font-semibold"
                       onClick={() => {
                         setShowForgotPassword(true)
                         setResetEmail(cleanEmail)
@@ -594,7 +597,7 @@ export default function StudentLoginForm() {
                   <button
                     type="submit"
                     disabled={loading}
-                    className="w-full h-10 rounded-[4px] bg-[#0047BB] text-white text-[13px] font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="w-full h-10 rounded-[4px] brand-bg brand-bg-hover text-white text-[13px] font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {loading ? 'Entrando…' : 'Entrar'}
                   </button>
@@ -646,7 +649,7 @@ export default function StudentLoginForm() {
                   Novo por aqui?{' '}
                   <button
                     type="button"
-                    className="text-[#0047BB] font-semibold"
+                    className="brand-text font-semibold"
                     onClick={() => {
                       setView('register')
                       setShowForgotPassword(false)
@@ -677,7 +680,7 @@ export default function StudentLoginForm() {
 
       <div className="hidden lg:flex flex-1 relative items-center justify-center overflow-hidden">
         <img src="/login-background.svg" alt="" className="absolute inset-0 w-full h-full object-cover" />
-        <img src="/logo-expanded.svg" alt="Connekt" className="relative h-12 w-auto" />
+        <BrandLogo variant="sidebar" className="relative h-12 w-auto" alt={brand?.name || 'Logo'} />
       </div>
     </div>
   )

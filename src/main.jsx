@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { HelmetProvider } from 'react-helmet-async';
 import App from '@/App';
+import { BrandingProvider } from '@/contexts/BrandingContext'
 import '@/index.css';
 
 // Logs de diagnóstico removidos após validação de ambiente
@@ -44,7 +45,9 @@ try {
   if (!el) throw new Error('root_not_found')
   ReactDOM.createRoot(el).render(
     <HelmetProvider>
-      <App />
+      <BrandingProvider>
+        <App />
+      </BrandingProvider>
     </HelmetProvider>
   );
 } catch (e) {

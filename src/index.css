@@ -3,6 +3,29 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --brand-primary: #0047BB;
+  --brand-primary-hover: #003399;
+  --brand-sidebar-from: rgb(15, 6, 39);
+  --brand-sidebar-to: rgb(0, 0, 104);
+}
+
+.brand-text {
+  color: var(--brand-primary) !important;
+}
+
+.brand-bg {
+  background-color: var(--brand-primary) !important;
+}
+
+.brand-bg-hover:hover {
+  background-color: var(--brand-primary-hover) !important;
+}
+
+.brand-border-focus:focus {
+  border-color: var(--brand-primary) !important;
+}
+
 @layer base {
   :root {
     --background: 0 0% 100%;

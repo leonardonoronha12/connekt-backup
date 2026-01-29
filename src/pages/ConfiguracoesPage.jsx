@@ -52,6 +52,17 @@ const ConfiguracoesPage = () => {
   const [subdomainInput, setSubdomainInput] = useState('');
   const [subdomainSaving, setSubdomainSaving] = useState(false);
   const [subdomainSavedUrl, setSubdomainSavedUrl] = useState('');
+  const whitelabelLogoInputRef = useRef(null);
+  const whitelabelLogoCompactInputRef = useRef(null);
+  const [whitelabelBrandName, setWhitelabelBrandName] = useState('');
+  const [whitelabelPrimaryColor, setWhitelabelPrimaryColor] = useState('#0047BB');
+  const [whitelabelPrimaryHoverColor, setWhitelabelPrimaryHoverColor] = useState('#003399');
+  const [whitelabelSidebarFrom, setWhitelabelSidebarFrom] = useState('rgb(15, 6, 39)');
+  const [whitelabelSidebarTo, setWhitelabelSidebarTo] = useState('rgb(0, 0, 104)');
+  const [whitelabelLogoUrl, setWhitelabelLogoUrl] = useState('');
+  const [whitelabelLogoCompactUrl, setWhitelabelLogoCompactUrl] = useState('');
+  const [whitelabelSaving, setWhitelabelSaving] = useState(false);
+  const [whitelabelUploading, setWhitelabelUploading] = useState(false);
   const [payoutEnabled, setPayoutEnabled] = useState(false);
   const [payoutPixKey, setPayoutPixKey] = useState('');
   const [payoutBank, setPayoutBank] = useState('');
@@ -607,6 +618,108 @@ const ConfiguracoesPage = () => {
     })();
     return () => { active = false; };
   }, [user?.id, user?.user_metadata]);
+
+  useEffect(() => {
+    try {
+      const meta = user?.user_metadata || {};
+      const wl = (meta.whitelabel && typeof meta.whitelabel === 'object')
+        ? meta.whitelabel
+        : ((meta.whiteLabel && typeof meta.whiteLabel === 'object') ? meta.whiteLabel : {});
+      setWhitelabelBrandName(String(wl.name || wl.brandName || wl.appName || '').trim());
+      setWhitelabelPrimaryColor(String(wl.primaryColor || wl.primary_color || '#0047BB').trim() || '#0047BB');
+      setWhitelabelPrimaryHoverColor(String(wl.primaryHoverColor || wl.primary_hover_color || '#003399').trim() || '#003399');
+      setWhitelabelSidebarFrom(String(wl.sidebarFrom || wl.sidebar_from || 'rgb(15, 6, 39)').trim() || 'rgb(15, 6, 39)');
+      setWhitelabelSidebarTo(String(wl.sidebarTo || wl.sidebar_to || 'rgb(0, 0, 104)').trim() || 'rgb(0, 0, 104)');
+      setWhitelabelLogoUrl(String(wl.logoUrl || wl.logo_url || '').trim());
+      setWhitelabelLogoCompactUrl(String(wl.logoCompactUrl || wl.logo_compact_url || '').trim());
+    } catch (_) {}
+  }, [user?.id, user?.user_metadata]);
+
+  const uploadWhitelabelLogo = async (file, variant) => {
+    if (!file || !user?.id) return;
+    try {
+      if (!file.type?.startsWith('image/')) {
+        toast({ title: 'Arquivo inválido', description: 'Selecione uma imagem (JPG/PNG/WebP).', duration: 5000 });
+        return;
+      }
+      if (file.size > 2 * 1024 * 1024) {
+        toast({ title: 'Arquivo muito grande', description: 'Tamanho máximo: 2MB.', duration: 5000 });
+        return;
+      }
+      const token = session?.access_token || (await (async () => {
+        try {
+          const { data } = await supabase.auth.getSession();
+          return data?.session?.access_token || '';
+        } catch (_) {
+          return '';
+        }
+      })());
+      if (!token) {
+        toast({ title: 'Sessão inválida', description: 'Faça login novamente.', duration: 5000 });
+        return;
+      }
+      setWhitelabelUploading(true);
+      const qs = new URLSearchParams();
+      qs.set('type', 'image');
+      qs.set('bankId', 'whitelabel');
+      qs.set('questionId', variant);
+      qs.set('filename', file.name || 'logo.png');
+      qs.set('contentType', file.type || 'image/png');
+      const r = await fetch(`/api/upload-question-media?${qs.toString()}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': file.type || 'application/octet-stream' },
+        body: file,
+      });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        toast({ title: 'Erro ao enviar', description: String(body?.error || 'Falha no upload.'), duration: 6000 });
+        return;
+      }
+      const url = String(body?.url || '').trim();
+      if (!url) {
+        toast({ title: 'Upload incompleto', description: 'URL não retornada.', duration: 6000 });
+        return;
+      }
+      if (variant === 'logo') setWhitelabelLogoUrl(url);
+      if (variant === 'logo_compact') setWhitelabelLogoCompactUrl(url);
+      toast({ title: 'Logo enviado', description: 'Salve para aplicar no aluno.', duration: 4000 });
+    } catch (err) {
+      toast({ title: 'Erro ao enviar', description: err?.message || String(err), duration: 6000 });
+    } finally {
+      setWhitelabelUploading(false);
+      try {
+        if (variant === 'logo' && whitelabelLogoInputRef.current) whitelabelLogoInputRef.current.value = '';
+        if (variant === 'logo_compact' && whitelabelLogoCompactInputRef.current) whitelabelLogoCompactInputRef.current.value = '';
+      } catch (_) {}
+    }
+  };
+
+  const handleSaveWhitelabel = async () => {
+    if (!user?.id) return;
+    setWhitelabelSaving(true);
+    try {
+      const meta = user?.user_metadata && typeof user.user_metadata === 'object' ? user.user_metadata : {};
+      const next = {
+        ...(meta || {}),
+        whitelabel: {
+          name: String(whitelabelBrandName || '').trim(),
+          primaryColor: String(whitelabelPrimaryColor || '').trim(),
+          primaryHoverColor: String(whitelabelPrimaryHoverColor || '').trim(),
+          sidebarFrom: String(whitelabelSidebarFrom || '').trim(),
+          sidebarTo: String(whitelabelSidebarTo || '').trim(),
+          logoUrl: String(whitelabelLogoUrl || '').trim() || null,
+          logoCompactUrl: String(whitelabelLogoCompactUrl || '').trim() || null,
+        },
+      };
+      const { error } = await supabase.auth.updateUser({ data: next });
+      if (error) throw error;
+      toast({ title: 'White label salvo', description: 'Aplicado na área do aluno.', duration: 5000 });
+    } catch (err) {
+      toast({ title: 'Erro ao salvar', description: err?.message || String(err), duration: 6000 });
+    } finally {
+      setWhitelabelSaving(false);
+    }
+  };
 
   const handlePickAvatar = () => {
     if (avatarUploading) return;
@@ -1459,23 +1572,133 @@ const ConfiguracoesPage = () => {
               <div className="mb-8">
                 <h3 className="text-[14px] font-semibold text-[#1E1B39] mb-4">Logotipo</h3>
                 <div className="grid grid-cols-2 gap-6">
-                  {/* Horizontal Logo */}
                   <div className="space-y-2">
-                    <label className="text-[12px] text-[#737780]">Logotipo Horizontal</label>
-                    <div className="border-2 border-dashed border-[#0047BB] rounded-[8px] bg-[#F8FAFC] h-[120px] flex flex-col items-center justify-center cursor-pointer hover:bg-blue-50 transition-colors">
-                      <UploadCloud className="text-[#0047BB] mb-2" size={24} />
-                      <p className="text-[12px] font-bold text-[#1E1B39]">Arraste ou <span className="text-[#0047BB]">selecione clicando aqui</span></p>
-                      <p className="text-[10px] text-[#737780] mt-1">Max 2 MB, formato: JPG ou PNG</p>
-                    </div>
+                    <label className="text-[12px] text-[#737780]">Logo (sidebar)</label>
+                    <input
+                      ref={whitelabelLogoInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) uploadWhitelabelLogo(file, 'logo');
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => whitelabelLogoInputRef.current && whitelabelLogoInputRef.current.click()}
+                      disabled={whitelabelUploading}
+                      className="w-full border-2 border-dashed border-[#0047BB] rounded-[8px] bg-[#F8FAFC] h-[120px] flex flex-col items-center justify-center cursor-pointer hover:bg-blue-50 transition-colors disabled:opacity-60 disabled:cursor-not-allowed overflow-hidden"
+                    >
+                      {whitelabelLogoUrl ? (
+                        <img src={whitelabelLogoUrl} alt="Logo" className="max-h-[92px] max-w-[92%] object-contain" />
+                      ) : (
+                        <>
+                          <UploadCloud className="text-[#0047BB] mb-2" size={24} />
+                          <p className="text-[12px] font-bold text-[#1E1B39]">
+                            Arraste ou <span className="text-[#0047BB]">selecione clicando aqui</span>
+                          </p>
+                          <p className="text-[10px] text-[#737780] mt-1">Max 2 MB, formato: JPG ou PNG</p>
+                        </>
+                      )}
+                    </button>
                   </div>
-                  {/* Vertical Logo */}
                   <div className="space-y-2">
-                    <label className="text-[12px] text-[#737780]">Logotipo Vertical</label>
-                    <div className="border-2 border-dashed border-[#0047BB] rounded-[8px] bg-[#F8FAFC] h-[120px] flex flex-col items-center justify-center cursor-pointer hover:bg-blue-50 transition-colors">
-                      <UploadCloud className="text-[#0047BB] mb-2" size={24} />
-                      <p className="text-[12px] font-bold text-[#1E1B39]">Arraste ou <span className="text-[#0047BB]">selecione clicando aqui</span></p>
-                      <p className="text-[10px] text-[#737780] mt-1">Max 2 MB, formato: JPG ou PNG</p>
-                    </div>
+                    <label className="text-[12px] text-[#737780]">Logo (compacta)</label>
+                    <input
+                      ref={whitelabelLogoCompactInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) uploadWhitelabelLogo(file, 'logo_compact');
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => whitelabelLogoCompactInputRef.current && whitelabelLogoCompactInputRef.current.click()}
+                      disabled={whitelabelUploading}
+                      className="w-full border-2 border-dashed border-[#0047BB] rounded-[8px] bg-[#F8FAFC] h-[120px] flex flex-col items-center justify-center cursor-pointer hover:bg-blue-50 transition-colors disabled:opacity-60 disabled:cursor-not-allowed overflow-hidden"
+                    >
+                      {whitelabelLogoCompactUrl ? (
+                        <img src={whitelabelLogoCompactUrl} alt="Logo compacta" className="max-h-[92px] max-w-[92%] object-contain" />
+                      ) : (
+                        <>
+                          <UploadCloud className="text-[#0047BB] mb-2" size={24} />
+                          <p className="text-[12px] font-bold text-[#1E1B39]">
+                            Arraste ou <span className="text-[#0047BB]">selecione clicando aqui</span>
+                          </p>
+                          <p className="text-[10px] text-[#737780] mt-1">Max 2 MB, formato: JPG ou PNG</p>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-[#F8FAFC] border border-[#E3E4E5] rounded-[8px] p-6 mb-8">
+                <h3 className="text-[14px] font-semibold text-[#1E1B39] mb-4">Identidade visual</h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="text-[12px] text-[#737780]">Nome da marca</label>
+                    <input
+                      type="text"
+                      value={whitelabelBrandName}
+                      onChange={(e) => setWhitelabelBrandName(e.target.value)}
+                      placeholder="Ex.: Minha Plataforma"
+                      className="w-full px-3 py-2 border border-[#E3E4E5] rounded-[6px] text-[14px] focus:outline-none focus:border-[#0047BB] bg-white"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[12px] text-[#737780]">Cor primária</label>
+                    <input
+                      type="text"
+                      value={whitelabelPrimaryColor}
+                      onChange={(e) => setWhitelabelPrimaryColor(e.target.value)}
+                      placeholder="#0047BB"
+                      className="w-full px-3 py-2 border border-[#E3E4E5] rounded-[6px] text-[14px] focus:outline-none focus:border-[#0047BB] bg-white"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[12px] text-[#737780]">Cor primária (hover)</label>
+                    <input
+                      type="text"
+                      value={whitelabelPrimaryHoverColor}
+                      onChange={(e) => setWhitelabelPrimaryHoverColor(e.target.value)}
+                      placeholder="#003399"
+                      className="w-full px-3 py-2 border border-[#E3E4E5] rounded-[6px] text-[14px] focus:outline-none focus:border-[#0047BB] bg-white"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[12px] text-[#737780]">Sidebar (topo)</label>
+                    <input
+                      type="text"
+                      value={whitelabelSidebarFrom}
+                      onChange={(e) => setWhitelabelSidebarFrom(e.target.value)}
+                      placeholder="rgb(15, 6, 39)"
+                      className="w-full px-3 py-2 border border-[#E3E4E5] rounded-[6px] text-[14px] focus:outline-none focus:border-[#0047BB] bg-white"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[12px] text-[#737780]">Sidebar (base)</label>
+                    <input
+                      type="text"
+                      value={whitelabelSidebarTo}
+                      onChange={(e) => setWhitelabelSidebarTo(e.target.value)}
+                      placeholder="rgb(0, 0, 104)"
+                      className="w-full px-3 py-2 border border-[#E3E4E5] rounded-[6px] text-[14px] focus:outline-none focus:border-[#0047BB] bg-white"
+                    />
+                  </div>
+                  <div className="flex items-end justify-end">
+                    <button
+                      type="button"
+                      disabled={whitelabelSaving || whitelabelUploading}
+                      onClick={handleSaveWhitelabel}
+                      className={`h-10 px-5 rounded-[6px] text-[14px] font-medium text-white transition-colors whitespace-nowrap ${whitelabelSaving || whitelabelUploading ? 'opacity-60 cursor-not-allowed bg-[#0047BB]' : 'bg-[#0047BB] hover:bg-[#003da0]'}`}
+                    >
+                      {whitelabelSaving ? 'Salvando…' : 'Salvar white label'}
+                    </button>
                   </div>
                 </div>
               </div>
