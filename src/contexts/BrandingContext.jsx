@@ -77,7 +77,7 @@ export function BrandingProvider({ children }) {
         if (!producerId && fromQuery) producerId = String(fromQuery).trim()
 
         if (!producerId) {
-          const r = await fetch(`/api/public-branding?host=${encodeURIComponent(host)}`)
+          const r = await fetch(`/api/producer?type=public_branding&host=${encodeURIComponent(host)}`)
           const body = await r.json().catch(() => ({}))
           if (!active) return
           const pid = String(body?.producerId || '').trim()
@@ -102,7 +102,7 @@ export function BrandingProvider({ children }) {
           }
         }
 
-        const r2 = await fetch(`/api/public-branding?producerId=${encodeURIComponent(producerId)}&host=${encodeURIComponent(host)}`)
+        const r2 = await fetch(`/api/producer?type=public_branding&producerId=${encodeURIComponent(producerId)}&host=${encodeURIComponent(host)}`)
         const body2 = await r2.json().catch(() => ({}))
         if (!active) return
         if (body2?.brand) setBrand(normalizeBrand(body2.brand))
@@ -140,4 +140,3 @@ export function BrandingProvider({ children }) {
 export function useBranding() {
   return useContext(BrandingContext)
 }
-
