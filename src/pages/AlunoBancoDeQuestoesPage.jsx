@@ -257,12 +257,54 @@ export default function AlunoBancoDeQuestoesPage() {
             </div>
           </div>
           <div className="hidden lg:flex justify-end">
-            <div className="w-full max-w-[760px] bg-black rounded-[12px] overflow-hidden shadow-sm border border-black/10 px-10 py-8">
-              <img
-                src="/Preview.png"
-                alt="Banco de Questões"
-                className="w-full h-auto object-contain rotate-[-8deg] scale-[1.08] origin-center"
-              />
+            <div className="w-full max-w-[760px] rounded-[12px] border border-[#E3E4E5] bg-[#F8FAFC] p-6">
+              <div className="flex items-start justify-between gap-6">
+                <div className="min-w-0">
+                  <div className="text-[12px] font-medium text-[#737780]">Banco de Questões</div>
+                  <div className="mt-1 text-[18px] font-semibold text-[#1E1B39]">Sessão de treino guiada</div>
+                  <div className="mt-2 text-[12px] leading-[18px] text-[#737780] max-w-[380px]">
+                    Filtre por categoria, subcategoria e tags. Em seguida, clique em “Iniciar questões” para começar.
+                  </div>
+                </div>
+
+                <div className="shrink-0">
+                  <div className="w-[72px] h-[72px] rounded-full p-[6px]" style={{ background: 'conic-gradient(#0047BB 62%, #E3E4E5 0)' }}>
+                    <div className="w-full h-full rounded-full bg-white border border-[#E3E4E5] flex flex-col items-center justify-center">
+                      <div className="text-[16px] font-bold text-[#1E1B39] leading-none">62%</div>
+                      <div className="mt-1 text-[10px] text-[#737780] leading-none">Aproveitamento</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-5 grid grid-cols-3 gap-3">
+                <div className="rounded-[10px] border border-[#E3E4E5] bg-white p-3">
+                  <div className="text-[11px] text-[#737780]">Bancos</div>
+                  <div className="mt-1 text-[16px] font-semibold text-[#1E1B39]">{String(filteredBanks.length)}</div>
+                </div>
+                <div className="rounded-[10px] border border-[#E3E4E5] bg-white p-3">
+                  <div className="text-[11px] text-[#737780]">Categorias</div>
+                  <div className="mt-1 text-[16px] font-semibold text-[#1E1B39]">{String(allCategories.length)}</div>
+                </div>
+                <div className="rounded-[10px] border border-[#E3E4E5] bg-white p-3">
+                  <div className="text-[11px] text-[#737780]">Tags</div>
+                  <div className="mt-1 text-[16px] font-semibold text-[#1E1B39]">{String(allTags.length)}</div>
+                </div>
+              </div>
+
+              <div className="mt-4 rounded-[10px] border border-[#E3E4E5] bg-white p-4">
+                <div className="text-[12px] font-semibold text-[#1E1B39]">Dicas rápidas</div>
+                <div className="mt-2 grid grid-cols-1 gap-2 text-[12px] text-[#737780]">
+                  <div className="flex items-start gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-[#0047BB] mt-1.5" />
+                    <div className="min-w-0">Escolha uma categoria para refinar automaticamente subcategorias e tags.</div>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-[#0047BB] mt-1.5" />
+                    <div className="min-w-0">Use tags para focar em conteúdos específicos (ex.: ECG, Emergência).</div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
