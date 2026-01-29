@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react'
 import { Database, GraduationCap, Menu, Monitor, Settings, X } from 'lucide-react'
 import Header from '@/components/Header'
+import BrandLogo from '@/components/BrandLogo'
+import { useBranding } from '@/contexts/BrandingContext'
 
 function navigateTo(path) {
   window.history.pushState({}, '', path)
@@ -25,6 +27,7 @@ const navSections = [
 export default function AlunoLayout({ children }) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [currentPath, setCurrentPath] = useState(() => String(window.location.pathname || ''))
+  const { brand } = useBranding()
 
   useEffect(() => {
     const onPop = () => setCurrentPath(String(window.location.pathname || ''))
@@ -36,10 +39,10 @@ export default function AlunoLayout({ children }) {
     <div className="flex min-h-screen bg-[#F5F6FA]">
       <aside
         className="hidden lg:flex w-[260px] h-screen flex-col"
-        style={{ background: 'linear-gradient(180deg, rgb(15, 6, 39) 0%, rgb(0, 0, 104) 100%)' }}
+        style={{ background: `linear-gradient(180deg, ${brand?.sidebarFrom || 'var(--brand-sidebar-from)'} 0%, ${brand?.sidebarTo || 'var(--brand-sidebar-to)'} 100%)` }}
       >
         <div className="flex justify-center py-5">
-          <img src="/logo-expanded.svg" alt="Connekt" className="w-[119px] h-[35px]" />
+          <BrandLogo variant="sidebar" className="w-[119px] h-[35px]" />
         </div>
         <div className="h-px mx-10" style={{ backgroundColor: 'rgb(47, 58, 86)' }} />
         <nav className="flex-1 overflow-y-auto px-4 py-5 space-y-6">
@@ -61,9 +64,8 @@ export default function AlunoLayout({ children }) {
                       key={item.label}
                       type="button"
                       onClick={() => navigateTo(item.path)}
-                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-[10px] text-[13px] font-semibold transition-colors ${
-                        isActive ? 'bg-[#0047BB] text-white' : 'text-white/80 hover:bg-white/10'
-                      }`}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-[10px] text-[13px] font-semibold transition-colors ${isActive ? 'text-white' : 'text-white/80 hover:bg-white/10'}`}
+                      style={isActive ? { backgroundColor: brand?.primaryColor || 'var(--brand-primary)' } : undefined}
                     >
                       <item.Icon className="w-5 h-5" />
                       <span className="truncate">{item.label}</span>
@@ -81,7 +83,7 @@ export default function AlunoLayout({ children }) {
           <div className="absolute inset-0 bg-black/40" onClick={() => setMobileNavOpen(false)} />
           <div className="absolute left-0 top-0 bottom-0 w-[300px] bg-[#0F0627] flex flex-col">
             <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">
-              <img src="/logo-expanded.svg" alt="Connekt" className="w-[119px] h-[35px]" />
+              <BrandLogo variant="sidebar" className="w-[119px] h-[35px]" />
               <button
                 type="button"
                 className="h-10 w-10 rounded-full bg-white/10 flex items-center justify-center"
@@ -105,22 +107,21 @@ export default function AlunoLayout({ children }) {
                         : (itemPathname === '/aluno/simulados'
                           ? currentPath.startsWith('/aluno/simulados') || currentPath === '/aluno/reposta-correta-simulado'
                           : currentPath === itemPathname)
-                      return (
-                        <button
-                          key={item.label}
-                          type="button"
-                          onClick={() => {
-                            setMobileNavOpen(false)
-                            navigateTo(item.path)
-                          }}
-                          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-[10px] text-[13px] font-semibold transition-colors ${
-                            isActive ? 'bg-[#0047BB] text-white' : 'text-white/80 hover:bg-white/10'
-                          }`}
-                        >
-                          <item.Icon className="w-5 h-5" />
-                          <span className="truncate">{item.label}</span>
-                        </button>
-                      )
+                        return (
+                          <button
+                            key={item.label}
+                            type="button"
+                            onClick={() => {
+                              setMobileNavOpen(false)
+                              navigateTo(item.path)
+                            }}
+                            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-[10px] text-[13px] font-semibold transition-colors ${isActive ? 'text-white' : 'text-white/80 hover:bg-white/10'}`}
+                            style={isActive ? { backgroundColor: brand?.primaryColor || 'var(--brand-primary)' } : undefined}
+                          >
+                            <item.Icon className="w-5 h-5" />
+                            <span className="truncate">{item.label}</span>
+                          </button>
+                        )
                     })}
                   </div>
                 </div>
@@ -147,4 +148,3 @@ export default function AlunoLayout({ children }) {
     </div>
   )
 }
-

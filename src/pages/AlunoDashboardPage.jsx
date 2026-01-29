@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { BookOpen, ChevronLeft, ChevronRight, Database, FileText, GraduationCap, Monitor, PlayCircle, Search, Settings, Star, Menu, X } from 'lucide-react'
 import Header from '@/components/Header'
+import BrandLogo from '@/components/BrandLogo'
 import CourseFooter from '@/components/CourseFooter'
 import { supabase } from '@/lib/supabaseClient'
 import { useAuth } from '@/contexts/SupabaseAuthContext'
@@ -1064,9 +1065,9 @@ export default function AlunoDashboardPage() {
             aria-label="Fechar menu"
             onClick={() => setMobileNavOpen(false)}
           />
-          <div className="absolute left-0 top-0 h-full w-[280px] max-w-[86vw] flex flex-col" style={{ background: 'linear-gradient(180deg, rgb(15, 6, 39) 0%, rgb(0, 0, 104) 100%)' }}>
+          <div className="absolute left-0 top-0 h-full w-[280px] max-w-[86vw] flex flex-col" style={{ background: 'linear-gradient(180deg, var(--brand-sidebar-from) 0%, var(--brand-sidebar-to) 100%)' }}>
             <div className="flex items-center justify-between px-4 py-5">
-              <img src="/logo-expanded.svg" alt="Connekt" className="w-[110px] h-auto" />
+              <BrandLogo variant="sidebar" className="w-[110px] h-auto" />
               <button
                 type="button"
                 className="h-10 w-10 rounded-full bg-white/10 text-white flex items-center justify-center"
@@ -1098,7 +1099,7 @@ export default function AlunoDashboardPage() {
                             navigateTo(item.path)
                           }}
                           className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-[10px] text-[13px] font-semibold transition-colors ${
-                            isActive ? 'bg-[#0047BB] text-white' : 'text-white/80 hover:bg-white/10'
+                            isActive ? 'brand-bg text-white' : 'text-white/80 hover:bg-white/10'
                           }`}
                         >
                           <item.Icon className="w-5 h-5" />
@@ -1140,10 +1141,10 @@ export default function AlunoDashboardPage() {
 
       <aside
         className="hidden lg:flex w-[260px] h-screen flex-col"
-        style={{ background: 'linear-gradient(180deg, rgb(15, 6, 39) 0%, rgb(0, 0, 104) 100%)' }}
+        style={{ background: 'linear-gradient(180deg, var(--brand-sidebar-from) 0%, var(--brand-sidebar-to) 100%)' }}
       >
         <div className="flex justify-center py-5">
-          <img src="/logo-expanded.svg" alt="Connekt" className="w-[119px] h-[35px]" />
+          <BrandLogo variant="sidebar" className="w-[119px] h-[35px]" />
         </div>
         <div
           className="h-px mx-10"
@@ -1169,7 +1170,7 @@ export default function AlunoDashboardPage() {
                       type="button"
                       onClick={() => navigateTo(item.path)}
                       className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-[10px] text-[13px] font-semibold transition-colors ${
-                        isActive ? 'bg-[#0047BB] text-white' : 'text-white/80 hover:bg-white/10'
+                        isActive ? 'brand-bg text-white' : 'text-white/80 hover:bg-white/10'
                       }`}
                     >
                       <item.Icon className="w-5 h-5" />
