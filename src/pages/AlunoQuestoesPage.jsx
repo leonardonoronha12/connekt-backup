@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { ChevronLeft } from 'lucide-react'
 import { toast } from '@/components/ui/use-toast'
+import AlunoLayout from '@/components/AlunoLayout'
 import questionBankService from '@/services/questionBankService'
 
 function navigateTo(path) {
@@ -314,185 +315,187 @@ export default function AlunoQuestoesPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F5F6FA]">
-      <div className="border-b border-[#E3E4E5] bg-white">
-        <div className="max-w-[1100px] mx-auto px-5 py-4 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3 min-w-0">
-            <button
-              type="button"
-              className="h-9 w-9 rounded-full border border-[#E3E4E5] bg-white flex items-center justify-center"
-              onClick={() => navigateTo('/aluno/banco-de-questoes')}
-              aria-label="Voltar"
-            >
-              <ChevronLeft className="w-5 h-5 text-[#22252B]" />
-            </button>
-            <div className="min-w-0">
-              <div className="text-[14px] font-semibold text-[#22252B] truncate">Questões</div>
-              <div className="text-[12px] text-[#737780] truncate">{headerSubtitle}</div>
-            </div>
-          </div>
-          <div className="text-[12px] text-[#737780] whitespace-nowrap">
-            {total > 0 ? `${index + 1}/${total}` : '0/0'}
-          </div>
-        </div>
-        <div className="max-w-[1100px] mx-auto px-5 pb-4">
-          <div className="h-2 w-full rounded-full bg-[#EEF2FF] overflow-hidden">
-            <div className="h-full bg-[#0047BB]" style={{ width: `${progressPct}%` }} />
-          </div>
-        </div>
-      </div>
-
-      <div className="max-w-[1100px] mx-auto px-5 py-8">
-        {loading ? (
-          <div className="text-[12px] text-[#737780]">Carregando questões…</div>
-        ) : !current ? (
-          <div className="bg-white border border-[#E3E4E5] rounded-[12px] p-6">
-            <div className="text-[14px] font-semibold text-[#22252B]">Nenhuma questão disponível</div>
-            <div className="mt-1 text-[12px] text-[#737780]">Crie questões nesse banco para aparecerem aqui.</div>
-            <button
-              type="button"
-              className="mt-4 h-9 px-4 rounded-[8px] bg-[#0047BB] text-white text-[12px] font-semibold"
-              onClick={() => navigateTo('/aluno/banco-de-questoes')}
-            >
-              Voltar
-            </button>
-          </div>
-        ) : (
-          <div className="bg-white border border-[#E3E4E5] rounded-[12px] p-6">
-            <div className="text-[14px] font-semibold text-[#22252B]">{assets.title || 'Questão'}</div>
-            {assets.questionText ? (
-              <div className="mt-2 text-[12px] text-[#3A3D45] whitespace-pre-wrap">{assets.questionText}</div>
-            ) : null}
-
-            {assets.questionImages.length ? (
-              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {assets.questionImages.map((src) => (
-                  <a key={src} href={src} target="_blank" rel="noreferrer" className="block rounded-[10px] overflow-hidden border border-[#E3E4E5] bg-white">
-                    <img src={src} alt="" className="w-full h-[180px] object-cover" />
-                  </a>
-                ))}
+    <AlunoLayout>
+      <div className="w-full">
+        <div className="border-b border-[#E3E4E5] bg-white">
+          <div className="max-w-[1100px] mx-auto px-5 py-4 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3 min-w-0">
+              <button
+                type="button"
+                className="h-9 w-9 rounded-full border border-[#E3E4E5] bg-white flex items-center justify-center"
+                onClick={() => navigateTo('/aluno/banco-de-questoes')}
+                aria-label="Voltar"
+              >
+                <ChevronLeft className="w-5 h-5 text-[#22252B]" />
+              </button>
+              <div className="min-w-0">
+                <div className="text-[14px] font-semibold text-[#22252B] truncate">Questões</div>
+                <div className="text-[12px] text-[#737780] truncate">{headerSubtitle}</div>
               </div>
-            ) : null}
-
-            <div className="mt-5 space-y-2">
-              {choices.map((c, i) => {
-                const isSelected = selected === i
-                const isCorrect = submitted ? isCorrectChoice(current, i) : false
-                const showWrong = submitted && isSelected && !isCorrect
-                const cls = (() => {
-                  if (!submitted) {
-                    return isSelected
-                      ? 'border-[#0047BB] bg-[#EEF2FF]'
-                      : 'border-[#E3E4E5] bg-white hover:bg-[#F9FAFB]'
-                  }
-                  if (isCorrect) return 'border-[#06C270] bg-[#E9FFEF]'
-                  if (showWrong) return 'border-[#EF4444] bg-[#FEF2F2]'
-                  return 'border-[#E3E4E5] bg-white opacity-80'
-                })()
-                return (
-                  <button
-                    key={c.id || i}
-                    type="button"
-                    className={`w-full text-left px-4 py-3 rounded-[10px] border ${cls}`}
-                    disabled={submitted}
-                    onClick={() => setSelected(i)}
-                  >
-                    <div className="text-[12px] text-[#22252B]">{c.label}</div>
-                  </button>
-                )
-              })}
             </div>
+            <div className="text-[12px] text-[#737780] whitespace-nowrap">
+              {total > 0 ? `${index + 1}/${total}` : '0/0'}
+            </div>
+          </div>
+          <div className="max-w-[1100px] mx-auto px-5 pb-4">
+            <div className="h-2 w-full rounded-full bg-[#EEF2FF] overflow-hidden">
+              <div className="h-full bg-[#0047BB]" style={{ width: `${progressPct}%` }} />
+            </div>
+          </div>
+        </div>
 
-            {submitted && (assets.resolutionText || assets.resolutionImages.length || assets.resolutionVideos.length || assets.resolutionDocs.length) ? (
-              <div className="mt-5 rounded-[12px] border border-[#BFDBFE] bg-[#EFF6FF] p-5">
-                <div className="text-[12px] font-semibold text-[#0047BB]">Resolução</div>
-                {assets.resolutionText ? (
-                  <div className="mt-2 text-[12px] text-[#1E1B39] leading-relaxed whitespace-pre-wrap">{assets.resolutionText}</div>
-                ) : null}
+        <div className="max-w-[1100px] mx-auto px-5 py-8">
+          {loading ? (
+            <div className="text-[12px] text-[#737780]">Carregando questões…</div>
+          ) : !current ? (
+            <div className="bg-white border border-[#E3E4E5] rounded-[12px] p-6">
+              <div className="text-[14px] font-semibold text-[#22252B]">Nenhuma questão disponível</div>
+              <div className="mt-1 text-[12px] text-[#737780]">Crie questões nesse banco para aparecerem aqui.</div>
+              <button
+                type="button"
+                className="mt-4 h-9 px-4 rounded-[8px] bg-[#0047BB] text-white text-[12px] font-semibold"
+                onClick={() => navigateTo('/aluno/banco-de-questoes')}
+              >
+                Voltar
+              </button>
+            </div>
+          ) : (
+            <div className="bg-white border border-[#E3E4E5] rounded-[12px] p-6">
+              <div className="text-[14px] font-semibold text-[#22252B]">{assets.title || 'Questão'}</div>
+              {assets.questionText ? (
+                <div className="mt-2 text-[12px] text-[#3A3D45] whitespace-pre-wrap">{assets.questionText}</div>
+              ) : null}
 
-                {assets.resolutionImages.length ? (
-                  <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {assets.resolutionImages.map((src) => (
-                      <a key={src} href={src} target="_blank" rel="noreferrer" className="block rounded-[10px] overflow-hidden border border-[#E3E4E5] bg-white">
-                        <img src={src} alt="" className="w-full h-[180px] object-cover" />
-                      </a>
-                    ))}
-                  </div>
-                ) : null}
+              {assets.questionImages.length ? (
+                <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {assets.questionImages.map((src) => (
+                    <a key={src} href={src} target="_blank" rel="noreferrer" className="block rounded-[10px] overflow-hidden border border-[#E3E4E5] bg-white">
+                      <img src={src} alt="" className="w-full h-[180px] object-cover" />
+                    </a>
+                  ))}
+                </div>
+              ) : null}
 
-                {assets.resolutionVideos.length ? (
-                  <div className="mt-4 space-y-3">
-                    {assets.resolutionVideos.map((url) => {
-                      const embed = getEmbedUrl(url)
-                      if (embed) {
-                        return (
-                          <div key={url} className="rounded-[10px] overflow-hidden border border-[#E3E4E5] bg-white">
-                            <iframe
-                              title="Vídeo explicativo"
-                              src={embed}
-                              className="w-full h-[240px]"
-                              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                              allowFullScreen
-                            />
-                          </div>
-                        )
-                      }
-                      if (isVideoFile(url)) {
-                        return (
-                          <div key={url} className="rounded-[10px] overflow-hidden border border-[#E3E4E5] bg-white">
-                            <video src={url} controls className="w-full h-[240px] bg-black" />
-                          </div>
-                        )
-                      }
-                      return (
-                        <a key={url} href={url} target="_blank" rel="noreferrer" className="inline-flex text-[12px] font-semibold text-[#0047BB]">
-                          Abrir vídeo
+              <div className="mt-5 space-y-2">
+                {choices.map((c, i) => {
+                  const isSelected = selected === i
+                  const isCorrect = submitted ? isCorrectChoice(current, i) : false
+                  const showWrong = submitted && isSelected && !isCorrect
+                  const cls = (() => {
+                    if (!submitted) {
+                      return isSelected
+                        ? 'border-[#0047BB] bg-[#EEF2FF]'
+                        : 'border-[#E3E4E5] bg-white hover:bg-[#F9FAFB]'
+                    }
+                    if (isCorrect) return 'border-[#06C270] bg-[#E9FFEF]'
+                    if (showWrong) return 'border-[#EF4444] bg-[#FEF2F2]'
+                    return 'border-[#E3E4E5] bg-white opacity-80'
+                  })()
+                  return (
+                    <button
+                      key={c.id || i}
+                      type="button"
+                      className={`w-full text-left px-4 py-3 rounded-[10px] border ${cls}`}
+                      disabled={submitted}
+                      onClick={() => setSelected(i)}
+                    >
+                      <div className="text-[12px] text-[#22252B]">{c.label}</div>
+                    </button>
+                  )
+                })}
+              </div>
+
+              {submitted && (assets.resolutionText || assets.resolutionImages.length || assets.resolutionVideos.length || assets.resolutionDocs.length) ? (
+                <div className="mt-5 rounded-[12px] border border-[#BFDBFE] bg-[#EFF6FF] p-5">
+                  <div className="text-[12px] font-semibold text-[#0047BB]">Resolução</div>
+                  {assets.resolutionText ? (
+                    <div className="mt-2 text-[12px] text-[#1E1B39] leading-relaxed whitespace-pre-wrap">{assets.resolutionText}</div>
+                  ) : null}
+
+                  {assets.resolutionImages.length ? (
+                    <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {assets.resolutionImages.map((src) => (
+                        <a key={src} href={src} target="_blank" rel="noreferrer" className="block rounded-[10px] overflow-hidden border border-[#E3E4E5] bg-white">
+                          <img src={src} alt="" className="w-full h-[180px] object-cover" />
                         </a>
-                      )
-                    })}
-                  </div>
-                ) : null}
+                      ))}
+                    </div>
+                  ) : null}
 
-                {assets.resolutionDocs.length ? (
-                  <div className="mt-4 flex flex-col gap-2">
-                    {assets.resolutionDocs.map((url) => (
-                      <a key={url} href={url} target="_blank" rel="noreferrer" className="text-[12px] font-semibold text-[#0047BB]">
-                        Abrir material
-                      </a>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
+                  {assets.resolutionVideos.length ? (
+                    <div className="mt-4 space-y-3">
+                      {assets.resolutionVideos.map((url) => {
+                        const embed = getEmbedUrl(url)
+                        if (embed) {
+                          return (
+                            <div key={url} className="rounded-[10px] overflow-hidden border border-[#E3E4E5] bg-white">
+                              <iframe
+                                title="Vídeo explicativo"
+                                src={embed}
+                                className="w-full h-[240px]"
+                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                allowFullScreen
+                              />
+                            </div>
+                          )
+                        }
+                        if (isVideoFile(url)) {
+                          return (
+                            <div key={url} className="rounded-[10px] overflow-hidden border border-[#E3E4E5] bg-white">
+                              <video src={url} controls className="w-full h-[240px] bg-black" />
+                            </div>
+                          )
+                        }
+                        return (
+                          <a key={url} href={url} target="_blank" rel="noreferrer" className="inline-flex text-[12px] font-semibold text-[#0047BB]">
+                            Abrir vídeo
+                          </a>
+                        )
+                      })}
+                    </div>
+                  ) : null}
 
-            <div className="mt-6 flex items-center justify-between gap-3">
-              <div className="text-[12px] text-[#737780]">
-                Pontuação: {score}
-              </div>
-              <div className="flex items-center gap-2">
-                {!submitted ? (
-                  <button
-                    type="button"
-                    className="h-9 px-4 rounded-[8px] bg-[#0047BB] text-white text-[12px] font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-                    disabled={selected === null}
-                    onClick={submit}
-                  >
-                    Confirmar
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    className="h-9 px-4 rounded-[8px] bg-[#0047BB] text-white text-[12px] font-semibold"
-                    onClick={next}
-                  >
-                    Próxima
-                  </button>
-                )}
+                  {assets.resolutionDocs.length ? (
+                    <div className="mt-4 flex flex-col gap-2">
+                      {assets.resolutionDocs.map((url) => (
+                        <a key={url} href={url} target="_blank" rel="noreferrer" className="text-[12px] font-semibold text-[#0047BB]">
+                          Abrir material
+                        </a>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
+              <div className="mt-6 flex items-center justify-between gap-3">
+                <div className="text-[12px] text-[#737780]">
+                  Pontuação: {score}
+                </div>
+                <div className="flex items-center gap-2">
+                  {!submitted ? (
+                    <button
+                      type="button"
+                      className="h-9 px-4 rounded-[8px] bg-[#0047BB] text-white text-[12px] font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                      disabled={selected === null}
+                      onClick={submit}
+                    >
+                      Confirmar
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="h-9 px-4 rounded-[8px] bg-[#0047BB] text-white text-[12px] font-semibold"
+                      onClick={next}
+                    >
+                      Próxima
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
-    </div>
+    </AlunoLayout>
   )
 }
