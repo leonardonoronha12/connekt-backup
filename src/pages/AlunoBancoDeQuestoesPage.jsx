@@ -257,7 +257,13 @@ export default function AlunoBancoDeQuestoesPage() {
             </div>
           </div>
           <div className="hidden lg:flex justify-end">
-            <img src="/Preview.png" alt="Banco de Questões" className="w-full max-w-[760px] h-auto object-contain" />
+            <div className="w-full max-w-[760px] bg-black rounded-[12px] overflow-hidden shadow-sm border border-black/10 px-10 py-8">
+              <img
+                src="/Preview.png"
+                alt="Banco de Questões"
+                className="w-full h-auto object-contain rotate-[-8deg] scale-[1.08] origin-center"
+              />
+            </div>
           </div>
         </div>
       </div>
