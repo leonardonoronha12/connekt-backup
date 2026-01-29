@@ -8,6 +8,42 @@ function navigateTo(path) {
   window.dispatchEvent(new PopStateEvent('popstate'))
 }
 
+function getText(v) {
+  if (v == null) return ''
+  if (typeof v === 'string') return v
+  if (typeof v === 'number') return String(v)
+  return ''
+}
+
+function resolveSupabasePublicUrl(rawValue) {
+  const u = typeof rawValue === 'string' ? rawValue.trim() : ''
+  if (!u) return ''
+  if (u.startsWith('data:') || u.startsWith('blob:')) return u
+  try {
+    const parsed = new URL(u)
+    const m = parsed.pathname.match(/\/storage\/v1\/object\/sign\/([^/]+)\/(.+)$/)
+    if (m?.[1] && m?.[2]) {
+      parsed.pathname = `/storage/v1/object/public/${m[1]}/${m[2]}`
+      parsed.search = ''
+      parsed.hash = ''
+      return parsed.toString()
+    }
+    return u
+  } catch (_) {
+    const base = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_SUPABASE_URL)
+      ? String(import.meta.env.VITE_SUPABASE_URL)
+      : ''
+    const bucket = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_SUPABASE_QUESTION_IMAGES_BUCKET)
+      ? String(import.meta.env.VITE_SUPABASE_QUESTION_IMAGES_BUCKET)
+      : 'question-images'
+    if (!base) return u
+    let p = u.replace(/^\/+/, '')
+    if (p.startsWith(`${bucket}/`)) p = p.slice(bucket.length + 1)
+    if (p.startsWith('question-images/')) p = p.slice('question-images/'.length)
+    return `${base.replace(/\/+$/, '')}/storage/v1/object/public/${bucket}/${p}`
+  }
+}
+
 function parseChoices(question) {
   const meta = (question?.metadata && typeof question.metadata === 'object') ? question.metadata : {}
   const raw = Array.isArray(meta.choices)
@@ -46,6 +82,105 @@ function shuffle(arr) {
   return out
 }
 
+function normalizeUrlList(list) {
+  const arr = Array.isArray(list) ? list : []
+  return arr
+    .map((v) => getText(v).trim())
+    .filter(Boolean)
+    .map((u) => resolveSupabasePublicUrl(u))
+}
+
+function extractQuestionAssets(question) {
+  const meta = (question?.metadata && typeof question.metadata === 'object') ? question.metadata : {}
+  const questionText = getText(question?.body) || getText(meta?.stem) || getText(meta?.question) || ''
+  const title = getText(question?.title) || getText(meta?.title) || ''
+
+  const questionImages = [
+    meta?.image_url,
+    meta?.imageUrl,
+    meta?.question_image_url,
+    meta?.questionImageUrl,
+    ...(Array.isArray(meta?.images) ? meta.images : []),
+    ...(Array.isArray(meta?.image_urls) ? meta.image_urls : []),
+    ...(Array.isArray(meta?.imageUrls) ? meta.imageUrls : []),
+    ...(Array.isArray(meta?.questionImages) ? meta.questionImages : []),
+  ]
+
+  const resolutionText =
+    getText(meta?.resolutionText) ||
+    getText(meta?.resolution_text) ||
+    getText(meta?.resolucaoText) ||
+    getText(meta?.resolucao_text) ||
+    getText(meta?.resolution) ||
+    getText(meta?.resolucao) ||
+    getText(meta?.explanation) ||
+    getText(meta?.solution) ||
+    getText(meta?.commentary) ||
+    ''
+
+  const resolutionImages = [
+    ...(Array.isArray(meta?.resolutionImages) ? meta.resolutionImages : []),
+    ...(Array.isArray(meta?.resolution_images) ? meta.resolution_images : []),
+    ...(Array.isArray(meta?.explanationImages) ? meta.explanationImages : []),
+    ...(Array.isArray(meta?.explanation_images) ? meta.explanation_images : []),
+  ]
+
+  const resolutionVideos = [
+    meta?.resolutionVideoUrl,
+    meta?.resolution_video_url,
+    meta?.explanationVideoUrl,
+    meta?.explanation_video_url,
+    meta?.video_url,
+    meta?.videoUrl,
+    ...(Array.isArray(meta?.videos) ? meta.videos : []),
+    ...(Array.isArray(meta?.video_urls) ? meta.video_urls : []),
+    ...(Array.isArray(meta?.videoUrls) ? meta.videoUrls : []),
+  ]
+
+  const resolutionDocs = [
+    ...(Array.isArray(meta?.docs) ? meta.docs : []),
+    ...(Array.isArray(meta?.doc_urls) ? meta.doc_urls : []),
+    ...(Array.isArray(meta?.docUrls) ? meta.docUrls : []),
+  ]
+
+  return {
+    title,
+    questionText,
+    questionImages: normalizeUrlList(questionImages),
+    resolutionText: resolutionText.trim(),
+    resolutionImages: normalizeUrlList(resolutionImages),
+    resolutionVideos: normalizeUrlList(resolutionVideos),
+    resolutionDocs: normalizeUrlList(resolutionDocs),
+  }
+}
+
+function isVideoFile(url) {
+  const u = String(url || '').toLowerCase()
+  return u.endsWith('.mp4') || u.endsWith('.webm') || u.endsWith('.ogg') || u.includes('.mp4?') || u.includes('.webm?') || u.includes('.ogg?')
+}
+
+function getEmbedUrl(url) {
+  const u = String(url || '').trim()
+  if (!u) return ''
+  try {
+    const parsed = new URL(u)
+    const host = parsed.hostname.toLowerCase()
+    if (host.includes('youtu.be')) {
+      const id = parsed.pathname.replace('/', '').trim()
+      return id ? `https://www.youtube.com/embed/${encodeURIComponent(id)}` : ''
+    }
+    if (host.includes('youtube.com')) {
+      const id = parsed.searchParams.get('v') || ''
+      return id ? `https://www.youtube.com/embed/${encodeURIComponent(id)}` : ''
+    }
+    if (host.includes('vimeo.com')) {
+      const id = parsed.pathname.split('/').filter(Boolean).pop() || ''
+      return id ? `https://player.vimeo.com/video/${encodeURIComponent(id)}` : ''
+    }
+  } catch (_) {}
+  return ''
+}
+
 export default function AlunoQuestoesPage() {
   const params = useMemo(() => {
     try {
@@ -69,6 +204,10 @@ export default function AlunoQuestoesPage() {
   const [selected, setSelected] = useState(null)
   const [submitted, setSubmitted] = useState(false)
   const [score, setScore] = useState(0)
+  const [selectedIndices, setSelectedIndices] = useState([])
+  const [questionStatuses, setQuestionStatuses] = useState([])
+  const [sessionId, setSessionId] = useState('')
+  const [startedAt, setStartedAt] = useState(null)
 
   useEffect(() => {
     let active = true
@@ -88,11 +227,16 @@ export default function AlunoQuestoesPage() {
         const usable = merged.filter((q) => parseChoices(q).length > 0)
         const shuffled = shuffle(usable)
         if (!active) return
+        const sid = `qb_${Date.now()}_${Math.random().toString(16).slice(2)}`
         setQuestions(shuffled)
         setIndex(0)
         setSelected(null)
         setSubmitted(false)
         setScore(0)
+        setSelectedIndices(Array(shuffled.length).fill(null))
+        setQuestionStatuses(Array(shuffled.length).fill(null))
+        setSessionId(sid)
+        setStartedAt(Date.now())
       } catch (e) {
         if (!active) return
         setQuestions([])
@@ -109,6 +253,8 @@ export default function AlunoQuestoesPage() {
   const choices = useMemo(() => parseChoices(current), [current])
   const total = questions.length
   const progressPct = total > 0 ? Math.round(((index + 1) / total) * 100) : 0
+  const assets = useMemo(() => extractQuestionAssets(current), [current])
+  const status = useMemo(() => (Array.isArray(questionStatuses) ? questionStatuses[index] : null), [index, questionStatuses])
 
   const headerSubtitle = useMemo(() => {
     const parts = [params.category, params.subcategory, params.tag].filter(Boolean)
@@ -121,12 +267,45 @@ export default function AlunoQuestoesPage() {
     const ok = isCorrectChoice(current, selected)
     setSubmitted(true)
     if (ok) setScore((s) => s + 1)
+    setSelectedIndices((prev) => {
+      const next = Array.isArray(prev) ? [...prev] : []
+      next[index] = selected
+      return next
+    })
+    setQuestionStatuses((prev) => {
+      const next = Array.isArray(prev) ? [...prev] : []
+      next[index] = ok ? 'correct' : 'wrong'
+      return next
+    })
   }
 
   const next = () => {
     if (index >= total - 1) {
-      toast({ description: `Você finalizou: ${score}/${total}`, })
-      navigateTo('/aluno/banco-de-questoes')
+      const correctCount = Array.isArray(questionStatuses) ? questionStatuses.filter((s) => s === 'correct').length : Number(score) || 0
+      const wrongCount = Array.isArray(questionStatuses) ? questionStatuses.filter((s) => s === 'wrong').length : Math.max(0, total - correctCount)
+      const percent = total > 0 ? Math.round((correctCount / total) * 100) : 0
+      const payload = {
+        version: 1,
+        sessionId,
+        filters: { category: params.category, subcategory: params.subcategory, tag: params.tag },
+        bankIds: params.bankIds,
+        startedAt: startedAt || Date.now(),
+        finishedAt: Date.now(),
+        score: correctCount,
+        total,
+        percent,
+        correctCount,
+        wrongCount,
+        selectedIndices,
+        questionStatuses,
+        questions,
+      }
+      try {
+        if (sessionId) localStorage.setItem(`connekt_qb_exam:${sessionId}`, JSON.stringify(payload))
+      } catch (_) {}
+      const qs = new URLSearchParams()
+      if (sessionId) qs.set('sessionId', sessionId)
+      navigateTo(`/aluno/banco-de-questoes/resultado?${qs.toString()}`)
       return
     }
     setIndex((i) => i + 1)
@@ -180,9 +359,19 @@ export default function AlunoQuestoesPage() {
           </div>
         ) : (
           <div className="bg-white border border-[#E3E4E5] rounded-[12px] p-6">
-            <div className="text-[14px] font-semibold text-[#22252B]">{String(current?.title || 'Questão')}</div>
-            {current?.body ? (
-              <div className="mt-2 text-[12px] text-[#3A3D45] whitespace-pre-wrap">{String(current.body)}</div>
+            <div className="text-[14px] font-semibold text-[#22252B]">{assets.title || 'Questão'}</div>
+            {assets.questionText ? (
+              <div className="mt-2 text-[12px] text-[#3A3D45] whitespace-pre-wrap">{assets.questionText}</div>
+            ) : null}
+
+            {assets.questionImages.length ? (
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {assets.questionImages.map((src) => (
+                  <a key={src} href={src} target="_blank" rel="noreferrer" className="block rounded-[10px] overflow-hidden border border-[#E3E4E5] bg-white">
+                    <img src={src} alt="" className="w-full h-[180px] object-cover" />
+                  </a>
+                ))}
+              </div>
             ) : null}
 
             <div className="mt-5 space-y-2">
@@ -213,6 +402,68 @@ export default function AlunoQuestoesPage() {
                 )
               })}
             </div>
+
+            {submitted && (assets.resolutionText || assets.resolutionImages.length || assets.resolutionVideos.length || assets.resolutionDocs.length) ? (
+              <div className="mt-5 rounded-[12px] border border-[#BFDBFE] bg-[#EFF6FF] p-5">
+                <div className="text-[12px] font-semibold text-[#0047BB]">Resolução</div>
+                {assets.resolutionText ? (
+                  <div className="mt-2 text-[12px] text-[#1E1B39] leading-relaxed whitespace-pre-wrap">{assets.resolutionText}</div>
+                ) : null}
+
+                {assets.resolutionImages.length ? (
+                  <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {assets.resolutionImages.map((src) => (
+                      <a key={src} href={src} target="_blank" rel="noreferrer" className="block rounded-[10px] overflow-hidden border border-[#E3E4E5] bg-white">
+                        <img src={src} alt="" className="w-full h-[180px] object-cover" />
+                      </a>
+                    ))}
+                  </div>
+                ) : null}
+
+                {assets.resolutionVideos.length ? (
+                  <div className="mt-4 space-y-3">
+                    {assets.resolutionVideos.map((url) => {
+                      const embed = getEmbedUrl(url)
+                      if (embed) {
+                        return (
+                          <div key={url} className="rounded-[10px] overflow-hidden border border-[#E3E4E5] bg-white">
+                            <iframe
+                              title="Vídeo explicativo"
+                              src={embed}
+                              className="w-full h-[240px]"
+                              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                              allowFullScreen
+                            />
+                          </div>
+                        )
+                      }
+                      if (isVideoFile(url)) {
+                        return (
+                          <div key={url} className="rounded-[10px] overflow-hidden border border-[#E3E4E5] bg-white">
+                            <video src={url} controls className="w-full h-[240px] bg-black" />
+                          </div>
+                        )
+                      }
+                      return (
+                        <a key={url} href={url} target="_blank" rel="noreferrer" className="inline-flex text-[12px] font-semibold text-[#0047BB]">
+                          Abrir vídeo
+                        </a>
+                      )
+                    })}
+                  </div>
+                ) : null}
+
+                {assets.resolutionDocs.length ? (
+                  <div className="mt-4 flex flex-col gap-2">
+                    {assets.resolutionDocs.map((url) => (
+                      <a key={url} href={url} target="_blank" rel="noreferrer" className="text-[12px] font-semibold text-[#0047BB]">
+                        Abrir material
+                      </a>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
 
             <div className="mt-6 flex items-center justify-between gap-3">
               <div className="text-[12px] text-[#737780]">
@@ -245,4 +496,3 @@ export default function AlunoQuestoesPage() {
     </div>
   )
 }
-
