@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Database, GraduationCap, Menu, Monitor, Settings, X } from 'lucide-react'
+import { ChevronDown, Database, GraduationCap, Menu, Monitor, Settings, X } from 'lucide-react'
 import Header from '@/components/Header'
 import { toast } from '@/components/ui/use-toast'
 import questionBankService from '@/services/questionBankService'
@@ -296,48 +296,45 @@ export default function AlunoBancoDeQuestoesPage() {
         </button>
         <Header />
         <main className="flex-1 overflow-y-auto">
-          <div className="min-h-full bg-[#F5F6FA]">
-            <div className="px-[22px] pt-12 pb-10">
+          <div className="min-h-full bg-white">
+            <div className="px-[22px] pt-16 pb-24">
               <div className="max-w-[1904px] mx-auto w-full">
-                <div className="relative w-full max-w-[1076px] mx-auto">
-                  <div className="relative pl-[42px] pr-[42px] pt-[22px] pb-[22px] bg-[#FFFFFF] text-[#22252B] rounded-[10px] shadow-sm overflow-hidden w-full h-fit flex flex-col border border-[#E3E4E5]">
-                    <div className="grid grid-cols-1 lg:grid-cols-[1fr,1fr] gap-8 items-center">
-                      <div className="min-w-0">
-                        <img src="/logo connekt.png" alt="Connekt" className="w-[140px] h-auto" />
-                        <div className="mt-4 text-[12px] text-[#737780]">
-                          Aprimore seus conhecimentos respondendo questões de múltiplos temas em nosso banco exclusivo. Coloque-se à prova, desafie seus limites e evolua a cada resposta.
-                        </div>
-                      </div>
-                      <div className="hidden lg:flex justify-end">
-                        <img src="/questoes.png" alt="" className="w-full max-w-[520px] h-auto object-contain" />
+                <div className="w-full max-w-[1200px] mx-auto">
+                  <div className="grid grid-cols-1 lg:grid-cols-[1.05fr,1.15fr] gap-10 items-start">
+                    <div className="min-w-0 pt-6">
+                      <img src="/logo connekt.png" alt="Connekt" className="w-[240px] h-auto" />
+                      <div className="mt-5 text-[16px] leading-[28px] text-[#9AA3AF] max-w-[420px]">
+                        Aprimore seus conhecimentos respondendo questões de múltiplos temas em nosso banco exclusivo. Coloque-se à prova, desafie seus limites e evolua a cada resposta.
                       </div>
                     </div>
+                    <div className="hidden lg:flex justify-end">
+                      <img src="/questoes.png" alt="" className="w-full max-w-[760px] h-auto object-contain" />
+                    </div>
                   </div>
-                </div>
 
-                <div className="mt-10 w-full max-w-[1076px] mx-auto">
-                  <div className="bg-white border border-[#E3E4E5] rounded-[10px] p-8 flex flex-col items-center text-center">
-                    <div className="text-[18px] font-semibold text-[#22252B]">Filtrar</div>
-                    <div className="mt-1 text-[12px] text-[#737780]">Aplique os filtros e comece a responder.</div>
+                  <div className="mt-16 flex flex-col items-center text-center">
+                    <div className="text-[28px] font-semibold text-[#111827]">Filtrar</div>
+                    <div className="mt-2 text-[16px] text-[#6B7280]">Aplique os filtros e comece a responder.</div>
 
-                    <div className="mt-6 w-full flex flex-col sm:flex-row items-center justify-center gap-3">
-                      <div className="w-full sm:w-[220px]">
+                    <div className="mt-10 w-full max-w-[860px] grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div className="relative">
                         <select
                           value={category}
                           onChange={(e) => setCategory(e.target.value)}
-                          className="w-full h-9 px-3 rounded-[6px] border border-[#E3E4E5] bg-white text-[12px] text-[#22252B] outline-none"
+                          className="w-full h-12 px-4 pr-10 rounded-[6px] border border-[#E3E4E5] bg-white text-[14px] text-[#111827] outline-none appearance-none"
                         >
                           <option value="">Categoria</option>
                           {allCategories.map((c) => (
                             <option key={c} value={c}>{c}</option>
                           ))}
                         </select>
+                        <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[#737780] pointer-events-none" aria-hidden="true" />
                       </div>
-                      <div className="w-full sm:w-[220px]">
+                      <div className="relative">
                         <select
                           value={subcategory}
                           onChange={(e) => setSubcategory(e.target.value)}
-                          className="w-full h-9 px-3 rounded-[6px] border border-[#E3E4E5] bg-white text-[12px] text-[#22252B] outline-none disabled:bg-[#F9FAFB]"
+                          className="w-full h-12 px-4 pr-10 rounded-[6px] border border-[#E3E4E5] bg-white text-[14px] text-[#111827] outline-none appearance-none disabled:bg-[#F9FAFB]"
                           disabled={allSubcategories.length === 0}
                         >
                           <option value="">Subcategoria</option>
@@ -345,12 +342,13 @@ export default function AlunoBancoDeQuestoesPage() {
                             <option key={c} value={c}>{c}</option>
                           ))}
                         </select>
+                        <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[#737780] pointer-events-none" aria-hidden="true" />
                       </div>
-                      <div className="w-full sm:w-[220px]">
+                      <div className="relative">
                         <select
                           value={tag}
                           onChange={(e) => setTag(e.target.value)}
-                          className="w-full h-9 px-3 rounded-[6px] border border-[#E3E4E5] bg-white text-[12px] text-[#22252B] outline-none disabled:bg-[#F9FAFB]"
+                          className="w-full h-12 px-4 pr-10 rounded-[6px] border border-[#E3E4E5] bg-white text-[14px] text-[#111827] outline-none appearance-none disabled:bg-[#F9FAFB]"
                           disabled={allTags.length === 0}
                         >
                           <option value="">Tag</option>
@@ -358,21 +356,18 @@ export default function AlunoBancoDeQuestoesPage() {
                             <option key={c} value={c}>{c}</option>
                           ))}
                         </select>
+                        <ChevronDown className="absolute right-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[#737780] pointer-events-none" aria-hidden="true" />
                       </div>
                     </div>
 
                     <button
                       type="button"
-                      className="mt-6 h-9 px-6 rounded-[6px] bg-[#0047BB] text-white text-[12px] font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                      className="mt-12 h-10 px-7 rounded-[4px] bg-[#0047BB] text-white text-[12px] font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
                       disabled={loading}
                       onClick={start}
                     >
                       {loading ? 'Carregando...' : 'Iniciar questões'}
                     </button>
-
-                    <div className="mt-4 text-[11px] text-[#737780]">
-                      {loading ? 'Buscando bancos disponíveis...' : `${filteredBanks.length} banco(s) encontrado(s)`}
-                    </div>
                   </div>
                 </div>
               </div>
@@ -383,4 +378,3 @@ export default function AlunoBancoDeQuestoesPage() {
     </div>
   )
 }
-
