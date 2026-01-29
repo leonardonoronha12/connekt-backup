@@ -115,6 +115,12 @@ function extractQuestionAssets(question) {
     ...(Array.isArray(meta?.videoUrls) ? meta.videoUrls : []),
   ]
 
+  const resolutionDocs = [
+    ...(Array.isArray(meta?.docs) ? meta.docs : []),
+    ...(Array.isArray(meta?.doc_urls) ? meta.doc_urls : []),
+    ...(Array.isArray(meta?.docUrls) ? meta.docUrls : []),
+  ]
+
   return {
     title,
     questionText,
@@ -122,6 +128,7 @@ function extractQuestionAssets(question) {
     resolutionText: resolutionText.trim(),
     resolutionImages: normalizeUrlList(resolutionImages),
     resolutionVideos: normalizeUrlList(resolutionVideos),
+    resolutionDocs: normalizeUrlList(resolutionDocs),
   }
 }
 
@@ -270,6 +277,16 @@ function ResultQuestionCard({ idx, question, selectedIndex, status }) {
                 })}
               </div>
             ) : null}
+
+            {assets.resolutionDocs.length ? (
+              <div className="mt-4 flex flex-col gap-2">
+                {assets.resolutionDocs.map((url) => (
+                  <a key={url} href={url} target="_blank" rel="noreferrer" className="text-[12px] font-semibold text-[#0047BB]">
+                    Abrir material
+                  </a>
+                ))}
+              </div>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -409,4 +426,3 @@ export default function AlunoBancoQuestoesResultadoPage() {
     </div>
   )
 }
-
