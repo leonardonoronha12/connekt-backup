@@ -4,6 +4,20 @@ function asArray(v) {
   return Array.isArray(v) ? v : []
 }
 
+function normalizeHost(raw) {
+  const v = String(raw || '').trim().toLowerCase()
+  if (!v) return ''
+  return v.replace(/^https?:\/\//i, '').split('/')[0].split(':')[0] || ''
+}
+
+function pickWhitelabel(user) {
+  const meta = user?.user_metadata && typeof user.user_metadata === 'object' ? user.user_metadata : {}
+  const wl = meta.whitelabel && typeof meta.whitelabel === 'object'
+    ? meta.whitelabel
+    : (meta.whiteLabel && typeof meta.whiteLabel === 'object' ? meta.whiteLabel : null)
+  return wl || null
+}
+
 function normalizeChoiceText(v) {
   if (v == null) return ''
   if (typeof v === 'string') return v
@@ -75,13 +89,38 @@ export default async function handler(req, res) {
   const admin = getSupabaseAdmin()
   if (!admin) return json(res, 501, { error: 'proxy_disabled', hint: 'Configure SUPABASE_SERVICE_ROLE_KEY no ambiente do deploy.' })
 
-  const auth = await getAuthedUser(admin, req)
-  if (!auth.user) return json(res, 401, { error: auth.error || 'unauthorized' })
-
   try {
     const u = new URL(req.url, `http://${req.headers.host}`)
     const type = String(u.searchParams.get('type') || '').trim().toLowerCase()
     const producerId = String(u.searchParams.get('producerId') || '').trim()
+
+    if (type === 'public_branding') {
+      const hostParam = normalizeHost(u.searchParams.get('host') || req.headers.host || '')
+      let resolvedProducerId = producerId && isUuid(producerId) ? producerId : ''
+      if (!resolvedProducerId && hostParam) {
+        const httpsUrl = `https://${hostParam}`
+        const httpUrl = `http://${hostParam}`
+        const { data } = await admin
+          .from('profiles')
+          .select('user_id,member_area_url')
+          .in('member_area_url', [httpsUrl, httpUrl])
+          .limit(1)
+        const row = Array.isArray(data) ? data[0] : null
+        resolvedProducerId = row?.user_id ? String(row.user_id).trim() : ''
+      }
+      if (!resolvedProducerId || !isUuid(resolvedProducerId)) return json(res, 200, { producerId: '', brand: null })
+      let user = null
+      try {
+        const { data } = await admin.auth.admin.getUserById(resolvedProducerId)
+        user = data?.user || null
+      } catch (_) {
+        user = null
+      }
+      return json(res, 200, { producerId: resolvedProducerId, brand: pickWhitelabel(user) })
+    }
+
+    const auth = await getAuthedUser(admin, req)
+    if (!auth.user) return json(res, 401, { error: auth.error || 'unauthorized' })
 
     if (!producerId || !isUuid(producerId)) return json(res, 400, { error: 'invalid_producer_id' })
 
@@ -93,11 +132,7 @@ export default async function handler(req, res) {
       } catch (_) {
         user = null
       }
-      const meta = user?.user_metadata && typeof user.user_metadata === 'object' ? user.user_metadata : {}
-      const wl = meta.whitelabel && typeof meta.whitelabel === 'object'
-        ? meta.whitelabel
-        : (meta.whiteLabel && typeof meta.whiteLabel === 'object' ? meta.whiteLabel : null)
-      return json(res, 200, { producerId, brand: wl || null })
+      return json(res, 200, { producerId, brand: pickWhitelabel(user) })
     }
 
     if (type === 'courses') {
