@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { Helmet } from 'react-helmet-async'
 import { ChevronLeft } from 'lucide-react'
+import AlunoLayout from '@/components/AlunoLayout'
 
 function navigateTo(path) {
   window.history.pushState({}, '', path)
@@ -336,93 +337,95 @@ export default function AlunoBancoQuestoesResultadoPage() {
   const durationMs = (Number(data?.finishedAt) && Number(data?.startedAt)) ? Math.max(0, Number(data.finishedAt) - Number(data.startedAt)) : 0
 
   return (
-    <div className="min-h-screen bg-[#F5F6FA]">
+    <AlunoLayout>
       <Helmet>
         <title>Connekt - Resultado - Banco de Questões</title>
       </Helmet>
 
-      <div className="border-b border-[#E3E4E5] bg-white">
-        <div className="max-w-[1100px] mx-auto px-5 py-4 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3 min-w-0">
-            <button
-              type="button"
-              className="h-9 w-9 rounded-full border border-[#E3E4E5] bg-white flex items-center justify-center"
-              onClick={() => navigateTo('/aluno/banco-de-questoes')}
-              aria-label="Voltar"
-            >
-              <ChevronLeft className="w-5 h-5 text-[#22252B]" />
-            </button>
-            <div className="min-w-0">
-              <div className="text-[14px] font-semibold text-[#22252B] truncate">Resultado</div>
-              <div className="text-[12px] text-[#737780] truncate">{subtitle}</div>
+      <div className="w-full">
+        <div className="border-b border-[#E3E4E5] bg-white">
+          <div className="max-w-[1100px] mx-auto px-5 py-4 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3 min-w-0">
+              <button
+                type="button"
+                className="h-9 w-9 rounded-full border border-[#E3E4E5] bg-white flex items-center justify-center"
+                onClick={() => navigateTo('/aluno/banco-de-questoes')}
+                aria-label="Voltar"
+              >
+                <ChevronLeft className="w-5 h-5 text-[#22252B]" />
+              </button>
+              <div className="min-w-0">
+                <div className="text-[14px] font-semibold text-[#22252B] truncate">Resultado</div>
+                <div className="text-[12px] text-[#737780] truncate">{subtitle}</div>
+              </div>
             </div>
-          </div>
-          <button
-            type="button"
-            className="h-9 px-4 rounded-[8px] bg-[#0047BB] text-white text-[12px] font-semibold"
-            onClick={() => navigateTo('/aluno/banco-de-questoes')}
-          >
-            Voltar ao Banco
-          </button>
-        </div>
-      </div>
-
-      <div className="max-w-[1100px] mx-auto px-5 py-8">
-        {!data ? (
-          <div className="bg-white border border-[#E3E4E5] rounded-[12px] p-6">
-            <div className="text-[14px] font-semibold text-[#22252B]">Resultado não encontrado</div>
-            <div className="mt-1 text-[12px] text-[#737780]">Finalize uma sequência de questões para ver o resultado aqui.</div>
             <button
               type="button"
-              className="mt-4 h-9 px-4 rounded-[8px] bg-[#0047BB] text-white text-[12px] font-semibold"
+              className="h-9 px-4 rounded-[8px] bg-[#0047BB] text-white text-[12px] font-semibold"
               onClick={() => navigateTo('/aluno/banco-de-questoes')}
             >
-              Voltar
+              Voltar ao Banco
             </button>
           </div>
-        ) : (
-          <>
+        </div>
+
+        <div className="max-w-[1100px] mx-auto px-5 py-8">
+          {!data ? (
             <div className="bg-white border border-[#E3E4E5] rounded-[12px] p-6">
-              <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
-                <div className="min-w-0">
-                  <div className="text-[16px] font-semibold text-[#22252B]">Resultado final</div>
-                  <div className="mt-1 text-[12px] text-[#737780]">
-                    {total} questões • {correct} corretas • {wrong} erradas{durationMs ? ` • ${formatDuration(durationMs)}` : ''}
+              <div className="text-[14px] font-semibold text-[#22252B]">Resultado não encontrado</div>
+              <div className="mt-1 text-[12px] text-[#737780]">Finalize uma sequência de questões para ver o resultado aqui.</div>
+              <button
+                type="button"
+                className="mt-4 h-9 px-4 rounded-[8px] bg-[#0047BB] text-white text-[12px] font-semibold"
+                onClick={() => navigateTo('/aluno/banco-de-questoes')}
+              >
+                Voltar
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="bg-white border border-[#E3E4E5] rounded-[12px] p-6">
+                <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
+                  <div className="min-w-0">
+                    <div className="text-[16px] font-semibold text-[#22252B]">Resultado final</div>
+                    <div className="mt-1 text-[12px] text-[#737780]">
+                      {total} questões • {correct} corretas • {wrong} erradas{durationMs ? ` • ${formatDuration(durationMs)}` : ''}
+                    </div>
+                  </div>
+                  <PercentCircle percent={percent} />
+                </div>
+
+                <div className="mt-5 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="rounded-[10px] border border-[#E3E4E5] bg-[#F9FAFB] p-4">
+                    <div className="text-[11px] text-[#737780]">Acertos</div>
+                    <div className="mt-1 text-[18px] font-bold text-[#1E1B39]">{String(correct)}</div>
+                  </div>
+                  <div className="rounded-[10px] border border-[#E3E4E5] bg-[#F9FAFB] p-4">
+                    <div className="text-[11px] text-[#737780]">Erros</div>
+                    <div className="mt-1 text-[18px] font-bold text-[#1E1B39]">{String(wrong)}</div>
+                  </div>
+                  <div className="rounded-[10px] border border-[#E3E4E5] bg-[#F9FAFB] p-4">
+                    <div className="text-[11px] text-[#737780]">Pontuação</div>
+                    <div className="mt-1 text-[18px] font-bold text-[#1E1B39]">{String(correct)}/{String(total)}</div>
                   </div>
                 </div>
-                <PercentCircle percent={percent} />
               </div>
 
-              <div className="mt-5 grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="rounded-[10px] border border-[#E3E4E5] bg-[#F9FAFB] p-4">
-                  <div className="text-[11px] text-[#737780]">Acertos</div>
-                  <div className="mt-1 text-[18px] font-bold text-[#1E1B39]">{String(correct)}</div>
-                </div>
-                <div className="rounded-[10px] border border-[#E3E4E5] bg-[#F9FAFB] p-4">
-                  <div className="text-[11px] text-[#737780]">Erros</div>
-                  <div className="mt-1 text-[18px] font-bold text-[#1E1B39]">{String(wrong)}</div>
-                </div>
-                <div className="rounded-[10px] border border-[#E3E4E5] bg-[#F9FAFB] p-4">
-                  <div className="text-[11px] text-[#737780]">Pontuação</div>
-                  <div className="mt-1 text-[18px] font-bold text-[#1E1B39]">{String(correct)}/{String(total)}</div>
-                </div>
+              <div className="mt-6 space-y-4">
+                {questions.map((q, idx) => (
+                  <ResultQuestionCard
+                    key={String(q?.id || idx)}
+                    idx={idx}
+                    question={q}
+                    selectedIndex={selectedIndices[idx]}
+                    status={statuses[idx]}
+                  />
+                ))}
               </div>
-            </div>
-
-            <div className="mt-6 space-y-4">
-              {questions.map((q, idx) => (
-                <ResultQuestionCard
-                  key={String(q?.id || idx)}
-                  idx={idx}
-                  question={q}
-                  selectedIndex={selectedIndices[idx]}
-                  status={statuses[idx]}
-                />
-              ))}
-            </div>
-          </>
-        )}
+            </>
+          )}
+        </div>
       </div>
-    </div>
+    </AlunoLayout>
   )
 }
