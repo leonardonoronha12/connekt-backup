@@ -1,4 +1,5 @@
 import { getSupabaseAdmin, getAuthedUser, isUuid, json } from '../src/server/supabaseAdmin.js'
+import * as dns from 'node:dns/promises'
 
 function asArray(v) {
   return Array.isArray(v) ? v : []
@@ -83,6 +84,31 @@ function getQuestionIds(simulado) {
   return ids.filter((v) => isUuid(v))
 }
 
+async function fetchJsonWithTimeout(url, timeoutMs) {
+  const controller = new AbortController()
+  const t = setTimeout(() => controller.abort(), Math.max(250, Number(timeoutMs) || 4500))
+  try {
+    const r = await fetch(url, {
+      method: 'GET',
+      redirect: 'follow',
+      headers: { Accept: 'application/json', 'User-Agent': 'connekt-domain-check/1.0' },
+      signal: controller.signal,
+    })
+    const contentType = String(r.headers.get('content-type') || '')
+    let jsonBody = null
+    if (contentType.includes('application/json')) {
+      jsonBody = await r.json().catch(() => null)
+    }
+    return { ok: r.ok, status: r.status, headers: Object.fromEntries(r.headers.entries()), json: jsonBody }
+  } finally {
+    clearTimeout(t)
+  }
+}
+
+function getErrCode(e) {
+  return String(e?.code || e?.cause?.code || e?.cause?.errno || '').trim()
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'GET') return json(res, 405, { error: 'method_not_allowed' })
 
@@ -121,6 +147,58 @@ export default async function handler(req, res) {
 
     const auth = await getAuthedUser(admin, req)
     if (!auth.user) return json(res, 401, { error: auth.error || 'unauthorized' })
+
+    if (type === 'domain_status') {
+      const hostParam = normalizeHost(u.searchParams.get('host') || '')
+      if (!hostParam || !hostParam.includes('.') || hostParam.length > 253) {
+        return json(res, 200, { active: false, state: 'error', reason: 'invalid_host', host: hostParam || '' })
+      }
+
+      try {
+        await dns.lookup(hostParam, { all: true })
+      } catch (e) {
+        const code = getErrCode(e)
+        const pending = code === 'ENOTFOUND' || code === 'EAI_AGAIN' || code === 'SERVFAIL' || code === 'NXDOMAIN'
+        return json(res, 200, {
+          active: false,
+          state: pending ? 'pending' : 'error',
+          reason: pending ? 'dns_not_propagated' : 'dns_error',
+          host: hostParam,
+          code,
+        })
+      }
+
+      try {
+        const r = await fetchJsonWithTimeout(`https://${hostParam}/api/version?ts=${Date.now()}`, 4500)
+        if (r.ok && r.status === 200) {
+          return json(res, 200, { active: true, state: 'active', reason: 'ok', host: hostParam })
+        }
+        return json(res, 200, {
+          active: false,
+          state: 'error',
+          reason: 'not_pointing_to_app',
+          host: hostParam,
+          httpStatus: r.status,
+        })
+      } catch (e) {
+        const code = getErrCode(e)
+        const msg = String(e?.message || '')
+        const pending =
+          code.includes('TLS') ||
+          msg.toLowerCase().includes('tls') ||
+          msg.toLowerCase().includes('certificate') ||
+          code === 'UND_ERR_CONNECT_TIMEOUT' ||
+          code === 'ETIMEDOUT' ||
+          code === 'ECONNRESET'
+        return json(res, 200, {
+          active: false,
+          state: pending ? 'pending' : 'error',
+          reason: pending ? 'ssl_or_deploy_pending' : 'fetch_error',
+          host: hostParam,
+          code,
+        })
+      }
+    }
 
     if (!producerId || !isUuid(producerId)) return json(res, 400, { error: 'invalid_producer_id' })
 

@@ -52,6 +52,9 @@ const ConfiguracoesPage = () => {
   const [subdomainInput, setSubdomainInput] = useState('');
   const [subdomainSaving, setSubdomainSaving] = useState(false);
   const [subdomainSavedUrl, setSubdomainSavedUrl] = useState('');
+  const [subdomainStatus, setSubdomainStatus] = useState({ state: 'idle', title: '', description: '' });
+  const subdomainStatusTimerRef = useRef(null);
+  const subdomainStatusTriesRef = useRef(0);
   const whitelabelLogoInputRef = useRef(null);
   const whitelabelLogoCompactInputRef = useRef(null);
   const [whitelabelBrandName, setWhitelabelBrandName] = useState('');
@@ -511,6 +514,71 @@ const ConfiguracoesPage = () => {
 
   const isAlunoView = typeof window !== 'undefined' && String(window.location.pathname || '').startsWith('/aluno/')
 
+  const mapSubdomainStatusToUi = (payload) => {
+    const state = String(payload?.state || '').toLowerCase()
+    const reason = String(payload?.reason || '').toLowerCase()
+    if (payload?.active === true || state === 'active') {
+      return { state: 'active', title: 'Ativo', description: 'Pronto para acessar.' }
+    }
+    if (state === 'pending') {
+      if (reason === 'dns_not_propagated') {
+        return { state: 'pending', title: 'Aguardando DNS', description: 'A propagação ainda não terminou.' }
+      }
+      if (reason === 'ssl_or_deploy_pending') {
+        return { state: 'pending', title: 'Ativando', description: 'Certificado/Deploy ainda em ativação.' }
+      }
+      return { state: 'pending', title: 'Ativando', description: 'Verificando disponibilidade do domínio.' }
+    }
+    if (state === 'error') {
+      if (reason === 'not_pointing_to_app') {
+        return { state: 'error', title: 'Não apontando', description: 'O domínio responde, mas não está servindo o app.' }
+      }
+      if (reason === 'invalid_host') {
+        return { state: 'error', title: 'Inválido', description: 'Subdomínio/domínio inválido.' }
+      }
+      return { state: 'error', title: 'Erro', description: 'Não foi possível validar o domínio agora.' }
+    }
+    return { state: 'checking', title: 'Verificando', description: 'Checando disponibilidade do domínio.' }
+  }
+
+  const checkSubdomainStatus = async (host) => {
+    try {
+      const token = session?.access_token || ''
+      const url = `/api/producer?type=domain_status&host=${encodeURIComponent(host)}`
+      const r = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : undefined })
+      const body = await r.json().catch(() => ({}))
+      const ui = mapSubdomainStatusToUi(body)
+      setSubdomainStatus(ui)
+      return ui
+    } catch (_) {
+      const ui = { state: 'pending', title: 'Ativando', description: 'Verificação temporariamente indisponível.' }
+      setSubdomainStatus(ui)
+      return ui
+    }
+  }
+
+  const startSubdomainStatusPolling = async (host) => {
+    try {
+      if (subdomainStatusTimerRef.current) clearInterval(subdomainStatusTimerRef.current)
+    } catch (_) {}
+    subdomainStatusTriesRef.current = 0
+    setSubdomainStatus({ state: 'checking', title: 'Verificando', description: 'Checando disponibilidade do domínio.' })
+    const tick = async () => {
+      const tries = (subdomainStatusTriesRef.current += 1)
+      const ui = await checkSubdomainStatus(host)
+      if (ui.state === 'active' || ui.state === 'error' || tries >= 120) {
+        try {
+          if (subdomainStatusTimerRef.current) clearInterval(subdomainStatusTimerRef.current)
+        } catch (_) {}
+        if (tries >= 120 && ui.state !== 'active') {
+          setSubdomainStatus({ state: 'pending', title: 'Aguardando', description: 'Pode levar até 48 horas para finalizar.' })
+        }
+      }
+    }
+    await tick()
+    subdomainStatusTimerRef.current = setInterval(tick, 15000)
+  }
+
   const allTabs = [
     { id: 'perfil', label: 'Perfil e conta', icon: null },
     { id: 'plano', label: 'Meu plano', icon: null },
@@ -593,6 +661,18 @@ const ConfiguracoesPage = () => {
     })();
     return () => { cancelled = true; };
   }, [user?.id]);
+
+  useEffect(() => {
+    if (!session?.access_token) return
+    const host = normalizeSavedMemberAreaUrlForLink(subdomainSavedUrl).host
+    if (!host) return
+    startSubdomainStatusPolling(host)
+    return () => {
+      try {
+        if (subdomainStatusTimerRef.current) clearInterval(subdomainStatusTimerRef.current)
+      } catch (_) {}
+    }
+  }, [subdomainSavedUrl, session?.access_token]);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -964,6 +1044,7 @@ const ConfiguracoesPage = () => {
       if (error) throw error;
       setSubdomainSavedUrl(normalized.url);
       setSubdomainInput(normalized.host);
+      setSubdomainStatus({ state: 'checking', title: 'Verificando', description: 'Checando disponibilidade do domínio.' })
       toast({ title: 'Subdomínio salvo', description: normalized.host, duration: 5000 });
     } catch (e) {
       toast({ title: 'Erro ao salvar subdomínio', description: e?.message || String(e), duration: 6000 });
@@ -1719,23 +1800,63 @@ const ConfiguracoesPage = () => {
                     />
                     <button
                       type="button"
-                      disabled={subdomainSaving || !subdomainInput.trim()}
+                      disabled={subdomainSaving || !subdomainInput.trim() || subdomainStatus.state === 'checking' || subdomainStatus.state === 'pending'}
                       onClick={handleAddSubdomain}
-                      className={`bg-[#0047BB] text-white px-4 py-2 rounded-[6px] text-[14px] font-medium transition-colors whitespace-nowrap ${subdomainSaving || !subdomainInput.trim() ? 'opacity-60 cursor-not-allowed' : 'hover:bg-[#003da0]'}`}
+                      className={`bg-[#0047BB] text-white px-4 py-2 rounded-[6px] text-[14px] font-medium transition-colors whitespace-nowrap ${subdomainSaving || !subdomainInput.trim() || subdomainStatus.state === 'checking' || subdomainStatus.state === 'pending' ? 'opacity-60 cursor-not-allowed' : 'hover:bg-[#003da0]'}`}
                     >
-                      {subdomainSaving ? 'Salvando…' : 'Adicionar subdomínio'}
+                      {subdomainSaving ? 'Salvando…' : (subdomainStatus.state === 'checking' || subdomainStatus.state === 'pending' ? 'Verificando…' : 'Adicionar subdomínio')}
                     </button>
                   </div>
                 </div>
                 {subdomainSavedUrl ? (
-                  <a
-                    href={normalizeSavedMemberAreaUrlForLink(subdomainSavedUrl).url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-2 text-[12px] text-[#166534] mb-6 hover:underline"
-                  >
-                    Subdomínio configurado: {normalizeSavedMemberAreaUrlForLink(subdomainSavedUrl).host} <ExternalLink size={14} />
-                  </a>
+                  <div className="mb-6 space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <a
+                        href={normalizeSavedMemberAreaUrlForLink(subdomainSavedUrl).url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className={`inline-flex items-center gap-2 text-[12px] hover:underline ${
+                          subdomainStatus.state === 'active'
+                            ? 'text-[#166534]'
+                            : (subdomainStatus.state === 'error' ? 'text-[#B91C1C]' : 'text-[#B45309]')
+                        }`}
+                      >
+                        Subdomínio configurado: {normalizeSavedMemberAreaUrlForLink(subdomainSavedUrl).host} <ExternalLink size={14} />
+                      </a>
+                      <span
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          subdomainStatus.state === 'active'
+                            ? 'bg-[#DCFCE7] text-[#166534]'
+                            : (subdomainStatus.state === 'error' ? 'bg-[#FEE2E2] text-[#B91C1C]' : 'bg-[#FFEDD5] text-[#B45309]')
+                        }`}
+                      >
+                        {subdomainStatus.title || 'Verificando'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => startSubdomainStatusPolling(normalizeSavedMemberAreaUrlForLink(subdomainSavedUrl).host)}
+                        disabled={subdomainSaving || subdomainStatus.state === 'checking' || subdomainStatus.state === 'pending'}
+                        className={`text-[11px] font-semibold ${
+                          subdomainSaving || subdomainStatus.state === 'checking' || subdomainStatus.state === 'pending'
+                            ? 'text-[#A3A3A3] cursor-not-allowed'
+                            : 'text-[#0047BB] hover:underline'
+                        }`}
+                      >
+                        Verificar agora
+                      </button>
+                    </div>
+                    {subdomainStatus.description ? (
+                      <div
+                        className={`text-[12px] ${
+                          subdomainStatus.state === 'active'
+                            ? 'text-[#166534]'
+                            : (subdomainStatus.state === 'error' ? 'text-[#B91C1C]' : 'text-[#B45309]')
+                        }`}
+                      >
+                        {subdomainStatus.description}
+                      </div>
+                    ) : null}
+                  </div>
                 ) : (
                   <p className="text-[12px] text-[#737780] mb-6">Informe o subdomínio e clique em “Adicionar subdomínio”.</p>
                 )}
