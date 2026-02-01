@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import Header from '@/components/Header'
 import BrandLogo from '@/components/BrandLogo'
-import { ChevronDown, FileText, LayoutGrid, Menu, Search, X } from 'lucide-react'
+import { ChevronDown, FileText, LayoutGrid, Menu, Monitor, Search, X } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { getActiveProducerUserId } from '@/services/producerScope'
 import { ALUNO_NAV_SECTIONS } from '@/constants/alunoNavSections'
