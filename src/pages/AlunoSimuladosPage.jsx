@@ -1,26 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import Header from '@/components/Header'
 import BrandLogo from '@/components/BrandLogo'
-import { ChevronDown, Database, FileText, GraduationCap, LayoutGrid, Menu, Monitor, Search, Settings, X } from 'lucide-react'
+import { ChevronDown, FileText, LayoutGrid, Menu, Search, X } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { getActiveProducerUserId } from '@/services/producerScope'
-
-const navSections = [
-  {
-    title: 'MENU',
-    items: [
-      { label: 'Painel', Icon: GraduationCap, path: '/aluno' },
-      { label: 'Simulados', Icon: Monitor, path: '/aluno/simulados' },
-      { label: 'Banco de Questões', Icon: Database, path: '/aluno/banco-de-questoes' },
-    ],
-  },
-  {
-    title: 'GERAL',
-    items: [
-      { label: 'Configurações', Icon: Settings, path: '/aluno/configuracoes' },
-    ],
-  },
-]
+import { ALUNO_NAV_SECTIONS } from '@/constants/alunoNavSections'
 
 function navigateTo(path) {
   window.history.pushState({}, '', path)
@@ -391,7 +375,7 @@ export default function AlunoSimuladosPage() {
             </div>
             <div className="h-px mx-6" style={{ backgroundColor: 'rgb(47, 58, 86)' }} />
             <nav className="flex-1 overflow-y-auto px-4 py-5 space-y-6 scrollbar-hide">
-              {navSections.map((section, idx) => (
+              {ALUNO_NAV_SECTIONS.map((section, idx) => (
                 <div key={`${section.title}-${idx}`}>
                   <div className="text-[11px] font-semibold text-white/50 uppercase tracking-wider px-2 mb-3">{section.title}</div>
                   <div className="space-y-1">
@@ -431,7 +415,7 @@ export default function AlunoSimuladosPage() {
         </div>
         <div className="h-px mx-10" style={{ backgroundColor: 'rgb(47, 58, 86)' }} />
         <nav className="flex-1 overflow-y-auto px-4 py-5 space-y-6 scrollbar-hide">
-          {navSections.map((section, idx) => (
+          {ALUNO_NAV_SECTIONS.map((section, idx) => (
             <div key={`${section.title}-${idx}`}>
               <div className="text-[11px] font-semibold text-white/50 uppercase tracking-wider px-2 mb-3">{section.title}</div>
               <div className="space-y-1">

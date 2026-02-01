@@ -1,28 +1,14 @@
 import React, { useEffect, useState } from 'react'
-import { Database, GraduationCap, Menu, Monitor, Settings, X } from 'lucide-react'
+import { Menu, X } from 'lucide-react'
 import Header from '@/components/Header'
 import BrandLogo from '@/components/BrandLogo'
 import { useBranding } from '@/contexts/BrandingContext'
+import { ALUNO_NAV_SECTIONS } from '@/constants/alunoNavSections'
 
 function navigateTo(path) {
   window.history.pushState({}, '', path)
   window.dispatchEvent(new PopStateEvent('popstate'))
 }
-
-const navSections = [
-  {
-    title: 'MENU',
-    items: [
-      { label: 'Painel', Icon: GraduationCap, path: '/aluno' },
-      { label: 'Simulados', Icon: Monitor, path: '/aluno/simulados' },
-      { label: 'Banco de Questões', Icon: Database, path: '/aluno/banco-de-questoes' },
-    ],
-  },
-  {
-    title: 'GERAL',
-    items: [{ label: 'Configurações', Icon: Settings, path: '/aluno/configuracoes' }],
-  },
-]
 
 export default function AlunoLayout({ children }) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
@@ -46,7 +32,7 @@ export default function AlunoLayout({ children }) {
         </div>
         <div className="h-px mx-10" style={{ backgroundColor: 'rgb(47, 58, 86)' }} />
         <nav className="flex-1 overflow-y-auto px-4 py-5 space-y-6">
-          {navSections.map((section, idx) => (
+          {ALUNO_NAV_SECTIONS.map((section, idx) => (
             <div key={`${section.title}-${idx}`}>
               <div className="text-[11px] font-semibold text-white/50 uppercase tracking-wider px-2 mb-3">
                 {section.title}
@@ -94,7 +80,7 @@ export default function AlunoLayout({ children }) {
               </button>
             </div>
             <nav className="flex-1 overflow-y-auto px-4 py-5 space-y-6">
-              {navSections.map((section, idx) => (
+              {ALUNO_NAV_SECTIONS.map((section, idx) => (
                 <div key={`${section.title}-m-${idx}`}>
                   <div className="text-[11px] font-semibold text-white/50 uppercase tracking-wider px-2 mb-3">
                     {section.title}
