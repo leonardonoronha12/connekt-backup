@@ -8,6 +8,7 @@ import { canConnectVideoProvider, canUseWhitelabel, canUseNpsFeedback, resolvePl
 import CancelSubscriptionModal from '@/components/CancelSubscriptionModal.jsx';
 import { deviceSessionService } from '@/services/deviceSessionService.js';
 import { getPublicAppOrigin } from '@/services/publicUrl.js';
+import { ALUNO_NAV_SECTIONS } from '@/constants/alunoNavSections'
 
 const ConfiguracoesPage = () => {
   const { user, signOut, session } = useAuth();
@@ -1839,12 +1840,19 @@ const ConfiguracoesPage = () => {
                 <div className="mt-8">
                   <h4 className="text-[13px] font-semibold text-[#1E1B39] mb-3">Prévia das abas do aluno</h4>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {[
-                      { id: 'painel', label: 'Painel', icon: '🏠' },
-                      { id: 'simulados', label: 'Simulados', icon: '📝' },
-                      { id: 'banco', label: 'Banco de Questões', icon: '📚' },
-                      { id: 'config', label: 'Configurações', icon: '⚙️' },
-                    ].map((tab) => {
+                    {ALUNO_NAV_SECTIONS
+                      .flatMap((s) => (Array.isArray(s?.items) ? s.items : []))
+                      .map((item) => {
+                      const pathname = String(item?.path || '')
+                      const tab = {
+                        id: pathname === '/aluno'
+                          ? 'painel'
+                          : (pathname.startsWith('/aluno/simulados')
+                            ? 'simulados'
+                            : (pathname.startsWith('/aluno/banco-de-questoes') ? 'banco' : 'config')),
+                        label: String(item?.label || '').trim() || pathname,
+                        Icon: item?.Icon || null,
+                      }
                       const primary = toHexColor(whitelabelPrimaryColor, '#0047BB')
                       const sidebarBg = `linear-gradient(180deg, ${whitelabelSidebarFrom} 0%, ${whitelabelSidebarTo} 100%)`
                       const brandLabel = String(whitelabelBrandName || '').trim() || 'Connekt'
@@ -1967,7 +1975,10 @@ const ConfiguracoesPage = () => {
                       return (
                         <div key={tab.id} className="rounded-[12px] border border-[#E3E4E5] bg-white overflow-hidden shadow-sm">
                           <div className="px-3 py-2 flex items-center justify-between border-b border-[#E3E4E5] bg-[#F8FAFC]">
-                            <div className="text-[11px] font-semibold text-[#111827] truncate">{tab.icon} {tab.label}</div>
+                            <div className="text-[11px] font-semibold text-[#111827] truncate inline-flex items-center gap-2">
+                              {tab.Icon ? <tab.Icon className="w-4 h-4" /> : null}
+                              <span className="truncate">{tab.label}</span>
+                            </div>
                             <div className="text-[10px] font-semibold" style={{ color: primary }}>{brandLabel}</div>
                           </div>
                           <div className="flex h-[190px]">
@@ -1980,12 +1991,18 @@ const ConfiguracoesPage = () => {
                                 )}
                               </div>
                               <div className="mt-2 space-y-1">
-                                {[
-                                  { id: 'painel', label: 'Painel' },
-                                  { id: 'simulados', label: 'Simulados' },
-                                  { id: 'banco', label: 'Banco' },
-                                  { id: 'config', label: 'Config' },
-                                ].map((it) => {
+                                {ALUNO_NAV_SECTIONS
+                                  .flatMap((s) => (Array.isArray(s?.items) ? s.items : []))
+                                  .map((item) => {
+                                    const pathname = String(item?.path || '')
+                                    const id = pathname === '/aluno'
+                                      ? 'painel'
+                                      : (pathname.startsWith('/aluno/simulados')
+                                        ? 'simulados'
+                                        : (pathname.startsWith('/aluno/banco-de-questoes') ? 'banco' : 'config'))
+                                    return { id, label: String(item?.label || '').trim() || pathname }
+                                  })
+                                  .map((it) => {
                                   const active = it.id === tab.id
                                   return (
                                     <div

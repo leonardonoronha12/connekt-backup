@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { BookOpen, ChevronLeft, ChevronRight, Database, FileText, GraduationCap, Monitor, PlayCircle, Search, Settings, Star, Menu, X } from 'lucide-react'
+import { BookOpen, ChevronLeft, ChevronRight, FileText, PlayCircle, Search, Star, Menu, X } from 'lucide-react'
 import Header from '@/components/Header'
 import BrandLogo from '@/components/BrandLogo'
 import CourseFooter from '@/components/CourseFooter'
@@ -7,23 +7,7 @@ import { supabase } from '@/lib/supabaseClient'
 import { useAuth } from '@/contexts/SupabaseAuthContext'
 import { useActiveProducerUserId } from '@/hooks/useActiveProducerUserId'
 import { setActiveProducerUserId } from '@/services/producerScope'
-
-const navSections = [
-  {
-    title: 'MENU',
-    items: [
-      { label: 'Painel', Icon: GraduationCap, path: '/aluno' },
-      { label: 'Simulados', Icon: Monitor, path: '/aluno/simulados' },
-      { label: 'Banco de Questões', Icon: Database, path: '/aluno/banco-de-questoes' },
-    ],
-  },
-  {
-    title: 'GERAL',
-    items: [
-      { label: 'Configurações', Icon: Settings, path: '/aluno/configuracoes' },
-    ],
-  },
-]
+import { ALUNO_NAV_SECTIONS } from '@/constants/alunoNavSections'
 
 function navigateTo(path) {
   window.history.pushState({}, '', path)
@@ -1079,7 +1063,7 @@ export default function AlunoDashboardPage() {
             </div>
             <div className="h-px mx-6" style={{ backgroundColor: 'rgb(47, 58, 86)' }} />
             <nav className="flex-1 overflow-y-auto px-4 py-5 space-y-6">
-              {navSections.map((section, idx) => (
+              {ALUNO_NAV_SECTIONS.map((section, idx) => (
                 <div key={`${section.title}-${idx}`}>
                   <div className="text-[11px] font-semibold text-white/50 uppercase tracking-wider px-2 mb-3">
                     {section.title}
@@ -1153,7 +1137,7 @@ export default function AlunoDashboardPage() {
           }}
         />
         <nav className="flex-1 overflow-y-auto px-4 py-5 space-y-6">
-          {navSections.map((section, idx) => (
+          {ALUNO_NAV_SECTIONS.map((section, idx) => (
             <div key={`${section.title}-${idx}`}>
               <div className="text-[11px] font-semibold text-white/50 uppercase tracking-wider px-2 mb-3">
                 {section.title}

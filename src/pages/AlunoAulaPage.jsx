@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { Check, ChevronDown, ChevronLeft, ChevronRight, Database, Download, ExternalLink, FileSpreadsheet, FileText, FileType, GraduationCap, Heart, Link as LinkIcon, Menu, Monitor, Settings, X } from 'lucide-react'
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Download, ExternalLink, FileSpreadsheet, FileText, FileType, Heart, Link as LinkIcon, Menu, X } from 'lucide-react'
 import { useAuth } from '@/contexts/SupabaseAuthContext'
 import { toast } from '@/components/ui/use-toast'
 import { Switch } from '@/components/ui/switch.jsx'
@@ -9,25 +9,9 @@ import CourseFooter from '@/components/CourseFooter'
 import { supabase } from '@/lib/supabaseClient'
 import { fetchConversationFeed } from '@/services/conversationService'
 import { useActiveProducerUserId } from '@/hooks/useActiveProducerUserId'
+import { ALUNO_NAV_SECTIONS } from '@/constants/alunoNavSections'
 
 const DEMO_PROMO_VIDEO_URL = ''
-
-const navSections = [
-  {
-    title: 'MENU',
-    items: [
-      { label: 'Painel', Icon: GraduationCap, path: '/aluno' },
-      { label: 'Simulados', Icon: Monitor, path: '/aluno/simulados' },
-      { label: 'Banco de Questões', Icon: Database, path: '/aluno/banco-de-questoes' },
-    ],
-  },
-  {
-    title: 'GERAL',
-    items: [
-      { label: 'Configurações', Icon: Settings, path: '/aluno/configuracoes' },
-    ],
-  },
-]
 
 function navigateTo(path) {
   window.history.pushState({}, '', path)
@@ -2152,7 +2136,7 @@ export default function AlunoAulaPage() {
             </div>
             <div className="h-px mx-6" style={{ backgroundColor: 'rgb(47, 58, 86)' }} />
             <nav className="flex-1 overflow-y-auto px-4 py-5 space-y-6 scrollbar-hide">
-              {navSections.map((section, idx) => (
+              {ALUNO_NAV_SECTIONS.map((section, idx) => (
                 <div key={`${section.title}-${idx}`}>
                   <div className="text-[11px] font-semibold text-white/50 uppercase tracking-wider px-2 mb-3">{section.title}</div>
                   <div className="space-y-1">
@@ -2192,7 +2176,7 @@ export default function AlunoAulaPage() {
         </div>
         <div className="h-px mx-10" style={{ backgroundColor: 'rgb(47, 58, 86)' }} />
         <nav className="flex-1 overflow-y-auto px-4 py-5 space-y-6 scrollbar-hide">
-          {navSections.map((section, idx) => (
+          {ALUNO_NAV_SECTIONS.map((section, idx) => (
             <div key={`${section.title}-${idx}`}>
               <div className="text-[11px] font-semibold text-white/50 uppercase tracking-wider px-2 mb-3">{section.title}</div>
               <div className="space-y-1">
