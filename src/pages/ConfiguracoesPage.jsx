@@ -120,6 +120,23 @@ const ConfiguracoesPage = () => {
   const whitelabelAllowed = canUseWhitelabel(resolvedPlanKey) || String(user?.email || '').toLowerCase() === 'leonardonoronha12@gmail.com';
   const npsFeedbackAllowed = canUseNpsFeedback(resolvedPlanKey);
 
+  const toHexColor = (input, fallback) => {
+    const raw = String(input || '').trim()
+    const fb = String(fallback || '#000000').trim()
+    if (/^#[0-9a-f]{6}$/i.test(raw)) return raw.toUpperCase()
+    const m = raw.match(/^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})(?:\s*,\s*(?:0|1|0?\.\d+))?\s*\)$/i)
+    if (m) {
+      const clamp = (n) => Math.max(0, Math.min(255, Number(n)))
+      const r = clamp(m[1])
+      const g = clamp(m[2])
+      const b = clamp(m[3])
+      const hex = `#${[r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('')}`.toUpperCase()
+      return hex
+    }
+    if (/^#[0-9a-f]{6}$/i.test(fb)) return fb.toUpperCase()
+    return '#000000'
+  }
+
   const formatDateBR = (iso) => {
     try {
       if (!iso) return '—';
@@ -566,11 +583,11 @@ const ConfiguracoesPage = () => {
     const tick = async () => {
       const tries = (subdomainStatusTriesRef.current += 1)
       const ui = await checkSubdomainStatus(host)
-      if (ui.state === 'active' || ui.state === 'error' || tries >= 120) {
+      if (ui.state === 'active' || tries >= 11520) {
         try {
           if (subdomainStatusTimerRef.current) clearInterval(subdomainStatusTimerRef.current)
         } catch (_) {}
-        if (tries >= 120 && ui.state !== 'active') {
+        if (tries >= 11520 && ui.state !== 'active') {
           setSubdomainStatus({ state: 'pending', title: 'Aguardando', description: 'Pode levar até 48 horas para finalizar.' })
         }
       }
@@ -1733,43 +1750,79 @@ const ConfiguracoesPage = () => {
                   </div>
                   <div className="space-y-2">
                     <label className="text-[12px] text-[#737780]">Cor primária</label>
-                    <input
-                      type="text"
-                      value={whitelabelPrimaryColor}
-                      onChange={(e) => setWhitelabelPrimaryColor(e.target.value)}
-                      placeholder="#0047BB"
-                      className="w-full px-3 py-2 border border-[#E3E4E5] rounded-[6px] text-[14px] focus:outline-none focus:border-[#0047BB] bg-white"
-                    />
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={whitelabelPrimaryColor}
+                        onChange={(e) => setWhitelabelPrimaryColor(e.target.value)}
+                        placeholder="#0047BB"
+                        className="flex-1 px-3 py-2 border border-[#E3E4E5] rounded-[6px] text-[14px] focus:outline-none focus:border-[#0047BB] bg-white"
+                      />
+                      <input
+                        type="color"
+                        value={toHexColor(whitelabelPrimaryColor, '#0047BB')}
+                        onChange={(e) => setWhitelabelPrimaryColor(e.target.value)}
+                        className="h-10 w-12 border border-[#E3E4E5] rounded-[6px] bg-white px-1"
+                        aria-label="Cor primária"
+                      />
+                    </div>
                   </div>
                   <div className="space-y-2">
                     <label className="text-[12px] text-[#737780]">Cor primária (hover)</label>
-                    <input
-                      type="text"
-                      value={whitelabelPrimaryHoverColor}
-                      onChange={(e) => setWhitelabelPrimaryHoverColor(e.target.value)}
-                      placeholder="#003399"
-                      className="w-full px-3 py-2 border border-[#E3E4E5] rounded-[6px] text-[14px] focus:outline-none focus:border-[#0047BB] bg-white"
-                    />
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={whitelabelPrimaryHoverColor}
+                        onChange={(e) => setWhitelabelPrimaryHoverColor(e.target.value)}
+                        placeholder="#003399"
+                        className="flex-1 px-3 py-2 border border-[#E3E4E5] rounded-[6px] text-[14px] focus:outline-none focus:border-[#0047BB] bg-white"
+                      />
+                      <input
+                        type="color"
+                        value={toHexColor(whitelabelPrimaryHoverColor, '#003399')}
+                        onChange={(e) => setWhitelabelPrimaryHoverColor(e.target.value)}
+                        className="h-10 w-12 border border-[#E3E4E5] rounded-[6px] bg-white px-1"
+                        aria-label="Cor primária hover"
+                      />
+                    </div>
                   </div>
                   <div className="space-y-2">
                     <label className="text-[12px] text-[#737780]">Sidebar (topo)</label>
-                    <input
-                      type="text"
-                      value={whitelabelSidebarFrom}
-                      onChange={(e) => setWhitelabelSidebarFrom(e.target.value)}
-                      placeholder="rgb(15, 6, 39)"
-                      className="w-full px-3 py-2 border border-[#E3E4E5] rounded-[6px] text-[14px] focus:outline-none focus:border-[#0047BB] bg-white"
-                    />
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={whitelabelSidebarFrom}
+                        onChange={(e) => setWhitelabelSidebarFrom(e.target.value)}
+                        placeholder="rgb(15, 6, 39)"
+                        className="flex-1 px-3 py-2 border border-[#E3E4E5] rounded-[6px] text-[14px] focus:outline-none focus:border-[#0047BB] bg-white"
+                      />
+                      <input
+                        type="color"
+                        value={toHexColor(whitelabelSidebarFrom, '#0F0627')}
+                        onChange={(e) => setWhitelabelSidebarFrom(e.target.value)}
+                        className="h-10 w-12 border border-[#E3E4E5] rounded-[6px] bg-white px-1"
+                        aria-label="Sidebar topo"
+                      />
+                    </div>
                   </div>
                   <div className="space-y-2">
                     <label className="text-[12px] text-[#737780]">Sidebar (base)</label>
-                    <input
-                      type="text"
-                      value={whitelabelSidebarTo}
-                      onChange={(e) => setWhitelabelSidebarTo(e.target.value)}
-                      placeholder="rgb(0, 0, 104)"
-                      className="w-full px-3 py-2 border border-[#E3E4E5] rounded-[6px] text-[14px] focus:outline-none focus:border-[#0047BB] bg-white"
-                    />
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={whitelabelSidebarTo}
+                        onChange={(e) => setWhitelabelSidebarTo(e.target.value)}
+                        placeholder="rgb(0, 0, 104)"
+                        className="flex-1 px-3 py-2 border border-[#E3E4E5] rounded-[6px] text-[14px] focus:outline-none focus:border-[#0047BB] bg-white"
+                      />
+                      <input
+                        type="color"
+                        value={toHexColor(whitelabelSidebarTo, '#000068')}
+                        onChange={(e) => setWhitelabelSidebarTo(e.target.value)}
+                        className="h-10 w-12 border border-[#E3E4E5] rounded-[6px] bg-white px-1"
+                        aria-label="Sidebar base"
+                      />
+                    </div>
                   </div>
                   <div className="flex items-end justify-end">
                     <button
@@ -1832,18 +1885,6 @@ const ConfiguracoesPage = () => {
                       >
                         {subdomainStatus.title || 'Verificando'}
                       </span>
-                      <button
-                        type="button"
-                        onClick={() => startSubdomainStatusPolling(normalizeSavedMemberAreaUrlForLink(subdomainSavedUrl).host)}
-                        disabled={subdomainSaving || subdomainStatus.state === 'checking' || subdomainStatus.state === 'pending'}
-                        className={`text-[11px] font-semibold ${
-                          subdomainSaving || subdomainStatus.state === 'checking' || subdomainStatus.state === 'pending'
-                            ? 'text-[#A3A3A3] cursor-not-allowed'
-                            : 'text-[#0047BB] hover:underline'
-                        }`}
-                      >
-                        Verificar agora
-                      </button>
                     </div>
                     {subdomainStatus.description ? (
                       <div
