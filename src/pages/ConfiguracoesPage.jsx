@@ -1838,34 +1838,181 @@ const ConfiguracoesPage = () => {
 
                 <div className="mt-8">
                   <h4 className="text-[13px] font-semibold text-[#1E1B39] mb-3">Prévia das abas do aluno</h4>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {[
-                      { label: 'Painel', icon: '🏠' },
-                      { label: 'Simulados', icon: '📝' },
-                      { label: 'Banco de Questões', icon: '📚' },
-                      { label: 'Configurações', icon: '⚙️' },
-                    ].map((tab) => (
-                      <div
-                        key={tab.label}
-                        className="rounded-[10px] border border-[#E3E4E5] bg-white p-3 shadow-sm"
-                      >
-                        <div
-                          className="h-9 rounded-[8px] mb-3 flex items-center justify-center text-white text-[12px] font-semibold"
-                          style={{ backgroundColor: toHexColor(whitelabelPrimaryColor, '#0047BB') }}
-                        >
-                          {tab.icon} {tab.label}
+                      { id: 'painel', label: 'Painel', icon: '🏠' },
+                      { id: 'simulados', label: 'Simulados', icon: '📝' },
+                      { id: 'banco', label: 'Banco de Questões', icon: '📚' },
+                      { id: 'config', label: 'Configurações', icon: '⚙️' },
+                    ].map((tab) => {
+                      const primary = toHexColor(whitelabelPrimaryColor, '#0047BB')
+                      const sidebarBg = `linear-gradient(180deg, ${whitelabelSidebarFrom} 0%, ${whitelabelSidebarTo} 100%)`
+                      const brandLabel = String(whitelabelBrandName || '').trim() || 'Connekt'
+                      const renderContent = () => {
+                        if (tab.id === 'painel') {
+                          return (
+                            <>
+                              <div className="text-[10px] font-semibold text-[#111827]">Seu progresso</div>
+                              <div className="mt-2 grid grid-cols-3 gap-2">
+                                <div className="rounded-[8px] border border-[#E5E7EB] bg-white p-2">
+                                  <div className="text-[9px] text-[#6B7280]">Cursos</div>
+                                  <div className="text-[12px] font-bold text-[#111827]">3</div>
+                                </div>
+                                <div className="rounded-[8px] border border-[#E5E7EB] bg-white p-2">
+                                  <div className="text-[9px] text-[#6B7280]">Aulas</div>
+                                  <div className="text-[12px] font-bold text-[#111827]">18</div>
+                                </div>
+                                <div className="rounded-[8px] border border-[#E5E7EB] bg-white p-2">
+                                  <div className="text-[9px] text-[#6B7280]">Acertos</div>
+                                  <div className="text-[12px] font-bold text-[#111827]">72%</div>
+                                </div>
+                              </div>
+                              <div className="mt-2 rounded-[8px] border border-[#E5E7EB] bg-white p-2">
+                                <div className="flex items-center justify-between">
+                                  <div className="text-[9px] text-[#6B7280]">Última atividade</div>
+                                  <div className="text-[9px] font-semibold" style={{ color: primary }}>Ver</div>
+                                </div>
+                                <div className="mt-2 h-10 rounded-[6px]" style={{ background: `linear-gradient(90deg, ${primary}22 0%, ${primary}55 45%, ${primary}22 100%)` }} />
+                              </div>
+                            </>
+                          )
+                        }
+                        if (tab.id === 'simulados') {
+                          return (
+                            <>
+                              <div className="flex items-center justify-between">
+                                <div className="text-[10px] font-semibold text-[#111827]">Disponíveis</div>
+                                <div className="text-[9px] font-semibold" style={{ color: primary }}>Filtrar</div>
+                              </div>
+                              <div className="mt-2 space-y-2">
+                                {[
+                                  { t: 'Simulado 01', s: 'Novo' },
+                                  { t: 'Simulado 02', s: 'Em breve' },
+                                  { t: 'Simulado 03', s: 'Liberado' },
+                                ].map((it) => (
+                                  <div key={it.t} className="rounded-[8px] border border-[#E5E7EB] bg-white p-2">
+                                    <div className="flex items-center justify-between gap-2">
+                                      <div className="text-[10px] font-semibold text-[#111827] truncate">{it.t}</div>
+                                      <span
+                                        className="text-[9px] font-bold px-2 py-0.5 rounded-full"
+                                        style={{
+                                          backgroundColor: it.s === 'Liberado' ? '#DCFCE7' : (it.s === 'Em breve' ? '#FFEDD5' : '#DBEAFE'),
+                                          color: it.s === 'Liberado' ? '#166534' : (it.s === 'Em breve' ? '#B45309' : primary),
+                                        }}
+                                      >
+                                        {it.s}
+                                      </span>
+                                    </div>
+                                    <div className="mt-1 h-2 rounded-[6px] bg-[#F3F4F6]" />
+                                  </div>
+                                ))}
+                              </div>
+                            </>
+                          )
+                        }
+                        if (tab.id === 'banco') {
+                          return (
+                            <>
+                              <div className="flex items-center justify-between">
+                                <div className="text-[10px] font-semibold text-[#111827]">Banco de questões</div>
+                                <div className="text-[9px] font-semibold" style={{ color: primary }}>Buscar</div>
+                              </div>
+                              <div className="mt-2 rounded-[8px] border border-[#E5E7EB] bg-white p-2">
+                                <div className="h-2 rounded-[6px] bg-[#E5E7EB]" />
+                              </div>
+                              <div className="mt-2 space-y-2">
+                                {[
+                                  'Cardiologia',
+                                  'Clínica médica',
+                                  'Emergências',
+                                ].map((c) => (
+                                  <div key={c} className="rounded-[8px] border border-[#E5E7EB] bg-white p-2">
+                                    <div className="text-[10px] font-semibold text-[#111827] truncate">{c}</div>
+                                    <div className="mt-1 flex items-center gap-2">
+                                      <div className="h-2 flex-1 rounded-[6px] bg-[#F3F4F6]" />
+                                      <div className="h-5 px-2 rounded-[6px] text-[9px] font-semibold flex items-center" style={{ backgroundColor: `${primary}22`, color: primary }}>
+                                        Abrir
+                                      </div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </>
+                          )
+                        }
+                        return (
+                          <>
+                            <div className="flex items-center justify-between">
+                              <div className="text-[10px] font-semibold text-[#111827]">Preferências</div>
+                              <div className="text-[9px] font-semibold" style={{ color: primary }}>Salvar</div>
+                            </div>
+                            <div className="mt-2 space-y-2">
+                              {[
+                                { k: 'Notificações', v: true },
+                                { k: 'Modo foco', v: false },
+                                { k: 'Acessibilidade', v: false },
+                              ].map((row) => (
+                                <div key={row.k} className="rounded-[8px] border border-[#E5E7EB] bg-white p-2 flex items-center justify-between gap-2">
+                                  <div className="text-[10px] text-[#111827] truncate">{row.k}</div>
+                                  <div className="h-4 w-8 rounded-full relative" style={{ backgroundColor: row.v ? primary : '#E5E7EB' }}>
+                                    <div className="absolute top-0.5 h-3 w-3 rounded-full bg-white" style={{ left: row.v ? '18px' : '2px' }} />
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </>
+                        )
+                      }
+
+                      return (
+                        <div key={tab.id} className="rounded-[12px] border border-[#E3E4E5] bg-white overflow-hidden shadow-sm">
+                          <div className="px-3 py-2 flex items-center justify-between border-b border-[#E3E4E5] bg-[#F8FAFC]">
+                            <div className="text-[11px] font-semibold text-[#111827] truncate">{tab.icon} {tab.label}</div>
+                            <div className="text-[10px] font-semibold" style={{ color: primary }}>{brandLabel}</div>
+                          </div>
+                          <div className="flex h-[190px]">
+                            <div className="w-[92px] px-2 py-2" style={{ background: sidebarBg }}>
+                              <div className="h-6 rounded-[8px] bg-white/15 flex items-center justify-center px-2">
+                                {whitelabelLogoCompactUrl ? (
+                                  <img src={whitelabelLogoCompactUrl} alt="Logo" className="h-4 w-auto object-contain" />
+                                ) : (
+                                  <div className="text-[9px] font-bold text-white truncate">{brandLabel}</div>
+                                )}
+                              </div>
+                              <div className="mt-2 space-y-1">
+                                {[
+                                  { id: 'painel', label: 'Painel' },
+                                  { id: 'simulados', label: 'Simulados' },
+                                  { id: 'banco', label: 'Banco' },
+                                  { id: 'config', label: 'Config' },
+                                ].map((it) => {
+                                  const active = it.id === tab.id
+                                  return (
+                                    <div
+                                      key={it.id}
+                                      className="h-6 rounded-[8px] flex items-center px-2 text-[9px] font-semibold"
+                                      style={{
+                                        backgroundColor: active ? primary : 'rgba(255,255,255,0.12)',
+                                        color: '#FFFFFF',
+                                      }}
+                                    >
+                                      <span className="truncate">{it.label}</span>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            </div>
+                            <div className="flex-1 bg-[#F8FAFC] p-3 overflow-hidden">
+                              <div className="flex items-center justify-between">
+                                <div className="text-[12px] font-bold text-[#111827] truncate">{tab.label}</div>
+                                <div className="h-6 w-6 rounded-full bg-[#E5E7EB]" />
+                              </div>
+                              <div className="mt-2">{renderContent()}</div>
+                            </div>
+                          </div>
                         </div>
-                        <div
-                          className="h-24 rounded-[8px] relative overflow-hidden"
-                          style={{ background: `linear-gradient(180deg, ${whitelabelSidebarFrom} 0%, ${whitelabelSidebarTo} 100%)` }}
-                        >
-                          <div className="absolute top-2 left-2 h-3 w-20 rounded-[6px] bg-white/20" />
-                          <div className="absolute top-2 right-2 h-3 w-10 rounded-[6px] bg-white/20" />
-                          <div className="absolute bottom-2 left-2 h-3 w-24 rounded-[6px] bg-white/20" />
-                          <div className="absolute bottom-2 right-2 h-3 w-16 rounded-[6px] bg-white/20" />
-                        </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 </div>
               </div>
