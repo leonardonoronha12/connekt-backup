@@ -1835,6 +1835,39 @@ const ConfiguracoesPage = () => {
                     </button>
                   </div>
                 </div>
+
+                <div className="mt-8">
+                  <h4 className="text-[13px] font-semibold text-[#1E1B39] mb-3">Prévia das abas do aluno</h4>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    {[
+                      { label: 'Painel', icon: '🏠' },
+                      { label: 'Simulados', icon: '📝' },
+                      { label: 'Banco de Questões', icon: '📚' },
+                      { label: 'Configurações', icon: '⚙️' },
+                    ].map((tab) => (
+                      <div
+                        key={tab.label}
+                        className="rounded-[10px] border border-[#E3E4E5] bg-white p-3 shadow-sm"
+                      >
+                        <div
+                          className="h-9 rounded-[8px] mb-3 flex items-center justify-center text-white text-[12px] font-semibold"
+                          style={{ backgroundColor: toHexColor(whitelabelPrimaryColor, '#0047BB') }}
+                        >
+                          {tab.icon} {tab.label}
+                        </div>
+                        <div
+                          className="h-24 rounded-[8px] relative overflow-hidden"
+                          style={{ background: `linear-gradient(180deg, ${whitelabelSidebarFrom} 0%, ${whitelabelSidebarTo} 100%)` }}
+                        >
+                          <div className="absolute top-2 left-2 h-3 w-20 rounded-[6px] bg-white/20" />
+                          <div className="absolute top-2 right-2 h-3 w-10 rounded-[6px] bg-white/20" />
+                          <div className="absolute bottom-2 left-2 h-3 w-24 rounded-[6px] bg-white/20" />
+                          <div className="absolute bottom-2 right-2 h-3 w-16 rounded-[6px] bg-white/20" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
 
               {/* Subdomain Section */}
