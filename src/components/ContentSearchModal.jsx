@@ -520,9 +520,20 @@ export default function ContentSearchModal({ open, query, onChangeQuery, onClose
               >
                 <div className="px-4 py-3 flex items-center justify-between bg-white">
                   <div className="text-[12px] font-semibold text-[#22252B]">Aplicar filtros de pesquisa</div>
-                  <button type="button" className="text-[11px] font-semibold text-[#0047BB] hover:underline" onClick={clearFilters}>
-                    Limpar
-                  </button>
+                  <div className="flex items-center gap-3">
+                    <button type="button" className="text-[11px] font-semibold text-[#0047BB] hover:underline" onClick={clearFilters}>
+                      Limpar
+                    </button>
+                    <button
+                      type="button"
+                      className="w-8 h-8 rounded-full hover:bg-black/5 flex items-center justify-center"
+                      onClick={() => setIsFilterOpen(false)}
+                      aria-label="Fechar filtros"
+                      title="Fechar"
+                    >
+                      <X className="w-4 h-4 text-[#737780]" />
+                    </button>
+                  </div>
                 </div>
                 <div className="px-4 py-3">
                   <div className="flex items-center gap-2 w-full h-9 px-3 rounded-[8px] border border-[#E3E4E5] bg-[#F9FAFB]">
