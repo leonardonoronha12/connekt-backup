@@ -175,15 +175,32 @@ const Header = () => {
     if (!item) return
     const isAluno = String(window.location.pathname || '').startsWith('/aluno')
     if (item.type === 'Simulado') {
-      navigateTo(isAluno ? '/aluno/simulados/acesso?simId=s1' : '/simulados/acesso?simId=s1')
+      const simId = item?.simId || item?.id
+      if (simId) {
+        const qs = new URLSearchParams()
+        qs.set('simId', String(simId))
+        navigateTo(isAluno ? `/aluno/simulados/acesso?${qs.toString()}` : `/simulados/acesso?${qs.toString()}`)
+      }
       return
     }
     if (item.type === 'Curso') {
-      navigateTo(isAluno ? '/aluno' : '/produtos')
+      const courseId = item?.courseId || item?.id
+      if (courseId) {
+        navigateTo(isAluno ? `/aluno/curso/${encodeURIComponent(String(courseId))}` : `/produtos`)
+      }
       return
     }
     if (item.type === 'Aula') {
-      navigateTo(isAluno ? '/aluno/aula' : '/produtos')
+      const courseId = item?.courseId || ''
+      const moduleId = item?.moduleId || ''
+      const lessonId = item?.lessonId || ''
+      const lessonIndex = item?.lessonIndex
+      const qs = new URLSearchParams()
+      if (courseId) qs.set('courseId', String(courseId))
+      if (moduleId) qs.set('moduleId', String(moduleId))
+      if (lessonId) qs.set('lessonId', String(lessonId))
+      if (!lessonId && Number.isFinite(Number(lessonIndex))) qs.set('lessonIndex', String(lessonIndex))
+      navigateTo(isAluno ? `/aluno/aula?${qs.toString()}` : '/produtos')
       return
     }
   }
