@@ -217,9 +217,11 @@ function SimuladoCard({ title, progress, isPaid, price, onClick }) {
           <span className="inline-flex items-center justify-center w-[80px] h-[18px] px-3 text-[10px] rounded-[54px] leading-none font-medium bg-[#E9FFEF] text-[#06C270]">
             Publicado
           </span>
-          <span className={`inline-flex items-center justify-center w-[80px] h-[18px] px-3 text-[10px] rounded-[54px] leading-none font-medium ${paid ? 'bg-[#FEF3C7] text-[#92400E]' : 'bg-[#EEF2FF] text-[#0047BB]'}`}>
-            {paid ? 'Pago' : 'Gratuito'}
-          </span>
+          {!paid ? (
+            <span className="inline-flex items-center justify-center w-[80px] h-[18px] px-3 text-[10px] rounded-[54px] leading-none font-medium bg-[#EEF2FF] text-[#0047BB]">
+              Gratuito
+            </span>
+          ) : null}
         </div>
       </div>
 
@@ -339,9 +341,11 @@ function ProducerSimuladosModal({ open, onClose, simulados, onSelectSimulado }) 
                             <div className="text-[10px] text-[#9291A5] font-inter">Simulado criado por você</div>
                           </div>
                         </div>
-                        <span className={`inline-flex items-center justify-center h-[18px] px-3 text-[10px] rounded-[54px] leading-none font-medium ${paid ? 'bg-[#FEF3C7] text-[#92400E]' : 'bg-[#EEF2FF] text-[#0047BB]'}`}>
-                          {paid ? 'Pago' : 'Gratuito'}
-                        </span>
+                        {!paid ? (
+                          <span className="inline-flex items-center justify-center h-[18px] px-3 text-[10px] rounded-[54px] leading-none font-medium bg-[#EEF2FF] text-[#0047BB]">
+                            Gratuito
+                          </span>
+                        ) : null}
                       </div>
                       <div className="mt-4 flex items-center justify-between text-[12px] text-[#737780]">
                         <div>Aprovação</div>
