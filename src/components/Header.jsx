@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { ArrowLeft, X, HelpCircle, Bell, ChevronDown, User, Search } from 'lucide-react';
+import { ArrowLeft, X, Bell, ChevronDown, User, Search } from 'lucide-react';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import SystemNotificationsModal from '@/components/SystemNotificationsModal.jsx';
 import { notificationsService } from '@/services/notificationsService.js';
@@ -11,6 +11,7 @@ const Header = () => {
   const [unreadCount, setUnreadCount] = useState(0);
   const [searchValue, setSearchValue] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isSearchPinnedOpen, setIsSearchPinnedOpen] = useState(false);
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
   const [currentSearch, setCurrentSearch] = useState(window.location.search);
   const [avatarLoadFailed, setAvatarLoadFailed] = useState(false);
@@ -88,11 +89,6 @@ const Header = () => {
 
   useEffect(() => {
     const userId = user?.id || null
-    const isAlunoPath = String(currentPath || '').startsWith('/aluno')
-    if (isAlunoPath) {
-      setUnreadCount(0)
-      return
-    }
     if (!userId) {
       setUnreadCount(0)
       return
@@ -161,17 +157,20 @@ const Header = () => {
     if (!showSearch) {
       if (q.length > 0) setSearchValue('')
       setIsSearchOpen(false)
+      setIsSearchPinnedOpen(false)
       return
     }
     if (q.length > 0) {
+      if (isSearchPinnedOpen) setIsSearchPinnedOpen(false)
       setIsSearchOpen(true)
       return
     }
-    setIsSearchOpen(false)
-  }, [searchValue, showSearch])
+    if (!isSearchPinnedOpen) setIsSearchOpen(false)
+  }, [searchValue, showSearch, isSearchPinnedOpen])
 
   const handleSelectSearchResult = (item) => {
     setIsSearchOpen(false)
+    setIsSearchPinnedOpen(false)
     if (!item) return
     const isAluno = String(window.location.pathname || '').startsWith('/aluno')
     if (item.type === 'Simulado') {
@@ -242,7 +241,20 @@ const Header = () => {
 
       {!isSimuladoResposta && !isAproveitamento && showSearch ? (
         <div className="flex items-center gap-3 flex-1 min-w-0">
-          <div className="flex items-center gap-2 w-full min-w-0 max-w-none sm:max-w-[420px]" style={{ height: '36px', padding: '0 12px', borderRadius: '8px', border: '1px solid rgb(227, 228, 229)', backgroundColor: 'rgb(249, 250, 251)' }}>
+          <button
+            type="button"
+            className="sm:hidden h-9 w-9 rounded-[8px] border border-[#E3E4E5] bg-[#F9FAFB] flex items-center justify-center"
+            aria-label="Abrir busca"
+            title="Buscar"
+            onClick={() => {
+              setIsSearchPinnedOpen(true)
+              setSearchValue('')
+              setIsSearchOpen(true)
+            }}
+          >
+            <Search className="w-4 h-4 text-[#737780]" />
+          </button>
+          <div className="hidden sm:flex items-center gap-2 w-full min-w-0 max-w-none sm:max-w-[420px]" style={{ height: '36px', padding: '0 12px', borderRadius: '8px', border: '1px solid rgb(227, 228, 229)', backgroundColor: 'rgb(249, 250, 251)' }}>
             <Search className="w-4 h-4 text-[#737780]" />
             <input
               value={searchValue}
@@ -319,28 +331,26 @@ const Header = () => {
           className="flex items-center gap-2 sm:gap-3 shrink-0"
         >
           {/* Botão 2 - Notificações */}
-          {!isAlunoPath ? (
-            <button
-              className="flex items-center justify-center transition-all duration-200 hover:bg-black hover:bg-opacity-5"
-              style={{
-                width: '24px',
-                height: '24px',
-                backgroundColor: 'rgb(243, 244, 245)',
-                borderRadius: '2px',
-                cursor: 'pointer'
-              }}
-              aria-label="Notificações"
-              title="Notificações"
-              onClick={() => setIsNotificationsOpen(v => !v)}
-            >
-              <span className="relative">
-                <Bell className="w-3 h-3 text-[#22252B]" />
-                {unreadCount > 0 ? (
-                  <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-[#0047BB]" />
-                ) : null}
-              </span>
-            </button>
-          ) : null}
+          <button
+            className="flex items-center justify-center transition-all duration-200 hover:bg-black hover:bg-opacity-5"
+            style={{
+              width: '24px',
+              height: '24px',
+              backgroundColor: 'rgb(243, 244, 245)',
+              borderRadius: '2px',
+              cursor: 'pointer'
+            }}
+            aria-label="Notificações"
+            title="Notificações"
+            onClick={() => setIsNotificationsOpen(v => !v)}
+          >
+            <span className="relative">
+              <Bell className="w-3 h-3 text-[#22252B]" />
+              {unreadCount > 0 ? (
+                <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-[#0047BB]" />
+              ) : null}
+            </span>
+          </button>
 
           {/* Avatar + Caret */}
           <div
@@ -384,13 +394,11 @@ const Header = () => {
             </div>
           )}
 
-          {!isAlunoPath ? (
-            <SystemNotificationsModal
-              open={isNotificationsOpen}
-              onClose={() => setIsNotificationsOpen(false)}
-              user={user}
-            />
-          ) : null}
+          <SystemNotificationsModal
+            open={isNotificationsOpen}
+            onClose={() => setIsNotificationsOpen(false)}
+            user={user}
+          />
         </div>
       )}
 
@@ -398,7 +406,10 @@ const Header = () => {
         open={showSearch && isSearchOpen && !isSimuladoResposta && !isAproveitamento}
         query={searchValue}
         onChangeQuery={setSearchValue}
-        onClose={() => setIsSearchOpen(false)}
+        onClose={() => {
+          setIsSearchOpen(false)
+          setIsSearchPinnedOpen(false)
+        }}
         onSelect={handleSelectSearchResult}
       />
     </header>
