@@ -1,8 +1,44 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronDown, Search, X } from 'lucide-react'
+import { supabase } from '@/lib/supabaseClient'
+import { useActiveProducerUserId } from '@/hooks/useActiveProducerUserId'
 
 function normalize(value) {
   return String(value || '').trim().toLowerCase()
+}
+
+function isNonEmptyString(v) {
+  return typeof v === 'string' && v.trim()
+}
+
+function parseJsonMaybe(value) {
+  if (value == null) return null
+  if (typeof value === 'object') return value
+  if (typeof value !== 'string') return null
+  const s = value.trim()
+  if (!s) return null
+  try { return JSON.parse(s) } catch (_) { return null }
+}
+
+function getCourseModules(row) {
+  const parsed = parseJsonMaybe(row?.modules)
+  if (Array.isArray(parsed)) return parsed
+  if (parsed && typeof parsed === 'object') {
+    if (Array.isArray(parsed.modules)) return parsed.modules
+    if (Array.isArray(parsed.items)) return parsed.items
+  }
+  const fromData = parseJsonMaybe(row?.data)
+  if (fromData && typeof fromData === 'object' && Array.isArray(fromData.modules)) return fromData.modules
+  return []
+}
+
+function getModuleLessons(mod) {
+  if (!mod) return []
+  if (Array.isArray(mod.lessons)) return mod.lessons
+  if (Array.isArray(mod.aulas)) return mod.aulas
+  if (Array.isArray(mod.items)) return mod.items
+  if (mod && typeof mod === 'object' && Array.isArray(mod.module_lessons)) return mod.module_lessons
+  return []
 }
 
 function TypePill({ label, active, onClick }) {
@@ -61,11 +97,16 @@ function ResultRow({ item, onSelect }) {
 }
 
 export default function ContentSearchModal({ open, query, onChangeQuery, onClose, onSelect }) {
+  const activeProducerUserId = useActiveProducerUserId()
   const [typeFilter, setTypeFilter] = useState('Todos')
   const [isFilterOpen, setIsFilterOpen] = useState(false)
   const [filters, setFilters] = useState({ categories: [], subcategories: [], tags: [] })
   const filterButtonRef = useRef(null)
   const filterPanelRef = useRef(null)
+  const [loading, setLoading] = useState(false)
+  const [producerCourses, setProducerCourses] = useState([])
+  const [producerSimulados, setProducerSimulados] = useState([])
+  const [loadError, setLoadError] = useState('')
 
   useEffect(() => {
     if (!open) return
@@ -82,6 +123,52 @@ export default function ContentSearchModal({ open, query, onChangeQuery, onClose
     setIsFilterOpen(false)
     setFilters({ categories: [], subcategories: [], tags: [] })
   }, [open])
+
+  useEffect(() => {
+    let active = true
+    const run = async () => {
+      if (!open) return
+      const pid = String(activeProducerUserId || '').trim()
+      if (!pid) {
+        if (active) {
+          setProducerCourses([])
+          setProducerSimulados([])
+          setLoadError('')
+          setLoading(false)
+        }
+        return
+      }
+      setLoading(true)
+      setLoadError('')
+      try {
+        const token = (await supabase.auth.getSession().catch(() => ({ data: null })))?.data?.session?.access_token || ''
+        if (!token) throw new Error('missing_token')
+        const [coursesRes, simuladosRes] = await Promise.all([
+          fetch(`/api/producer?type=courses&producerId=${encodeURIComponent(pid)}`, { headers: { Authorization: `Bearer ${token}` } }),
+          fetch(`/api/producer?type=simulados&producerId=${encodeURIComponent(pid)}`, { headers: { Authorization: `Bearer ${token}` } }),
+        ])
+        const [coursesBody, simuladosBody] = await Promise.all([
+          coursesRes.json().catch(() => ({})),
+          simuladosRes.json().catch(() => ({})),
+        ])
+        if (!active) return
+        setProducerCourses(Array.isArray(coursesBody?.data) ? coursesBody.data : [])
+        setProducerSimulados(Array.isArray(simuladosBody?.data) ? simuladosBody.data : [])
+        if (!coursesRes.ok || !simuladosRes.ok) {
+          setLoadError(String(coursesBody?.error || simuladosBody?.error || 'Não foi possível carregar o conteúdo.'))
+        }
+      } catch (e) {
+        if (!active) return
+        setProducerCourses([])
+        setProducerSimulados([])
+        setLoadError(String(e?.message || 'Não foi possível carregar o conteúdo.'))
+      } finally {
+        if (active) setLoading(false)
+      }
+    }
+    run()
+    return () => { active = false }
+  }, [open, activeProducerUserId])
 
   useEffect(() => {
     if (!open) return
@@ -188,12 +275,73 @@ export default function ContentSearchModal({ open, query, onChangeQuery, onClose
   const clearFilters = () => setFilters({ categories: [], subcategories: [], tags: [] })
 
   const items = useMemo(
-    () => [
-      { id: 'curso-1', type: 'Curso', title: 'Nome do curso', subtitle: 'Conteúdo do curso', categoryId: 'cat-azul', subcategoryId: 'sub-roxo', tagIds: ['tag-azul'], tags: ['Categoria'] },
-      { id: 'simulado-1', type: 'Simulado', title: 'Nome do simulado', subtitle: 'Conteúdo do simulado', categoryId: 'cat-verde', subcategoryId: 'sub-azul', tagIds: ['tag-verde'], tags: ['Categoria'] },
-      { id: 'aula-1', type: 'Aula', title: 'Nome da aula', subtitle: 'Conteúdo da aula', categoryId: 'cat-roxo', subcategoryId: 'sub-verde', tagIds: ['tag-roxo'], tags: ['Categoria'] },
-    ],
-    []
+    () => {
+      const out = []
+
+      for (const row of Array.isArray(producerCourses) ? producerCourses : []) {
+        const courseId = String(row?.id || '').trim()
+        const courseTitle = String(row?.title || '').trim() || 'Curso'
+        if (courseId) {
+          out.push({
+            id: `course:${courseId}`,
+            type: 'Curso',
+            title: courseTitle,
+            subtitle: 'Curso',
+            courseId,
+            tags: [],
+            tagIds: [],
+            categoryId: '',
+            subcategoryId: '',
+          })
+        }
+
+        const modules = getCourseModules(row)
+        for (const mod of (Array.isArray(modules) ? modules : [])) {
+          const moduleTitle = String(mod?.title || mod?.name || '').trim()
+          const moduleId = String(mod?.id || mod?.module_id || mod?.moduleId || '').trim()
+          const lessons = getModuleLessons(mod)
+          for (let lessonIndex = 0; lessonIndex < lessons.length; lessonIndex += 1) {
+            const lesson = lessons[lessonIndex]
+            const lessonTitle = String(lesson?.title || lesson?.name || '').trim() || 'Aula'
+            const lessonId = String(lesson?.id || lesson?.lesson_id || lesson?.lessonId || '').trim()
+            out.push({
+              id: `lesson:${courseId}:${moduleId || ''}:${lessonId || ''}:${lessonIndex}`,
+              type: 'Aula',
+              title: lessonTitle,
+              subtitle: moduleTitle ? `${courseTitle} • ${moduleTitle}` : courseTitle,
+              courseId,
+              moduleId,
+              lessonId,
+              lessonIndex,
+              tags: [],
+              tagIds: [],
+              categoryId: '',
+              subcategoryId: '',
+            })
+          }
+        }
+      }
+
+      for (const row of Array.isArray(producerSimulados) ? producerSimulados : []) {
+        const simId = String(row?.id || '').trim()
+        const title = String(row?.title || '').trim() || 'Simulado'
+        if (!simId) continue
+        out.push({
+          id: `simulado:${simId}`,
+          type: 'Simulado',
+          title,
+          subtitle: 'Simulado',
+          simId,
+          tags: [],
+          tagIds: [],
+          categoryId: '',
+          subcategoryId: '',
+        })
+      }
+
+      return out
+    },
+    [producerCourses, producerSimulados]
   )
 
   const filtered = useMemo(() => {
@@ -302,7 +450,21 @@ export default function ContentSearchModal({ open, query, onChangeQuery, onClose
         </div>
 
         <div className="border-t border-[#E3E4E5]">
-          {filtered.length === 0 ? (
+          {loading ? (
+            <div className="min-h-[320px] flex items-center justify-center px-6 py-10 text-center">
+              <div className="max-w-[320px]">
+                <div className="text-[12px] font-semibold text-[#22252B]">Carregando...</div>
+                <div className="mt-1 text-[11px] text-[#737780]">Buscando conteúdo do produtor.</div>
+              </div>
+            </div>
+          ) : loadError ? (
+            <div className="min-h-[320px] flex items-center justify-center px-6 py-10 text-center">
+              <div className="max-w-[320px]">
+                <div className="text-[12px] font-semibold text-[#22252B]">Erro ao carregar</div>
+                <div className="mt-1 text-[11px] text-[#737780]">{loadError}</div>
+              </div>
+            </div>
+          ) : filtered.length === 0 ? (
             <div className="min-h-[320px] flex items-center justify-center px-6 py-10 text-center">
               <div className="max-w-[320px]">
                 <div className="text-[12px] font-semibold text-[#22252B]">Nenhum resultado</div>
