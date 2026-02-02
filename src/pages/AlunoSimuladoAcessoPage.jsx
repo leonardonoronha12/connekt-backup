@@ -602,6 +602,11 @@ export default function AlunoSimuladoAcessoPage() {
                           startSimuladoCheckout()
                           return
                         }
+                        try {
+                          localStorage.removeItem(`connekt_simulado_pause_${simId}`)
+                          localStorage.removeItem(`connekt_simulado_finish_${simId}`)
+                          localStorage.setItem(`connekt_simulado_progress:${simId}`, '0')
+                        } catch (_) {}
                         navigateTo(`/aluno/reposta-correta-simulado?simId=${encodeURIComponent(simId)}${demoSuffix}`)
                       }}
                       disabled={primaryCtaDisabled}

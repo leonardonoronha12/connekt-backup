@@ -1,6 +1,7 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { supabase } from '@/lib/supabaseClient';
 import { useActiveProducerUserId } from '@/hooks/useActiveProducerUserId';
+import { useAuth } from '@/contexts/SupabaseAuthContext'
 
 function Badge({ children }) {
   return (
@@ -87,6 +88,7 @@ function AproveitamentoCircle({ percent = 0 }) {
 
 function RepostaCorretaSimuladoPage() {
   const isAlunoView = typeof window !== 'undefined' && String(window.location.pathname || '').startsWith('/aluno/');
+  const { user } = useAuth()
   const activeProducerUserId = useActiveProducerUserId()
   const params = (() => {
     try {
@@ -124,9 +126,18 @@ function RepostaCorretaSimuladoPage() {
   const [finishedAt, setFinishedAt] = useState(null);
   const [finalRemainingMs, setFinalRemainingMs] = useState(null);
   const endTimeRef = useRef(null);
+  const [studentProfile, setStudentProfile] = useState({ name: '', avatar_url: '' })
+  const [confirmModal, setConfirmModal] = useState({ open: false, mode: '' })
 
   useEffect(() => {
     try {
+      if (isAlunoView && !params.resultado) {
+        try {
+          localStorage.removeItem(pauseKey);
+          localStorage.removeItem(finishKey);
+          localStorage.setItem(progressKey, '0');
+        } catch (_) {}
+      }
       const raw = localStorage.getItem(previewKey) || localStorage.getItem('simulationPreview');
       let paused = null;
       try {
@@ -181,6 +192,88 @@ function RepostaCorretaSimuladoPage() {
       console.warn('Falha ao carregar simulationPreview:', err);
     }
   }, []);
+
+  useEffect(() => {
+    let cancelled = false
+    const run = async () => {
+      if (!isAlunoView) return
+      if (params.demo) return
+      const uid = String(user?.id || '').trim()
+      const email = String(user?.email || '').trim()
+      if (!uid && !email) return
+      const attempts = [
+        () => supabase.from('students').select('name,avatar_url').eq('user_id', uid).maybeSingle(),
+        () => supabase.from('students').select('name,avatar_url').eq('external_id', uid).maybeSingle(),
+        () => supabase.from('students').select('name,avatar_url').eq('email', email).maybeSingle(),
+      ]
+      for (const fn of attempts) {
+        try {
+          const { data, error } = await fn()
+          if (cancelled) return
+          if (error) continue
+          if (data?.name || data?.avatar_url) {
+            setStudentProfile({ name: String(data?.name || ''), avatar_url: String(data?.avatar_url || '') })
+            return
+          }
+        } catch (_) {}
+      }
+    }
+    run()
+    return () => { cancelled = true }
+  }, [isAlunoView, params.demo, user?.id, user?.email])
+
+  const studentName = useMemo(() => {
+    const fromStudents = String(studentProfile?.name || '').trim()
+    const meta = user?.user_metadata && typeof user.user_metadata === 'object' ? user.user_metadata : {}
+    const fromMeta = String(meta.full_name || meta.name || meta.user_name || '').trim()
+    const raw = fromStudents || fromMeta || String(user?.email || '').split('@')[0] || ''
+    const parts = raw.split(/\s+/).filter(Boolean)
+    if (parts.length >= 2) return `${parts[0]} ${parts[parts.length - 1]}`
+    return raw || 'Aluno'
+  }, [studentProfile?.name, user?.user_metadata, user?.email])
+
+  const studentAvatar = useMemo(() => {
+    const fromStudents = String(studentProfile?.avatar_url || '').trim()
+    const meta = user?.user_metadata && typeof user.user_metadata === 'object' ? user.user_metadata : {}
+    const fromMeta = String(meta.avatar_url || meta.picture || '').trim()
+    return fromStudents || fromMeta || '/perfil rc.png'
+  }, [studentProfile?.avatar_url, user?.user_metadata])
+
+  const doPause = () => {
+    if (!isAlunoView) return
+    if (isFinished) return
+    try {
+      localStorage.setItem(
+        pauseKey,
+        JSON.stringify({
+          pausedAt: new Date().toISOString(),
+          remainingMs,
+          activeQuestion,
+          selectedIndices,
+          questionStatuses,
+          aproveitamentoPercent,
+        })
+      )
+    } catch (_) {}
+    try {
+      const url = new URL('/aluno/simulados', window.location.origin)
+      if (params.demo) url.searchParams.set('demo', '1')
+      navigateTo(`${url.pathname}${url.search}`)
+    } catch (_) {
+      navigateTo(`/aluno/simulados${params.demo ? '?demo=1' : ''}`)
+    }
+  }
+
+  const doExit = () => {
+    if (!isAlunoView) return
+    try {
+      const url = new URL('/aluno/simulados', window.location.origin)
+      if (params.demo) url.searchParams.set('demo', '1')
+      navigateTo(`${url.pathname}${url.search}`)
+    } catch (_) {
+      navigateTo(`/aluno/simulados${params.demo ? '?demo=1' : ''}`)
+    }
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -596,8 +689,8 @@ function RepostaCorretaSimuladoPage() {
           <div className="flex items-center justify-end mb-4">
             <button
               type="button"
-              data-action="pause"
               disabled={isFinished}
+              onClick={() => setConfirmModal({ open: true, mode: 'pause' })}
               className="h-[36px] px-4 rounded-[4px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#22252B] hover:bg-[#F6F5FA] w-full sm:w-auto"
             >
               Pausar simulado
@@ -610,11 +703,11 @@ function RepostaCorretaSimuladoPage() {
           <div className="rounded-lg bg-white p-4 sm:p-6 flex flex-col gap-6">
             <div className="flex flex-col items-center gap-2">
               <div className="h-16 w-16 overflow-hidden rounded-full bg-gray-100">
-                <img src="/perfil rc.png" alt="Avatar" className="h-full w-full object-cover" />
+                <img src={isAlunoView ? studentAvatar : '/perfil rc.png'} alt="Avatar" className="h-full w-full object-cover" />
               </div>
               <div className="text-center">
-                <p className="font-inter font-semibold text-[16px] leading-[24px] tracking-[0px] text-gray-800">{preview.title || 'Simulado'}</p>
-                <p className="font-inter font-normal text-[12px] leading-[20px] tracking-[0px] text-gray-500">Preview</p>
+                <p className="font-inter font-semibold text-[16px] leading-[24px] tracking-[0px] text-gray-800">{isAlunoView ? studentName : (preview.title || 'Simulado')}</p>
+                <p className="font-inter font-normal text-[12px] leading-[20px] tracking-[0px] text-gray-500">{isAlunoView ? (preview.title || 'Simulado') : 'Preview'}</p>
               </div>
             </div>
 
@@ -672,9 +765,7 @@ function RepostaCorretaSimuladoPage() {
                     type="button"
                     className="h-[36px] px-4 rounded-[4px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#22252B] hover:bg-[#F6F5FA]"
                     onClick={() => {
-                      const url = new URL('/aluno/simulados', window.location.origin)
-                      if (params.demo) url.searchParams.set('demo', '1')
-                      navigateTo(`${url.pathname}${url.search}`)
+                      setConfirmModal({ open: true, mode: 'exit' })
                     }}
                   >
                     Sair do simulado
@@ -856,6 +947,44 @@ function RepostaCorretaSimuladoPage() {
         </aside>
         </div>
       </div>
+      {confirmModal.open ? (
+        <div className="fixed inset-0 z-[200]">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setConfirmModal({ open: false, mode: '' })} />
+          <div className="absolute inset-0 flex items-center justify-center p-4">
+            <div className="w-full max-w-[420px] rounded-[10px] bg-white border border-[#E3E4E5] shadow-xl p-5">
+              <div className="text-[14px] font-semibold text-[#22252B]">
+                {confirmModal.mode === 'pause' ? 'Pausar simulado?' : 'Sair do simulado?'}
+              </div>
+              <div className="mt-2 text-[12px] text-[#737780] leading-relaxed">
+                {confirmModal.mode === 'pause'
+                  ? 'Você realmente quer pausar e voltar para a lista de simulados?'
+                  : 'Você realmente quer sair e voltar para a lista de simulados?'}
+              </div>
+              <div className="mt-5 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  className="h-9 px-4 rounded-[6px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#22252B] hover:bg-[#F6F5FA]"
+                  onClick={() => setConfirmModal({ open: false, mode: '' })}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  className="h-9 px-4 rounded-[6px] bg-[#0047BB] text-white text-[12px] font-semibold hover:bg-[#003da0]"
+                  onClick={() => {
+                    const mode = confirmModal.mode
+                    setConfirmModal({ open: false, mode: '' })
+                    if (mode === 'pause') doPause()
+                    if (mode === 'exit') doExit()
+                  }}
+                >
+                  Confirmar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
