@@ -169,6 +169,7 @@ function QuestionResultCard({ index, q, selectedIndex, status, points }) {
 
 export default function AlunoSimuladoResultadoPage() {
   const { user } = useAuth()
+  const [confirmExitOpen, setConfirmExitOpen] = useState(false)
   const params = useMemo(() => {
     try {
       const sp = new URLSearchParams(window.location.search || '')
@@ -239,9 +240,7 @@ export default function AlunoSimuladoResultadoPage() {
             type="button"
             className="h-[36px] px-4 rounded-[4px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#22252B] hover:bg-[#F6F5FA]"
             onClick={() => {
-              const url = new URL('/aluno/simulados', window.location.origin)
-              if (params.demo) url.searchParams.set('demo', '1')
-              navigateTo(`${url.pathname}${url.search}`)
+              setConfirmExitOpen(true)
             }}
           >
             Sair do simulado
@@ -320,6 +319,38 @@ export default function AlunoSimuladoResultadoPage() {
           ))}
         </div>
       </div>
+      {confirmExitOpen ? (
+        <div className="fixed inset-0 z-[200]">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setConfirmExitOpen(false)} />
+          <div className="absolute inset-0 flex items-center justify-center p-4">
+            <div className="w-full max-w-[420px] rounded-[10px] bg-white border border-[#E3E4E5] shadow-xl p-5">
+              <div className="text-[14px] font-semibold text-[#22252B]">Sair do simulado?</div>
+              <div className="mt-2 text-[12px] text-[#737780] leading-relaxed">Você realmente quer voltar para a lista de simulados?</div>
+              <div className="mt-5 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  className="h-9 px-4 rounded-[6px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#22252B] hover:bg-[#F6F5FA]"
+                  onClick={() => setConfirmExitOpen(false)}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  className="h-9 px-4 rounded-[6px] bg-[#0047BB] text-white text-[12px] font-semibold hover:bg-[#003da0]"
+                  onClick={() => {
+                    setConfirmExitOpen(false)
+                    const url = new URL('/aluno/simulados', window.location.origin)
+                    if (params.demo) url.searchParams.set('demo', '1')
+                    navigateTo(`${url.pathname}${url.search}`)
+                  }}
+                >
+                  Confirmar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }
