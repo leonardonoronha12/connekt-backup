@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronDown, Search, X } from 'lucide-react'
+import { BookOpen, ChevronDown, ClipboardList, PlayCircle, Search, X } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useActiveProducerUserId } from '@/hooks/useActiveProducerUserId'
 
@@ -65,6 +65,8 @@ function ResultRow({ item, onSelect }) {
           ? { bg: '#E9FFEF', fg: '#06C270' }
           : { bg: '#F6F5FA', fg: '#22252B' }
 
+  const TypeIcon = item.type === 'Curso' ? BookOpen : (item.type === 'Simulado' ? ClipboardList : (item.type === 'Aula' ? PlayCircle : null))
+
   return (
     <button
       type="button"
@@ -72,7 +74,7 @@ function ResultRow({ item, onSelect }) {
       className="w-full text-left px-4 py-3 hover:bg-[#F9FAFB] flex items-start gap-3"
     >
       <div className="w-9 h-9 rounded-[8px] flex items-center justify-center shrink-0" style={{ backgroundColor: badgeColor.bg }}>
-        <div className="w-3.5 h-3.5 rounded-[4px]" style={{ backgroundColor: badgeColor.fg }} />
+        {TypeIcon ? <TypeIcon className="w-4 h-4" style={{ color: badgeColor.fg }} /> : <div className="w-3.5 h-3.5 rounded-[4px]" style={{ backgroundColor: badgeColor.fg }} />}
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-3">
