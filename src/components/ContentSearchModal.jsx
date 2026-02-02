@@ -20,6 +20,36 @@ function parseJsonMaybe(value) {
   try { return JSON.parse(s) } catch (_) { return null }
 }
 
+function normalizeTaxonomyValue(v) {
+  if (v == null) return ''
+  if (typeof v === 'string') return v.trim()
+  if (typeof v === 'number') return String(v)
+  if (typeof v === 'object') return String(v?.name || v?.label || v?.title || v?.value || '').trim()
+  return ''
+}
+
+function asStringArray(v) {
+  if (Array.isArray(v)) return v.map(normalizeTaxonomyValue).filter(Boolean)
+  const s = normalizeTaxonomyValue(v)
+  return s ? [s] : []
+}
+
+function readArrayFromObj(obj, keys) {
+  const o = obj && typeof obj === 'object' ? obj : {}
+  for (const k of (Array.isArray(keys) ? keys : [])) {
+    const arr = asStringArray(o?.[k])
+    if (arr.length > 0) return arr
+  }
+  return []
+}
+
+function getCourseMeta(row) {
+  const fromData = parseJsonMaybe(row?.data) || null
+  const parsedModules = parseJsonMaybe(row?.modules) || null
+  const fromModulesMeta = parsedModules && typeof parsedModules === 'object' ? (parsedModules.meta || null) : null
+  return { ...(fromModulesMeta || {}), ...(fromData || {}) }
+}
+
 function getCourseModules(row) {
   const parsed = parseJsonMaybe(row?.modules)
   if (Array.isArray(parsed)) return parsed
@@ -39,6 +69,49 @@ function getModuleLessons(mod) {
   if (Array.isArray(mod.items)) return mod.items
   if (mod && typeof mod === 'object' && Array.isArray(mod.module_lessons)) return mod.module_lessons
   return []
+}
+
+function getLessonTaxonomy(lesson, courseMeta) {
+  const l = lesson && typeof lesson === 'object' ? lesson : {}
+  const meta = (l.metadata && typeof l.metadata === 'object') ? l.metadata : ((l.meta && typeof l.meta === 'object') ? l.meta : {})
+
+  const categories =
+    readArrayFromObj(l, ['categories', 'category', 'lesson_category', 'lessonCategory']) ||
+    []
+  const subcategories =
+    readArrayFromObj(l, ['subcategories', 'subCategories', 'subcategorias', 'sub_categorias', 'sub_categories', 'subcategory', 'subcategoria', 'lesson_subcategory', 'lessonSubcategory']) ||
+    []
+  const tags =
+    readArrayFromObj(l, ['tags', 'tagIds', 'tag_ids', 'extraTags', 'tag', 'tagName', 'tag_name']) ||
+    []
+
+  const categoriesFromMeta = readArrayFromObj(meta, ['categories', 'category', 'lesson_category', 'lessonCategory'])
+  const subcategoriesFromMeta = readArrayFromObj(meta, ['subcategories', 'subCategories', 'subcategorias', 'sub_categorias', 'sub_categories', 'subcategory', 'subcategoria', 'lesson_subcategory', 'lessonSubcategory'])
+  const tagsFromMeta = readArrayFromObj(meta, ['tags', 'tagIds', 'tag_ids', 'extraTags', 'tag', 'tagName', 'tag_name'])
+
+  const cm = courseMeta && typeof courseMeta === 'object' ? courseMeta : {}
+  const courseCategories = readArrayFromObj(cm, ['selectedCategories', 'selected_categories', 'categories', 'course_categories'])
+  const courseSubcategories = readArrayFromObj(cm, ['selectedSubcategories', 'selected_subcategories', 'subcategories', 'course_subcategories'])
+  const courseTags = readArrayFromObj(cm, ['selectedTags', 'selected_tags', 'tags', 'course_tags'])
+
+  return {
+    categoryIds: (categories.length ? categories : (categoriesFromMeta.length ? categoriesFromMeta : courseCategories)),
+    subcategoryIds: (subcategories.length ? subcategories : (subcategoriesFromMeta.length ? subcategoriesFromMeta : courseSubcategories)),
+    tagIds: (tags.length ? tags : (tagsFromMeta.length ? tagsFromMeta : courseTags)),
+  }
+}
+
+function getSimuladoTaxonomy(simulado) {
+  const s = simulado && typeof simulado === 'object' ? simulado : {}
+  const settings = (s.settings && typeof s.settings === 'object') ? s.settings : (parseJsonMaybe(s.settings) || {})
+  const cats = readArrayFromObj(settings, ['categories', 'selectedCategories', 'selected_categories', 'category', 'categoria'])
+  const subs = readArrayFromObj(settings, ['subcategories', 'subCategories', 'subcategorias', 'sub_categorias', 'sub_categories', 'selectedSubcategories', 'selected_subcategories', 'subcategory', 'subcategoria'])
+  const tags = readArrayFromObj(settings, ['tags', 'tagIds', 'tag_ids', 'selectedTags', 'selected_tags', 'tag', 'tagName', 'tag_name'])
+  return {
+    categoryIds: cats,
+    subcategoryIds: subs,
+    tagIds: tags,
+  }
 }
 
 function TypePill({ label, active, onClick }) {
@@ -186,54 +259,6 @@ export default function ContentSearchModal({ open, query, onChangeQuery, onClose
     return () => window.removeEventListener('mousedown', onMouseDown)
   }, [open, isFilterOpen])
 
-  const filterOptions = useMemo(
-    () => ({
-      categories: [
-        { id: 'cat-azul', label: 'Categoria', color: '#0047BB' },
-        { id: 'cat-verde', label: 'Categoria', color: '#06C270' },
-        { id: 'cat-roxo', label: 'Categoria', color: '#5B4DEA' },
-        { id: 'cat-amarelo', label: 'Categoria', color: '#E5B800' },
-      ],
-      subcategories: [
-        { id: 'sub-azul', label: 'Subcategoria', color: '#0047BB' },
-        { id: 'sub-verde', label: 'Subcategoria', color: '#06C270' },
-        { id: 'sub-roxo', label: 'Subcategoria', color: '#5B4DEA' },
-        { id: 'sub-amarelo', label: 'Subcategoria', color: '#E5B800' },
-      ],
-      tags: [
-        { id: 'tag-azul', label: 'Tag', color: '#0047BB' },
-        { id: 'tag-verde', label: 'Tag', color: '#06C270' },
-        { id: 'tag-roxo', label: 'Tag', color: '#5B4DEA' },
-        { id: 'tag-amarelo', label: 'Tag', color: '#E5B800' },
-      ],
-    }),
-    []
-  )
-
-  const filterGroups = useMemo(() => {
-    const find = (group, id) => (filterOptions[group] || []).find((o) => o.id === id)
-    return [
-      {
-        key: 'categories',
-        group: 'categories',
-        left: [find('categories', 'cat-roxo'), find('categories', 'cat-amarelo')].filter(Boolean),
-        right: [find('categories', 'cat-azul'), find('categories', 'cat-verde')].filter(Boolean),
-      },
-      {
-        key: 'subcategories',
-        group: 'subcategories',
-        left: [find('subcategories', 'sub-roxo'), find('subcategories', 'sub-amarelo')].filter(Boolean),
-        right: [find('subcategories', 'sub-azul'), find('subcategories', 'sub-verde')].filter(Boolean),
-      },
-      {
-        key: 'tags',
-        group: 'tags',
-        left: [find('tags', 'tag-roxo'), find('tags', 'tag-amarelo')].filter(Boolean),
-        right: [find('tags', 'tag-azul'), find('tags', 'tag-verde')].filter(Boolean),
-      },
-    ]
-  }, [filterOptions])
-
   const renderFilterRow = (group, opt) => {
     const checkedList = Array.isArray(filters[group]) ? filters[group] : []
     const checked = checkedList.includes(opt.id)
@@ -283,6 +308,10 @@ export default function ContentSearchModal({ open, query, onChangeQuery, onClose
       for (const row of Array.isArray(producerCourses) ? producerCourses : []) {
         const courseId = String(row?.id || '').trim()
         const courseTitle = String(row?.title || '').trim() || 'Curso'
+        const courseMeta = getCourseMeta(row)
+        const courseCategoryIds = readArrayFromObj(courseMeta, ['selectedCategories', 'selected_categories', 'categories', 'course_categories'])
+        const courseSubcategoryIds = readArrayFromObj(courseMeta, ['selectedSubcategories', 'selected_subcategories', 'subcategories', 'course_subcategories'])
+        const courseTagIds = readArrayFromObj(courseMeta, ['selectedTags', 'selected_tags', 'tags', 'course_tags'])
         if (courseId) {
           out.push({
             id: `course:${courseId}`,
@@ -290,10 +319,9 @@ export default function ContentSearchModal({ open, query, onChangeQuery, onClose
             title: courseTitle,
             subtitle: 'Curso',
             courseId,
-            tags: [],
-            tagIds: [],
-            categoryId: '',
-            subcategoryId: '',
+            categoryIds: courseCategoryIds,
+            subcategoryIds: courseSubcategoryIds,
+            tagIds: courseTagIds,
           })
         }
 
@@ -306,6 +334,7 @@ export default function ContentSearchModal({ open, query, onChangeQuery, onClose
             const lesson = lessons[lessonIndex]
             const lessonTitle = String(lesson?.title || lesson?.name || '').trim() || 'Aula'
             const lessonId = String(lesson?.id || lesson?.lesson_id || lesson?.lessonId || '').trim()
+            const lessonTax = getLessonTaxonomy(lesson, courseMeta)
             out.push({
               id: `lesson:${courseId}:${moduleId || ''}:${lessonId || ''}:${lessonIndex}`,
               type: 'Aula',
@@ -315,10 +344,9 @@ export default function ContentSearchModal({ open, query, onChangeQuery, onClose
               moduleId,
               lessonId,
               lessonIndex,
-              tags: [],
-              tagIds: [],
-              categoryId: '',
-              subcategoryId: '',
+              categoryIds: lessonTax.categoryIds,
+              subcategoryIds: lessonTax.subcategoryIds,
+              tagIds: lessonTax.tagIds,
             })
           }
         }
@@ -328,16 +356,16 @@ export default function ContentSearchModal({ open, query, onChangeQuery, onClose
         const simId = String(row?.id || '').trim()
         const title = String(row?.title || '').trim() || 'Simulado'
         if (!simId) continue
+        const simTax = getSimuladoTaxonomy(row)
         out.push({
           id: `simulado:${simId}`,
           type: 'Simulado',
           title,
           subtitle: 'Simulado',
           simId,
-          tags: [],
-          tagIds: [],
-          categoryId: '',
-          subcategoryId: '',
+          categoryIds: simTax.categoryIds,
+          subcategoryIds: simTax.subcategoryIds,
+          tagIds: simTax.tagIds,
         })
       }
 
@@ -345,6 +373,40 @@ export default function ContentSearchModal({ open, query, onChangeQuery, onClose
     },
     [producerCourses, producerSimulados]
   )
+
+  const filterOptions = useMemo(() => {
+    const palette = ['#5B4DEA', '#E5B800', '#0047BB', '#06C270']
+    const catSet = new Set()
+    const subSet = new Set()
+    const tagSet = new Set()
+    for (const i of Array.isArray(items) ? items : []) {
+      for (const c of (Array.isArray(i?.categoryIds) ? i.categoryIds : [])) catSet.add(String(c))
+      for (const s of (Array.isArray(i?.subcategoryIds) ? i.subcategoryIds : [])) subSet.add(String(s))
+      for (const t of (Array.isArray(i?.tagIds) ? i.tagIds : [])) tagSet.add(String(t))
+    }
+    const categories = Array.from(catSet).map((v) => String(v || '').trim()).filter(Boolean).sort((a, b) => a.localeCompare(b))
+    const subcategories = Array.from(subSet).map((v) => String(v || '').trim()).filter(Boolean).sort((a, b) => a.localeCompare(b))
+    const tags = Array.from(tagSet).map((v) => String(v || '').trim()).filter(Boolean).sort((a, b) => a.localeCompare(b))
+
+    return {
+      categories: categories.map((c, idx) => ({ id: c, label: c, color: palette[idx % palette.length] })),
+      subcategories: subcategories.map((c, idx) => ({ id: c, label: c, color: palette[(idx + 1) % palette.length] })),
+      tags: tags.map((c, idx) => ({ id: c, label: c, color: palette[(idx + 2) % palette.length] })),
+    }
+  }, [items])
+
+  const filterGroups = useMemo(() => {
+    const split = (arr) => {
+      const list = Array.isArray(arr) ? arr : []
+      const half = Math.ceil(list.length / 2)
+      return { left: list.slice(0, half), right: list.slice(half) }
+    }
+    return [
+      { key: 'categories', group: 'categories', ...split(filterOptions.categories) },
+      { key: 'subcategories', group: 'subcategories', ...split(filterOptions.subcategories) },
+      { key: 'tags', group: 'tags', ...split(filterOptions.tags) },
+    ]
+  }, [filterOptions])
 
   const filtered = useMemo(() => {
     const q = normalize(query)
@@ -356,11 +418,20 @@ export default function ContentSearchModal({ open, query, onChangeQuery, onClose
     const tags = Array.isArray(filters.tags) ? filters.tags : []
 
     return byText.filter((i) => {
-      if (cats.length > 0 && !cats.includes(i.categoryId)) return false
-      if (subs.length > 0 && !subs.includes(i.subcategoryId)) return false
+      if (cats.length > 0) {
+        const itemCats = Array.isArray(i.categoryIds) ? i.categoryIds : []
+        const has = itemCats.some((c) => cats.includes(String(c || '').trim()))
+        if (!has) return false
+      }
+      if (subs.length > 0) {
+        const itemSubs = Array.isArray(i.subcategoryIds) ? i.subcategoryIds : []
+        const has = itemSubs.some((c) => subs.includes(String(c || '').trim()))
+        if (!has) return false
+      }
       if (tags.length > 0) {
         const itemTags = Array.isArray(i.tagIds) ? i.tagIds : []
-        if (!itemTags.some((t) => tags.includes(t))) return false
+        const has = itemTags.some((t) => tags.includes(String(t || '').trim()))
+        if (!has) return false
       }
       return true
     })
@@ -428,14 +499,18 @@ export default function ContentSearchModal({ open, query, onChangeQuery, onClose
                     {filterGroups.map((g, idx) => (
                       <div key={g.key}>
                         {idx > 0 ? <div className="border-t border-[#E3E4E5]" /> : null}
-                        <div className="grid grid-cols-2">
-                          <div className="py-1">
-                            {g.left.map((opt) => renderFilterRow(g.group, opt))}
+                        {((g.left || []).length + (g.right || []).length) === 0 ? (
+                          <div className="px-4 py-2 text-[11px] text-[#737780]">Nenhuma opção disponível</div>
+                        ) : (
+                          <div className="grid grid-cols-2">
+                            <div className="py-1">
+                              {g.left.map((opt) => renderFilterRow(g.group, opt))}
+                            </div>
+                            <div className="py-1 border-l border-[#E3E4E5]">
+                              {g.right.map((opt) => renderFilterRow(g.group, opt))}
+                            </div>
                           </div>
-                          <div className="py-1 border-l border-[#E3E4E5]">
-                            {g.right.map((opt) => renderFilterRow(g.group, opt))}
-                          </div>
-                        </div>
+                        )}
                       </div>
                     ))}
                   </div>
