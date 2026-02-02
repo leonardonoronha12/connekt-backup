@@ -318,22 +318,6 @@ const Header = () => {
         <div 
           className="flex items-center gap-2 sm:gap-3 shrink-0"
         >
-          {/* Botão 1 - Ajuda */}
-          <button
-            className="flex items-center justify-center transition-all duration-200 hover:bg-black hover:bg-opacity-5"
-            style={{
-              width: '24px',
-              height: '24px',
-              backgroundColor: 'rgb(243, 244, 245)',
-              borderRadius: '2px',
-              cursor: 'pointer'
-            }}
-            aria-label="Ajuda"
-            title="Ajuda"
-          >
-            <HelpCircle className="w-3 h-3 text-[#22252B]" />
-          </button>
-
           {/* Botão 2 - Notificações */}
           {!isAlunoPath ? (
             <button
