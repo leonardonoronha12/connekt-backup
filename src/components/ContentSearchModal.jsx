@@ -501,88 +501,99 @@ export default function ContentSearchModal({ open, query, onChangeQuery, onClose
                 ) : null}
                 <ChevronDown className={`w-4 h-4 text-[#737780] transition-transform duration-200 ${isFilterOpen ? 'rotate-180' : 'rotate-0'}`} />
               </button>
-
-              {isFilterOpen ? (
-                <div
-                  ref={filterPanelRef}
-                  className="absolute right-0 top-full mt-2 w-[420px] max-w-[86vw] rounded-[10px] border border-[#E3E4E5] bg-[#F9FAFB] shadow-xl overflow-hidden z-[10000]"
-                >
-                  <div className="px-4 py-3 flex items-center justify-between bg-white">
-                    <div className="text-[12px] font-semibold text-[#22252B]">Aplicar filtros de pesquisa</div>
-                    <button type="button" className="text-[11px] font-semibold text-[#0047BB] hover:underline" onClick={clearFilters}>
-                      Limpar
-                    </button>
-                  </div>
-                  <div className="px-4 py-3">
-                    <div className="flex items-center gap-2 w-full h-9 px-3 rounded-[8px] border border-[#E3E4E5] bg-[#F9FAFB]">
-                      <Search className="w-4 h-4 text-[#737780]" aria-hidden="true" />
-                      <input
-                        value={filterOptionQuery}
-                        onChange={(e) => setFilterOptionQuery(e.target.value)}
-                        className="flex-1 bg-transparent outline-none text-[12px] text-[#22252B]"
-                        placeholder="Buscar nos filtros"
-                      />
-                      {filterOptionQuery ? (
-                        <button
-                          type="button"
-                          className="w-7 h-7 rounded-full hover:bg-white flex items-center justify-center"
-                          onClick={() => setFilterOptionQuery('')}
-                          aria-label="Limpar busca"
-                        >
-                          <X className="w-4 h-4 text-[#737780]" />
-                        </button>
-                      ) : null}
-                    </div>
-                  </div>
-                  <div className="max-h-[360px] overflow-auto px-3 pb-3 space-y-2">
-                    {filterGroups.map((g) => {
-                      const openGroup = !!filterOpenGroups?.[g.group]
-                      const count = groupActiveCount(g.group)
-                      const total = (g.left?.length || 0) + (g.right?.length || 0)
-                      return (
-                        <div key={g.key} className="bg-white rounded-[10px] shadow-sm overflow-hidden">
-                          <button
-                            type="button"
-                            className="w-full px-4 py-3 flex items-center justify-between hover:bg-[#F9FAFB]"
-                            onClick={() => setFilterOpenGroups((prev) => ({ ...(prev || {}), [g.group]: !openGroup }))}
-                          >
-                            <div className="flex items-center gap-2 min-w-0">
-                              <div className="text-[12px] font-semibold text-[#22252B] truncate">{g.title}</div>
-                              {count > 0 ? (
-                                <span className="inline-flex items-center justify-center min-w-6 h-6 px-2 rounded-full bg-[#EEF2FF] text-[#0047BB] text-[11px] font-bold">
-                                  {count}
-                                </span>
-                              ) : null}
-                              {total > 0 ? (
-                                <span className="text-[11px] text-[#737780]">{total}</span>
-                              ) : null}
-                            </div>
-                            <ChevronDown className={`w-4 h-4 text-[#737780] transition-transform duration-200 ${openGroup ? 'rotate-180' : 'rotate-0'}`} aria-hidden="true" />
-                          </button>
-                          {openGroup ? (
-                            total === 0 ? (
-                              <div className="px-4 pb-4 text-[12px] text-[#737780]">
-                                Nenhuma opção disponível
-                              </div>
-                            ) : (
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 px-2 pb-2">
-                                <div className="py-1 space-y-1">
-                                  {(g.left || []).map((opt) => renderFilterRow(g.group, opt))}
-                                </div>
-                                <div className="py-1 space-y-1">
-                                  {(g.right || []).map((opt) => renderFilterRow(g.group, opt))}
-                                </div>
-                              </div>
-                            )
-                          ) : null}
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              ) : null}
             </div>
           </div>
+
+          {isFilterOpen ? (
+            <div
+              className="fixed inset-0 z-[10001] flex items-start justify-center px-4"
+              onMouseDown={(e) => {
+                e.stopPropagation()
+                setIsFilterOpen(false)
+              }}
+            >
+              <div className="absolute inset-0 bg-black/30" />
+              <div
+                ref={filterPanelRef}
+                className="relative mt-20 w-full max-w-[520px] rounded-[10px] border border-[#E3E4E5] bg-[#F9FAFB] shadow-xl overflow-hidden"
+                onMouseDown={(e) => e.stopPropagation()}
+              >
+                <div className="px-4 py-3 flex items-center justify-between bg-white">
+                  <div className="text-[12px] font-semibold text-[#22252B]">Aplicar filtros de pesquisa</div>
+                  <button type="button" className="text-[11px] font-semibold text-[#0047BB] hover:underline" onClick={clearFilters}>
+                    Limpar
+                  </button>
+                </div>
+                <div className="px-4 py-3">
+                  <div className="flex items-center gap-2 w-full h-9 px-3 rounded-[8px] border border-[#E3E4E5] bg-[#F9FAFB]">
+                    <Search className="w-4 h-4 text-[#737780]" aria-hidden="true" />
+                    <input
+                      value={filterOptionQuery}
+                      onChange={(e) => setFilterOptionQuery(e.target.value)}
+                      className="flex-1 bg-transparent outline-none text-[12px] text-[#22252B]"
+                      placeholder="Buscar nos filtros"
+                      autoFocus
+                    />
+                    {filterOptionQuery ? (
+                      <button
+                        type="button"
+                        className="w-7 h-7 rounded-full hover:bg-white flex items-center justify-center"
+                        onClick={() => setFilterOptionQuery('')}
+                        aria-label="Limpar busca"
+                      >
+                        <X className="w-4 h-4 text-[#737780]" />
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+                <div className="max-h-[calc(100vh-220px)] overflow-auto px-3 pb-3 space-y-2">
+                  {filterGroups.map((g) => {
+                    const openGroup = !!filterOpenGroups?.[g.group]
+                    const count = groupActiveCount(g.group)
+                    const total = (g.left?.length || 0) + (g.right?.length || 0)
+                    return (
+                      <div key={g.key} className="bg-white rounded-[10px] shadow-sm overflow-hidden">
+                        <button
+                          type="button"
+                          className="w-full px-4 py-3 flex items-center justify-between hover:bg-[#F9FAFB]"
+                          onClick={() => setFilterOpenGroups((prev) => ({ ...(prev || {}), [g.group]: !openGroup }))}
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <div className="text-[12px] font-semibold text-[#22252B] truncate">{g.title}</div>
+                            {count > 0 ? (
+                              <span className="inline-flex items-center justify-center min-w-6 h-6 px-2 rounded-full bg-[#EEF2FF] text-[#0047BB] text-[11px] font-bold">
+                                {count}
+                              </span>
+                            ) : null}
+                            {total > 0 ? (
+                              <span className="text-[11px] text-[#737780]">{total}</span>
+                            ) : null}
+                          </div>
+                          <ChevronDown className={`w-4 h-4 text-[#737780] transition-transform duration-200 ${openGroup ? 'rotate-180' : 'rotate-0'}`} aria-hidden="true" />
+                        </button>
+                        {openGroup ? (
+                          total === 0 ? (
+                            <div className="px-4 pb-4 text-[12px] text-[#737780]">
+                              Nenhuma opção disponível
+                            </div>
+                          ) : (
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 px-2 pb-2">
+                              <div className="py-1 space-y-1">
+                                {(g.left || []).map((opt) => renderFilterRow(g.group, opt))}
+                              </div>
+                              <div className="py-1 space-y-1">
+                                {(g.right || []).map((opt) => renderFilterRow(g.group, opt))}
+                              </div>
+                            </div>
+                          )
+                        ) : null}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+          ) : null}
 
           <div className="mt-3 flex items-center gap-2 flex-wrap">
             {['Todos', 'Curso', 'Aula', 'Simulado'].map((t) => (
