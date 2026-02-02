@@ -1274,43 +1274,45 @@ const ConfiguracoesPage = () => {
                     </div>
                   </div>
 
-                  <div className="rounded-[8px] border border-[#E3E4E5] bg-[#F8FAFC] p-4">
-                    <div className="text-[14px] font-semibold text-[#1E1B39]">Link de acesso do aluno</div>
-                    <div className="text-[12px] text-[#737780] mt-1">Compartilhe este link para o aluno entrar no seu ambiente.</div>
-                    <div className="mt-3 flex flex-col sm:flex-row sm:items-center gap-2">
-                      <input
-                        type="text"
-                        readOnly
-                        value={studentPortalLink}
-                        className="w-full sm:flex-1 px-3 py-2 border border-[#E3E4E5] rounded-[6px] text-[12px] bg-white text-[#22252B]"
-                      />
-                      <button
-                        type="button"
-                        className="h-[36px] px-3 rounded-[6px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#22252B] w-full sm:w-auto whitespace-nowrap"
-                        onClick={async () => {
-                          try {
+                  {!isAlunoView ? (
+                    <div className="rounded-[8px] border border-[#E3E4E5] bg-[#F8FAFC] p-4">
+                      <div className="text-[14px] font-semibold text-[#1E1B39]">Link de acesso do aluno</div>
+                      <div className="text-[12px] text-[#737780] mt-1">Compartilhe este link para o aluno entrar no seu ambiente.</div>
+                      <div className="mt-3 flex flex-col sm:flex-row sm:items-center gap-2">
+                        <input
+                          type="text"
+                          readOnly
+                          value={studentPortalLink}
+                          className="w-full sm:flex-1 px-3 py-2 border border-[#E3E4E5] rounded-[6px] text-[12px] bg-white text-[#22252B]"
+                        />
+                        <button
+                          type="button"
+                          className="h-[36px] px-3 rounded-[6px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#22252B] w-full sm:w-auto whitespace-nowrap"
+                          onClick={async () => {
+                            try {
+                              if (!studentPortalLink) return
+                              await navigator.clipboard.writeText(studentPortalLink)
+                              toast({ title: 'Copiado', description: 'Link copiado para a área de transferência.', duration: 4000 })
+                            } catch (_) {
+                              toast({ title: 'Erro', description: 'Não foi possível copiar o link.', duration: 4000, variant: 'destructive' })
+                            }
+                          }}
+                        >
+                          Copiar
+                        </button>
+                        <button
+                          type="button"
+                          className="h-[36px] px-3 rounded-[6px] bg-[#0047BB] text-white text-[12px] font-semibold w-full sm:w-auto whitespace-nowrap"
+                          onClick={() => {
                             if (!studentPortalLink) return
-                            await navigator.clipboard.writeText(studentPortalLink)
-                            toast({ title: 'Copiado', description: 'Link copiado para a área de transferência.', duration: 4000 })
-                          } catch (_) {
-                            toast({ title: 'Erro', description: 'Não foi possível copiar o link.', duration: 4000, variant: 'destructive' })
-                          }
-                        }}
-                      >
-                        Copiar
-                      </button>
-                      <button
-                        type="button"
-                        className="h-[36px] px-3 rounded-[6px] bg-[#0047BB] text-white text-[12px] font-semibold w-full sm:w-auto whitespace-nowrap"
-                        onClick={() => {
-                          if (!studentPortalLink) return
-                          window.open(studentPortalLink, '_blank', 'noopener,noreferrer')
-                        }}
-                      >
-                        Abrir
-                      </button>
+                            window.open(studentPortalLink, '_blank', 'noopener,noreferrer')
+                          }}
+                        >
+                          Abrir
+                        </button>
+                      </div>
                     </div>
-                  </div>
+                  ) : null}
 
                   {/* Password Section */}
                   <div className="pt-6">
