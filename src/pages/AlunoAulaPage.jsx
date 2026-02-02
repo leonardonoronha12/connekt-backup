@@ -258,6 +258,175 @@ function isSupabaseStorageUrl(u) {
   try { return String(u || '').includes('.supabase.co/storage/v1/object/') } catch (_) { return false }
 }
 
+function resolveLessonCoverCandidate(lesson) {
+  const l = lesson && typeof lesson === 'object' ? lesson : {}
+  const meta = (l.metadata && typeof l.metadata === 'object') ? l.metadata : ((l.meta && typeof l.meta === 'object') ? l.meta : null)
+  const media = (l.media && typeof l.media === 'object') ? l.media : null
+  const candidates = [
+    l.cover_image_url,
+    l.coverImageUrl,
+    l.thumbnail_url,
+    l.thumbnailUrl,
+    l.poster,
+    l.poster_url,
+    meta?.cover_image_url,
+    meta?.coverImageUrl,
+    meta?.thumbnail_url,
+    meta?.thumbnailUrl,
+    meta?.poster,
+    meta?.poster_url,
+    media?.cover_image_url,
+    media?.coverImageUrl,
+    media?.thumbnail_url,
+    media?.thumbnailUrl,
+    media?.poster,
+    media?.poster_url,
+  ]
+    .filter((v) => isNonEmptyString(v))
+    .map((v) => toPublicCoursesMediaUrl(v))
+    .filter((v) => isNonEmptyString(v))
+  return candidates[0] || ''
+}
+
+function resolveLessonPlayableVideoUrl(lesson) {
+  const l = lesson && typeof lesson === 'object' ? lesson : {}
+  const mediaObj = (l.media && typeof l.media === 'object') ? l.media : ((l.metadata && typeof l.metadata === 'object') ? l.metadata : null)
+  const lessonVideoCandidates = [
+    l.video_url,
+    l.videoUrl,
+    l.video_src,
+    l.videoSrc,
+    l.media_url,
+    l.mediaUrl,
+    l.vimeo_url,
+    l.vimeoUrl,
+    l.vimeoUri,
+    l.vimeo_uri,
+    l.youtube_url,
+    l.youtubeUrl,
+    l.video_path,
+    l.videoPath,
+    l.url,
+    mediaObj?.video_url,
+    mediaObj?.videoUrl,
+    mediaObj?.video_path,
+    mediaObj?.videoPath,
+    mediaObj?.vimeo_url,
+    mediaObj?.vimeoUrl,
+    mediaObj?.vimeoUri,
+    mediaObj?.vimeo_uri,
+    mediaObj?.youtube_url,
+    mediaObj?.youtubeUrl,
+  ]
+    .filter((v) => isNonEmptyString(v))
+    .map((v) => toPublicCoursesMediaUrl(v))
+    .filter((v) => isNonEmptyString(v))
+
+  const rawVideo = lessonVideoCandidates.find((v) => isNonEmptyString(v)) || ''
+  if (!rawVideo) return ''
+
+  const isMp4Like = /\.(mp4|webm|ogg)(\?.*)?$/i.test(String(rawVideo || ''))
+  const isHlsLike = /\.(m3u8)(\?.*)?$/i.test(String(rawVideo || ''))
+  const vimeoEmbed = vimeoEmbedUrlFromAny(rawVideo)
+  const ytEmbed = youtubeEmbedUrlFromAny(rawVideo)
+  const isVdoCipher = String(rawVideo || '').includes('vdocipher') || String(rawVideo || '').includes('player.vdocipher.com')
+  if (vimeoEmbed || ytEmbed || isVdoCipher) return ''
+  if (!isMp4Like && !isHlsLike) return ''
+
+  const u = String(rawVideo || '')
+  if (isSupabaseStorageUrl(u)) {
+    let isLocal = false
+    try {
+      const h = String(window.location.hostname || '').toLowerCase()
+      isLocal = h === 'localhost' || h === '127.0.0.1'
+    } catch (_) {}
+    return isLocal ? u : `/api/media?u=${encodeURIComponent(u)}`
+  }
+  return u
+}
+
+async function captureVideoFrameDataUrl(src, seekSeconds) {
+  const url = String(src || '').trim()
+  if (!url) return ''
+  const seekTo = Number.isFinite(Number(seekSeconds)) ? Number(seekSeconds) : 0.2
+
+  const v = document.createElement('video')
+  v.crossOrigin = 'anonymous'
+  v.muted = true
+  v.playsInline = true
+  v.preload = 'metadata'
+
+  const cleanup = () => {
+    try { v.pause() } catch (_) {}
+    try { v.removeAttribute('src') } catch (_) {}
+    try { v.load() } catch (_) {}
+  }
+
+  const withTimeout = (p, ms) => new Promise((resolve) => {
+    let done = false
+    const t = setTimeout(() => {
+      if (done) return
+      done = true
+      resolve('')
+    }, Math.max(500, Number(ms) || 3500))
+    Promise.resolve(p)
+      .then((val) => {
+        if (done) return
+        done = true
+        clearTimeout(t)
+        resolve(val)
+      })
+      .catch(() => {
+        if (done) return
+        done = true
+        clearTimeout(t)
+        resolve('')
+      })
+  })
+
+  return withTimeout(new Promise((resolve) => {
+    v.onloadedmetadata = () => {
+      try {
+        const d = Number.isFinite(Number(v.duration)) ? Number(v.duration) : 0
+        const target = Math.max(0, Math.min(d > 0 ? d - 0.05 : seekTo, seekTo))
+        try { v.currentTime = target } catch (_) {}
+      } catch (_) {
+        resolve('')
+      }
+    }
+    v.onseeked = () => {
+      try {
+        const w = Math.max(1, v.videoWidth || 0)
+        const h = Math.max(1, v.videoHeight || 0)
+        if (!w || !h) return resolve('')
+        const canvas = document.createElement('canvas')
+        canvas.width = w
+        canvas.height = h
+        const ctx = canvas.getContext('2d')
+        if (!ctx) return resolve('')
+        ctx.drawImage(v, 0, 0, w, h)
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.72)
+        resolve(dataUrl || '')
+      } catch (_) {
+        resolve('')
+      } finally {
+        cleanup()
+      }
+    }
+    v.onerror = () => {
+      cleanup()
+      resolve('')
+    }
+    try {
+      v.src = url
+      v.load()
+    } catch (_) {
+      cleanup()
+      resolve('')
+    }
+  }), 5000)
+}
+
 function ProgressRing({ value }) {
   const p = Math.max(0, Math.min(100, Number(value || 0)))
   const size = 28
@@ -1040,7 +1209,7 @@ function LessonStatusIcon({ completed }) {
   )
 }
 
-function RecommendedLessonRow({ title, subtitle, active, completed, onClick }) {
+function RecommendedLessonRow({ title, subtitle, coverSrc, active, completed, onClick }) {
   return (
     <button
       type="button"
@@ -1049,7 +1218,7 @@ function RecommendedLessonRow({ title, subtitle, active, completed, onClick }) {
       className={`w-full flex items-center gap-3 text-left py-2 ${active ? 'bg-[#F7F7FB] rounded-[10px] px-2' : ''} ${onClick ? 'cursor-pointer' : 'cursor-default opacity-60'}`}
     >
       <div className="relative w-[46px] h-[34px] rounded-[6px] overflow-hidden bg-[#F3F4F5] flex-shrink-0">
-        <img src="/Preview.png" alt="" className="absolute inset-0 w-full h-full object-cover" />
+        <img src={coverSrc || '/Preview.png'} alt="" className="absolute inset-0 w-full h-full object-cover" />
         <div className="absolute inset-0 bg-black/10" />
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="w-6 h-6 rounded-full bg-white/90 flex items-center justify-center">
@@ -1066,7 +1235,7 @@ function RecommendedLessonRow({ title, subtitle, active, completed, onClick }) {
   )
 }
 
-function ModuleLessonRow({ title, subtitle, completed, active, onClick }) {
+function ModuleLessonRow({ title, subtitle, coverSrc, completed, active, onClick }) {
   return (
     <button
       type="button"
@@ -1075,7 +1244,7 @@ function ModuleLessonRow({ title, subtitle, completed, active, onClick }) {
       className={`w-full flex items-center gap-3 text-left py-2 ${active ? 'bg-[#F7F7FB] rounded-[10px] px-2' : ''} ${onClick ? 'cursor-pointer' : 'cursor-default opacity-60'}`}
     >
       <div className="relative w-[38px] h-[28px] rounded-[6px] overflow-hidden bg-[#F3F4F5] flex-shrink-0">
-        <img src="/Preview.png" alt="" className="absolute inset-0 w-full h-full object-cover" />
+        <img src={coverSrc || '/Preview.png'} alt="" className="absolute inset-0 w-full h-full object-cover" />
         <div className="absolute inset-0 bg-black/10" />
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="w-5 h-5 rounded-full bg-white/90 flex items-center justify-center">
@@ -1116,6 +1285,7 @@ function CollapsibleModuleRow({ title, subtitle, percent, open, onToggle, lesson
                 key={l.key}
                 title={l.title}
                 subtitle={l.subtitle}
+                coverSrc={l.coverSrc}
                 completed={!!l.completed}
                 active={!!l.active}
                 onClick={l.onClick}
@@ -1163,6 +1333,10 @@ export default function AlunoAulaPage() {
   const [statsTick, setStatsTick] = useState(0)
   const [vdocipherEmbedUrl, setVdocipherEmbedUrl] = useState('')
   const [videoUrlOverride, setVideoUrlOverride] = useState('')
+  const lessonThumbTickRef = useRef(0)
+  const [lessonThumbTick, setLessonThumbTick] = useState(0)
+  const lessonThumbCacheRef = useRef(new Map())
+  const lessonThumbInFlightRef = useRef(new Set())
   const [progressTick, setProgressTick] = useState(0)
   const [moduleSimulados, setModuleSimulados] = useState([])
   const [moduleSimuladosLoading, setModuleSimuladosLoading] = useState(false)
@@ -1823,6 +1997,35 @@ export default function AlunoAulaPage() {
     setVideoUrlOverride('')
   }, [player.videoUrl, player.videoMode])
 
+  const getLessonCoverForKey = (k) => {
+    const key = String(k || '').trim()
+    if (!key) return ''
+    return lessonThumbCacheRef.current.get(key) || ''
+  }
+
+  const ensureLessonCover = async (k, coverCandidate, playableUrl) => {
+    const key = String(k || '').trim()
+    if (!key) return
+    if (isNonEmptyString(coverCandidate)) {
+      if (!lessonThumbCacheRef.current.get(key)) {
+        lessonThumbCacheRef.current.set(key, String(coverCandidate))
+        lessonThumbTickRef.current += 1
+        setLessonThumbTick(lessonThumbTickRef.current)
+      }
+      return
+    }
+    if (!isNonEmptyString(playableUrl)) return
+    if (lessonThumbCacheRef.current.get(key)) return
+    if (lessonThumbInFlightRef.current.has(key)) return
+    lessonThumbInFlightRef.current.add(key)
+    const dataUrl = await captureVideoFrameDataUrl(playableUrl, 0.35)
+    lessonThumbInFlightRef.current.delete(key)
+    if (!dataUrl) return
+    lessonThumbCacheRef.current.set(key, dataUrl)
+    lessonThumbTickRef.current += 1
+    setLessonThumbTick(lessonThumbTickRef.current)
+  }
+
   const moduleRecommendedLessons = useMemo(() => {
     const cid = String(courseId || '').trim()
     const pickedModule = current?.module || null
@@ -1844,6 +2047,8 @@ export default function AlunoAulaPage() {
         lessonId: lid,
         lessonIndex: inModule - 1,
       })
+      const coverCandidate = resolveLessonCoverCandidate(lesson)
+      const playableVideoUrl = resolveLessonPlayableVideoUrl(lesson)
       out.push({
         key: `${mid || String(moduleIndexNum >= 0 ? moduleIndexNum : 'm')}:${lid || inModule}`,
         title: title || `Aula ${inModule}`,
@@ -1853,11 +2058,14 @@ export default function AlunoAulaPage() {
         moduleIndex: moduleIndexNum >= 0 ? moduleIndexNum : 0,
         lessonIndex: inModule - 1,
         inModule,
+        coverCandidate,
+        playableVideoUrl,
+        coverSrc: getLessonCoverForKey(`${mid || String(moduleIndexNum >= 0 ? moduleIndexNum : 'm')}:${lid || inModule}`) || coverCandidate || '/Preview.png',
         completed: safeLsGet(key) === '1',
       })
     }
     return out
-  }, [courseId, current, progressTick])
+  }, [courseId, current, progressTick, lessonThumbTick])
 
   const recommendedForCurrentLesson = useMemo(() => {
     const list = Array.isArray(moduleRecommendedLessons) ? moduleRecommendedLessons : []
@@ -1890,6 +2098,24 @@ export default function AlunoAulaPage() {
       lessonIndex: current?.lessonIndex,
     })
   }, [courseId, current])
+
+  const currentThumbKey = useMemo(() => {
+    const k = String(currentLessonKey || '').trim()
+    return k ? `thumb:${k}` : ''
+  }, [currentLessonKey])
+
+  useEffect(() => {
+    if (player.videoMode !== 'video') return
+    const src = String(player.videoUrl || '').trim()
+    if (!src) return
+    if (!currentThumbKey) return
+    ensureLessonCover(currentThumbKey, '', src)
+  }, [player.videoMode, player.videoUrl, currentThumbKey])
+
+  const currentPoster = useMemo(() => {
+    if (!currentThumbKey) return ''
+    return getLessonCoverForKey(currentThumbKey) || ''
+  }, [currentThumbKey, lessonThumbTick])
 
   useEffect(() => {
     setIsCompleted(safeLsGet(currentLessonKey) === '1')
@@ -1929,6 +2155,9 @@ export default function AlunoAulaPage() {
           key: `${moduleKey}:${lid || inModule}`,
           title,
           subtitle: `Aula ${inModule + 1}`,
+          coverCandidate: resolveLessonCoverCandidate(lesson),
+          playableVideoUrl: resolveLessonPlayableVideoUrl(lesson),
+          coverSrc: getLessonCoverForKey(`${moduleKey}:${lid || inModule}`) || resolveLessonCoverCandidate(lesson) || '/Preview.png',
           completed,
           active,
           onClick: () => {
@@ -1955,7 +2184,33 @@ export default function AlunoAulaPage() {
       })
     }
     return out
-  }, [courseRow, courseId, isDemoStudent, progressTick, current])
+  }, [courseRow, courseId, isDemoStudent, progressTick, current, lessonThumbTick])
+
+  useEffect(() => {
+    const list = []
+    try {
+      const rec = Array.isArray(recommendedForCurrentLesson) ? recommendedForCurrentLesson.slice(0, 8) : []
+      for (const r of rec) list.push(r)
+    } catch (_) {}
+    try {
+      const mods = Array.isArray(sidebarModules) ? sidebarModules : []
+      for (const m of mods) {
+        if (!m?.key) continue
+        const open = !!(openModules && m.key && openModules[m.key])
+        if (!open) continue
+        const lessons = Array.isArray(m.lessons) ? m.lessons.slice(0, 10) : []
+        for (const l of lessons) list.push(l)
+      }
+    } catch (_) {}
+    let cancelled = false
+    ;(async () => {
+      for (const item of list) {
+        if (cancelled) return
+        await ensureLessonCover(item?.key, item?.coverCandidate, item?.playableVideoUrl)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [recommendedForCurrentLesson, sidebarModules, openModules])
 
   useEffect(() => {
     const syncTabFromSearch = () => {
@@ -2252,7 +2507,7 @@ export default function AlunoAulaPage() {
                       <video
                         className="w-full h-[330px] bg-black"
                         controls
-                        poster="/Preview.png"
+                        poster={currentPoster || '/Preview.png'}
                         onError={(e) => {
                           const v = e.currentTarget
                           if (v?.dataset?.fallbackUsed === '1') return
@@ -2504,6 +2759,7 @@ export default function AlunoAulaPage() {
                               key={l.key}
                               title={l.title}
                               subtitle={l.subtitle}
+                              coverSrc={l.coverSrc}
                               active={active}
                               completed={!!l.completed}
                               onClick={(l.moduleId || l.lessonId || String(l.moduleIndex) !== 'undefined') ? (() => {
