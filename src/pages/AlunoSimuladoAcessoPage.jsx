@@ -72,9 +72,11 @@ function SimuladoCard({ title, subtitle, categories, status, approval, isPaid, p
           <span className="inline-flex items-center justify-center h-[18px] px-3 text-[10px] rounded-[54px] leading-none font-medium bg-[#E9FFEF] text-[#06C270]">
             {status}
           </span>
-          <span className={`inline-flex items-center justify-center h-[18px] px-3 text-[10px] rounded-[54px] leading-none font-medium ${paid ? 'bg-[#FEF3C7] text-[#92400E]' : 'bg-[#EEF2FF] text-[#0047BB]'}`}>
-            {paid ? 'Pago' : 'Gratuito'}
-          </span>
+          {!paid ? (
+            <span className="inline-flex items-center justify-center h-[18px] px-3 text-[10px] rounded-[54px] leading-none font-medium bg-[#EEF2FF] text-[#0047BB]">
+              Gratuito
+            </span>
+          ) : null}
           {paid && isOwned ? (
             <span className="inline-flex items-center justify-center h-[18px] px-3 text-[10px] rounded-[54px] leading-none font-medium bg-[#E9FFEF] text-[#06C270]">
               Adquirido
