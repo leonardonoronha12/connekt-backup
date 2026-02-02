@@ -1175,7 +1175,7 @@ const ConfiguracoesPage = () => {
         </div>
 
         {/* Main Content Card */}
-        <div className="bg-white rounded-[8px] border border-[#E3E4E5] shadow-sm p-8">
+        <div className="bg-white rounded-[8px] border border-[#E3E4E5] shadow-sm p-4 sm:p-8">
           {activeTab === 'Perfil e conta' && (
             <>
               <div className="mb-8">
@@ -1184,10 +1184,10 @@ const ConfiguracoesPage = () => {
                 <div className="h-[1px] bg-[#E3E4E5] mt-4" />
               </div>
 
-              <div className="flex gap-12">
+              <div className="flex flex-col lg:flex-row gap-6 sm:gap-12">
                 {/* Left Column - Profile Photo */}
-                <div className="w-[200px] flex flex-col items-center">
-                  <div className="relative w-32 h-32 mb-4">
+                <div className="w-full lg:w-[200px] flex flex-col items-center">
+                  <div className="relative w-24 h-24 sm:w-32 sm:h-32 mb-4">
                     <img
                       src={profileAvatarUrl || "/perfil rc.png"} 
                       alt="Profile"
@@ -1202,7 +1202,7 @@ const ConfiguracoesPage = () => {
                     type="button"
                     onClick={handlePickAvatar}
                     disabled={avatarUploading}
-                    className="flex items-center gap-2 px-4 py-2 border border-[#0047BB] text-[#0047BB] rounded-[6px] text-[12px] font-medium hover:bg-blue-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="flex items-center justify-center gap-2 px-4 py-2 border border-[#0047BB] text-[#0047BB] rounded-[6px] text-[12px] font-medium hover:bg-blue-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed w-full max-w-[240px]"
                   >
                     <div className="w-4 h-4 bg-[#0047BB] rounded-full flex items-center justify-center text-white text-[10px]">✓</div>
                     {avatarUploading ? 'Enviando…' : 'Alterar foto do perfil'}
@@ -1218,7 +1218,7 @@ const ConfiguracoesPage = () => {
 
                 {/* Right Column - Form Fields */}
                 <div className="flex-1 space-y-6">
-                  <div className="grid grid-cols-2 gap-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                     <div className="space-y-2">
                       <label className="text-[14px] text-[#1E1B39] font-medium">Nome completo</label>
                       <input
@@ -1277,16 +1277,16 @@ const ConfiguracoesPage = () => {
                   <div className="rounded-[8px] border border-[#E3E4E5] bg-[#F8FAFC] p-4">
                     <div className="text-[14px] font-semibold text-[#1E1B39]">Link de acesso do aluno</div>
                     <div className="text-[12px] text-[#737780] mt-1">Compartilhe este link para o aluno entrar no seu ambiente.</div>
-                    <div className="mt-3 flex items-center gap-2">
+                    <div className="mt-3 flex flex-col sm:flex-row sm:items-center gap-2">
                       <input
                         type="text"
                         readOnly
                         value={studentPortalLink}
-                        className="flex-1 px-3 py-2 border border-[#E3E4E5] rounded-[6px] text-[12px] bg-white text-[#22252B]"
+                        className="w-full sm:flex-1 px-3 py-2 border border-[#E3E4E5] rounded-[6px] text-[12px] bg-white text-[#22252B]"
                       />
                       <button
                         type="button"
-                        className="h-[36px] px-3 rounded-[6px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#22252B]"
+                        className="h-[36px] px-3 rounded-[6px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#22252B] w-full sm:w-auto whitespace-nowrap"
                         onClick={async () => {
                           try {
                             if (!studentPortalLink) return
@@ -1301,7 +1301,7 @@ const ConfiguracoesPage = () => {
                       </button>
                       <button
                         type="button"
-                        className="h-[36px] px-3 rounded-[6px] bg-[#0047BB] text-white text-[12px] font-semibold"
+                        className="h-[36px] px-3 rounded-[6px] bg-[#0047BB] text-white text-[12px] font-semibold w-full sm:w-auto whitespace-nowrap"
                         onClick={() => {
                           if (!studentPortalLink) return
                           window.open(studentPortalLink, '_blank', 'noopener,noreferrer')
@@ -1315,7 +1315,7 @@ const ConfiguracoesPage = () => {
                   {/* Password Section */}
                   <div className="pt-6">
                     <h3 className="text-[14px] font-semibold text-[#1E1B39] mb-4">Alterar Senha</h3>
-                    <div className="grid grid-cols-2 gap-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                       <div className="space-y-2">
                         <label className="text-[14px] text-[#1E1B39] font-medium">Senha atual</label>
                         <input
@@ -1339,7 +1339,7 @@ const ConfiguracoesPage = () => {
                   {!isAlunoView ? (
                     <div className="pt-6">
                       <h3 className="text-[14px] font-semibold text-[#1E1B39] mb-4">Notificações</h3>
-                      <div className="grid grid-cols-2 gap-x-12 gap-y-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-12 gap-y-4">
                         <div className="flex items-center justify-between">
                           <span className="text-[14px] text-[#1E1B39]">Novos alunos matriculados</span>
                           <button
