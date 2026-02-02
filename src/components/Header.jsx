@@ -207,13 +207,11 @@ const Header = () => {
 
   return (
     <header 
-      className={`sticky top-0 w-full flex items-center ${isSimuladoResposta ? 'justify-end' : 'justify-between'}`}
+      className={`sticky top-0 w-full flex items-center ${isSimuladoResposta ? 'justify-end' : 'justify-between'} ${isSimuladoResposta ? 'px-3 sm:px-[18px]' : 'px-3 sm:px-[22px]'} ${(!isSimuladoResposta && !isAproveitamento && showSearch) ? 'pl-16 sm:pl-[22px]' : ''}`}
       style={{
         height: isSimuladoResposta ? '48px' : '60px',
         backgroundColor: 'rgb(255, 255, 255)',
         border: '1px solid rgb(227, 228, 229)',
-        paddingRight: isSimuladoResposta ? '18px' : '22px',
-        paddingLeft: isSimuladoResposta ? undefined : '22px',
         zIndex: 2
       }}
     >
@@ -243,13 +241,13 @@ const Header = () => {
       )}
 
       {!isSimuladoResposta && !isAproveitamento && showSearch ? (
-        <div className="flex items-center gap-3 flex-1 ml-12 lg:ml-0">
-          <div className="flex items-center gap-2 w-full max-w-[420px]" style={{ height: '36px', padding: '0 12px', borderRadius: '8px', border: '1px solid rgb(227, 228, 229)', backgroundColor: 'rgb(249, 250, 251)' }}>
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          <div className="flex items-center gap-2 w-full min-w-0 max-w-none sm:max-w-[420px]" style={{ height: '36px', padding: '0 12px', borderRadius: '8px', border: '1px solid rgb(227, 228, 229)', backgroundColor: 'rgb(249, 250, 251)' }}>
             <Search className="w-4 h-4 text-[#737780]" />
             <input
               value={searchValue}
               onChange={(e) => setSearchValue(e.target.value)}
-              className="flex-1 bg-transparent outline-none text-[12px] text-[#22252B]"
+              className="flex-1 min-w-0 bg-transparent outline-none text-[12px] text-[#22252B]"
               placeholder="Busque por um termo desejado"
               onKeyDown={(e) => {
                 if (e.key === 'Escape') setSearchValue('')
@@ -318,12 +316,7 @@ const Header = () => {
         </div>
       ) : (
         <div 
-          className="flex items-center"
-          style={{
-            width: '130px',
-            height: '40px',
-            gap: '12px'
-          }}
+          className="flex items-center gap-2 sm:gap-3 shrink-0"
         >
           {/* Botão 1 - Ajuda */}
           <button
@@ -367,8 +360,7 @@ const Header = () => {
 
           {/* Avatar + Caret */}
           <div
-            className="flex items-center cursor-pointer"
-            style={{ padding: '8px 12px 8px 0px', gap: '6px' }}
+            className="flex items-center cursor-pointer py-2 pl-1 pr-0 gap-2 sm:gap-[6px]"
             role="button"
             tabIndex="0"
             aria-haspopup="menu"
