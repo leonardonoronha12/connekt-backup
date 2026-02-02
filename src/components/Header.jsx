@@ -243,7 +243,7 @@ const Header = () => {
       )}
 
       {!isSimuladoResposta && !isAproveitamento && showSearch ? (
-        <div className="flex items-center gap-3 flex-1">
+        <div className="flex items-center gap-3 flex-1 ml-12 lg:ml-0">
           <div className="flex items-center gap-2 w-full max-w-[420px]" style={{ height: '36px', padding: '0 12px', borderRadius: '8px', border: '1px solid rgb(227, 228, 229)', backgroundColor: 'rgb(249, 250, 251)' }}>
             <Search className="w-4 h-4 text-[#737780]" />
             <input
