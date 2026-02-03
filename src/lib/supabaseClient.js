@@ -3,6 +3,41 @@ const url = import.meta.env.VITE_SUPABASE_URL;
 const anon = import.meta.env.VITE_SUPABASE_ANON_KEY;
 if (!url || !anon) throw new Error('Env Supabase ausente: verifique VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY');
 
+function getAvailableStorage() {
+  if (typeof window === 'undefined') return undefined
+  try {
+    const ls = window.localStorage
+    if (ls) return ls
+  } catch (_) {}
+  try {
+    const ss = window.sessionStorage
+    if (ss) return ss
+  } catch (_) {}
+  return undefined
+}
+
+function migrateSupabaseAuthFromSessionToLocal() {
+  if (typeof window === 'undefined') return
+  let ss = null
+  let ls = null
+  try { ss = window.sessionStorage } catch (_) { ss = null }
+  try { ls = window.localStorage } catch (_) { ls = null }
+  if (!ss || !ls) return
+  try {
+    const keys = Object.keys(ss || {})
+    for (const k of keys) {
+      const key = String(k || '')
+      const isSupabaseKey = (key.startsWith('sb-') && key.endsWith('-auth-token')) || key === 'supabase.auth.token'
+      if (!isSupabaseKey) continue
+      const v = ss.getItem(key)
+      if (!v) continue
+      if (!ls.getItem(key)) {
+        try { ls.setItem(key, v) } catch (_) {}
+      }
+    }
+  } catch (_) {}
+}
+
 function isRetryableNetworkError(err) {
   const msg = String(err?.message || err || '').toLowerCase()
   return (
@@ -40,12 +75,14 @@ function createRetryingFetch(baseFetch) {
   }
 }
 
+migrateSupabaseAuthFromSessionToLocal()
+
 export const supabase = createClient(url, anon, {
   global: {
     fetch: createRetryingFetch(fetch),
   },
   auth: {
-    storage: (typeof window !== 'undefined' && window.sessionStorage) ? window.sessionStorage : undefined,
+    storage: getAvailableStorage(),
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
