@@ -50,6 +50,9 @@ const ConfiguracoesPage = () => {
 
   const [profileFullName, setProfileFullName] = useState(userName || '');
   const [profilePhone, setProfilePhone] = useState('');
+  const [profileCrm, setProfileCrm] = useState('');
+  const [profileSpecialty, setProfileSpecialty] = useState('');
+  const [profileInstitution, setProfileInstitution] = useState('');
   const [subdomainInput, setSubdomainInput] = useState('');
   const [subdomainSaving, setSubdomainSaving] = useState(false);
   const [subdomainSavedUrl, setSubdomainSavedUrl] = useState('');
@@ -681,6 +684,21 @@ const ConfiguracoesPage = () => {
   }, [user?.id]);
 
   useEffect(() => {
+    if (!user?.id) return
+    const meta = user?.user_metadata && typeof user.user_metadata === 'object' ? user.user_metadata : {}
+    const readLocal = (k) => {
+      try { return String(localStorage.getItem(k) || '') } catch (_) { return '' }
+    }
+    const u = String(user.id)
+    const crm = String(meta.profile_crm || '').trim() || readLocal(`connekt_profile_crm:${u}`)
+    const specialty = String(meta.profile_specialty || '').trim() || readLocal(`connekt_profile_specialty:${u}`)
+    const institution = String(meta.profile_institution || '').trim() || readLocal(`connekt_profile_institution:${u}`)
+    setProfileCrm(crm)
+    setProfileSpecialty(specialty)
+    setProfileInstitution(institution)
+  }, [user?.id])
+
+  useEffect(() => {
     if (!session?.access_token) return
     const host = normalizeSavedMemberAreaUrlForLink(subdomainSavedUrl).host
     if (!host) return
@@ -1089,9 +1107,22 @@ const ConfiguracoesPage = () => {
       const { error } = await supabase.from('profiles').upsert(payload, { onConflict: 'user_id' });
       if (error) throw error;
       try {
-        if (profileFullName && supabase?.auth?.updateUser) {
-          await supabase.auth.updateUser({ data: { full_name: profileFullName } });
+        if (supabase?.auth?.updateUser) {
+          await supabase.auth.updateUser({
+            data: {
+              ...(profileFullName ? { full_name: profileFullName } : {}),
+              profile_crm: String(profileCrm || '').trim(),
+              profile_specialty: String(profileSpecialty || '').trim(),
+              profile_institution: String(profileInstitution || '').trim(),
+            },
+          });
         }
+      } catch (_) {}
+      try {
+        const u = String(user.id)
+        localStorage.setItem(`connekt_profile_crm:${u}`, String(profileCrm || ''))
+        localStorage.setItem(`connekt_profile_specialty:${u}`, String(profileSpecialty || ''))
+        localStorage.setItem(`connekt_profile_institution:${u}`, String(profileInstitution || ''))
       } catch (_) {}
       toast({ title: 'Salvo', description: 'Configurações atualizadas.', duration: 4000 });
     } catch (e) {
@@ -1252,7 +1283,9 @@ const ConfiguracoesPage = () => {
                       <label className="text-[14px] text-[#1E1B39] font-medium">CRM</label>
                       <input
                         type="text"
-                        placeholder="Digite o nome da categoria"
+                        value={profileCrm}
+                        onChange={(e) => setProfileCrm(e.target.value)}
+                        placeholder="Digite seu CRM"
                         className="w-full px-3 py-2 border border-[#E3E4E5] rounded-[6px] text-[14px] focus:outline-none focus:border-[#0047BB] bg-[#F8FAFC]"
                       />
                     </div>
@@ -1260,7 +1293,9 @@ const ConfiguracoesPage = () => {
                       <label className="text-[14px] text-[#1E1B39] font-medium">Especialidade</label>
                       <input
                         type="text"
-                        placeholder="Digite o nome da categoria"
+                        value={profileSpecialty}
+                        onChange={(e) => setProfileSpecialty(e.target.value)}
+                        placeholder="Digite sua especialidade"
                         className="w-full px-3 py-2 border border-[#E3E4E5] rounded-[6px] text-[14px] focus:outline-none focus:border-[#0047BB] bg-[#F8FAFC]"
                       />
                     </div>
@@ -1268,7 +1303,9 @@ const ConfiguracoesPage = () => {
                       <label className="text-[14px] text-[#1E1B39] font-medium">Instituição</label>
                       <input
                         type="text"
-                        placeholder="Digite o nome da categoria"
+                        value={profileInstitution}
+                        onChange={(e) => setProfileInstitution(e.target.value)}
+                        placeholder="Digite sua instituição"
                         className="w-full px-3 py-2 border border-[#E3E4E5] rounded-[6px] text-[14px] focus:outline-none focus:border-[#0047BB] bg-[#F8FAFC]"
                       />
                     </div>
