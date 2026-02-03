@@ -53,11 +53,47 @@ export default function AlunoSimuladosPage() {
 
   const normalize = (value) => String(value || '').trim().toLowerCase()
 
+  const normalizeToList = (value) => {
+    if (Array.isArray(value)) {
+      return value
+        .map((v) => {
+          if (v && typeof v === 'object') return String(v?.name || v?.label || v?.title || '').trim()
+          return String(v || '').trim()
+        })
+        .filter(Boolean)
+    }
+    if (typeof value === 'string') {
+      const raw = String(value || '').trim()
+      if (!raw) return []
+      if (raw.includes(',')) return raw.split(',').map((v) => String(v || '').trim()).filter(Boolean)
+      return [raw]
+    }
+    return []
+  }
+
+  const getSimuladoCategories = (s) => {
+    const settings = s?.settings && typeof s.settings === 'object' ? s.settings : null
+    const candidates = [
+      settings?.categories,
+      settings?.categorias,
+      settings?.category,
+      settings?.categoria,
+      s?.categories,
+      s?.categorias,
+      s?.category,
+      s?.categoria,
+    ]
+    for (const c of candidates) {
+      const list = normalizeToList(c)
+      if (list.length > 0) return list
+    }
+    return []
+  }
+
   const categoryOptions = useMemo(() => {
     const set = new Set()
     for (const s of Array.isArray(simulados) ? simulados : []) {
-      const settings = s?.settings && typeof s.settings === 'object' ? s.settings : null
-      const cats = Array.isArray(settings?.categories) ? settings.categories : []
+      const cats = getSimuladoCategories(s)
       for (const c of cats) {
         const v = String(c || '').trim()
         if (v) set.add(v)
@@ -278,7 +314,7 @@ export default function AlunoSimuladosPage() {
       if (filterOwned === 'owned' && !owned) return false
       if (filterOwned === 'not_owned' && owned) return false
       const settings = s?.settings && typeof s.settings === 'object' ? s.settings : null
-      const cats = Array.isArray(settings?.categories) ? settings.categories : []
+      const cats = getSimuladoCategories(s)
       const subs =
         Array.isArray(settings?.subcategories) ? settings.subcategories
           : Array.isArray(settings?.subCategories) ? settings.subCategories
@@ -724,14 +760,14 @@ export default function AlunoSimuladosPage() {
                             const progress = Math.max(0, Math.min(100, Number(safeLsGet(`connekt_simulado_progress:${id}`) || 0)))
                             const priceValue = Number(s?.price || 0) || 0
                             const showPrice = paid && Number.isFinite(priceValue) && priceValue > 0
-                            const priceText = (() => {
-                              if (!showPrice) return ''
-                              try { return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(priceValue) } catch (_) { return `R$ ${priceValue.toFixed(2)}` }
-                            })()
-                            const settings = s?.settings && typeof s.settings === 'object' ? s.settings : null
-                            const categories = Array.isArray(settings?.categories) ? settings.categories : []
-                            const categoryLabel = String(categories?.[0] || 'Categoria')
-                            return (
+                          const priceText = (() => {
+                            if (!showPrice) return ''
+                            try { return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(priceValue) } catch (_) { return `R$ ${priceValue.toFixed(2)}` }
+                          })()
+                          const settings = s?.settings && typeof s.settings === 'object' ? s.settings : null
+                          const categories = getSimuladoCategories(s)
+                          const categoryLabel = String(categories?.[0] || 'Sem categoria')
+                          return (
                               <div
                                 key={id}
                                 className="bg-white border border-[#E3E4E5] rounded-[4px] p-4 w-full h-[230px] flex flex-col flex-shrink-0 cursor-pointer"
