@@ -255,6 +255,18 @@ export default function AlunoSimuladosPage() {
     setFilterOptionQuery('')
   }, [filterOpen])
 
+  useEffect(() => {
+    if (!filterOpen) return
+    let isMobile = false
+    try { isMobile = window.matchMedia('(max-width: 639px)').matches } catch (_) { isMobile = false }
+    if (!isMobile) return
+    const prev = document?.body?.style?.overflow
+    if (document?.body?.style) document.body.style.overflow = 'hidden'
+    return () => {
+      if (document?.body?.style) document.body.style.overflow = prev || ''
+    }
+  }, [filterOpen])
+
   const filteredSimulados = useMemo(() => {
     const q = String(searchValue || '').trim().toLowerCase()
     const base = Array.isArray(simulados) ? simulados : []
@@ -518,18 +530,30 @@ export default function AlunoSimuladosPage() {
                         </button>
                         {filterOpen ? (
                           <>
-                            <div className="sm:hidden fixed inset-0 z-[10000] bg-black/30">
+                            <div className="sm:hidden fixed inset-0 z-[10000] bg-black/30 flex items-start justify-center p-3">
                               <button type="button" className="absolute inset-0" aria-label="Fechar filtros" onClick={() => setFilterOpen(false)} />
                               <div
                                 ref={filterPanelRef}
-                                className="absolute left-1/2 top-[86px] -translate-x-1/2 w-[calc(100%-24px)] max-w-[520px] rounded-[10px] border border-[#E3E4E5] bg-[#F9FAFB] shadow-xl overflow-hidden"
+                                className="relative w-full max-w-[520px] rounded-[10px] border border-[#E3E4E5] bg-[#F9FAFB] shadow-xl overflow-hidden my-4"
+                                style={{ maxHeight: 'calc(100vh - 24px)' }}
                                 onMouseDown={(e) => e.stopPropagation()}
                               >
                                 <div className="px-4 py-3 flex items-center justify-between bg-white">
                                   <div className="text-[12px] font-semibold text-[#22252B]">Aplicar filtros de pesquisa</div>
-                                  <button type="button" className="text-[11px] font-semibold text-[#0047BB] hover:underline" onClick={clearFilters}>
-                                    Limpar
-                                  </button>
+                                  <div className="flex items-center gap-3">
+                                    <button type="button" className="text-[11px] font-semibold text-[#0047BB] hover:underline" onClick={clearFilters}>
+                                      Limpar
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="w-8 h-8 rounded-full hover:bg-black/5 flex items-center justify-center"
+                                      onClick={() => setFilterOpen(false)}
+                                      aria-label="Fechar filtros"
+                                      title="Fechar"
+                                    >
+                                      <X className="w-4 h-4 text-[#737780]" />
+                                    </button>
+                                  </div>
                                 </div>
                                 <div className="px-4 py-3">
                                   <div className="flex items-center gap-2 w-full h-9 px-3 rounded-[8px] border border-[#E3E4E5] bg-[#F9FAFB]">
@@ -539,6 +563,7 @@ export default function AlunoSimuladosPage() {
                                       onChange={(e) => setFilterOptionQuery(e.target.value)}
                                       className="flex-1 bg-transparent outline-none text-[12px] text-[#22252B]"
                                       placeholder="Buscar nos filtros"
+                                      autoFocus
                                     />
                                     {filterOptionQuery ? (
                                       <button
@@ -552,7 +577,7 @@ export default function AlunoSimuladosPage() {
                                     ) : null}
                                   </div>
                                 </div>
-                                <div className="max-h-[calc(100vh-160px)] overflow-auto px-3 pb-3 space-y-2">
+                                <div className="overflow-auto px-3 pb-3 space-y-2 overscroll-contain" style={{ maxHeight: 'calc(100vh - 190px)' }}>
                                   {filterGroups.map((g) => {
                                     const open = !!filterOpenGroups?.[g.group]
                                     const count = groupActiveCount(g.group)
