@@ -139,8 +139,7 @@ function SectionTitle({ title, onMore, showMoreInline = false, icon: Icon = null
               className="inline-flex items-center gap-2 h-8 px-4 rounded-[8px] bg-[#EEF2FF] text-[#0047BB] text-[12px] font-semibold"
               onClick={onMore}
             >
-              <span className="text-[16px] leading-none">+</span>
-              Ver mais
+              Lista completa
             </button>
           ) : null}
         </div>
@@ -151,7 +150,7 @@ function SectionTitle({ title, onMore, showMoreInline = false, icon: Icon = null
           className="text-[12px] font-semibold text-[#0047BB] hover:underline"
           onClick={onMore}
         >
-          Ver mais
+          Lista completa
         </button>
       ) : (
         <div className="w-16" />
@@ -594,6 +593,104 @@ function FeaturedCoursesModal({ open, onClose, courses, onSelectCourse, ownershi
   )
 }
 
+function MyCoursesModal({ open, onClose, courses, onSelectCourse }) {
+  const [query, setQuery] = useState('')
+
+  useEffect(() => {
+    if (!open) return
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [open, onClose])
+
+  const list = useMemo(() => {
+    const q = String(query || '').trim().toLowerCase()
+    const base = Array.isArray(courses) ? courses : []
+    if (!q) return base
+    return base.filter((c) => String(c?.title || '').toLowerCase().includes(q))
+  }, [courses, query])
+
+  if (!open) return null
+
+  return (
+    <div className="fixed inset-0 z-[80]">
+      <button type="button" className="absolute inset-0 bg-black/40" aria-label="Fechar" onClick={onClose} />
+      <div
+        role="dialog"
+        aria-modal="true"
+        className="absolute left-1/2 top-1/2 w-[calc(100%-24px)] max-w-[980px] -translate-x-1/2 -translate-y-1/2 rounded-[14px] bg-white border border-[#E3E4E5] shadow-xl overflow-hidden"
+      >
+        <div className="px-5 py-4 border-b border-[#E3E4E5] flex items-center justify-between gap-4">
+          <div className="min-w-0">
+            <div className="text-[14px] font-semibold text-[#22252B] truncate">Meus cursos</div>
+            <div className="text-[12px] text-[#737780]">Veja todos os seus cursos</div>
+          </div>
+          <button
+            type="button"
+            className="h-9 w-9 rounded-full border border-[#E3E4E5] bg-white flex items-center justify-center"
+            aria-label="Fechar"
+            onClick={onClose}
+          >
+            <X className="w-4 h-4 text-[#22252B]" />
+          </button>
+        </div>
+
+        <div className="p-5">
+          <div className="flex items-center gap-3">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 w-full" style={{ height: '36px', padding: '0 12px', borderRadius: '8px', border: '1px solid rgb(227, 228, 229)', backgroundColor: 'rgb(249, 250, 251)' }}>
+                <Search className="w-4 h-4 text-[#737780]" />
+                <input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  className="flex-1 bg-transparent outline-none text-[12px] text-[#22252B]"
+                  placeholder="Buscar curso"
+                />
+              </div>
+            </div>
+            <div className="text-[12px] text-[#737780] whitespace-nowrap">{list.length}</div>
+          </div>
+
+          <div className="mt-4 max-h-[60vh] overflow-auto pr-1">
+            {list.length === 0 ? (
+              <div className="text-[12px] text-[#737780] py-10 text-center">Nenhum curso encontrado</div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {list.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => onSelectCourse?.(c)}
+                    className="bg-white border border-[#E3E4E5] rounded-[12px] overflow-hidden w-full text-left hover:bg-[#F9FAFB] transition-colors"
+                  >
+                    <div className="relative h-[130px] w-full bg-[#EEF2FF]">
+                      {c.cover ? (
+                        <img src={c.cover} alt={c.title || 'Curso'} className="w-full h-full object-cover" />
+                      ) : null}
+                    </div>
+                    <div className="p-4">
+                      <div className="text-[12px] font-semibold text-[#1E1B39] font-inter truncate">{c.title || 'Nome do curso'}</div>
+                      <div className="mt-3 flex items-center justify-between text-[12px] text-[#737780]">
+                        <div>Progresso</div>
+                        <div className="text-[12px] font-bold text-[#0047BB]">{Math.max(0, Math.min(100, Number(c.progress || 0)))}%</div>
+                      </div>
+                      <div className="mt-2 h-1.5 w-full rounded-full bg-[#E3E4E5] overflow-hidden">
+                        <div className="h-full bg-[#0047BB]" style={{ width: `${Math.max(0, Math.min(100, Number(c.progress || 0)))}%` }} />
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function AlunoDashboardPage() {
   const { user } = useAuth()
   const [loading, setLoading] = useState(true)
@@ -604,6 +701,7 @@ export default function AlunoDashboardPage() {
   const [ownershipTick, setOwnershipTick] = useState(0)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [simuladosModalOpen, setSimuladosModalOpen] = useState(false)
+  const [myCoursesModalOpen, setMyCoursesModalOpen] = useState(false)
   const [featuredModalOpen, setFeaturedModalOpen] = useState(false)
   const continueScrollRef = useRef(null)
   const [canScrollContinueLeft, setCanScrollContinueLeft] = useState(false)
@@ -1131,20 +1229,19 @@ export default function AlunoDashboardPage() {
     ]
   }, [activeProducerUserId, courses, coverFallback, producerCoversByTitle])
 
-  const myCourses = useMemo(() => {
+  const myCoursesAll = useMemo(() => {
     const list = courses
       .filter((c) => !c?.isPaid || !!c?.isOwned)
-      .slice(0, 8)
       .map((c, idx) => ({
-      id: `${c?.course_name || 'curso'}-${idx}`,
-      courseId: c?.course_id || c?.courseId || c?.id || null,
-      title: c?.course_name || 'Nome do curso',
-      cover: (() => {
-        const t = String(c?.course_name || '').trim().toLowerCase()
-        return producerCoversByTitle[t] || c?.cover_image_url || pickCoverForCourse(c?.course_name || 'Nome do curso', idx)
-      })(),
-      progress: c?.progress || 0,
-    }))
+        id: `all-${c?.course_name || 'curso'}-${idx}`,
+        courseId: c?.course_id || c?.courseId || c?.id || null,
+        title: c?.course_name || 'Nome do curso',
+        cover: (() => {
+          const t = String(c?.course_name || '').trim().toLowerCase()
+          return producerCoversByTitle[t] || c?.cover_image_url || pickCoverForCourse(c?.course_name || 'Nome do curso', idx)
+        })(),
+        progress: c?.progress || 0,
+      }))
     if (list.length > 0) return list
     if (activeProducerUserId) return []
     return [
@@ -1154,6 +1251,10 @@ export default function AlunoDashboardPage() {
       { id: 'm4', title: 'Nome do curso', cover: pickCoverForCourse('Nome do curso', 3), progress: 0 },
     ]
   }, [activeProducerUserId, courses, coverFallback, connektCourseCoverOptions, producerCoversByTitle])
+
+  const myCourses = useMemo(() => {
+    return (Array.isArray(myCoursesAll) ? myCoursesAll : []).slice(0, 8)
+  }, [myCoursesAll])
 
   const featuredCourses = useMemo(() => {
     const base = courses
@@ -1214,13 +1315,13 @@ export default function AlunoDashboardPage() {
   const currentPath = typeof window !== 'undefined' ? window.location.pathname : '/aluno'
 
   useEffect(() => {
-    if (!mobileNavOpen && !simuladosModalOpen && !featuredModalOpen) return
+    if (!mobileNavOpen && !simuladosModalOpen && !myCoursesModalOpen && !featuredModalOpen) return
     const prev = document?.body?.style?.overflow
     if (document?.body?.style) document.body.style.overflow = 'hidden'
     return () => {
       if (document?.body?.style) document.body.style.overflow = prev || ''
     }
-  }, [mobileNavOpen, simuladosModalOpen, featuredModalOpen])
+  }, [mobileNavOpen, simuladosModalOpen, myCoursesModalOpen, featuredModalOpen])
 
   return (
     <div className="min-h-screen lg:h-screen w-full bg-[#EEF2FF] flex lg:overflow-hidden">
@@ -1290,6 +1391,20 @@ export default function AlunoDashboardPage() {
           setSimuladosModalOpen(false)
           const demoSuffix = isDemoStudent ? '&demo=1' : ''
           navigateTo(`/aluno/simulados/acesso?simId=${encodeURIComponent(String(s.id))}${demoSuffix}`)
+        }}
+      />
+
+      <MyCoursesModal
+        open={myCoursesModalOpen}
+        onClose={() => setMyCoursesModalOpen(false)}
+        courses={myCoursesAll}
+        onSelectCourse={async (c) => {
+          setMyCoursesModalOpen(false)
+          let cid = c?.courseId || null
+          if (!cid) cid = isDemoStudent ? 'demo' : await resolveCourseIdByTitle(c?.title)
+          if (!cid) return
+          const base = `/aluno/curso/${encodeURIComponent(String(cid))}`
+          navigateTo(isDemoStudent ? `${base}?demo=1` : base)
         }}
       />
 
@@ -1450,10 +1565,9 @@ export default function AlunoDashboardPage() {
                         <button
                           type="button"
                           className="inline-flex items-center gap-2 h-8 px-4 rounded-[8px] bg-[#EEF2FF] text-[#0047BB] text-[12px] font-semibold"
-                          onClick={() => navigateTo('/aluno/cursos')}
+                          onClick={() => setMyCoursesModalOpen(true)}
                         >
-                          <span className="text-[16px] leading-none">+</span>
-                          Ver mais
+                          Lista completa
                         </button>
                       </div>
                     </div>
@@ -1517,8 +1631,7 @@ export default function AlunoDashboardPage() {
                           className="inline-flex items-center gap-2 h-8 px-4 rounded-[8px] bg-[#EEF2FF] text-[#0047BB] text-[12px] font-semibold"
                           onClick={() => setFeaturedModalOpen(true)}
                         >
-                          <span className="text-[16px] leading-none">+</span>
-                          Ver mais
+                          Lista completa
                         </button>
                       </div>
                     </div>
@@ -1580,8 +1693,7 @@ export default function AlunoDashboardPage() {
                           className="inline-flex items-center gap-2 h-8 px-4 rounded-[8px] bg-[#EEF2FF] text-[#0047BB] text-[12px] font-semibold"
                           onClick={() => setSimuladosModalOpen(true)}
                         >
-                          <span className="text-[16px] leading-none">+</span>
-                          Ver mais
+                          Lista completa
                         </button>
                       </div>
                     </div>
