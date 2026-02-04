@@ -139,7 +139,8 @@ function SectionTitle({ title, onMore, showMoreInline = false, icon: Icon = null
               className="inline-flex items-center gap-2 h-8 px-4 rounded-[8px] bg-[#EEF2FF] text-[#0047BB] text-[12px] font-semibold"
               onClick={onMore}
             >
-              Lista completa
+              <span className="text-[16px] leading-none">+</span>
+              Ver mais
             </button>
           ) : null}
         </div>
@@ -150,7 +151,7 @@ function SectionTitle({ title, onMore, showMoreInline = false, icon: Icon = null
           className="text-[12px] font-semibold text-[#0047BB] hover:underline"
           onClick={onMore}
         >
-          Lista completa
+          Ver mais
         </button>
       ) : (
         <div className="w-16" />
@@ -595,6 +596,7 @@ function FeaturedCoursesModal({ open, onClose, courses, onSelectCourse, ownershi
 
 function MyCoursesModal({ open, onClose, courses, onSelectCourse }) {
   const [query, setQuery] = useState('')
+  const [filter, setFilter] = useState('all')
 
   useEffect(() => {
     if (!open) return
@@ -608,9 +610,16 @@ function MyCoursesModal({ open, onClose, courses, onSelectCourse }) {
   const list = useMemo(() => {
     const q = String(query || '').trim().toLowerCase()
     const base = Array.isArray(courses) ? courses : []
-    if (!q) return base
-    return base.filter((c) => String(c?.title || '').toLowerCase().includes(q))
-  }, [courses, query])
+    const filtered = base.filter((c) => {
+      const p = Math.max(0, Math.min(100, Number(c?.progress || 0)))
+      if (filter === 'not_started') return p <= 0
+      if (filter === 'in_progress') return p > 0 && p < 100
+      if (filter === 'completed') return p >= 100
+      return true
+    })
+    if (!q) return filtered
+    return filtered.filter((c) => String(c?.title || '').toLowerCase().includes(q))
+  }, [courses, filter, query])
 
   if (!open) return null
 
@@ -651,6 +660,27 @@ function MyCoursesModal({ open, onClose, courses, onSelectCourse }) {
               </div>
             </div>
             <div className="text-[12px] text-[#737780] whitespace-nowrap">{list.length}</div>
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            {[
+              { k: 'all', l: 'Todos' },
+              { k: 'not_started', l: 'Não iniciado' },
+              { k: 'in_progress', l: 'Em andamento' },
+              { k: 'completed', l: 'Concluído' },
+            ].map((it) => {
+              const active = filter === it.k
+              return (
+                <button
+                  key={it.k}
+                  type="button"
+                  onClick={() => setFilter(it.k)}
+                  className={`h-7 px-3 rounded-full text-[11px] font-semibold border transition-colors ${active ? 'bg-[#0047BB] border-[#0047BB] text-white' : 'bg-white border-[#E3E4E5] text-[#22252B] hover:bg-[#F9FAFB]'}`}
+                >
+                  {it.l}
+                </button>
+              )
+            })}
           </div>
 
           <div className="mt-4 max-h-[60vh] overflow-auto pr-1">
@@ -1567,7 +1597,8 @@ export default function AlunoDashboardPage() {
                           className="inline-flex items-center gap-2 h-8 px-4 rounded-[8px] bg-[#EEF2FF] text-[#0047BB] text-[12px] font-semibold"
                           onClick={() => setMyCoursesModalOpen(true)}
                         >
-                          Lista completa
+                          <span className="text-[16px] leading-none">+</span>
+                          Ver mais
                         </button>
                       </div>
                     </div>
@@ -1631,7 +1662,8 @@ export default function AlunoDashboardPage() {
                           className="inline-flex items-center gap-2 h-8 px-4 rounded-[8px] bg-[#EEF2FF] text-[#0047BB] text-[12px] font-semibold"
                           onClick={() => setFeaturedModalOpen(true)}
                         >
-                          Lista completa
+                          <span className="text-[16px] leading-none">+</span>
+                          Ver mais
                         </button>
                       </div>
                     </div>
@@ -1693,7 +1725,8 @@ export default function AlunoDashboardPage() {
                           className="inline-flex items-center gap-2 h-8 px-4 rounded-[8px] bg-[#EEF2FF] text-[#0047BB] text-[12px] font-semibold"
                           onClick={() => setSimuladosModalOpen(true)}
                         >
-                          Lista completa
+                          <span className="text-[16px] leading-none">+</span>
+                          Ver mais
                         </button>
                       </div>
                     </div>
