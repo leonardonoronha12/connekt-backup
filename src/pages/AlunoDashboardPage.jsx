@@ -1591,12 +1591,14 @@ export default function AlunoDashboardPage() {
                         <BookOpen className="w-4 h-4 text-[#0047BB]" />
                       </div>
                       <div className="flex items-center gap-3">
+                        <div className="text-[14px] font-semibold text-[#22252B]">Meus cursos</div>
                         <button
                           type="button"
-                          className="text-[14px] font-semibold text-[#22252B] hover:underline"
+                          className="inline-flex items-center gap-2 h-8 px-4 rounded-[8px] bg-[#EEF2FF] text-[#0047BB] text-[12px] font-semibold"
                           onClick={() => setMyCoursesModalOpen(true)}
                         >
-                          Meus cursos
+                          <span className="text-[16px] leading-none">+</span>
+                          Ver mais
                         </button>
                       </div>
                     </div>
@@ -1654,14 +1656,12 @@ export default function AlunoDashboardPage() {
                         <Star className="w-4 h-4 text-[#0047BB]" />
                       </div>
                       <div className="flex items-center gap-3">
-                        <div className="text-[14px] font-semibold text-[#22252B]">Cursos em destaque</div>
                         <button
                           type="button"
-                          className="inline-flex items-center gap-2 h-8 px-4 rounded-[8px] bg-[#EEF2FF] text-[#0047BB] text-[12px] font-semibold"
+                          className="text-[14px] font-semibold text-[#22252B] hover:underline"
                           onClick={() => setFeaturedModalOpen(true)}
                         >
-                          <span className="text-[16px] leading-none">+</span>
-                          Ver mais
+                          Cursos em destaque
                         </button>
                       </div>
                     </div>
