@@ -2688,13 +2688,34 @@ export default function AlunoAulaPage() {
                                 <p className="text-[10px] text-[#9291A5] font-inter font-[400] mt-1">{currentSimuladosRefs.length > 0 && currentSimuladosRefs[0]?.scope === 'curso' ? 'Simulado do curso' : 'Simulado do módulo'}</p>
                               </div>
                               <div className="mt-3 flex items-center gap-2">
+                                {(() => {
+                                  const settings = s?.settings && typeof s.settings === 'object' ? s.settings : null
+                                  const rawCats =
+                                    (settings && (settings.categories || settings.categorias || settings.category || settings.categoria)) ||
+                                    s?.categories ||
+                                    s?.categorias ||
+                                    s?.category ||
+                                    s?.categoria ||
+                                    []
+                                  const cats = Array.isArray(rawCats) ? rawCats : (typeof rawCats === 'string' ? rawCats.split(',') : [])
+                                  const first = cats
+                                    .map((v) => {
+                                      if (!v) return ''
+                                      if (typeof v === 'object') return String(v?.name || v?.label || v?.title || '').trim()
+                                      return String(v).trim()
+                                    })
+                                    .filter(Boolean)[0]
+                                  const categoryLabel = String(first || 'Sem categoria')
+                                  return (
                                 <span
                                   className="inline-flex items-center gap-1 text-[12px] font-normal h-[20px] px-2 py-0 rounded-[4px]"
                                   style={{ backgroundColor: 'rgba(173,137,247,0.1)', color: '#22252B' }}
                                 >
                                   <span className="leading-none text-[7px] text-[#AD89F7]">🟪</span>
-                                  <span className="text-[10px] text-[#22252B] font-normal not-italic">Categoria</span>
+                                  <span className="text-[10px] text-[#22252B] font-normal not-italic">{categoryLabel}</span>
                                 </span>
+                                  )
+                                })()}
                               </div>
                               <div className="mt-4 flex items-center justify-between">
                                 <div className="flex flex-col w-full">
