@@ -3934,7 +3934,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                 rows={3}
               />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className={newModuleVisibility === 'Paga' ? "grid grid-cols-2 gap-3" : "grid grid-cols-1 gap-3"}>
               <div>
                 <label className="text-[12px] font-medium text-[#737780]">Visibilidade</label>
                 <select
@@ -3950,24 +3950,25 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                   <option value="Paga">Pago</option>
                 </select>
               </div>
-              <div>
-                <label className="text-[12px] font-medium text-[#737780]">Valor</label>
-                <div className={`mt-1 flex items-center rounded-[6px] border border-[#E3E4E5] bg-white px-3 ${newModuleVisibility === 'Paga' ? '' : 'opacity-60'}`}>
-                  <span className="text-[12px] text-[#6B7280]">R$</span>
-                  <input
-                    value={newModulePrice}
-                    onChange={(e) => {
-                      const v = e.target.value
-                      const cleaned = v.replace(/[^\d.,]/g, '')
-                      setNewModulePrice(cleaned)
-                    }}
-                    inputMode="decimal"
-                    disabled={newModuleVisibility !== 'Paga'}
-                    className="h-10 w-full bg-transparent px-2 text-[14px] outline-none disabled:cursor-not-allowed"
-                    placeholder="0,00"
-                  />
+              {newModuleVisibility === 'Paga' ? (
+                <div>
+                  <label className="text-[12px] font-medium text-[#737780]">Valor</label>
+                  <div className="mt-1 flex items-center rounded-[6px] border border-[#E3E4E5] bg-white px-3">
+                    <span className="text-[12px] text-[#6B7280]">R$</span>
+                    <input
+                      value={newModulePrice}
+                      onChange={(e) => {
+                        const v = e.target.value
+                        const cleaned = v.replace(/[^\d.,]/g, '')
+                        setNewModulePrice(cleaned)
+                      }}
+                      inputMode="decimal"
+                      className="h-10 w-full bg-transparent px-2 text-[14px] outline-none"
+                      placeholder="0,00"
+                    />
+                  </div>
                 </div>
-              </div>
+              ) : null}
             </div>
           </div>
           <AlertDialogFooter>
