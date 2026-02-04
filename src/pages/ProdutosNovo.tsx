@@ -22,6 +22,7 @@ type Lesson = {
   durationMin: number;
   visibility: "Gratuita" | "Paga";
   priceCents?: number;
+  difficulty?: "Iniciante" | "Intermediário" | "Avançado";
   tag: string;
   categories?: string[];
   subcategories?: string[];
@@ -579,6 +580,17 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
         </clipPath>
       </defs>
     </svg>
+  )
+  const CoverCardPreview = ({ src, titleText }: { src: string; titleText: string }) => (
+    <div className="relative w-[180px] h-[326px] rounded-[10px] overflow-hidden border border-[#E3E4E5] bg-[#F8FAFF]">
+      <img src={src} alt="Capa" className="absolute inset-0 h-full w-full object-cover" />
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 to-transparent" />
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 pb-6 flex flex-col items-center text-center px-3">
+        <ConnektWordmark className="w-[110px] h-auto" />
+        <div className="mt-2 h-[2px] w-10 bg-white/70 rounded" />
+        <div className="mt-3 text-[14px] font-semibold text-white truncate w-full">{titleText}</div>
+      </div>
+    </div>
   )
   const medicalCourseCoverOptions = useMemo(() => {
     const svgToDataUrl = (svg: string) => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
@@ -2130,6 +2142,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
     setNewLessonDurationMin(lesson.durationMin)
     setNewLessonVisibility(lesson.visibility)
     setNewLessonPrice(lesson.visibility === 'Paga' && typeof lesson.priceCents === 'number' ? formatCentsToBRLValue(lesson.priceCents) : '')
+    setNewLessonDifficulty(((lesson as any).difficulty as any) || 'Intermediário')
     setNewLessonCategories(lesson.categories && lesson.categories.length ? lesson.categories : ['Categoria'])
     setNewLessonSubcategories(lesson.subcategories && lesson.subcategories.length ? lesson.subcategories : ['Subcategoria'])
     setNewLessonExtraTags(lesson.extraTags && lesson.extraTags.length ? lesson.extraTags : ['Tag'])
@@ -2627,6 +2640,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
   const [newLessonDurationMin, setNewLessonDurationMin] = useState<number>(15)
   const [newLessonVisibility, setNewLessonVisibility] = useState<'Gratuita' | 'Paga'>('Gratuita')
   const [newLessonPrice, setNewLessonPrice] = useState<string>('')
+  const [newLessonDifficulty, setNewLessonDifficulty] = useState<Lesson['difficulty']>('Intermediário')
   // Estados para tokens no modal de nova aula
   const [newLessonCategories, setNewLessonCategories] = useState<string[]>(['Categoria'])
   const [newLessonSubcategories, setNewLessonSubcategories] = useState<string[]>(['Subcategoria'])
@@ -2671,6 +2685,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
     }
     if (editingLessonId) return
     if (!draftLessonId) setDraftLessonId(`lesson-${Date.now()}`)
+    setNewLessonDifficulty('Intermediário')
     setNewLessonVideoUrl('')
     setNewLessonVideoId('')
     setNewLessonVideoPath(null)
@@ -3304,7 +3319,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
               <label className="text-[12px] font-medium text-[#374151]">Descrição</label>
               <textarea value={newLessonDescription} onChange={(e) => setNewLessonDescription(e.target.value)} className="mt-1 w-full rounded-[8px] border border-[#E3E4E5] p-3 text-[12px]" rows={3} placeholder="Digite uma descrição"></textarea>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
                 <label className="text-[12px] font-medium text-[#374151]">Duração (min)</label>
                 <input type="number" min={1} value={newLessonDurationMin} onChange={(e) => setNewLessonDurationMin(Number(e.target.value))} className="mt-1 h-9 w-full rounded-[8px] border border-[#E3E4E5] px-3 text-[12px]" />
@@ -3314,6 +3329,14 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                 <select value={newLessonVisibility} onChange={(e) => { const v = e.target.value as 'Gratuita' | 'Paga'; setNewLessonVisibility(v); if (v === 'Gratuita') setNewLessonPrice('') }} className="mt-1 h-9 w-full rounded-[8px] border border-[#E3E4E5] px-3 text-[12px]">
                   <option value="Gratuita">Gratuita</option>
                   <option value="Paga">Paga</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-[12px] font-medium text-[#374151]">Dificuldade</label>
+                <select value={newLessonDifficulty || 'Intermediário'} onChange={(e) => setNewLessonDifficulty(e.target.value as any)} className="mt-1 h-9 w-full rounded-[8px] border border-[#E3E4E5] px-3 text-[12px]">
+                  <option value="Iniciante">Iniciante</option>
+                  <option value="Intermediário">Intermediário</option>
+                  <option value="Avançado">Avançado</option>
                 </select>
               </div>
             </div>
@@ -3722,6 +3745,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
               setEditingLessonId(null)
               setEditingModuleId(null)
               setDraftLessonId(null)
+              setNewLessonDifficulty('Intermediário')
               setNewLessonVideoUrl('')
               setNewLessonVideoId('')
               setNewLessonVideoPath(null)
@@ -3751,6 +3775,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                 durationMin: newLessonDurationMin || 15,
                 visibility: newLessonVisibility,
                 priceCents: newLessonVisibility === 'Paga' ? (lessonPriceCents || undefined) : undefined,
+                difficulty: newLessonDifficulty || 'Intermediário',
                 tag: newLessonExtraTags.length ? newLessonExtraTags[0] : 'Tag',
                 categories: newLessonCategories.length ? newLessonCategories : ['Categoria'],
                 subcategories: newLessonSubcategories.length ? newLessonSubcategories : ['Subcategoria'],
@@ -3784,6 +3809,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
               setNewLessonDurationMin(15)
               setNewLessonVisibility('Gratuita')
               setNewLessonPrice('')
+              setNewLessonDifficulty('Intermediário')
               setNewLessonCategories(['Categoria'])
               setNewLessonSubcategories(['Subcategoria'])
               setNewLessonExtraTags(['Tag'])
@@ -4000,6 +4026,15 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                 if (newModuleCoverFile) {
                   setModuleCoverFilesById((prev) => ({ ...prev, [id]: newModuleCoverFile }))
                 }
+                if (newModuleCoverFile) {
+                  setModuleLayoutImage(newModuleCoverImage || null)
+                  setModuleLayoutImageFile(newModuleCoverFile)
+                  setModuleLayoutImagePath(null)
+                } else if (newModuleCoverImage) {
+                  setModuleLayoutImage(newModuleCoverImage)
+                  setModuleLayoutImageFile(null)
+                  setModuleLayoutImagePath(null)
+                }
                 setEditingModuleId(id)
                 setEditingLessonId(null)
                 setShowModuleForm(false);
@@ -4166,10 +4201,14 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                   <X className="h-4 w-4 text-[#6B7280]" />
                 </button>
               </div>
-              <div className="rounded-[10px] overflow-hidden border border-[#E3E4E5]">
-                <div className="relative">
-                  <img src="/login-background.jpg" alt="Capa do curso" className="w-full h-64 object-cover" />
-                </div>
+              <div className="flex justify-center">
+                {moduleLayoutImage ? (
+                  <CoverCardPreview src={moduleLayoutImage} titleText={(title || '').trim() || 'Nome do curso'} />
+                ) : (
+                  <div className="w-[180px] h-[326px] rounded-[10px] border border-dashed border-[#C7D2FE] bg-[#F8FAFF] flex items-center justify-center text-[12px] text-[#737780]">
+                    Sem capa
+                  </div>
+                )}
               </div>
               <div className="mt-4 flex items-center justify-end">
                 <Button variant="outline" onClick={() => { setActiveScreen('editor'); history.replaceState({}, '', window.location.pathname); }}>Voltar para informações</Button>
@@ -5608,7 +5647,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                     <div className="grid sm:grid-cols-3 gap-4 mb-6">
                       <div className="rounded-[8px] border border-[#E3E4E5] bg-white p-4">
                         <div className="h-10 w-10 rounded-[8px] bg-[#EEF2FF] flex items-center justify-center">
-                          <FileSpreadsheet className="h-5 w-5 text-[#0047BB]" />
+                          <img src="/simulado-cover.svg" alt="" className="h-5 w-5" />
                         </div>
                         <div className="mt-2 text-[13px] font-semibold text-[#1E1B39]">Simulados</div>
                         <div className="text-[12px] text-[#737780]">Bancos de questões e simulados</div>
@@ -6725,6 +6764,15 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                                         if (moduleEditCoverFile) {
                                           setModuleCoverFilesById((prev) => ({ ...prev, [m.id]: moduleEditCoverFile }))
                                         }
+                                        if (moduleEditCoverFile) {
+                                          setModuleLayoutImage(nextCoverUrl)
+                                          setModuleLayoutImageFile(moduleEditCoverFile)
+                                          setModuleLayoutImagePath(null)
+                                        } else if (nextCoverUrl) {
+                                          setModuleLayoutImage(nextCoverUrl)
+                                          setModuleLayoutImageFile(null)
+                                          setModuleLayoutImagePath(null)
+                                        }
                                         setModuleEditId(null)
                                         setModuleEditTitle('')
                                         setModuleEditDescription('')
@@ -7437,19 +7485,13 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
               Sugestões
             </button>
           </div>
-          <div className="rounded-[10px] overflow-hidden border border-[#E3E4E5] w-full">
-            <div className="relative group h-[110px] w-full bg-[#F8FAFF] flex items-center justify-center border-b border-[#E3E4E5]">
+          <div className="flex justify-center">
+            <div className="relative group">
               {moduleLayoutImage ? (
-                <>
-                  <img 
-                    src={moduleLayoutImage} 
-                    alt="Capa do curso" 
-                    className="w-full h-full object-cover" 
-                  />
-                </>
+                <CoverCardPreview src={moduleLayoutImage} titleText={(title || '').trim() || 'Nome do curso'} />
               ) : (
-                <div 
-                  className="flex flex-col items-center justify-center text-[#737780] gap-3 p-6 text-center cursor-pointer hover:bg-[#F1F5F9] transition-colors w-full h-full" 
+                <div
+                  className="w-[180px] h-[326px] rounded-[10px] border border-dashed border-[#C7D2FE] bg-[#F8FAFF] flex flex-col items-center justify-center text-[#737780] gap-3 p-6 text-center cursor-pointer hover:bg-[#EEF2FF] transition-colors"
                   onClick={() => moduleLayoutImageInputRef.current?.click()}
                 >
                   <div className="h-12 w-12 rounded-full bg-[#EEF2FF] flex items-center justify-center mb-1">
@@ -7457,21 +7499,21 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                   </div>
                   <div>
                     <div className="text-[13px] font-semibold text-[#1E1B39]">Capa do Curso</div>
-                    <div className="text-[12px]">Clique para fazer upload <br/>ou arraste uma imagem</div>
+                    <div className="text-[12px]">Clique para fazer upload <br />ou arraste uma imagem</div>
                   </div>
                 </div>
               )}
-              
+
               {moduleLayoutImage && (
                 <div className="absolute top-2 right-2 flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button 
+                  <button
                     onClick={() => moduleLayoutImageInputRef.current?.click()}
                     className="bg-white/90 p-1.5 rounded-full hover:bg-white text-gray-700 shadow-sm"
                     title="Alterar imagem"
                   >
                     <Pencil className="h-4 w-4" />
                   </button>
-                  <button 
+                  <button
                     onClick={handleRemoveModuleLayoutImage}
                     className="bg-white/90 p-1.5 rounded-full hover:bg-white text-red-600 shadow-sm"
                     title="Remover imagem"
@@ -7481,14 +7523,13 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                 </div>
               )}
 
-              <input 
-                type="file" 
-                ref={moduleLayoutImageInputRef} 
-                className="hidden" 
+              <input
+                type="file"
+                ref={moduleLayoutImageInputRef}
+                className="hidden"
                 accept="image/*"
                 onChange={handleModuleLayoutImageUpload}
               />
-
             </div>
           </div>
           {isCoverGalleryOpen ? (
