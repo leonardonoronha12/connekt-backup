@@ -195,10 +195,10 @@ export default function AlunoSimuladosPage() {
     const subcategories = splitTwoCols(filterOptions.subcategories || [])
     const tags = splitTwoCols(filterOptions.tags || [])
     return [
+      { key: 'ownership', group: 'ownership', title: 'Compra', left: ownership.left, right: ownership.right },
       { key: 'categories', group: 'categories', title: 'Categorias', left: categories.left, right: categories.right },
       { key: 'subcategories', group: 'subcategories', title: 'Sub Categorias', left: subcategories.left, right: subcategories.right },
       { key: 'tags', group: 'tags', title: 'Tags', left: tags.left, right: tags.right },
-      { key: 'ownership', group: 'ownership', title: 'Compra', left: ownership.left, right: ownership.right },
     ]
   }, [filterOptions])
 
