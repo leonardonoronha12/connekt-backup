@@ -5607,7 +5607,9 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
 
                     <div className="grid sm:grid-cols-3 gap-4 mb-6">
                       <div className="rounded-[8px] border border-[#E3E4E5] bg-white p-4">
-                        <div className="h-10 w-10 rounded-[8px]" style={{ background: 'rgb(238, 242, 255)' }} />
+                        <div className="h-10 w-10 rounded-[8px] bg-[#EEF2FF] flex items-center justify-center">
+                          <FileSpreadsheet className="h-5 w-5 text-[#0047BB]" />
+                        </div>
                         <div className="mt-2 text-[13px] font-semibold text-[#1E1B39]">Simulados</div>
                         <div className="text-[12px] text-[#737780]">Bancos de questões e simulados</div>
                         <Button variant="outline" className="px-4 py-2 mt-3 h-8" onClick={() => openSimuladoSelector('curso')}>Adicionar simulados</Button>
@@ -5782,7 +5784,6 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                       <ul className="list-disc pl-5 text-[12px] text-[#737780] space-y-1">
                         <li>Envie uma imagem de capa e vídeo de apresentação.</li>
                         <li>Ajuste as cores do tema para combinar com sua marca.</li>
-                        <li>Opcional: configure a URL da página de vendas.</li>
                       </ul>
                     </div>
                     <div className="flex items-center justify-between mb-4">
@@ -6011,8 +6012,6 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                         <div className="rounded-[8px] bg-gradient-to-br from-[#F8FAFF] to-[#EEF2FF] border border-[#C7D2FE] p-4 mb-4">
                           <div className="text-[13px] font-semibold text-[#1E1B39] mb-1">O que fazer nesta etapa</div>
                           <ul className="list-disc pl-5 text-[12px] text-[#737780] space-y-1">
-                            <li>Selecione o gateway e defina o preço do curso.</li>
-                            <li>Estabeleça as políticas financeiras (reembolso, tipo de cobrança).</li>
                             <li>Revise e publique quando estiver pronto.</li>
                           </ul>
                         </div>
@@ -6027,7 +6026,6 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                             <div className="rounded-[8px] border border-[#E3E4E5] bg-white p-4">
                               <div className="text-[13px] font-semibold mb-2">Gateway</div>
                               <div className="flex items-center gap-3 text-[12px] text-[#737780]">
-                                <img src="/bank-icon.svg" alt="Mygateway" className="h-5 w-5" />
                                 Mygateway
                               </div>
                               {(() => {
@@ -7147,7 +7145,6 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                 <ul className="list-disc pl-5 text-[12px] text-[#737780] space-y-1">
                   <li>Envie uma imagem de capa e vídeo de apresentação.</li>
                   <li>Ajuste as cores do tema para combinar com sua marca.</li>
-                  <li>Opcional: configure a URL da página de vendas.</li>
                 </ul>
               </div>
               <div className="flex items-center justify-between mb-4">
@@ -7319,8 +7316,6 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
               <div className="rounded-[8px] bg-gradient-to-br from-[#F8FAFF] to-[#EEF2FF] border border-[#C7D2FE] p-4 mb-4">
                 <div className="text-[13px] font-semibold text-[#1E1B39] mb-1">O que fazer nesta etapa</div>
                 <ul className="list-disc pl-5 text-[12px] text-[#737780] space-y-1">
-                  <li>Selecione o gateway e defina o preço do curso.</li>
-                  <li>Estabeleça as políticas financeiras (reembolso, tipo de cobrança).</li>
                   <li>Revise e publique quando estiver pronto.</li>
                 </ul>
               </div>
@@ -7335,7 +7330,6 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                 <div className="rounded-[8px] border border-[#E3E4E5] bg-white p-4">
                   <div className="text-[13px] font-semibold mb-2">Gateway</div>
                   <div className="flex items-center gap-3 text-[12px] text-[#737780]">
-                    <img src="/bank-icon.svg" alt="Mygateway" className="h-5 w-5" />
                     Mygateway
                   </div>
                   {(() => {
