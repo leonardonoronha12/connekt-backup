@@ -21,6 +21,64 @@ function parseJsonMaybe(value) {
   try { return JSON.parse(value) } catch (_) { return null }
 }
 
+function safeLsGet(key) {
+  if (!key) return ''
+  try { return String(localStorage.getItem(String(key)) || '') } catch (_) { return '' }
+}
+
+function getCourseMeta(row) {
+  const fromData = parseJsonMaybe(row?.data) || null
+  const parsedModules = parseJsonMaybe(row?.modules) || null
+  const fromModulesMeta = parsedModules && typeof parsedModules === 'object' ? (parsedModules.meta || null) : null
+  return { ...(fromModulesMeta || {}), ...(fromData || {}) }
+}
+
+function resolveCoursePriceNumber(courseRow) {
+  const meta = getCourseMeta(courseRow)
+  const candidates = [
+    courseRow?.price,
+    courseRow?.course_price,
+    meta?.price,
+    meta?.preco,
+    meta?.valor,
+    meta?.value,
+    meta?.coursePrice,
+    meta?.course_price,
+    meta?.productPrice,
+    meta?.product_price,
+    meta?.checkoutPrice,
+    meta?.checkout_price,
+    meta?.checkoutValue,
+    meta?.checkout_value,
+    meta?.paymentValue,
+    meta?.payment_value,
+  ]
+  for (const c of candidates) {
+    const n = Number(c)
+    if (Number.isFinite(n) && n > 0) return n
+  }
+  return 0
+}
+
+function isPaidCourseFromMeta(courseRow) {
+  const meta = getCourseMeta(courseRow)
+  const boolCandidates = [
+    meta?.is_paid,
+    meta?.isPaid,
+    meta?.paid,
+    meta?.pago,
+    meta?.course_is_paid,
+    meta?.courseIsPaid,
+    meta?.isPaidCourse,
+  ]
+  for (const c of boolCandidates) {
+    if (typeof c === 'boolean') return c
+    const s = String(c ?? '').trim().toLowerCase()
+    if (s === 'true' || s === '1' || s === 'paid' || s === 'pago' || s === 'sim') return true
+  }
+  return false
+}
+
 function getCourseModules(row) {
   const parsed = parseJsonMaybe(row?.modules)
   if (Array.isArray(parsed)) return parsed
@@ -934,10 +992,23 @@ export default function AlunoDashboardPage() {
         cover_image_url: deriveCourseCoverUrl(row) || null,
         progress: 0,
         courseRow: row,
+        isPaid: resolveCoursePriceNumber(row) > 0 || isPaidCourseFromMeta(row),
+        isOwned: (() => {
+          const cid = String(row?.id || '').trim()
+          if (!cid) return false
+          if (isDemoStudent) return true
+          const isPaid = resolveCoursePriceNumber(row) > 0 || isPaidCourseFromMeta(row)
+          if (!isPaid) return true
+          return safeLsGet(`connekt_course_owned:${cid}`) === '1'
+        })(),
       }))
     }
-    return Array.isArray(student?.courses) ? student.courses : []
-  }, [activeProducerUserId, producerCourses, student?.courses])
+    return (Array.isArray(student?.courses) ? student.courses : []).map((c) => ({
+      ...c,
+      isPaid: false,
+      isOwned: true,
+    }))
+  }, [activeProducerUserId, isDemoStudent, producerCourses, student?.courses])
   const name = student?.name || user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email || 'Aluno'
   const coverFallback = connektCourseCoverOptions[0]?.src || '/Preview.png'
   const pickCoverForCourse = (titleValue, idx) => {
@@ -980,7 +1051,10 @@ export default function AlunoDashboardPage() {
   }, [activeProducerUserId, courses, coverFallback, producerCoversByTitle])
 
   const myCourses = useMemo(() => {
-    const list = courses.slice(0, 8).map((c, idx) => ({
+    const list = courses
+      .filter((c) => !c?.isPaid || !!c?.isOwned)
+      .slice(0, 8)
+      .map((c, idx) => ({
       id: `${c?.course_name || 'curso'}-${idx}`,
       courseId: c?.course_id || c?.courseId || c?.id || null,
       title: c?.course_name || 'Nome do curso',
@@ -1001,7 +1075,19 @@ export default function AlunoDashboardPage() {
   }, [activeProducerUserId, courses, coverFallback, connektCourseCoverOptions, producerCoversByTitle])
 
   const featuredCourses = useMemo(() => {
-    const base = myCourses.slice(0, 6)
+    const base = courses
+      .filter((c) => !!c?.isPaid && !c?.isOwned)
+      .slice(0, 6)
+      .map((c, idx) => ({
+        id: `blocked-${c?.course_name || 'curso'}-${idx}`,
+        courseId: c?.course_id || c?.courseId || c?.id || null,
+        title: c?.course_name || 'Nome do curso',
+        cover: (() => {
+          const t = String(c?.course_name || '').trim().toLowerCase()
+          return producerCoversByTitle[t] || c?.cover_image_url || pickCoverForCourse(c?.course_name || 'Nome do curso', idx + 10)
+        })(),
+        progress: c?.progress || 0,
+      }))
     if (base.length > 0) return base
     return [
       { id: 'f1', title: 'Nome do curso', cover: pickCoverForCourse('Nome do curso', 10), progress: 0 },
@@ -1009,12 +1095,24 @@ export default function AlunoDashboardPage() {
       { id: 'f3', title: 'Nome do curso', cover: pickCoverForCourse('Nome do curso', 12), progress: 0 },
       { id: 'f4', title: 'Nome do curso', cover: pickCoverForCourse('Nome do curso', 13), progress: 0 },
     ]
-  }, [myCourses, coverFallback, connektCourseCoverOptions])
+  }, [courses, producerCoversByTitle, coverFallback, connektCourseCoverOptions])
 
   const featuredCoursesAll = useMemo(() => {
-    if (Array.isArray(myCourses) && myCourses.length > 0) return myCourses
+    const list = courses
+      .filter((c) => !!c?.isPaid && !c?.isOwned)
+      .map((c, idx) => ({
+        id: `blocked-all-${c?.course_name || 'curso'}-${idx}`,
+        courseId: c?.course_id || c?.courseId || c?.id || null,
+        title: c?.course_name || 'Nome do curso',
+        cover: (() => {
+          const t = String(c?.course_name || '').trim().toLowerCase()
+          return producerCoversByTitle[t] || c?.cover_image_url || pickCoverForCourse(c?.course_name || 'Nome do curso', idx + 10)
+        })(),
+        progress: c?.progress || 0,
+      }))
+    if (list.length > 0) return list
     return featuredCourses
-  }, [featuredCourses, myCourses])
+  }, [courses, featuredCourses, producerCoversByTitle, coverFallback, connektCourseCoverOptions])
 
   const simulados = useMemo(() => {
     if (producerSimuladosLoading) return []
