@@ -40,7 +40,7 @@ export default function NovoCursoPage() {
   const [title, setTitle] = useState("")
   const [description, setDescription] = useState("")
   const [hiddenAdvanceButtons, setHiddenAdvanceButtons] = useState<string[]>([])
-  const [modules, setModules] = useState<{ id: string; name: string; description: string; lessonsCount: number; lessons: Lesson[]; cover_image_url?: string | null; cover_image_path?: string | null }[]>([])
+  const [modules, setModules] = useState<{ id: string; name: string; description: string; lessonsCount: number; lessons: Lesson[]; cover_image_url?: string | null; cover_image_path?: string | null; visibility?: 'Gratuita' | 'Paga'; priceCents?: number }[]>([])
   const [showChatBot, setShowChatBot] = useState(false)
   const [expandedModules, setExpandedModules] = useState<string[]>([])
 
@@ -668,6 +668,8 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
   const [showModuleForm, setShowModuleForm] = useState(false)
   const [newModuleTitle, setNewModuleTitle] = useState("")
   const [newModuleDescription, setNewModuleDescription] = useState("")
+  const [newModuleVisibility, setNewModuleVisibility] = useState<'Gratuita' | 'Paga'>('Gratuita')
+  const [newModulePrice, setNewModulePrice] = useState<string>('')
   const [newModuleCoverImage, setNewModuleCoverImage] = useState<string | null>(null)
   const [newModuleCoverFile, setNewModuleCoverFile] = useState<File | null>(null)
   const newModuleCoverInputRef = useRef<HTMLInputElement | null>(null)
@@ -3805,6 +3807,8 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
         if (!open) {
           setNewModuleTitle("")
           setNewModuleDescription("")
+          setNewModuleVisibility('Gratuita')
+          setNewModulePrice('')
           setNewModuleCoverImage(null)
           setNewModuleCoverFile(null)
           setIsNewModuleCoverGalleryOpen(false)
@@ -3930,12 +3934,49 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                 rows={3}
               />
             </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-[12px] font-medium text-[#737780]">Visibilidade</label>
+                <select
+                  value={newModuleVisibility}
+                  onChange={(e) => {
+                    const v = e.target.value as 'Gratuita' | 'Paga'
+                    setNewModuleVisibility(v)
+                    if (v === 'Gratuita') setNewModulePrice('')
+                  }}
+                  className="mt-1 w-full h-10 px-3 border border-[#E3E4E5] rounded-[6px] bg-white text-[14px]"
+                >
+                  <option value="Gratuita">Gratuito</option>
+                  <option value="Paga">Pago</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-[12px] font-medium text-[#737780]">Valor</label>
+                <div className={`mt-1 flex items-center rounded-[6px] border border-[#E3E4E5] bg-white px-3 ${newModuleVisibility === 'Paga' ? '' : 'opacity-60'}`}>
+                  <span className="text-[12px] text-[#6B7280]">R$</span>
+                  <input
+                    value={newModulePrice}
+                    onChange={(e) => {
+                      const v = e.target.value
+                      const cleaned = v.replace(/[^\d.,]/g, '')
+                      setNewModulePrice(cleaned)
+                    }}
+                    inputMode="decimal"
+                    disabled={newModuleVisibility !== 'Paga'}
+                    className="h-10 w-full bg-transparent px-2 text-[14px] outline-none disabled:cursor-not-allowed"
+                    placeholder="0,00"
+                  />
+                </div>
+              </div>
+            </div>
           </div>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => {
               setShowModuleForm(false);
               setNewModuleTitle("");
               setNewModuleDescription("");
+              setNewModuleVisibility('Gratuita')
+              setNewModulePrice('')
               setNewModuleCoverImage(null)
               setNewModuleCoverFile(null)
               setIsNewModuleCoverGalleryOpen(false)
@@ -3946,8 +3987,13 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                 const name = newModuleTitle.trim();
                 const desc = newModuleDescription.trim();
                 if (!name || !desc) return;
+                const priceCents = newModuleVisibility === 'Paga' ? parseBRLValueToCents(newModulePrice) : null
+                if (newModuleVisibility === 'Paga' && (!priceCents || priceCents <= 0)) {
+                  toast({ title: 'Informe o valor', description: 'Defina o valor do módulo para visibilidade Paga.', variant: 'destructive' as any })
+                  return
+                }
                 const id = `mod-${Date.now()}`
-                setModules((prev) => [...prev, { id, name, description: desc, lessonsCount: 0, lessons: [], cover_image_url: newModuleCoverImage || null, cover_image_path: null } as any]);
+                setModules((prev) => [...prev, { id, name, description: desc, lessonsCount: 0, lessons: [], cover_image_url: newModuleCoverImage || null, cover_image_path: null, visibility: newModuleVisibility, priceCents: newModuleVisibility === 'Paga' ? (priceCents || 0) : undefined } as any]);
                 if (newModuleCoverFile) {
                   setModuleCoverFilesById((prev) => ({ ...prev, [id]: newModuleCoverFile }))
                 }
@@ -3956,6 +4002,8 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                 setShowModuleForm(false);
                 setNewModuleTitle("");
                 setNewModuleDescription("");
+                setNewModuleVisibility('Gratuita')
+                setNewModulePrice('')
                 setNewModuleCoverImage(null)
                 setNewModuleCoverFile(null)
                 setIsNewModuleCoverGalleryOpen(false)
