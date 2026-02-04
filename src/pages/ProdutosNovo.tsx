@@ -27,8 +27,9 @@ type Lesson = {
   subcategories?: string[];
   extraTags?: string[];
   videoProvider?: "vimeo" | "vdocipher" | "upload";
-  videoUrl?: string;
-  videoId?: string;
+  videoUrl?: string | null;
+  videoId?: string | null;
+  videoPath?: string | null;
   materials?: LessonMaterial[];
   commentsEnabled?: boolean;
 }
@@ -892,8 +893,36 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
         return next as any
       })()
 
-      const modulesWithUploadedMaterials = await (async () => {
+      const modulesWithUploadedLessonVideos = await (async () => {
         const base = Array.isArray(modulesWithUploadedCovers) ? modulesWithUploadedCovers : []
+        const keys = lessonVideoFilesById ? Object.keys(lessonVideoFilesById) : []
+        if (keys.length === 0) return base
+        const next = await Promise.all(base.map(async (m: any) => {
+          const moduleId = String(m?.id || '').trim()
+          const lessons = Array.isArray(m?.lessons) ? m.lessons : []
+          if (lessons.length === 0) return m
+          const nextLessons = await Promise.all(lessons.map(async (l: any) => {
+            const lid = String(l?.id || '').trim()
+            const file = lid ? lessonVideoFilesById[lid] : undefined
+            if (!file) return l
+            const uploaded = await uploadCourseMedia(courseId, `lesson_video/${moduleId || 'mod'}/${lid}`, file)
+            return {
+              ...l,
+              videoProvider: 'upload',
+              videoUrl: uploaded?.url || null,
+              videoPath: uploaded?.path || null,
+              videoId: null,
+            }
+          }))
+          return { ...m, lessons: nextLessons }
+        }))
+        setModules(next as any)
+        setLessonVideoFilesById({})
+        return next as any
+      })()
+
+      const modulesWithUploadedMaterials = await (async () => {
+        const base = Array.isArray(modulesWithUploadedLessonVideos) ? modulesWithUploadedLessonVideos : []
         const keys = lessonMaterialFilesById ? Object.keys(lessonMaterialFilesById) : []
         if (keys.length === 0) return base
         const next = await Promise.all(base.map(async (m: any) => {
@@ -1149,8 +1178,36 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
         return next as any
       })()
 
-      const modulesWithUploadedMaterials = await (async () => {
+      const modulesWithUploadedLessonVideos = await (async () => {
         const base = Array.isArray(modulesWithUploadedCovers) ? modulesWithUploadedCovers : []
+        const keys = lessonVideoFilesById ? Object.keys(lessonVideoFilesById) : []
+        if (keys.length === 0) return base
+        const next = await Promise.all(base.map(async (m: any) => {
+          const moduleId = String(m?.id || '').trim()
+          const lessons = Array.isArray(m?.lessons) ? m.lessons : []
+          if (lessons.length === 0) return m
+          const nextLessons = await Promise.all(lessons.map(async (l: any) => {
+            const lid = String(l?.id || '').trim()
+            const file = lid ? lessonVideoFilesById[lid] : undefined
+            if (!file) return l
+            const uploaded = await uploadCourseMedia(editingCourseId, `lesson_video/${moduleId || 'mod'}/${lid}`, file)
+            return {
+              ...l,
+              videoProvider: 'upload',
+              videoUrl: uploaded?.url || null,
+              videoPath: uploaded?.path || null,
+              videoId: null,
+            }
+          }))
+          return { ...m, lessons: nextLessons }
+        }))
+        setModules(next as any)
+        setLessonVideoFilesById({})
+        return next as any
+      })()
+
+      const modulesWithUploadedMaterials = await (async () => {
+        const base = Array.isArray(modulesWithUploadedLessonVideos) ? modulesWithUploadedLessonVideos : []
         const keys = lessonMaterialFilesById ? Object.keys(lessonMaterialFilesById) : []
         if (keys.length === 0) return base
         const next = await Promise.all(base.map(async (m: any) => {
@@ -1492,6 +1549,12 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
           updateLessonField(editingModuleId, editingLessonId, 'videoUrl', '')
         }
       } catch (_) {}
+      if (videoId) {
+        setDefaultVideoProvider('vdocipher')
+        setNewLessonVideoId(String(videoId))
+        setNewLessonVideoUrl('')
+        setNewLessonVideoPath(null)
+      }
       setVdoUploadTitle('')
       setVdoUploadFile(null)
       setIsVdoUploading(false)
@@ -1499,6 +1562,66 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
       console.error(e)
       toast({ title: 'Erro no upload', description: 'Tente novamente em instantes.' })
       setIsVdoUploading(false)
+    }
+  }
+
+  const handleLessonStorageUpload = async () => {
+    const courseId = String(editingCourseId || createdCourseId || '').trim()
+    const lessonId = String(editingLessonId || draftLessonId || '').trim()
+    const file = lessonUploadFile || (lessonId ? lessonVideoFilesById?.[lessonId] : null)
+    const sanitizeFilename = (name: string) => (name || 'file').replace(/[^a-zA-Z0-9_.-]/g, '_')
+
+    try {
+      if (!user) {
+        toast({ title: 'Faça login', description: 'Entre para enviar vídeos.' })
+        const next = encodeURIComponent('/produtos/novo#aulas')
+        window.location.href = `/login?next=${next}`
+        return
+      }
+      if (!courseId) {
+        toast({ title: 'Salve o curso', description: 'Salve/crie o curso antes de enviar o vídeo.' })
+        return
+      }
+      if (!lessonId) {
+        toast({ title: 'Aula não definida', description: 'Defina a aula antes de enviar o vídeo.' })
+        return
+      }
+      if (!file) {
+        toast({ title: 'Selecione um arquivo', description: 'Escolha um vídeo para enviar.' })
+        return
+      }
+      setIsLessonUploadUploading(true)
+      const allowed = await canUploadBytes(user.id, file.size, resolvePlanKey())
+      if (!allowed.ok) {
+        toast({ title: 'Limite de armazenamento', description: 'Limite de armazenamento atingido. Faça upgrade do seu plano para continuar.', variant: 'destructive' as any })
+        setIsLessonUploadUploading(false)
+        return
+      }
+      const bucket = 'courses-media'
+      const safeName = sanitizeFilename(file.name || 'video')
+      const objectPath = `users/${user.id}/courses/${courseId}/lesson_video/${lessonId}/${Date.now()}_${safeName}`
+      const { data, error } = await supabase.storage.from(bucket).upload(objectPath, file, { upsert: true, contentType: file.type || 'application/octet-stream' })
+      if (error) throw error
+      const storedPath = data?.path || objectPath
+      const { data: pub } = supabase.storage.from(bucket).getPublicUrl(storedPath)
+      const url = pub?.publicUrl || ''
+      if (!url) throw new Error('Não foi possível obter a URL do vídeo.')
+      setDefaultVideoProvider('upload')
+      setNewLessonVideoUrl(url)
+      setNewLessonVideoId('')
+      setNewLessonVideoPath(storedPath)
+      setLessonUploadFile(null)
+      setLessonVideoFilesById((prev) => {
+        const next = { ...(prev || {}) }
+        delete next[lessonId]
+        return next
+      })
+      toast({ title: 'Vídeo enviado', description: 'Upload concluído com sucesso.' })
+    } catch (e: any) {
+      const msg = String(e?.message || e || '')
+      toast({ title: 'Erro no upload', description: msg || 'Tente novamente.', variant: 'destructive' as any })
+    } finally {
+      setIsLessonUploadUploading(false)
     }
   }
 
@@ -2009,6 +2132,11 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
     setNewLessonMaterials(lesson.materials || [])
     setNewLessonCommentsEnabled(lesson.commentsEnabled || false)
     setDefaultVideoProvider(lesson.videoProvider || 'vimeo')
+    setDraftLessonId(String(lesson.id || ''))
+    setNewLessonVideoUrl(String(lesson.videoUrl || ''))
+    setNewLessonVideoId(String(lesson.videoId || ''))
+    setNewLessonVideoPath(lesson.videoPath ? String(lesson.videoPath) : null)
+    setLessonUploadFile(null)
     
     setEditingModuleId(module.id)
     setEditingLessonId(lesson.id)
@@ -2344,7 +2472,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
   }
 
   // Provedor padrão para vídeos das aulas
-  const [defaultVideoProvider, setDefaultVideoProvider] = useState<'vimeo' | 'vdocipher'>('vimeo')
+  const [defaultVideoProvider, setDefaultVideoProvider] = useState<'vimeo' | 'vdocipher' | 'upload'>('vimeo')
 
   // Navegação de telas locais (Passos do fluxo)
   const [activeScreen, setActiveScreen] = useState<'editor' | 'layout' | 'aulas' | 'recursos' | 'visual' | 'monetizacao'>('editor')
@@ -2505,6 +2633,13 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
   // Materiais no modal de configuração da aula
   const [newLessonMaterials, setNewLessonMaterials] = useState<LessonMaterial[]>([])
   const [lessonMaterialFilesById, setLessonMaterialFilesById] = useState<Record<string, File>>({})
+  const [lessonVideoFilesById, setLessonVideoFilesById] = useState<Record<string, File>>({})
+  const [draftLessonId, setDraftLessonId] = useState<string | null>(null)
+  const [newLessonVideoUrl, setNewLessonVideoUrl] = useState<string>('')
+  const [newLessonVideoId, setNewLessonVideoId] = useState<string>('')
+  const [newLessonVideoPath, setNewLessonVideoPath] = useState<string | null>(null)
+  const [lessonUploadFile, setLessonUploadFile] = useState<File | null>(null)
+  const [isLessonUploadUploading, setIsLessonUploadUploading] = useState(false)
   const materialFileInputRef = useRef<HTMLInputElement | null>(null)
   const [pendingMaterialType, setPendingMaterialType] = useState<LessonMaterial['type'] | null>(null)
   const [showLinkInput, setShowLinkInput] = useState<boolean>(false)
@@ -2522,6 +2657,20 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
   const filteredLessonTagsList = (availableCourseTags || [])
     .filter((n) => n.toLowerCase().includes(lessonTagSearchQuery.toLowerCase()))
     .filter((n) => !newLessonExtraTags.includes(n))
+
+  useEffect(() => {
+    if (!isAddLessonModalOpen) {
+      setDraftLessonId(null)
+      setLessonUploadFile(null)
+      setIsLessonUploadUploading(false)
+      return
+    }
+    if (editingLessonId) return
+    if (!draftLessonId) setDraftLessonId(`lesson-${Date.now()}`)
+    setNewLessonVideoUrl('')
+    setNewLessonVideoId('')
+    setNewLessonVideoPath(null)
+  }, [draftLessonId, editingLessonId, isAddLessonModalOpen])
 
   const goToPhase = (phase: 'conteudo' | 'aulas' | 'recursos' | 'visual' | 'monetizacao') => {
     if (phase === 'conteudo') {
@@ -3415,7 +3564,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
 
             <div className="pt-4">
               <p className="text-[12px] font-medium text-[#374151]">Integração de armazenamento de videos</p>
-              <div className="mt-2 grid grid-cols-2 gap-3">
+              <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div className={`rounded-[8px] border ${defaultVideoProvider === 'vimeo' ? 'border-[#0047BB]' : 'border-[#E3E4E5]'} bg-white p-3`}>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
@@ -3516,11 +3665,64 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                     </div>
                   )}
                 </div>
+                <div className={`rounded-[8px] border ${defaultVideoProvider === 'upload' ? 'border-[#0047BB]' : 'border-[#E3E4E5]'} bg-white p-3`}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Folder className="h-5 w-5 text-[#0047BB]" />
+                      <span className="text-[12px]">Upload</span>
+                    </div>
+                    <input type="radio" name="provider" checked={defaultVideoProvider === 'upload'} onChange={() => setDefaultVideoProvider('upload')} />
+                  </div>
+                  <p className="mt-2 text-[11px] text-[#737780]">Envie um vídeo direto do seu dispositivo.</p>
+                  <div className="mt-2">
+                    <label className="text-[11px] text-[#6B7280]">Arquivo (MP4/Mov)</label>
+                    <input
+                      className="mt-1 w-full rounded-[8px] border border-[#E3E4E5] bg-white px-3 py-1.5 text-[12px]"
+                      type="file"
+                      accept="video/*"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0] ?? null
+                        setLessonUploadFile(file)
+                        setDefaultVideoProvider('upload')
+                        const lid = String(editingLessonId || draftLessonId || '').trim()
+                        if (file && lid) setLessonVideoFilesById((prev) => ({ ...(prev || {}), [lid]: file }))
+                      }}
+                    />
+                    {(() => {
+                      const lid = String(editingLessonId || draftLessonId || '').trim()
+                      const f = lid ? lessonVideoFilesById?.[lid] : null
+                      if (!f) return null
+                      return <div className="mt-2 text-[11px] text-[#737780] truncate">{f.name}</div>
+                    })()}
+                    {defaultVideoProvider === 'upload' && newLessonVideoUrl ? (
+                      <div className="mt-2 text-[11px] text-[#166534]">Vídeo pronto para a aula.</div>
+                    ) : null}
+                  </div>
+                  <div className="mt-2 flex items-center justify-end">
+                    <Button
+                      className="h-8 px-3 bg-[#0047BB] hover:bg-[#003a99] text-white"
+                      type="button"
+                      disabled={isLessonUploadUploading}
+                      onClick={handleLessonStorageUpload}
+                    >
+                      {isLessonUploadUploading ? 'Enviando...' : 'Enviar vídeo'}
+                    </Button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => { setIsAddLessonModalOpen(false); setEditingLessonId(null); setEditingModuleId(null); }}>Cancelar</AlertDialogCancel>
+            <AlertDialogCancel onClick={() => {
+              setIsAddLessonModalOpen(false)
+              setEditingLessonId(null)
+              setEditingModuleId(null)
+              setDraftLessonId(null)
+              setNewLessonVideoUrl('')
+              setNewLessonVideoId('')
+              setNewLessonVideoPath(null)
+              setLessonUploadFile(null)
+            }}>Cancelar</AlertDialogCancel>
             <AlertDialogAction onClick={() => {
               let selectedModuleId = editingModuleId ?? modules[0]?.id
               if (!selectedModuleId) {
@@ -3533,8 +3735,13 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                 toast({ title: 'Informe o valor', description: 'Defina o valor da aula para visibilidade Paga.', variant: 'destructive' as any })
                 return
               }
+              const lessonId = String(editingLessonId || draftLessonId || Date.now()).trim()
+              const provider = defaultVideoProvider
+              const videoUrl = provider === 'vimeo' || provider === 'upload' ? (newLessonVideoUrl || null) : null
+              const videoId = provider === 'vdocipher' ? (newLessonVideoId || null) : null
+              const videoPath = provider === 'upload' ? (newLessonVideoPath || null) : null
               const lessonData: Lesson = {
-                id: editingLessonId ?? String(Date.now()),
+                id: lessonId,
                 title: newLessonTitle || 'Nova aula',
                 description: newLessonDescription || '',
                 durationMin: newLessonDurationMin || 15,
@@ -3544,7 +3751,10 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                 categories: newLessonCategories.length ? newLessonCategories : ['Categoria'],
                 subcategories: newLessonSubcategories.length ? newLessonSubcategories : ['Subcategoria'],
                 extraTags: newLessonExtraTags.length ? newLessonExtraTags : ['Tag'],
-                videoProvider: defaultVideoProvider,
+                videoProvider: provider,
+                videoUrl,
+                videoId,
+                videoPath,
                 materials: newLessonMaterials,
                 commentsEnabled: newLessonCommentsEnabled,
               }
@@ -3563,6 +3773,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
               setIsAddLessonModalOpen(false)
               setEditingLessonId(null)
               setEditingModuleId(null)
+              setDraftLessonId(null)
 
               setNewLessonTitle('Nova aula')
               setNewLessonDescription('')
@@ -3573,6 +3784,10 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
               setNewLessonSubcategories(['Subcategoria'])
               setNewLessonExtraTags(['Tag'])
               setNewLessonMaterials([])
+              setNewLessonVideoUrl('')
+              setNewLessonVideoId('')
+              setNewLessonVideoPath(null)
+              setLessonUploadFile(null)
               setModalNewCategory('')
               setModalNewSubcategory('')
               setModalNewTagExtra('')
@@ -5236,6 +5451,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                                 <select className="mt-1 w-full rounded-[8px] border border-[#E3E4E5] bg-white px-3 py-2 text-[13px]" value={mod.lessons.find((l) => l.id === editingLessonId)?.videoProvider ?? defaultVideoProvider} onChange={(e) => updateLessonField(mod.id, editingLessonId!, 'videoProvider', e.target.value as Lesson['videoProvider'])}>
                                   <option value="vdocipher">VdoCipher</option>
                                   <option value="vimeo">Vimeo</option>
+                                  <option value="upload">Upload</option>
                                 </select>
                               </div>
                               <div>
@@ -6599,6 +6815,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                           >
                             <option value="vdocipher">VdoCipher</option>
                             <option value="vimeo">Vimeo</option>
+                            <option value="upload">Upload</option>
                           </select>
                         </div>
                         <div>
