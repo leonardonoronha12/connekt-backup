@@ -313,8 +313,9 @@ function SimuladoCard({ title, progress, isPaid, price, onClick }) {
   )
 }
 
-function ProducerSimuladosModal({ open, onClose, simulados, onSelectSimulado }) {
+function ProducerSimuladosModal({ open, onClose, simulados, onSelectSimulado, ownershipTick }) {
   const [query, setQuery] = useState('')
+  const [filter, setFilter] = useState('all')
 
   useEffect(() => {
     if (!open) return
@@ -328,9 +329,24 @@ function ProducerSimuladosModal({ open, onClose, simulados, onSelectSimulado }) 
   const list = useMemo(() => {
     const q = String(query || '').trim().toLowerCase()
     const base = Array.isArray(simulados) ? simulados : []
-    if (!q) return base
-    return base.filter((s) => String(s?.title || '').toLowerCase().includes(q))
-  }, [query, simulados])
+    const withFlags = base.map((s) => {
+      const id = String(s?.id || '').trim()
+      const paid = typeof (s?.is_paid ?? s?.isPaid) === 'boolean'
+        ? (s.is_paid ?? s.isPaid)
+        : Math.max(0, Number(s?.price || 0)) > 0
+      const owned = id ? safeLsGet(`connekt_simulado_owned:${id}`) === '1' : false
+      return { ...s, __paid: paid, __owned: owned }
+    })
+    const filtered = withFlags.filter((s) => {
+      if (filter === 'free') return !s.__paid
+      if (filter === 'paid') return !!s.__paid
+      if (filter === 'owned') return !!s.__paid && !!s.__owned
+      if (filter === 'not_owned') return !!s.__paid && !s.__owned
+      return true
+    })
+    if (!q) return filtered
+    return filtered.filter((s) => String(s?.title || '').toLowerCase().includes(q))
+  }, [filter, query, simulados, ownershipTick])
 
   if (!open) return null
 
@@ -373,15 +389,35 @@ function ProducerSimuladosModal({ open, onClose, simulados, onSelectSimulado }) 
             <div className="text-[12px] text-[#737780] whitespace-nowrap">{list.length}</div>
           </div>
 
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            {[
+              { k: 'all', l: 'Todos' },
+              { k: 'free', l: 'Gratuitos' },
+              { k: 'paid', l: 'Pagos' },
+              { k: 'owned', l: 'Adquiridos' },
+              { k: 'not_owned', l: 'Não adquiridos' },
+            ].map((it) => {
+              const active = filter === it.k
+              return (
+                <button
+                  key={it.k}
+                  type="button"
+                  onClick={() => setFilter(it.k)}
+                  className={`h-7 px-3 rounded-full text-[11px] font-semibold border transition-colors ${active ? 'bg-[#0047BB] border-[#0047BB] text-white' : 'bg-white border-[#E3E4E5] text-[#22252B] hover:bg-[#F9FAFB]'}`}
+                >
+                  {it.l}
+                </button>
+              )
+            })}
+          </div>
+
           <div className="mt-4 max-h-[60vh] overflow-auto pr-1">
             {list.length === 0 ? (
               <div className="text-[12px] text-[#737780] py-10 text-center">Nenhum simulado encontrado</div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {list.map((s) => {
-                  const paid = typeof (s?.is_paid ?? s?.isPaid) === 'boolean'
-                    ? (s.is_paid ?? s.isPaid)
-                    : Math.max(0, Number(s?.price || 0)) > 0
+                  const paid = !!s.__paid
                   return (
                     <button
                       key={s.id}
@@ -426,8 +462,9 @@ function ProducerSimuladosModal({ open, onClose, simulados, onSelectSimulado }) 
   )
 }
 
-function FeaturedCoursesModal({ open, onClose, courses, onSelectCourse }) {
+function FeaturedCoursesModal({ open, onClose, courses, onSelectCourse, ownershipTick }) {
   const [query, setQuery] = useState('')
+  const [filter, setFilter] = useState('all')
 
   useEffect(() => {
     if (!open) return
@@ -441,9 +478,18 @@ function FeaturedCoursesModal({ open, onClose, courses, onSelectCourse }) {
   const list = useMemo(() => {
     const q = String(query || '').trim().toLowerCase()
     const base = Array.isArray(courses) ? courses : []
-    if (!q) return base
-    return base.filter((c) => String(c?.title || '').toLowerCase().includes(q))
-  }, [courses, query])
+    const filtered = base.filter((c) => {
+      const cid = String(c?.courseId || c?.course_id || c?.id || '').trim()
+      const owned = cid ? safeLsGet(`connekt_course_owned:${cid}`) === '1' : false
+      const paid = !!c?.isPaid || !!c?.is_paid || Math.max(0, Number(c?.price || c?.coursePrice || 0)) > 0 || !!c?.locked
+      const blocked = paid && !owned
+      if (filter === 'blocked') return blocked
+      if (filter === 'unlocked') return !blocked
+      return true
+    })
+    if (!q) return filtered
+    return filtered.filter((c) => String(c?.title || '').toLowerCase().includes(q))
+  }, [courses, filter, query, ownershipTick])
 
   if (!open) return null
 
@@ -484,6 +530,26 @@ function FeaturedCoursesModal({ open, onClose, courses, onSelectCourse }) {
               </div>
             </div>
             <div className="text-[12px] text-[#737780] whitespace-nowrap">{list.length}</div>
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            {[
+              { k: 'all', l: 'Todos' },
+              { k: 'blocked', l: 'Bloqueados' },
+              { k: 'unlocked', l: 'Liberados' },
+            ].map((it) => {
+              const active = filter === it.k
+              return (
+                <button
+                  key={it.k}
+                  type="button"
+                  onClick={() => setFilter(it.k)}
+                  className={`h-7 px-3 rounded-full text-[11px] font-semibold border transition-colors ${active ? 'bg-[#0047BB] border-[#0047BB] text-white' : 'bg-white border-[#E3E4E5] text-[#22252B] hover:bg-[#F9FAFB]'}`}
+                >
+                  {it.l}
+                </button>
+              )
+            })}
           </div>
 
           <div className="mt-4 max-h-[60vh] overflow-auto pr-1">
@@ -535,6 +601,7 @@ export default function AlunoDashboardPage() {
   const [producerCourses, setProducerCourses] = useState([])
   const [producerSimulados, setProducerSimulados] = useState([])
   const [producerSimuladosLoading, setProducerSimuladosLoading] = useState(false)
+  const [ownershipTick, setOwnershipTick] = useState(0)
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [simuladosModalOpen, setSimuladosModalOpen] = useState(false)
   const [featuredModalOpen, setFeaturedModalOpen] = useState(false)
@@ -562,6 +629,20 @@ export default function AlunoDashboardPage() {
       return String(localStorage.getItem('connekt_demo_student') || '') === '1'
     } catch (_) {
       return false
+    }
+  }, [])
+
+  useEffect(() => {
+    const bump = () => setOwnershipTick((v) => v + 1)
+    const onStorage = (e) => {
+      const key = String(e?.key || '')
+      if (key.startsWith('connekt_course_owned:') || key.startsWith('connekt_simulado_owned:')) bump()
+    }
+    window.addEventListener('storage', onStorage)
+    window.addEventListener('focus', bump)
+    return () => {
+      window.removeEventListener('storage', onStorage)
+      window.removeEventListener('focus', bump)
     }
   }, [])
 
@@ -1204,6 +1285,7 @@ export default function AlunoDashboardPage() {
         open={simuladosModalOpen}
         onClose={() => setSimuladosModalOpen(false)}
         simulados={simulados}
+        ownershipTick={ownershipTick}
         onSelectSimulado={(s) => {
           setSimuladosModalOpen(false)
           const demoSuffix = isDemoStudent ? '&demo=1' : ''
@@ -1215,6 +1297,7 @@ export default function AlunoDashboardPage() {
         open={featuredModalOpen}
         onClose={() => setFeaturedModalOpen(false)}
         courses={featuredCoursesAll}
+        ownershipTick={ownershipTick}
         onSelectCourse={async (c) => {
           setFeaturedModalOpen(false)
           let cid = c?.courseId || null
