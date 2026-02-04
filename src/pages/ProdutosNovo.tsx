@@ -54,6 +54,8 @@ export default function NovoCursoPage() {
   const [moduleEditId, setModuleEditId] = useState<string | null>(null)
   const [moduleEditTitle, setModuleEditTitle] = useState('')
   const [moduleEditDescription, setModuleEditDescription] = useState('')
+  const [moduleEditVisibility, setModuleEditVisibility] = useState<'Gratuita' | 'Paga'>('Gratuita')
+  const [moduleEditPrice, setModuleEditPrice] = useState<string>('')
 const editorRef = useRef<HTMLDivElement | null>(null)
 const lessonTitleRef = useRef<HTMLInputElement | null>(null)
 const modulesSectionRef = useRef<HTMLDivElement | null>(null)
@@ -6478,6 +6480,8 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                                         setModuleEditId(null)
                                         setModuleEditTitle('')
                                         setModuleEditDescription('')
+                                        setModuleEditVisibility('Gratuita')
+                                        setModuleEditPrice('')
                                         setModuleEditCoverImage(null)
                                         setModuleEditCoverPath(null)
                                         setModuleEditCoverFile(null)
@@ -6488,6 +6492,8 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                                       setModuleEditId(m.id)
                                       setModuleEditTitle(m.name)
                                       setModuleEditDescription(m.description || '')
+                                      setModuleEditVisibility((m as any).visibility === 'Paga' ? 'Paga' : 'Gratuita')
+                                      setModuleEditPrice((m as any).visibility === 'Paga' && Number.isFinite(Number((m as any).priceCents)) ? formatCentsToBRLValue(Number((m as any).priceCents)) : '')
                                       setModuleEditCoverImage((m as any).cover_image_url || null)
                                       setModuleEditCoverPath((m as any).cover_image_path || null)
                                       setModuleEditCoverFile(null)
@@ -6509,6 +6515,8 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                                         setModuleEditId(null)
                                         setModuleEditTitle('')
                                         setModuleEditDescription('')
+                                        setModuleEditVisibility('Gratuita')
+                                        setModuleEditPrice('')
                                         setModuleEditCoverImage(null)
                                         setModuleEditCoverPath(null)
                                         setModuleEditCoverFile(null)
@@ -6644,6 +6652,42 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                                         rows={2}
                                       />
                                     </div>
+                                    <div className={moduleEditVisibility === 'Paga' ? "grid grid-cols-2 gap-3" : "grid grid-cols-1 gap-3"}>
+                                      <div>
+                                        <label className="text-[12px] text-[#737780]">Visibilidade</label>
+                                        <select
+                                          value={moduleEditVisibility}
+                                          onChange={(e) => {
+                                            const v = e.target.value as 'Gratuita' | 'Paga'
+                                            setModuleEditVisibility(v)
+                                            if (v === 'Gratuita') setModuleEditPrice('')
+                                          }}
+                                          className="mt-1 h-9 w-full rounded-[8px] border border-[#E3E4E5] bg-white px-3 text-[12px]"
+                                        >
+                                          <option value="Gratuita">Gratuito</option>
+                                          <option value="Paga">Pago</option>
+                                        </select>
+                                      </div>
+                                      {moduleEditVisibility === 'Paga' ? (
+                                        <div>
+                                          <label className="text-[12px] text-[#737780]">Valor</label>
+                                          <div className="mt-1 flex items-center rounded-[8px] border border-[#E3E4E5] bg-white px-3">
+                                            <span className="text-[11px] text-[#6B7280]">R$</span>
+                                            <input
+                                              value={moduleEditPrice}
+                                              onChange={(e) => {
+                                                const v = e.target.value
+                                                const cleaned = v.replace(/[^\d.,]/g, '')
+                                                setModuleEditPrice(cleaned)
+                                              }}
+                                              inputMode="decimal"
+                                              className="h-9 w-full bg-transparent px-2 text-[12px] outline-none"
+                                              placeholder="0,00"
+                                            />
+                                          </div>
+                                        </div>
+                                      ) : null}
+                                    </div>
                                   </div>
                                   <div className="mt-3 flex items-center justify-end gap-2">
                                     <Button
@@ -6654,6 +6698,8 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                                         setModuleEditId(null)
                                         setModuleEditTitle('')
                                         setModuleEditDescription('')
+                                        setModuleEditVisibility('Gratuita')
+                                        setModuleEditPrice('')
                                         setModuleEditCoverImage(null)
                                         setModuleEditCoverPath(null)
                                         setModuleEditCoverFile(null)
@@ -6670,15 +6716,22 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                                         const name = moduleEditTitle.trim()
                                         const desc = moduleEditDescription.trim()
                                         if (!name) return
+                                        const priceCents = moduleEditVisibility === 'Paga' ? parseBRLValueToCents(moduleEditPrice) : null
+                                        if (moduleEditVisibility === 'Paga' && (!priceCents || priceCents <= 0)) {
+                                          toast({ title: 'Informe o valor', description: 'Defina o valor do módulo para visibilidade Paga.', variant: 'destructive' as any })
+                                          return
+                                        }
                                         const nextCoverUrl = moduleEditCoverImage || null
                                         const nextCoverPath = moduleEditCoverFile ? null : (moduleEditCoverImage ? moduleEditCoverPath : null)
-                                        setModules((prev) => prev.map((x: any) => x.id === m.id ? { ...x, name, description: desc, cover_image_url: nextCoverUrl, cover_image_path: nextCoverPath } : x))
+                                        setModules((prev) => prev.map((x: any) => x.id === m.id ? { ...x, name, description: desc, cover_image_url: nextCoverUrl, cover_image_path: nextCoverPath, visibility: moduleEditVisibility, priceCents: moduleEditVisibility === 'Paga' ? (priceCents || 0) : undefined } : x))
                                         if (moduleEditCoverFile) {
                                           setModuleCoverFilesById((prev) => ({ ...prev, [m.id]: moduleEditCoverFile }))
                                         }
                                         setModuleEditId(null)
                                         setModuleEditTitle('')
                                         setModuleEditDescription('')
+                                        setModuleEditVisibility('Gratuita')
+                                        setModuleEditPrice('')
                                         setModuleEditCoverImage(null)
                                         setModuleEditCoverPath(null)
                                         setModuleEditCoverFile(null)
