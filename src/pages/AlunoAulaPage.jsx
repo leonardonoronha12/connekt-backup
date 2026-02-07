@@ -1,13 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { Check, ChevronDown, ChevronLeft, ChevronRight, Download, ExternalLink, FileSpreadsheet, FileText, FileType, Heart, Link as LinkIcon, Menu, X } from 'lucide-react'
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Download, ExternalLink, FileSpreadsheet, FileText, FileType, Heart, Link as LinkIcon, Lock, Menu, X } from 'lucide-react'
 import { useAuth } from '@/contexts/SupabaseAuthContext'
 import { toast } from '@/components/ui/use-toast'
 import { Switch } from '@/components/ui/switch.jsx'
 import Header from '@/components/Header'
 import BrandLogo from '@/components/BrandLogo'
 import CourseFooter from '@/components/CourseFooter'
+import AlunoInboxThread from '@/components/AlunoInboxThread'
 import { supabase } from '@/lib/supabaseClient'
-import { fetchConversationFeed } from '@/services/conversationService'
 import { useActiveProducerUserId } from '@/hooks/useActiveProducerUserId'
 import { ALUNO_NAV_SECTIONS } from '@/constants/alunoNavSections'
 
@@ -196,8 +196,16 @@ function isNonEmptyString(v) {
 function lessonProgressKey({ courseId, moduleId, moduleIndex, lessonId, lessonIndex }) {
   const cid = String(courseId || '').trim()
   if (!cid) return ''
-  const modKey = String(moduleId || '').trim() || `idx:${String(moduleIndex || '').trim() || '0'}`
-  const lesKey = String(lessonId || '').trim() || `idx:${String(lessonIndex || '').trim() || '0'}`
+  const modIdx = (() => {
+    const n = Number(moduleIndex)
+    return Number.isFinite(n) && n >= 0 ? n : 0
+  })()
+  const lesIdx = (() => {
+    const n = Number(lessonIndex)
+    return Number.isFinite(n) && n >= 0 ? n : 0
+  })()
+  const modKey = String(moduleId || '').trim() || `idx:${String(modIdx)}`
+  const lesKey = String(lessonId || '').trim() || `idx:${String(lesIdx)}`
   return `connekt_progress:${cid}:${modKey}:${lesKey}`
 }
 
@@ -818,382 +826,6 @@ function AttachmentsPanel({ courseId, moduleId, lessonId, lessonKey, demo }) {
   )
 }
 
-function CommentsPanel({ user, studentName, lessonKey }) {
-  const [loading, setLoading] = useState(false)
-  const [conversationId, setConversationId] = useState(null)
-  const [posts, setPosts] = useState([])
-  const [composer, setComposer] = useState('')
-  const [openRepliesById, setOpenRepliesById] = useState({})
-  const composerRef = useRef(null)
-
-  const demoKey = useMemo(() => `connekt_aluno_aula_comments_${lessonKey}`, [lessonKey])
-
-  const loadDemo = () => {
-    try {
-      const raw = localStorage.getItem(demoKey)
-      const parsed = raw ? JSON.parse(raw) : null
-      const list = Array.isArray(parsed) ? parsed : []
-      setPosts(list)
-    } catch (_) {
-      setPosts([])
-    }
-  }
-
-  const saveDemo = (list) => {
-    try {
-      localStorage.setItem(demoKey, JSON.stringify(list))
-    } catch (_) {}
-  }
-
-  const insertWithColumnPrune = async (table, initialPayload, maxAttempts = 10) => {
-    let payload = { ...(initialPayload || {}) }
-    for (let i = 0; i < maxAttempts; i += 1) {
-      const { data, error } = await supabase.from(table).insert(payload).select('id').single()
-      if (!error) return { data, error: null }
-      const msg = String(error?.message || '')
-      const isMissingColumn = msg.toLowerCase().includes('does not exist') && msg.toLowerCase().includes('column')
-      if (!isMissingColumn) return { data: null, error }
-      const m = msg.match(/column \"([^\"]+)\"/i)
-      const col = m?.[1]
-      if (!col || !(col in payload)) return { data: null, error }
-      delete payload[col]
-    }
-    return { data: null, error: new Error('Insert failed after pruning columns') }
-  }
-
-  const resolveStudentId = async () => {
-    const email = String(user?.email || '').trim().toLowerCase()
-    if (!email) return null
-
-    const attempts = [
-      () => supabase.from('students').select('id').eq('user_id', user.id).maybeSingle(),
-      () => supabase.from('students').select('id').eq('email', email).maybeSingle(),
-      () => supabase.from('students').select('id').eq('external_id', user.id).maybeSingle(),
-    ]
-
-    for (const fn of attempts) {
-      try {
-        const { data, error } = await fn()
-        if (!error && data?.id) return data.id
-      } catch (_) {}
-    }
-
-    const payload = {
-      user_id: user.id,
-      external_id: user.id,
-      name: String(studentName || 'Aluno'),
-      email,
-      avatar_url: null,
-    }
-    const { data } = await insertWithColumnPrune('students', payload, 8)
-    return data?.id || null
-  }
-
-  const resolveProducerId = async () => {
-    const params = new URLSearchParams(window.location.search || '')
-    const producerUserId = params.get('producer_uid') || params.get('producerUserId') || ''
-    if (producerUserId) {
-      try {
-        const { data } = await supabase
-          .from('producers')
-          .select('id')
-          .or(`id.eq.${producerUserId},external_id.eq.${producerUserId}`)
-          .maybeSingle()
-        if (data?.id) return data.id
-      } catch (_) {}
-    }
-
-    const courseId = params.get('courseId') || params.get('cursoId') || ''
-    if (courseId) {
-      try {
-        const { data } = await supabase.from('courses').select('user_id').eq('id', courseId).maybeSingle()
-        const userId = data?.user_id
-        if (userId) {
-          const { data: prod } = await supabase
-            .from('producers')
-            .select('id')
-            .or(`id.eq.${userId},external_id.eq.${userId}`)
-            .maybeSingle()
-          if (prod?.id) return prod.id
-        }
-      } catch (_) {}
-    }
-
-    const producerExternalId = params.get('producer_id') || params.get('producerId') || ''
-    if (producerExternalId) {
-      try {
-        const { data } = await supabase.from('producers').select('id').eq('external_id', producerExternalId).maybeSingle()
-        if (data?.id) return data.id
-      } catch (_) {}
-    }
-
-    try {
-      const { data } = await supabase.from('producers').select('id').limit(1)
-      const first = Array.isArray(data) ? data[0] : null
-      return first?.id || null
-    } catch (_) {
-      return null
-    }
-  }
-
-  const ensureConversation = async () => {
-    const studentId = await resolveStudentId()
-    const producerId = await resolveProducerId()
-    if (!studentId || !producerId) return null
-
-    const subject = `Comentários - ${lessonKey}`
-    try {
-      const { data: existing } = await supabase
-        .from('conversations')
-        .select('id')
-        .eq('producer_id', producerId)
-        .eq('student_id', studentId)
-        .eq('subject', subject)
-        .maybeSingle()
-
-      if (existing?.id) return existing.id
-    } catch (_) {}
-
-    const payload = {
-      producer_id: producerId,
-      student_id: studentId,
-      subject,
-      tag: 'Curso',
-      unread: 0,
-      date: new Date().toISOString(),
-    }
-    const { data } = await insertWithColumnPrune('conversations', payload, 10)
-    return data?.id || null
-  }
-
-  const refresh = async () => {
-    setLoading(true)
-    try {
-      if (!user?.id) {
-        loadDemo()
-        return
-      }
-      let id = conversationId
-      if (!id) {
-        id = await ensureConversation()
-        setConversationId(id)
-      }
-      if (!id) {
-        loadDemo()
-        return
-      }
-      const feed = await fetchConversationFeed(id, { limit: 50, offset: 0 })
-      const mapped = (feed || []).map((p) => ({
-        id: p.id,
-        text: p.content,
-        created_at: p.created_at,
-        likes: Number(p.likes || 0),
-        liked: !!p.liked,
-        replies: Array.isArray(p.replies) ? p.replies : [],
-      }))
-      setPosts(mapped)
-    } catch (_) {
-      loadDemo()
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    refresh()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  const handleLikePost = async (postId) => {
-    const post = posts.find((p) => p.id === postId)
-    if (!post) return
-    const nextLiked = !post.liked
-    const nextLikes = nextLiked ? post.likes + 1 : Math.max(0, post.likes - 1)
-    setPosts((prev) => prev.map((p) => (p.id === postId ? { ...p, liked: nextLiked, likes: nextLikes } : p)))
-
-    if (!user?.id || !conversationId) {
-      const next = posts.map((p) => (p.id === postId ? { ...p, liked: nextLiked, likes: nextLikes } : p))
-      saveDemo(next)
-      return
-    }
-
-    try {
-      await supabase.from('posts').update({ likes: nextLikes, liked: nextLiked }).eq('id', postId)
-    } catch (_) {}
-  }
-
-  const handleSubmit = async () => {
-    const text = composer.trim()
-    if (!text) return
-
-    if (!user?.id) {
-      const next = [
-        {
-          id: `demo-${Date.now()}`,
-          text,
-          created_at: new Date().toISOString(),
-          likes: 0,
-          liked: false,
-          replies: [],
-        },
-        ...posts,
-      ]
-      setPosts(next)
-      saveDemo(next)
-      setComposer('')
-      return
-    }
-
-    let id = conversationId
-    if (!id) {
-      id = await ensureConversation()
-      setConversationId(id)
-    }
-    if (!id) {
-      const next = [
-        {
-          id: `demo-${Date.now()}`,
-          text,
-          created_at: new Date().toISOString(),
-          likes: 0,
-          liked: false,
-          replies: [],
-        },
-        ...posts,
-      ]
-      setPosts(next)
-      saveDemo(next)
-      setComposer('')
-      return
-    }
-
-    try {
-      const { data, error } = await supabase
-        .from('posts')
-        .insert([{ conversation_id: id, content: text, likes: 0, liked: false }])
-        .select('id,content,created_at,likes,liked')
-        .single()
-      if (error) throw error
-      setPosts((prev) => [
-        {
-          id: data.id,
-          text: data.content,
-          created_at: data.created_at,
-          likes: Number(data.likes || 0),
-          liked: !!data.liked,
-          replies: [],
-        },
-        ...prev,
-      ])
-      setComposer('')
-      toast({ title: 'Comentário enviado' })
-    } catch (_) {
-      toast({ title: 'Erro ao enviar', description: 'Tente novamente.' })
-    }
-  }
-
-  const commentsCount = posts.length
-
-  return (
-    <div className="mt-6">
-      <div className="flex items-center justify-between">
-        <div className="text-[12px] font-semibold text-[#22252B]">Comentários</div>
-        <div className="text-[11px] text-[#737780]">{commentsCount} Comentários</div>
-      </div>
-
-      <div className="mt-3 rounded-[10px] border border-[#E3E4E5] bg-white p-4">
-        <textarea
-          ref={composerRef}
-          value={composer}
-          onChange={(e) => setComposer(e.target.value)}
-          className="w-full min-h-[96px] rounded-[10px] border border-[#E3E4E5] bg-white px-3 py-2 text-[12px] outline-none focus:border-[#0047BB]"
-          placeholder="Digite aqui sua pergunta ou comentário"
-          maxLength={600}
-        />
-        <div className="mt-3 flex items-center justify-end gap-2">
-          <button
-            type="button"
-            className="h-9 px-4 rounded-[8px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#22252B]"
-            onClick={() => setComposer('')}
-          >
-            Cancelar
-          </button>
-          <button
-            type="button"
-            className="h-9 px-4 rounded-[8px] bg-[#0047BB] text-white text-[12px] font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-            disabled={!composer.trim() || loading}
-            onClick={handleSubmit}
-          >
-            Comentar
-          </button>
-        </div>
-      </div>
-
-      <div className="mt-4 space-y-4">
-        {loading ? <div className="text-[12px] text-[#737780]">Carregando...</div> : null}
-        {posts.map((p) => {
-          const replies = Array.isArray(p.replies) ? p.replies : []
-          const open = !!openRepliesById[p.id]
-          return (
-            <div key={p.id} className="rounded-[10px] border border-[#E3E4E5] bg-white p-4">
-              <div className="flex items-start gap-3">
-                <div className="w-8 h-8 rounded-full bg-[#F3F4F5] border border-[#E3E4E5] flex items-center justify-center text-[#0047BB] font-bold text-[12px]">
-                  {String(studentName || 'A').slice(0, 1).toUpperCase()}
-                </div>
-                <div className="flex-1">
-                  <div className="text-[12px] font-semibold text-[#22252B]">{studentName || 'Aluno'}</div>
-                  <div className="mt-1 text-[12px] text-[#737780] leading-[18px]">{p.text}</div>
-                  <div className="mt-3 flex items-center gap-3 text-[11px] text-[#737780]">
-                    <button type="button" className="inline-flex items-center gap-1 hover:text-[#22252B]" onClick={() => handleLikePost(p.id)}>
-                      <Heart className={`w-4 h-4 ${p.liked ? 'text-[#EF4444]' : 'text-[#737780]'}`} />
-                      Curtir {p.likes ? `(${p.likes})` : ''}
-                    </button>
-                    {replies.length ? (
-                      <button
-                        type="button"
-                        className="hover:text-[#22252B]"
-                        onClick={() => setOpenRepliesById((s) => ({ ...s, [p.id]: !open }))}
-                      >
-                        {open ? 'Ocultar' : 'Ver'} {replies.length} respostas
-                      </button>
-                    ) : null}
-                  </div>
-
-                  {replies.length && open ? (
-                    <div className="mt-3 pl-5 border-l border-[#E3E4E5] space-y-3">
-                      {replies.map((r) => (
-                        <div key={r.id} className="flex items-start gap-3">
-                          <div className="w-7 h-7 rounded-full bg-[#F3F4F5] border border-[#E3E4E5] flex items-center justify-center text-[#22252B] font-bold text-[11px]">
-                            {String(r?.author?.name || 'P').slice(0, 1).toUpperCase()}
-                          </div>
-                          <div className="flex-1">
-                            <div className="text-[12px] font-semibold text-[#22252B]">{r?.author?.name || 'Professor'}</div>
-                            <div className="mt-1 text-[12px] text-[#737780] leading-[18px]">{r.content}</div>
-                          </div>
-                        </div>
-                      ))}
-                      <button
-                        type="button"
-                        className="mt-2 text-[11px] font-semibold text-[#0047BB]"
-                        onClick={() => {
-                          setComposer((prev) => prev || '@Professor ')
-                          window.setTimeout(() => composerRef.current?.focus?.(), 0)
-                        }}
-                      >
-                        Responder
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
 function LessonStatusIcon({ completed }) {
   if (completed) {
     return (
@@ -1261,12 +893,20 @@ function ModuleLessonRow({ title, subtitle, coverSrc, completed, active, onClick
   )
 }
 
-function CollapsibleModuleRow({ title, subtitle, percent, open, onToggle, lessons }) {
+function CollapsibleModuleRow({ title, subtitle, percent, open, onToggle, lessons, locked, badgeText }) {
   return (
     <div className="w-full">
       <button type="button" className="w-full flex items-center justify-between gap-3 py-3 text-left" onClick={onToggle}>
         <div className="min-w-0">
-          <div className="text-[12px] font-semibold text-[#22252B] truncate">{title}</div>
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="text-[12px] font-semibold text-[#22252B] truncate">{title}</div>
+            {badgeText ? (
+              <span className="inline-flex items-center justify-center h-[18px] px-3 text-[10px] rounded-[54px] leading-none font-medium bg-[#FEF3C7] text-[#92400E]">
+                {badgeText}
+              </span>
+            ) : null}
+            {locked ? <Lock className="h-4 w-4 text-[#737780] flex-shrink-0" /> : null}
+          </div>
           <div className="text-[10px] text-[#737780]">{subtitle}</div>
         </div>
         <div className="flex items-center gap-2">
@@ -1332,6 +972,7 @@ export default function AlunoAulaPage() {
   }))
   const [statsTick, setStatsTick] = useState(0)
   const [vdocipherEmbedUrl, setVdocipherEmbedUrl] = useState('')
+  const [vdocipherStatus, setVdocipherStatus] = useState('idle')
   const [videoUrlOverride, setVideoUrlOverride] = useState('')
   const lessonThumbTickRef = useRef(0)
   const [lessonThumbTick, setLessonThumbTick] = useState(0)
@@ -1395,6 +1036,26 @@ export default function AlunoAulaPage() {
     if (!isPaidCourse) return true
     return safeLsGet(courseOwnedKey) === '1'
   }, [courseId, courseOwnedKey, isDemoStudent, isPaidCourse])
+
+  const currentModulePaywall = useMemo(() => {
+    const cid = String(courseId || '').trim()
+    if (!cid) return { paid: false, owned: true, moduleId: '' }
+    if (isDemoStudent) return { paid: false, owned: true, moduleId: String(moduleId || '').trim() }
+    const mods = getCourseModules(courseRow)
+    const list = Array.isArray(mods) ? mods : []
+    const mid = String(moduleId || '').trim()
+    const mod =
+      (mid ? list.find((m) => String(m?.id || m?.module_id || m?.moduleId || '').trim() === mid) : null) ||
+      (Number.isFinite(Number(moduleIndex)) ? list[Number(moduleIndex)] : null) ||
+      null
+    const vis = String(mod?.visibility || '').trim()
+    const cents = Number(mod?.priceCents || 0)
+    const paid = vis === 'Paga' || (Number.isFinite(cents) && cents > 0)
+    const effectiveMid = String(mod?.id || mod?.module_id || mod?.moduleId || mid || '').trim()
+    const ownedKey = effectiveMid ? `connekt_module_owned:${cid}:${effectiveMid}` : ''
+    const owned = isOwnedCourse || !paid || (ownedKey ? safeLsGet(ownedKey) === '1' : true)
+    return { paid, owned, moduleId: effectiveMid }
+  }, [courseId, courseRow, isDemoStudent, isOwnedCourse, moduleId, moduleIndex])
   const gateRedirectRef = useRef(false)
 
   const isBlockedRead = (e) => {
@@ -1419,13 +1080,22 @@ export default function AlunoAulaPage() {
     if (!courseRow) return
     if (!isPaidCourse) return
     if (isOwnedCourse) return
+    if (currentModulePaywall?.owned) return
     if (gateRedirectRef.current) return
     gateRedirectRef.current = true
+    const mid = String(currentModulePaywall?.moduleId || '').trim()
+    if (currentModulePaywall?.paid && mid) {
+      try {
+        toast({ title: 'Módulo bloqueado', description: 'Compre o módulo para acessar as aulas.' })
+      } catch (_) {}
+      navigateTo(`/aluno/curso/${encodeURIComponent(cid)}?moduleId=${encodeURIComponent(mid)}`)
+      return
+    }
     try {
       toast({ title: 'Curso bloqueado', description: 'Compre o curso para acessar as aulas.' })
     } catch (_) {}
     navigateTo(`/aluno/curso/${encodeURIComponent(cid)}`)
-  }, [courseId, isDemoStudent, courseRow, isPaidCourse, isOwnedCourse])
+  }, [courseId, isDemoStudent, courseRow, isPaidCourse, isOwnedCourse, currentModulePaywall])
 
   useEffect(() => {
     let active = true
@@ -1963,11 +1633,13 @@ export default function AlunoAulaPage() {
     let active = true
     const run = async () => {
       setVdocipherEmbedUrl('')
+      setVdocipherStatus('idle')
       if (isDemoStudent) return
       const cid = String(courseId || '').trim()
       if (!cid) return
       if (resolved.videoProvider !== 'vdocipher') return
       if (!resolved.vdocipherVideoId) return
+      setVdocipherStatus('loading')
       try {
         const { data, error } = await supabase.functions.invoke('vdocipher-otp', {
           body: {
@@ -1979,9 +1651,13 @@ export default function AlunoAulaPage() {
           },
         })
         if (!active) return
-        if (error || !data?.otp || !data?.playbackInfo) return
+        if (error || !data?.otp || !data?.playbackInfo) {
+          setVdocipherStatus('processing')
+          return
+        }
         const src = `https://player.vdocipher.com/v2/?otp=${encodeURIComponent(String(data.otp))}&playbackInfo=${encodeURIComponent(String(data.playbackInfo))}`
         setVdocipherEmbedUrl(src)
+        setVdocipherStatus('ready')
       } catch (_) {}
     }
     run()
@@ -2138,6 +1814,12 @@ export default function AlunoAulaPage() {
       const moduleTitle = String(mod?.title || mod?.name || mod?.module_title || '').trim() || `Módulo ${i + 1}`
       const mid = String(mod?.id || mod?.module_id || mod?.moduleId || '').trim()
       const moduleKey = mid ? `id:${mid}` : `idx:${i}`
+      const vis = String(mod?.visibility || '').trim()
+      const cents = Number(mod?.priceCents || 0)
+      const paid = vis === 'Paga' || (Number.isFinite(cents) && cents > 0)
+      const ownedKey = (cid && mid) ? `connekt_module_owned:${cid}:${mid}` : ''
+      const owned = isDemoStudent || isOwnedCourse || !paid || (ownedKey ? safeLsGet(ownedKey) === '1' : true)
+      const lockedModule = paid && !owned
       const lessons = getModuleLessons(mod)
       const lessonRows = []
       let completedCount = 0
@@ -2161,6 +1843,11 @@ export default function AlunoAulaPage() {
           completed,
           active,
           onClick: () => {
+            if (lockedModule && cid && mid) {
+              try { toast({ title: 'Módulo pago', description: 'Compre o módulo para acessar as aulas.' }) } catch (_) {}
+              navigateTo(`/aluno/curso/${encodeURIComponent(cid)}?moduleId=${encodeURIComponent(mid)}`)
+              return
+            }
             const qs = new URLSearchParams()
             qs.set('courseId', String(courseId || ''))
             if (mid) qs.set('moduleId', String(mid))
@@ -2180,11 +1867,15 @@ export default function AlunoAulaPage() {
         title: moduleTitle,
         subtitle: `${completedCount} de ${total} aulas concluídas`,
         percent,
+        locked: lockedModule,
+        badgeText: paid ? (cents > 0 ? (() => {
+          try { return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(cents / 100) } catch (_) { return `R$ ${(cents / 100).toFixed(2)}` }
+        })() : 'Pago') : '',
         lessons: lessonRows,
       })
     }
     return out
-  }, [courseRow, courseId, isDemoStudent, progressTick, current, lessonThumbTick])
+  }, [courseRow, courseId, isDemoStudent, isOwnedCourse, progressTick, current, lessonThumbTick])
 
   useEffect(() => {
     const list = []
@@ -2535,7 +2226,9 @@ export default function AlunoAulaPage() {
                         <div className="text-[12px] text-white/80">
                           {courseLoading ? 'Carregando vídeo…' : (
                             courseError ? 'Não foi possível carregar o vídeo.' : (
-                              resolved.videoProvider === 'vdocipher' ? 'Carregando vídeo…' : 'Vídeo não encontrado para esta aula.'
+                              resolved.videoProvider === 'vdocipher'
+                                ? (vdocipherStatus === 'processing' ? 'Vídeo em processamento…' : 'Carregando vídeo…')
+                                : 'Vídeo não encontrado para esta aula.'
                             )
                           )}
                         </div>
@@ -2605,7 +2298,7 @@ export default function AlunoAulaPage() {
                         )}
                       </>
                     ) : activeTab === 'Comentários' ? (
-                      <CommentsPanel user={user} studentName={studentName} lessonKey={currentLessonKey} />
+                      <AlunoInboxThread user={user} studentName={studentName} threadKey={currentLessonKey} title="Comentários" lessonTitle={resolved.lessonTitle} itemLabel="Comentários" submitLabel="Comentar" successTitle="Comentário enviado" placeholder="Digite aqui sua pergunta ou comentário" courseId={courseId} />
                     ) : activeTab === 'Simulados' ? (
                       <div className="mt-5">
                         <div className="flex items-center justify-between">
@@ -2810,6 +2503,8 @@ export default function AlunoAulaPage() {
                           title={m.title}
                           subtitle={m.subtitle}
                           percent={m.percent}
+                          locked={!!m.locked}
+                          badgeText={m.badgeText}
                           open={!!(openModules && openModules[m.key])}
                           onToggle={() => setOpenModules((s) => ({ ...(s || {}), [m.key]: !(s && s[m.key]) }))}
                           lessons={m.lessons}

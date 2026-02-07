@@ -34,6 +34,19 @@ try {
   })
   window.addEventListener('unhandledrejection', (e) => {
     const r = e?.reason
+    const name = String(r?.name || '').toLowerCase()
+    const msgLower = String(r?.message || r?.error_description || r || '').toLowerCase()
+    const isAbort =
+      name.includes('abort') ||
+      msgLower.includes('abort') ||
+      msgLower.includes('err_aborted') ||
+      msgLower.includes('err_abort') ||
+      msgLower.includes('canceled') ||
+      msgLower.includes('cancelled')
+    if (isAbort) {
+      try { e.preventDefault() } catch (_) {}
+      return
+    }
     const msg = r?.message || r?.error_description || String(r || 'Promise rejeitada')
     const stack = r?.stack || ''
     renderFatal(String(msg), String(stack))

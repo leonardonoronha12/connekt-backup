@@ -205,6 +205,42 @@ const QuestionBankPage = () => {
   const [isFormModified, setIsFormModified] = useState(false);
   const [originalFormData, setOriginalFormData] = useState(null);
 
+  const parseMulti = (value) => {
+    return String(value || '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+  };
+
+  const serializeMulti = (items) => {
+    const uniq = [];
+    const seen = new Set();
+    for (const it of Array.isArray(items) ? items : []) {
+      const v = String(it || '').trim();
+      if (!v) continue;
+      const k = v.toLowerCase();
+      if (seen.has(k)) continue;
+      seen.add(k);
+      uniq.push(v);
+    }
+    return uniq.join(', ');
+  };
+
+  const addToMulti = (value, item) => {
+    return serializeMulti([...parseMulti(value), item]);
+  };
+
+  const removeFromMulti = (value, item) => {
+    const target = String(item || '').trim().toLowerCase();
+    return serializeMulti(parseMulti(value).filter((v) => v.toLowerCase() !== target));
+  };
+
+  const replaceInMulti = (value, oldItem, newItem) => {
+    const oldKey = String(oldItem || '').trim().toLowerCase();
+    const nextKey = String(newItem || '').trim();
+    return serializeMulti(parseMulti(value).map((v) => (v.toLowerCase() === oldKey ? nextKey : v)));
+  };
+
   useEffect(() => {
     if (!isPopupOpen) return;
     const prevOverflow = document?.body?.style?.overflow;
@@ -348,6 +384,15 @@ const QuestionBankPage = () => {
     .filter(tag => !!tag && typeof tag.name === 'string')
     .filter(tag => tag.name.toLowerCase().includes(tagsSearchTerm.toLowerCase()));
 
+  const selectedCategoryNames = parseMulti(formData.category);
+  const selectedSubcategoryNames = parseMulti(formData.subcategory);
+  const selectableCategories = filteredCategories.filter(
+    (c) => !selectedCategoryNames.some((n) => n.toLowerCase() === String(c?.name || '').toLowerCase())
+  );
+  const selectableSubcategories = filteredSubcategories.filter(
+    (s) => !selectedSubcategoryNames.some((n) => n.toLowerCase() === String(s?.name || '').toLowerCase())
+  );
+
   const handleCreateNewCategory = () => {
     const name = newCategoryName.trim();
     if (!name) return;
@@ -363,7 +408,7 @@ const QuestionBankPage = () => {
       description: newCategoryDescription.trim(),
       tagIds: [],
     });
-    setFormData(prev => ({ ...prev, category: name }));
+    setFormData(prev => ({ ...prev, category: addToMulti(prev.category, name) }));
     setNewCategoryName('');
     setNewCategoryColor('#8B5CF6');
     setNewCategoryDescription('');
@@ -405,7 +450,7 @@ const QuestionBankPage = () => {
       description: editCategoryDescription.trim(),
     });
     // Atualiza seleção se necessário
-    setFormData(prev => ({ ...prev, category: prev.category === oldName ? editCategoryName.trim() : prev.category }));
+    setFormData(prev => ({ ...prev, category: replaceInMulti(prev.category, oldName, editCategoryName.trim()) }));
     setEditingCategoryId(null);
     setEditCategoryName('');
     setEditCategoryColor('#8B5CF6');
@@ -417,7 +462,7 @@ const QuestionBankPage = () => {
     const cat = categories.find(c => String(c.id) === String(id));
     if (!cat) return;
     deleteCategory(String(id));
-    setFormData(prev => ({ ...prev, category: prev.category === cat.name ? '' : prev.category }));
+    setFormData(prev => ({ ...prev, category: removeFromMulti(prev.category, cat.name) }));
     setPendingDeleteCategoryId(null);
     toast({ description: 'Categoria removida com sucesso!' });
   };
@@ -434,7 +479,7 @@ const QuestionBankPage = () => {
         tagIds: [],
         productsCount: 0,
       });
-      setFormData(prev => ({ ...prev, subcategory: newSubcategoryName.trim() }));
+      setFormData(prev => ({ ...prev, subcategory: addToMulti(prev.subcategory, newSubcategoryName.trim()) }));
       setNewSubcategoryName('');
       setNewSubcategoryColor('#22C55E');
       setNewSubcategoryDescription('');
@@ -476,7 +521,7 @@ const QuestionBankPage = () => {
       description: editSubcategoryDescription.trim(),
     });
     // Atualiza seleção se necessário
-    setFormData(prev => ({ ...prev, subcategory: prev.subcategory === oldName ? editSubcategoryName.trim() : prev.subcategory }));
+    setFormData(prev => ({ ...prev, subcategory: replaceInMulti(prev.subcategory, oldName, editSubcategoryName.trim()) }));
     setEditingSubcategoryId(null);
     setEditSubcategoryName('');
     setEditSubcategoryColor('#22C55E');
@@ -488,7 +533,7 @@ const QuestionBankPage = () => {
     const sub = subcategories.find(s => String(s.id) === String(id));
     if (!sub) return;
     deleteSubcategory(String(id));
-    setFormData(prev => ({ ...prev, subcategory: prev.subcategory === sub.name ? '' : prev.subcategory }));
+    setFormData(prev => ({ ...prev, subcategory: removeFromMulti(prev.subcategory, sub.name) }));
     setPendingDeleteSubcategoryId(null);
     toast({ description: 'Subcategoria removida com sucesso!' });
   };
@@ -711,6 +756,14 @@ const QuestionBankPage = () => {
         description: "Nome do banco de questões é obrigatório",
         variant: "destructive"
       });
+      return;
+    }
+    if (parseMulti(formData.category).length === 0) {
+      toast({ description: "Selecione ao menos 1 categoria.", variant: "destructive" });
+      return;
+    }
+    if (parseMulti(formData.subcategory).length === 0) {
+      toast({ description: "Selecione ao menos 1 subcategoria.", variant: "destructive" });
       return;
     }
 
@@ -1080,35 +1133,42 @@ const QuestionBankPage = () => {
                     </div>
 
                     <div className="flex-1 flex items-center" style={{ width: 'fit-content', height: 'fit-content' }}>
-                      {formData.category ? (
-                        <div className="flex items-center gap-2">
-                          <span
-                            className="px-2 py-1 text-xs font-medium rounded flex items-center gap-1"
-                            style={{
-                              backgroundColor: 'rgba(173, 137, 247, 0.1)',
-                              color: '#AD89F7',
-                              fontFamily: 'Inter',
-                              fontSize: '12px',
-                              fontWeight: 500,
-                            }}
-                          >
-                            <div className="w-[10px] h-[10px]" style={{ backgroundColor: '#AD89F7' }}></div>
-                            {formData.category}
-                            <button
-                              onClick={() => setFormData(prev => ({ ...prev, category: '' }))}
-                              className="w-4 h-4 rounded-full flex items-center justify-center hover:bg-black hover:bg-opacity-10 transition-colors ml-1"
-                              style={{ color: '#AD89F7' }}
+                      <div className="flex flex-wrap items-center gap-2">
+                        {selectedCategoryNames.map((name) => {
+                          const cat = (categories || []).find((c) => c?.name === name);
+                          const color = cat?.color || '#AD89F7';
+                          return (
+                            <span
+                              key={name}
+                              className="px-2 py-1 text-xs font-medium rounded flex items-center gap-1"
+                              style={{
+                                backgroundColor: 'rgba(173, 137, 247, 0.1)',
+                                color,
+                                fontFamily: 'Inter',
+                                fontSize: '12px',
+                                fontWeight: 500,
+                              }}
                             >
-                              <X className="w-3 h-3" />
-                            </button>
-                          </span>
-                        </div>
-                      ) : (
+                              <div className="w-[10px] h-[10px]" style={{ backgroundColor: color }}></div>
+                              {name}
+                              <button
+                                onClick={() => setFormData(prev => ({ ...prev, category: removeFromMulti(prev.category, name) }))}
+                                className="w-4 h-4 rounded-full flex items-center justify-center hover:bg-black hover:bg-opacity-10 transition-colors ml-1"
+                                style={{ color }}
+                                aria-label="Remover"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </span>
+                          );
+                        })}
+
                         <div className="relative dropdown-container">
                           <button
                             onClick={() => setShowCategoryDropdown(!showCategoryDropdown)}
                             className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors"
                             style={{ background: 'none' }}
+                            aria-label="Adicionar categoria"
                           >
                             <Plus className="w-4 h-4 text-gray-600" />
                           </button>
@@ -1133,242 +1193,239 @@ const QuestionBankPage = () => {
                                     autoFocus
                                   />
                                 </div>
-                            
-                            {/* Lista de categorias filtradas */}
-                            <div className="max-h-40 overflow-y-auto">
-                              {filteredCategories.map((category) => (
-                                <div key={category.id} className="px-3 py-2 rounded-md transition-colors">
-                                  {editingCategoryId === category.id ? (
-                                    <div className="space-y-2">
-                                      <input
-                                        type="text"
-                                        placeholder="Nome da categoria"
-                                        value={editCategoryName}
-                                        onChange={(e) => setEditCategoryName(e.target.value)}
-                                        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                        style={{ fontFamily: 'Inter', fontSize: '14px' }}
-                                      />
-                                      <div className="flex items-center gap-2">
-                                        <label className="text-sm text-gray-600 font-medium" style={{ fontFamily: 'Inter', fontSize: '12px' }}>
-                                          Cor:
-                                        </label>
-                                        <input
-                                          type="color"
-                                          value={editCategoryColor}
-                                          onChange={(e) => setEditCategoryColor(e.target.value)}
-                                          className="w-8 h-8 border border-gray-200 rounded cursor-pointer"
-                                        />
-                                        <div
-                                          className="w-4 h-4 rounded-full border border-gray-200"
-                                          style={{ backgroundColor: editCategoryColor }}
-                                        ></div>
-                                      </div>
-                                      <textarea
-                                        placeholder="Descrição da categoria"
-                                        value={editCategoryDescription}
-                                        onChange={(e) => setEditCategoryDescription(e.target.value)}
-                                        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-                                        style={{ fontFamily: 'Inter', fontSize: '14px' }}
-                                        rows="2"
-                                      />
-                                      <div className="flex gap-2">
-                                        <button
-                                          onClick={handleSaveEditCategory}
-                                          disabled={!editCategoryName.trim() || !editCategoryDescription.trim()}
-                                          className="flex-1 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-                                          style={{ fontFamily: 'Inter', fontSize: '12px' }}
-                                        >
-                                          Salvar
-                                        </button>
-                                        <button
-                                          onClick={handleCancelEditCategory}
-                                          className="flex-1 px-3 py-1.5 text-sm bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors"
-                                          style={{ fontFamily: 'Inter', fontSize: '12px' }}
-                                        >
-                                          Cancelar
-                                        </button>
-                                      </div>
+
+                                <div className="max-h-40 overflow-y-auto">
+                                  {selectableCategories.map((category) => (
+                                    <div key={category.id} className="px-3 py-2 rounded-md transition-colors">
+                                      {editingCategoryId === category.id ? (
+                                        <div className="space-y-2">
+                                          <input
+                                            type="text"
+                                            placeholder="Nome da categoria"
+                                            value={editCategoryName}
+                                            onChange={(e) => setEditCategoryName(e.target.value)}
+                                            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                            style={{ fontFamily: 'Inter', fontSize: '14px' }}
+                                          />
+                                          <div className="flex items-center gap-2">
+                                            <label className="text-sm text-gray-600 font-medium" style={{ fontFamily: 'Inter', fontSize: '12px' }}>
+                                              Cor:
+                                            </label>
+                                            <input
+                                              type="color"
+                                              value={editCategoryColor}
+                                              onChange={(e) => setEditCategoryColor(e.target.value)}
+                                              className="w-8 h-8 border border-gray-200 rounded cursor-pointer"
+                                            />
+                                            <div
+                                              className="w-4 h-4 rounded-full border border-gray-200"
+                                              style={{ backgroundColor: editCategoryColor }}
+                                            ></div>
+                                          </div>
+                                          <textarea
+                                            placeholder="Descrição da categoria"
+                                            value={editCategoryDescription}
+                                            onChange={(e) => setEditCategoryDescription(e.target.value)}
+                                            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                                            style={{ fontFamily: 'Inter', fontSize: '14px' }}
+                                            rows="2"
+                                          />
+                                          <div className="flex gap-2">
+                                            <button
+                                              onClick={handleSaveEditCategory}
+                                              disabled={!editCategoryName.trim() || !editCategoryDescription.trim()}
+                                              className="flex-1 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                                              style={{ fontFamily: 'Inter', fontSize: '12px' }}
+                                            >
+                                              Salvar
+                                            </button>
+                                            <button
+                                              onClick={handleCancelEditCategory}
+                                              className="flex-1 px-3 py-1.5 text-sm bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors"
+                                              style={{ fontFamily: 'Inter', fontSize: '12px' }}
+                                            >
+                                              Cancelar
+                                            </button>
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        pendingDeleteCategoryId === category.id ? (
+                                          <div className="flex items-center gap-2 rounded-md">
+                                            <div
+                                              className="flex items-center gap-2 flex-1 text-left px-3 py-2 text-sm"
+                                              style={{ fontFamily: 'Inter', fontSize: '14px', color: '#374151' }}
+                                            >
+                                              <div
+                                                className="w-3 h-3 rounded-full flex-shrink-0"
+                                                style={{ backgroundColor: category.color }}
+                                              ></div>
+                                              <div className="flex-1">
+                                                <div className="font-medium">{category.name}</div>
+                                                <div className="text-xs text-gray-500 mt-0.5">{category.description}</div>
+                                              </div>
+                                            </div>
+                                            <div className="flex items-center gap-1 pr-2">
+                                              <span className="text-xs text-gray-500 mr-1" style={{ fontFamily: 'Inter' }}>
+                                                Remover?
+                                              </span>
+                                              <button
+                                                onClick={() => handleDeleteCategory(category.id)}
+                                                className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-black hover:bg-opacity-10 transition-colors"
+                                                title="Confirmar remoção"
+                                                aria-label="Confirmar remoção"
+                                              >
+                                                <Check className="w-3 h-3 text-red-600" />
+                                              </button>
+                                              <button
+                                                onClick={() => setPendingDeleteCategoryId(null)}
+                                                className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-black hover:bg-opacity-10 transition-colors"
+                                                title="Cancelar"
+                                                aria-label="Cancelar"
+                                              >
+                                                <X className="w-3 h-3 text-gray-600" />
+                                              </button>
+                                            </div>
+                                          </div>
+                                        ) : (
+                                          <div className="flex items-center gap-2 hover:bg-gray-100 rounded-md">
+                                            <button
+                                              onClick={() => {
+                                                setFormData(prev => ({ ...prev, category: addToMulti(prev.category, category.name) }));
+                                                setShowCategoryDropdown(false);
+                                                setCategorySearchTerm('');
+                                              }}
+                                              className="flex items-center gap-2 flex-1 text-left px-3 py-2 text-sm"
+                                              style={{ fontFamily: 'Inter', fontSize: '14px', color: '#374151' }}
+                                            >
+                                              <div
+                                                className="w-3 h-3 rounded-full flex-shrink-0"
+                                                style={{ backgroundColor: category.color }}
+                                              ></div>
+                                              <div className="flex-1">
+                                                <div className="font-medium">{category.name}</div>
+                                                <div className="text-xs text-gray-500 mt-0.5">{category.description}</div>
+                                              </div>
+                                            </button>
+                                            <div className="flex items-center gap-1 pr-2">
+                                              <button
+                                                onClick={() => handleStartEditCategory(category)}
+                                                className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-black hover:bg-opacity-10 transition-colors"
+                                                title="Editar"
+                                              >
+                                                <Pencil className="w-3 h-3 text-gray-600" />
+                                              </button>
+                                              <button
+                                                onClick={() => setPendingDeleteCategoryId(category.id)}
+                                                className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-black hover:bg-opacity-10 transition-colors"
+                                                title="Remover"
+                                              >
+                                                <Trash className="w-3 h-3 text-red-600" />
+                                              </button>
+                                            </div>
+                                          </div>
+                                        )
+                                      )}
                                     </div>
-                                  ) : (
-                                    pendingDeleteCategoryId === category.id ? (
-                                      <div className="flex items-center gap-2 rounded-md">
-                                        <div
-                                          className="flex items-center gap-2 flex-1 text-left px-3 py-2 text-sm"
-                                          style={{ fontFamily: 'Inter', fontSize: '14px', color: '#374151' }}
-                                        >
-                                          <div
-                                            className="w-3 h-3 rounded-full flex-shrink-0"
-                                            style={{ backgroundColor: category.color }}
-                                          ></div>
-                                          <div className="flex-1">
-                                            <div className="font-medium">{category.name}</div>
-                                            <div className="text-xs text-gray-500 mt-0.5">{category.description}</div>
-                                          </div>
-                                        </div>
-                                        <div className="flex items-center gap-1 pr-2">
-                                          <span className="text-xs text-gray-500 mr-1" style={{ fontFamily: 'Inter' }}>
-                                            Remover?
-                                          </span>
-                                          <button
-                                            onClick={() => handleDeleteCategory(category.id)}
-                                            className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-black hover:bg-opacity-10 transition-colors"
-                                            title="Confirmar remoção"
-                                            aria-label="Confirmar remoção"
-                                          >
-                                            <Check className="w-3 h-3 text-red-600" />
-                                          </button>
-                                          <button
-                                            onClick={() => setPendingDeleteCategoryId(null)}
-                                            className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-black hover:bg-opacity-10 transition-colors"
-                                            title="Cancelar"
-                                            aria-label="Cancelar"
-                                          >
-                                            <X className="w-3 h-3 text-gray-600" />
-                                          </button>
-                                        </div>
-                                      </div>
-                                    ) : (
-                                      <div className="flex items-center gap-2 hover:bg-gray-100 rounded-md">
-                                        <button
-                                          onClick={() => {
-                                            setFormData(prev => ({ ...prev, category: category.name }));
-                                            setShowCategoryDropdown(false);
-                                            setCategorySearchTerm('');
-                                          }}
-                                          className="flex items-center gap-2 flex-1 text-left px-3 py-2 text-sm"
-                                          style={{ fontFamily: 'Inter', fontSize: '14px', color: '#374151' }}
-                                        >
-                                          <div
-                                            className="w-3 h-3 rounded-full flex-shrink-0"
-                                            style={{ backgroundColor: category.color }}
-                                          ></div>
-                                          <div className="flex-1">
-                                            <div className="font-medium">{category.name}</div>
-                                            <div className="text-xs text-gray-500 mt-0.5">{category.description}</div>
-                                          </div>
-                                        </button>
-                                        <div className="flex items-center gap-1 pr-2">
-                                          <button
-                                            onClick={() => handleStartEditCategory(category)}
-                                            className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-black hover:bg-opacity-10 transition-colors"
-                                            title="Editar"
-                                          >
-                                            <Pencil className="w-3 h-3 text-gray-600" />
-                                          </button>
-                                          <button
-                                            onClick={() => setPendingDeleteCategoryId(category.id)}
-                                            className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-black hover:bg-opacity-10 transition-colors"
-                                            title="Remover"
-                                          >
-                                            <Trash className="w-3 h-3 text-red-600" />
-                                          </button>
-                                        </div>
-                                      </div>
-                                    )
+                                  ))}
+
+                                  {selectableCategories.length === 0 && categorySearchTerm && (
+                                    <div className="px-3 py-2 text-sm text-gray-500 text-center">
+                                      Nenhuma categoria encontrada
+                                    </div>
                                   )}
                                 </div>
-                              ))}
-                              
-                              {/* Mensagem quando não há categorias */}
-                              {filteredCategories.length === 0 && categorySearchTerm && (
-                                <div className="px-3 py-2 text-sm text-gray-500 text-center">
-                                  Nenhuma categoria encontrada
-                                </div>
-                              )}
-                            </div>
-                            
-                            {/* Separador */}
-                            {filteredCategories.length > 0 && (
-                              <div className="border-t border-gray-200 my-2"></div>
-                            )}
-                            
-                            {/* Opção para criar nova categoria */}
-                            {!isCreatingNewCategory ? (
-                              <button
-                                onClick={handleStartCreatingCategory}
-                                className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 rounded-md transition-colors flex items-center gap-2"
-                                style={{ 
-                                  fontFamily: 'Inter',
-                                  fontSize: '14px',
-                                  color: '#2563eb'
-                                }}
-                              >
-                                <Plus className="w-4 h-4" />
-                                Criar nova categoria
-                              </button>
-                            ) : (
-                              <div className="space-y-3">
-                                <input
-                                  type="text"
-                                  placeholder="Nome da nova categoria"
-                                  value={newCategoryName}
-                                  onChange={(e) => setNewCategoryName(e.target.value)}
-                                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                  style={{ 
-                                    fontFamily: 'Inter',
-                                    fontSize: '14px'
-                                  }}
-                                  autoFocus
-                                />
-                                
-                                <div className="flex items-center gap-2">
-                                  <label className="text-sm text-gray-600 font-medium" style={{ fontFamily: 'Inter', fontSize: '12px' }}>
-                                    Cor:
-                                  </label>
-                                  <input
-                                    type="color"
-                                    value={newCategoryColor}
-                                    onChange={(e) => setNewCategoryColor(e.target.value)}
-                                    className="w-8 h-8 border border-gray-200 rounded cursor-pointer"
-                                  />
-                                  <div 
-                                    className="w-4 h-4 rounded-full border border-gray-200"
-                                    style={{ backgroundColor: newCategoryColor }}
-                                  ></div>
-                                </div>
-                                
-                                <textarea
-                                  placeholder="Descrição da categoria"
-                                  value={newCategoryDescription}
-                                  onChange={(e) => setNewCategoryDescription(e.target.value)}
-                                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-                                  style={{ 
-                                    fontFamily: 'Inter',
-                                    fontSize: '14px'
-                                  }}
-                                  rows="2"
-                                />
-                                
-                                <div className="flex gap-2">
+
+                                {selectableCategories.length > 0 && (
+                                  <div className="border-t border-gray-200 my-2"></div>
+                                )}
+
+                                {!isCreatingNewCategory ? (
                                   <button
-                                    onClick={handleCreateNewCategory}
-                                    disabled={!newCategoryName.trim()}
-                                    className="flex-1 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-                                    style={{ 
+                                    onClick={handleStartCreatingCategory}
+                                    className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 rounded-md transition-colors flex items-center gap-2"
+                                    style={{
                                       fontFamily: 'Inter',
-                                      fontSize: '12px'
+                                      fontSize: '14px',
+                                      color: '#2563eb'
                                     }}
                                   >
-                                    Criar
+                                    <Plus className="w-4 h-4" />
+                                    Criar nova categoria
                                   </button>
-                                  <button
-                                    onClick={handleCancelNewCategory}
-                                    className="flex-1 px-3 py-1.5 text-sm bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors"
-                                    style={{ 
-                                      fontFamily: 'Inter',
-                                      fontSize: '12px'
-                                    }}
-                                  >
-                                    Cancelar
-                                  </button>
-                                </div>
+                                ) : (
+                                  <div className="space-y-3">
+                                    <input
+                                      type="text"
+                                      placeholder="Nome da nova categoria"
+                                      value={newCategoryName}
+                                      onChange={(e) => setNewCategoryName(e.target.value)}
+                                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                      style={{
+                                        fontFamily: 'Inter',
+                                        fontSize: '14px'
+                                      }}
+                                      autoFocus
+                                    />
+
+                                    <div className="flex items-center gap-2">
+                                      <label className="text-sm text-gray-600 font-medium" style={{ fontFamily: 'Inter', fontSize: '12px' }}>
+                                        Cor:
+                                      </label>
+                                      <input
+                                        type="color"
+                                        value={newCategoryColor}
+                                        onChange={(e) => setNewCategoryColor(e.target.value)}
+                                        className="w-8 h-8 border border-gray-200 rounded cursor-pointer"
+                                      />
+                                      <div
+                                        className="w-4 h-4 rounded-full border border-gray-200"
+                                        style={{ backgroundColor: newCategoryColor }}
+                                      ></div>
+                                    </div>
+
+                                    <textarea
+                                      placeholder="Descrição da categoria"
+                                      value={newCategoryDescription}
+                                      onChange={(e) => setNewCategoryDescription(e.target.value)}
+                                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                                      style={{
+                                        fontFamily: 'Inter',
+                                        fontSize: '14px'
+                                      }}
+                                      rows="2"
+                                    />
+
+                                    <div className="flex gap-2">
+                                      <button
+                                        onClick={handleCreateNewCategory}
+                                        disabled={!newCategoryName.trim()}
+                                        className="flex-1 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                                        style={{
+                                          fontFamily: 'Inter',
+                                          fontSize: '12px'
+                                        }}
+                                      >
+                                        Criar
+                                      </button>
+                                      <button
+                                        onClick={handleCancelNewCategory}
+                                        className="flex-1 px-3 py-1.5 text-sm bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors"
+                                        style={{
+                                          fontFamily: 'Inter',
+                                          fontSize: '12px'
+                                        }}
+                                      >
+                                        Cancelar
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
                               </div>
-                            )}
                             </div>
-                          </div>
-                        )}
+                          )}
+                        </div>
                       </div>
-                    )}
+                    </div>
                   </div>
                 </div>
                   <div className="mt-1 text-[12px] text-[#9291A5]">Categorias que serão vinculadas</div>
@@ -1392,35 +1449,42 @@ const QuestionBankPage = () => {
                     </div>
 
                     <div className="flex-1 flex flex-row items-center" style={{ width: 'fit-content', height: 'fit-content' }}>
-                      {formData.subcategory ? (
-                        <div className="flex items-center gap-2">
-                          <span
-                            className="px-2 py-1 text-xs font-medium rounded flex items-center gap-1"
-                            style={{
-                              backgroundColor: 'rgba(34, 197, 94, 0.1)',
-                              color: '#22C55E',
-                              fontFamily: 'Inter',
-                              fontSize: '12px',
-                              fontWeight: 500,
-                            }}
-                          >
-                            <div className="w-[10px] h-[10px]" style={{ backgroundColor: '#22C55E' }}></div>
-                            {formData.subcategory}
-                            <button
-                              onClick={() => setFormData(prev => ({ ...prev, subcategory: '' }))}
-                              className="w-4 h-4 rounded-full flex items-center justify-center hover:bg-black hover:bg-opacity-10 transition-colors ml-1"
-                              style={{ color: '#22C55E' }}
+                      <div className="flex flex-wrap items-center gap-2">
+                        {selectedSubcategoryNames.map((name) => {
+                          const sub = (subcategories || []).find((s) => s?.name === name);
+                          const color = sub?.color || '#22C55E';
+                          return (
+                            <span
+                              key={name}
+                              className="px-2 py-1 text-xs font-medium rounded flex items-center gap-1"
+                              style={{
+                                backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                                color,
+                                fontFamily: 'Inter',
+                                fontSize: '12px',
+                                fontWeight: 500,
+                              }}
                             >
-                              <X className="w-3 h-3" />
-                            </button>
-                          </span>
-                        </div>
-                      ) : (
+                              <div className="w-[10px] h-[10px]" style={{ backgroundColor: color }}></div>
+                              {name}
+                              <button
+                                onClick={() => setFormData(prev => ({ ...prev, subcategory: removeFromMulti(prev.subcategory, name) }))}
+                                className="w-4 h-4 rounded-full flex items-center justify-center hover:bg-black hover:bg-opacity-10 transition-colors ml-1"
+                                style={{ color }}
+                                aria-label="Remover"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </span>
+                          );
+                        })}
+
                         <div className="relative dropdown-container">
                           <button
                             onClick={() => setShowSubcategoryDropdown(!showSubcategoryDropdown)}
                             className="w-7 h-7 rounded-full flex items-center justify-center hover:bg-gray-200 transition-colors"
                             style={{ background: 'none' }}
+                            aria-label="Adicionar subcategoria"
                           >
                             <Plus className="w-4 h-4 text-gray-600" />
                           </button>
@@ -1428,217 +1492,212 @@ const QuestionBankPage = () => {
                           {showSubcategoryDropdown && (
                             <div className="absolute top-8 left-0 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[260px]">
                               <div className="p-2">
-                            {/* Busca */}
-                            <div className="mb-2">
-                              <input
-                                type="text"
-                                placeholder="Buscar subcategoria"
-                                value={subcategorySearchTerm}
-                                onChange={(e) => setSubcategorySearchTerm(e.target.value)}
-                                className="w-full h-[32px] px-3 py-2 border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                                style={{ fontFamily: 'Inter', fontSize: '14px' }}
-                              />
-                            </div>
-
-                            {/* Lista */}
-                            <div ref={subcategoryDropdownRef} className="max-h-[220px] overflow-y-auto">
-                              {filteredSubcategories.map((subcategory) => (
-                                <div key={subcategory.id} className="px-1 py-1">
-                                  {editingSubcategoryId === subcategory.id ? (
-                                    <div className="p-2 border border-gray-200 rounded-md bg-gray-50">
-                                      <div className="flex items-center gap-2 mb-2">
-                                        <input
-                                          type="text"
-                                          placeholder="Nome da subcategoria"
-                                          value={editSubcategoryName}
-                                          onChange={(e) => setEditSubcategoryName(e.target.value)}
-                                          className="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                          style={{ fontFamily: 'Inter', fontSize: '14px' }}
-                                        />
-                                        <div
-                                          className="w-4 h-4 rounded-full border border-gray-200"
-                                          style={{ backgroundColor: editSubcategoryColor }}
-                                        ></div>
-                                      </div>
-                                      <textarea
-                                        placeholder="Descrição da subcategoria"
-                                        value={editSubcategoryDescription}
-                                        onChange={(e) => setEditSubcategoryDescription(e.target.value)}
-                                        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-                                        style={{ fontFamily: 'Inter', fontSize: '14px' }}
-                                        rows="2"
-                                      />
-                                      <div className="flex gap-2 mt-2">
-                                        <button
-                                          onClick={handleSaveEditSubcategory}
-                                          disabled={!editSubcategoryName.trim() || !editSubcategoryDescription.trim()}
-                                          className="flex-1 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-                                          style={{ fontFamily: 'Inter', fontSize: '12px' }}
-                                        >
-                                          Salvar
-                                        </button>
-                                        <button
-                                          onClick={handleCancelEditSubcategory}
-                                          className="flex-1 px-3 py-1.5 text-sm bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors"
-                                          style={{ fontFamily: 'Inter', fontSize: '12px' }}
-                                        >
-                                          Cancelar
-                                        </button>
-                                      </div>
-                                    </div>
-                                  ) : (
-                                    pendingDeleteSubcategoryId === subcategory.id ? (
-                                      <div className="flex items-center gap-2 rounded-md">
-                                        <button
-                                          onClick={() => {
-                                            setFormData(prev => ({ ...prev, subcategory: subcategory.name }));
-                                            setShowSubcategoryDropdown(false);
-                                            setSubcategorySearchTerm('');
-                                          }}
-                                          className="flex items-center gap-2 flex-1 text-left px-3 py-2 text-sm"
-                                          style={{ fontFamily: 'Inter', fontSize: '14px', color: '#374151' }}
-                                        >
-                                          <div
-                                            className="w-3 h-3 rounded-full flex-shrink-0"
-                                            style={{ backgroundColor: subcategory.color }}
-                                          ></div>
-                                          <div className="flex-1">
-                                            <div className="font-medium">{subcategory.name}</div>
-                                            <div className="text-xs text-gray-500 mt-0.5">{subcategory.description}</div>
-                                          </div>
-                                        </button>
-                                        <div className="flex items-center gap-1 pr-2">
-                                          <span className="text-xs text-gray-500 mr-1" style={{ fontFamily: 'Inter' }}>
-                                            Remover?
-                                          </span>
-                                          <button
-                                            onClick={() => handleDeleteSubcategory(subcategory.id)}
-                                            className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-black hover:bg-opacity-10 transition-colors"
-                                            title="Confirmar remoção"
-                                            aria-label="Confirmar remoção"
-                                          >
-                                            <Check className="w-3 h-3 text-red-600" />
-                                          </button>
-                                          <button
-                                            onClick={() => setPendingDeleteSubcategoryId(null)}
-                                            className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-black hover:bg-opacity-10 transition-colors"
-                                            title="Cancelar"
-                                            aria-label="Cancelar"
-                                          >
-                                            <X className="w-3 h-3 text-gray-600" />
-                                          </button>
-                                        </div>
-                                      </div>
-                                    ) : (
-                                      <div className="flex items-center gap-2 hover:bg-gray-100 rounded-md">
-                                        <button
-                                          onClick={() => {
-                                            setFormData(prev => ({ ...prev, subcategory: subcategory.name }));
-                                            setShowSubcategoryDropdown(false);
-                                            setSubcategorySearchTerm('');
-                                          }}
-                                          className="flex items-center gap-2 flex-1 text-left px-3 py-2 text-sm"
-                                          style={{ fontFamily: 'Inter', fontSize: '14px', color: '#374151' }}
-                                        >
-                                          <div
-                                            className="w-3 h-3 rounded-full flex-shrink-0"
-                                            style={{ backgroundColor: subcategory.color }}
-                                          ></div>
-                                          <div className="flex-1">
-                                            <div className="font-medium">{subcategory.name}</div>
-                                            <div className="text-xs text-gray-500 mt-0.5">{subcategory.description}</div>
-                                          </div>
-                                        </button>
-                                        <div className="flex items-center gap-1 pr-2">
-                                          <button
-                                            onClick={() => handleStartEditSubcategory(subcategory)}
-                                            className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-black hover:bg-opacity-10 transition-colors"
-                                            title="Editar"
-                                          >
-                                            <Pencil className="w-3 h-3 text-gray-600" />
-                                          </button>
-                                          <button
-                                            onClick={() => setPendingDeleteSubcategoryId(subcategory.id)}
-                                            className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-black hover:bg-opacity-10 transition-colors"
-                                            title="Remover"
-                                          >
-                                            <Trash className="w-3 h-3 text-red-600" />
-                                          </button>
-                                        </div>
-                                      </div>
-                                    )
-                                  )}
-                                </div>
-                              ))}
-
-                              {/* Mensagem quando não há subcategorias */}
-                              {filteredSubcategories.length === 0 && subcategorySearchTerm && (
-                                <div className="px-3 py-2 text-sm text-gray-500 text-center">
-                                  Nenhuma subcategoria encontrada
-                                </div>
-                              )}
-                            </div>
-
-                            {/* Separador */}
-                            <div className="border-t border-gray-200 mt-2 mb-2"></div>
-
-                            {/* Criar nova subcategoria */}
-                            {isCreatingNewSubcategory ? (
-                              <div className="p-2 bg-gray-50 rounded-md">
-                                <div className="flex items-center gap-2 mb-2">
+                                <div className="mb-2">
                                   <input
                                     type="text"
-                                    placeholder="Nome da subcategoria"
-                                    value={newSubcategoryName}
-                                    onChange={(e) => setNewSubcategoryName(e.target.value)}
-                                    className="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                    placeholder="Buscar subcategoria"
+                                    value={subcategorySearchTerm}
+                                    onChange={(e) => setSubcategorySearchTerm(e.target.value)}
+                                    className="w-full h-[32px] px-3 py-2 border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
                                     style={{ fontFamily: 'Inter', fontSize: '14px' }}
                                   />
-                                  <div
-                                    className="w-4 h-4 rounded-full border border-gray-200"
-                                    style={{ backgroundColor: newSubcategoryColor }}
-                                  ></div>
                                 </div>
-                                <textarea
-                                  placeholder="Descrição da subcategoria"
-                                  value={newSubcategoryDescription}
-                                  onChange={(e) => setNewSubcategoryDescription(e.target.value)}
-                                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-                                  style={{ fontFamily: 'Inter', fontSize: '14px' }}
-                                  rows="2"
-                                />
-                                <div className="flex gap-2 mt-2">
-                                  <button
-                                    onClick={handleCreateNewSubcategory}
-                                    disabled={!newSubcategoryName.trim() || !newSubcategoryDescription.trim()}
-                                    className="flex-1 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-                                    style={{ fontFamily: 'Inter', fontSize: '12px' }}
-                                  >
-                                    Criar
-                                  </button>
-                                  <button
-                                    onClick={handleCancelNewSubcategory}
-                                    className="flex-1 px-3 py-1.5 text-sm bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors"
-                                    style={{ fontFamily: 'Inter', fontSize: '12px' }}
-                                  >
-                                    Cancelar
-                                  </button>
+
+                                <div ref={subcategoryDropdownRef} className="max-h-[220px] overflow-y-auto">
+                                  {selectableSubcategories.map((subcategory) => (
+                                    <div key={subcategory.id} className="px-1 py-1">
+                                      {editingSubcategoryId === subcategory.id ? (
+                                        <div className="p-2 border border-gray-200 rounded-md bg-gray-50">
+                                          <div className="flex items-center gap-2 mb-2">
+                                            <input
+                                              type="text"
+                                              placeholder="Nome da subcategoria"
+                                              value={editSubcategoryName}
+                                              onChange={(e) => setEditSubcategoryName(e.target.value)}
+                                              className="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                              style={{ fontFamily: 'Inter', fontSize: '14px' }}
+                                            />
+                                            <div
+                                              className="w-4 h-4 rounded-full border border-gray-200"
+                                              style={{ backgroundColor: editSubcategoryColor }}
+                                            ></div>
+                                          </div>
+                                          <textarea
+                                            placeholder="Descrição da subcategoria"
+                                            value={editSubcategoryDescription}
+                                            onChange={(e) => setEditSubcategoryDescription(e.target.value)}
+                                            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                                            style={{ fontFamily: 'Inter', fontSize: '14px' }}
+                                            rows="2"
+                                          />
+                                          <div className="flex gap-2 mt-2">
+                                            <button
+                                              onClick={handleSaveEditSubcategory}
+                                              disabled={!editSubcategoryName.trim() || !editSubcategoryDescription.trim()}
+                                              className="flex-1 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                                              style={{ fontFamily: 'Inter', fontSize: '12px' }}
+                                            >
+                                              Salvar
+                                            </button>
+                                            <button
+                                              onClick={handleCancelEditSubcategory}
+                                              className="flex-1 px-3 py-1.5 text-sm bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors"
+                                              style={{ fontFamily: 'Inter', fontSize: '12px' }}
+                                            >
+                                              Cancelar
+                                            </button>
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        pendingDeleteSubcategoryId === subcategory.id ? (
+                                          <div className="flex items-center gap-2 rounded-md">
+                                            <button
+                                              onClick={() => {
+                                                setFormData(prev => ({ ...prev, subcategory: addToMulti(prev.subcategory, subcategory.name) }));
+                                                setShowSubcategoryDropdown(false);
+                                                setSubcategorySearchTerm('');
+                                              }}
+                                              className="flex items-center gap-2 flex-1 text-left px-3 py-2 text-sm"
+                                              style={{ fontFamily: 'Inter', fontSize: '14px', color: '#374151' }}
+                                            >
+                                              <div
+                                                className="w-3 h-3 rounded-full flex-shrink-0"
+                                                style={{ backgroundColor: subcategory.color }}
+                                              ></div>
+                                              <div className="flex-1">
+                                                <div className="font-medium">{subcategory.name}</div>
+                                                <div className="text-xs text-gray-500 mt-0.5">{subcategory.description}</div>
+                                              </div>
+                                            </button>
+                                            <div className="flex items-center gap-1 pr-2">
+                                              <span className="text-xs text-gray-500 mr-1" style={{ fontFamily: 'Inter' }}>
+                                                Remover?
+                                              </span>
+                                              <button
+                                                onClick={() => handleDeleteSubcategory(subcategory.id)}
+                                                className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-black hover:bg-opacity-10 transition-colors"
+                                                title="Confirmar remoção"
+                                                aria-label="Confirmar remoção"
+                                              >
+                                                <Check className="w-3 h-3 text-red-600" />
+                                              </button>
+                                              <button
+                                                onClick={() => setPendingDeleteSubcategoryId(null)}
+                                                className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-black hover:bg-opacity-10 transition-colors"
+                                                title="Cancelar"
+                                                aria-label="Cancelar"
+                                              >
+                                                <X className="w-3 h-3 text-gray-600" />
+                                              </button>
+                                            </div>
+                                          </div>
+                                        ) : (
+                                          <div className="flex items-center gap-2 hover:bg-gray-100 rounded-md">
+                                            <button
+                                              onClick={() => {
+                                                setFormData(prev => ({ ...prev, subcategory: addToMulti(prev.subcategory, subcategory.name) }));
+                                                setShowSubcategoryDropdown(false);
+                                                setSubcategorySearchTerm('');
+                                              }}
+                                              className="flex items-center gap-2 flex-1 text-left px-3 py-2 text-sm"
+                                              style={{ fontFamily: 'Inter', fontSize: '14px', color: '#374151' }}
+                                            >
+                                              <div
+                                                className="w-3 h-3 rounded-full flex-shrink-0"
+                                                style={{ backgroundColor: subcategory.color }}
+                                              ></div>
+                                              <div className="flex-1">
+                                                <div className="font-medium">{subcategory.name}</div>
+                                                <div className="text-xs text-gray-500 mt-0.5">{subcategory.description}</div>
+                                              </div>
+                                            </button>
+                                            <div className="flex items-center gap-1 pr-2">
+                                              <button
+                                                onClick={() => handleStartEditSubcategory(subcategory)}
+                                                className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-black hover:bg-opacity-10 transition-colors"
+                                                title="Editar"
+                                              >
+                                                <Pencil className="w-3 h-3 text-gray-600" />
+                                              </button>
+                                              <button
+                                                onClick={() => setPendingDeleteSubcategoryId(subcategory.id)}
+                                                className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-black hover:bg-opacity-10 transition-colors"
+                                                title="Remover"
+                                              >
+                                                <Trash className="w-3 h-3 text-red-600" />
+                                              </button>
+                                            </div>
+                                          </div>
+                                        )
+                                      )}
+                                    </div>
+                                  ))}
+
+                                  {selectableSubcategories.length === 0 && subcategorySearchTerm && (
+                                    <div className="px-3 py-2 text-sm text-gray-500 text-center">
+                                      Nenhuma subcategoria encontrada
+                                    </div>
+                                  )}
                                 </div>
+
+                                <div className="border-t border-gray-200 mt-2 mb-2"></div>
+
+                                {isCreatingNewSubcategory ? (
+                                  <div className="p-2 bg-gray-50 rounded-md">
+                                    <div className="flex items-center gap-2 mb-2">
+                                      <input
+                                        type="text"
+                                        placeholder="Nome da subcategoria"
+                                        value={newSubcategoryName}
+                                        onChange={(e) => setNewSubcategoryName(e.target.value)}
+                                        className="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                        style={{ fontFamily: 'Inter', fontSize: '14px' }}
+                                      />
+                                      <div
+                                        className="w-4 h-4 rounded-full border border-gray-200"
+                                        style={{ backgroundColor: newSubcategoryColor }}
+                                      ></div>
+                                    </div>
+                                    <textarea
+                                      placeholder="Descrição da subcategoria"
+                                      value={newSubcategoryDescription}
+                                      onChange={(e) => setNewSubcategoryDescription(e.target.value)}
+                                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                                      style={{ fontFamily: 'Inter', fontSize: '14px' }}
+                                      rows="2"
+                                    />
+                                    <div className="flex gap-2 mt-2">
+                                      <button
+                                        onClick={handleCreateNewSubcategory}
+                                        disabled={!newSubcategoryName.trim() || !newSubcategoryDescription.trim()}
+                                        className="flex-1 px-3 py-1.5 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+                                        style={{ fontFamily: 'Inter', fontSize: '12px' }}
+                                      >
+                                        Criar
+                                      </button>
+                                      <button
+                                        onClick={handleCancelNewSubcategory}
+                                        className="flex-1 px-3 py-1.5 text-sm bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors"
+                                        style={{ fontFamily: 'Inter', fontSize: '12px' }}
+                                      >
+                                        Cancelar
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <button
+                                    onClick={() => setIsCreatingNewSubcategory(true)}
+                                    className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded-md transition-colors"
+                                    style={{ fontFamily: 'Inter', fontSize: '14px', color: '#374151' }}
+                                  >
+                                    + Criar nova subcategoria
+                                  </button>
+                                )}
                               </div>
-                            ) : (
-                              <button
-                                onClick={() => setIsCreatingNewSubcategory(true)}
-                                className="w-full text-left px-3 py-2 text-sm hover:bg-gray-100 rounded-md transition-colors"
-                                style={{ fontFamily: 'Inter', fontSize: '14px', color: '#374151' }}
-                              >
-                                + Criar nova subcategoria
-                              </button>
-                            )}
-                          </div>
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </div>
-                      )}
+                      </div>
                     </div>
                   </div>
                   <div className="mt-1 text-[12px] text-[#9291A5]">Subcategorias que serão vinculadas</div>
@@ -1978,7 +2037,6 @@ const QuestionBankPage = () => {
                   </div>
                 </div>
               </div>
-            </div>
             </div>
           </div>
         </div>,

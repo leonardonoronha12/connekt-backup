@@ -121,8 +121,14 @@ const Header = () => {
       let mode = ''
       try { mode = String(sessionStorage.getItem('connekt_login_mode') || localStorage.getItem('connekt_login_mode') || '') } catch (_) { mode = '' }
       const path = String(window.location.pathname || '')
-      const isAluno = mode === 'aluno' || path === '/aluno' || path.startsWith('/aluno/')
-      window.history.replaceState({}, '', isAluno ? '/login-aluno' : '/login');
+      const isAluno = mode === 'aluno' || path === '/aluno' || path.startsWith('/aluno/') || path === '/login-aluno-wl'
+      if (isAluno) {
+        const host = String(window.location.hostname || '').toLowerCase()
+        const isWhitelabelHost = host.endsWith('.app.connektco.com') && host !== 'app.connektco.com'
+        window.history.replaceState({}, '', isWhitelabelHost ? '/login-aluno-wl' : '/login-aluno');
+      } else {
+        window.history.replaceState({}, '', '/login');
+      }
       window.dispatchEvent(new PopStateEvent('popstate'));
     } catch (e) {
       console.error('Exceção ao deslogar:', e?.message || String(e));

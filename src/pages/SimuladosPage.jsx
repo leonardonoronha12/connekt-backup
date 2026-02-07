@@ -624,7 +624,7 @@ const SimuladosPage = ({ titleText = 'Simulados', subtitleText = 'Crie e gerenci
                           </button>
                           <button
                             className="w-full text-left px-3 py-2 text-[12px] text-[#22252B] hover:bg-[#F8FAFC]"
-                            onClick={() => { setOpenMenuId(null); navigateTo(`/simulados-aproveitamento?simId=${sim.id}`); }}
+                            onClick={() => { setOpenMenuId(null); navigateTo(`/simulados/aproveitamento?simId=${sim.id}`); }}
                             role="menuitem"
                           >
                             Analytics

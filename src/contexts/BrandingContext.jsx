@@ -14,7 +14,7 @@ function clampHexColor(input, fallback) {
 function isAlunoContext() {
   try {
     const path = String(window.location.pathname || '')
-    return path === '/login-aluno' || path === '/aluno/login' || path === '/aluno' || path.startsWith('/aluno/')
+    return path === '/login-aluno' || path === '/login-aluno-wl' || path === '/aluno/login' || path === '/aluno' || path.startsWith('/aluno/')
   } catch (_) {
     return false
   }
@@ -65,6 +65,10 @@ export function BrandingProvider({ children }) {
       setLoading(true)
       try {
         const host = String(window.location.hostname || '').toLowerCase()
+        if (host === 'app.connektco.com') {
+          if (active) setBrand(defaultBrand())
+          return
+        }
         let producerId = ''
         try { producerId = String(getActiveProducerUserId() || '').trim() } catch (_) { producerId = '' }
 

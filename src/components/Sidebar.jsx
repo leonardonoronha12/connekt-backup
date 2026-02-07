@@ -120,10 +120,10 @@ const Sidebar = ({
                   <span className="text-xs text-gray-500 flex-shrink-0">{formatDate(conv.date)}</span>
                 </div>
                 <p className="text-xs text-gray-600 truncate mt-0.5">
-                  {conv.subject}
+                  {conv.lesson_title || conv.subject}
                 </p>
                 <span className="inline-block mt-1 text-xs px-2 py-1 border border-[#F0F0F0] rounded-full text-gray-700 self-start">
-                  {conv.tag}
+                  {conv.course_title || conv.tag}
                 </span>
               </div>
             </motion.div>)}

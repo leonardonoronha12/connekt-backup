@@ -148,9 +148,9 @@ export async function clearActiveDevice({ userId }) {
   return { ok: true }
 }
 
-export async function enforceSingleDevice({ userId }) {
+export async function enforceSingleDevice({ userId, signal } = {}) {
   const currentDeviceId = getOrCreateDeviceId()
-  const r = await getActiveDevice({ userId })
+  const r = await getActiveDevice({ userId, signal })
   if (!r.ok) return r
   const d = r.device
   if (!d?.active_device_id) return { ok: true, allowed: true, reason: 'no_active_device' }

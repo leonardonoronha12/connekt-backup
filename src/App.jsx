@@ -25,6 +25,7 @@ import ResetPasswordPage from '@/pages/ResetPasswordPage.jsx';
 import TermosPrivacidadePage from '@/pages/TermosPrivacidadePage.jsx';
 import DeviceLockPage from '@/pages/DeviceLockPage.jsx';
 import LoginAlunoPage from '@/pages/LoginAlunoPage.jsx';
+import LoginAlunoWhitelabelPage from '@/pages/LoginAlunoWhitelabelPage.jsx';
 import AlunoDashboardPage from '@/pages/AlunoDashboardPage.jsx';
 import AlunoAulaPage from '@/pages/AlunoAulaPage.jsx';
 import AlunoSimuladoAcessoPage from '@/pages/AlunoSimuladoAcessoPage.jsx';
@@ -130,6 +131,8 @@ const getViewFromLocation = () => {
     return 'cursoPreviewAluno';
   } else if (path === '/simulados/aproveitamento') {
     return 'simuladosAproveitamento';
+  } else if (path === '/simulados-aproveitamento') {
+    return 'simuladosAproveitamento';
   } else if (path === '/vendas') {
     return 'vendas';
   } else if (path === '/dashboard') {
@@ -137,7 +140,17 @@ const getViewFromLocation = () => {
   } else if (path === '/inbox') {
     return 'inbox';
   } else if (path === '/login') {
+    try {
+      const intentParam = String(searchParams.get('login_intent') || '').trim().toLowerCase()
+      const hasProducerUid =
+        !!searchParams.get('producer_uid') ||
+        !!searchParams.get('producerUserId') ||
+        !!searchParams.get('producer_uid'.toUpperCase())
+      if (intentParam === 'aluno' || hasProducerUid) return 'loginAluno'
+    } catch (_) {}
     return 'login';
+  } else if (path === '/login-aluno-wl') {
+    return 'loginAlunoWhitelabel';
   } else if (path === '/login-aluno' || path === '/aluno/login') {
     return 'loginAluno';
   } else if (path === '/aluno/banco-de-questoes/resultado') {
@@ -192,6 +205,14 @@ function AppContent() {
   // Chave de localização para forçar remontagem em mudanças de query (ex.: bankId)
   const [locationKey, setLocationKey] = useState(() => window.location.search);
   const lastStableUrlRef = useRef(`${window.location.pathname}${window.location.search}`);
+  const userIdRef = useRef(null)
+  const loadingRef = useRef(true)
+  useEffect(() => {
+    userIdRef.current = user?.id || null
+  }, [user?.id])
+  useEffect(() => {
+    loadingRef.current = !!loading
+  }, [loading])
   let forceResetPassword = false
   try {
     forceResetPassword = String(window.location.pathname || '').startsWith('/reset-password')
@@ -202,19 +223,122 @@ function AppContent() {
   useEffect(() => {
     const handleLocationChange = () => {
       try {
+        const path = String(window.location.pathname || '')
+        if (path === '/login' || path === '/login-aluno' || path === '/login-aluno-wl' || path === '/aluno/login') {
+          const u = new URL(window.location.href)
+          const code = String(u.searchParams.get('code') || '').trim()
+          if (code) {
+            try { sessionStorage.setItem('connekt_pkce_pending_code', code) } catch (_) {}
+            try { u.searchParams.delete('code'); u.searchParams.delete('state') } catch (_) {}
+            window.history.replaceState({}, '', `${u.pathname}${u.search}${u.hash}`)
+            window.dispatchEvent(new PopStateEvent('popstate'))
+            return
+          }
+        }
+      } catch (_) {}
+
+      try {
         const rawHash = String(window.location.hash || '')
         if (rawHash && rawHash !== '#' && rawHash.includes('error=')) {
           const params = new URLSearchParams(rawHash.startsWith('#') ? rawHash.slice(1) : rawHash)
           const err = params.get('error')
           const errCode = params.get('error_code')
           const errDesc = params.get('error_description')
-          const target = new URL(`${window.location.origin}/login`)
+          const path = String(window.location.pathname || '')
+          const intent = (() => {
+            try { return String(sessionStorage.getItem('connekt_login_intent') || localStorage.getItem('connekt_login_intent') || '') } catch (_) { return '' }
+          })()
+          const targetPath = (path === '/login-aluno' || path === '/login-aluno-wl' || intent === 'aluno') ? '/login-aluno' : '/login'
+          const target = new URL(`${window.location.origin}${targetPath}`)
           if (err) target.searchParams.set('error', err)
           if (errCode) target.searchParams.set('error_code', errCode)
           if (errDesc) target.searchParams.set('error_description', errDesc)
           window.history.replaceState({}, '', `${target.pathname}${target.search}`)
           window.dispatchEvent(new PopStateEvent('popstate'))
           return
+        }
+      } catch (_) {}
+
+      try {
+        const host = String(window.location.hostname || '').toLowerCase()
+        const path = String(window.location.pathname || '')
+        if (host === 'app.connektco.com' && path === '/login-aluno-wl') {
+          const u = new URL(window.location.href)
+          const intentParam = String(u.searchParams.get('login_intent') || '').trim().toLowerCase()
+          const wlHostParam = String(u.searchParams.get('wl_host') || '').trim().toLowerCase()
+          if (!wlHostParam || intentParam === 'aluno') {
+            u.pathname = '/login-aluno'
+            u.searchParams.delete('wl_host')
+            u.searchParams.delete('oauth_provider')
+            if (!u.searchParams.get('login_intent')) u.searchParams.set('login_intent', 'aluno')
+            window.history.replaceState({}, '', `${u.pathname}${u.search}${u.hash}`)
+            window.dispatchEvent(new PopStateEvent('popstate'))
+            return
+          }
+        }
+      } catch (_) {}
+
+      try {
+        const host = String(window.location.hostname || '').toLowerCase()
+        const isCustomProducerHost = host.endsWith('.app.connektco.com') && host !== 'app.connektco.com'
+        const path = String(window.location.pathname || '')
+        if (isCustomProducerHost && (path === '/' || path === '/login' || path === '/login-aluno')) {
+          window.history.replaceState({}, '', `/login-aluno-wl${window.location.search || ''}`)
+          window.dispatchEvent(new PopStateEvent('popstate'))
+          return
+        }
+      } catch (_) {}
+
+      try {
+        const host = String(window.location.hostname || '').toLowerCase()
+        const path = String(window.location.pathname || '')
+        if (host === 'app.connektco.com' && (path === '/aluno' || path.startsWith('/aluno/'))) {
+          let shouldConsiderRedirect = false
+          try {
+            shouldConsiderRedirect = !loadingRef.current && !userIdRef.current
+          } catch (_) {
+            shouldConsiderRedirect = false
+          }
+          if (shouldConsiderRedirect) {
+            const params = new URLSearchParams(window.location.search || '')
+            const producerUid =
+              params.get('producer_uid') ||
+              params.get('producerUserId') ||
+              params.get('producer_uid'.toUpperCase()) ||
+              ''
+            const pid = String(producerUid || '').trim()
+            if (pid) {
+              try {
+                const oauthStarting = (() => {
+                  try { return sessionStorage.getItem('connekt_aluno_oauth_starting') === '1' } catch (_) { return false }
+                })()
+                const hasAuthParams = params.get('code') || params.get('error') || params.get('error_code')
+                const hasOauthProvider = !!params.get('oauth_provider')
+                const rawHash = String(window.location.hash || '').toLowerCase()
+                const hasTokens =
+                  rawHash.includes('access_token=') ||
+                  rawHash.includes('refresh_token=') ||
+                  rawHash.includes('sb_at=') ||
+                  rawHash.includes('sb_rt=')
+                const wlHostParam = String(params.get('wl_host') || '').trim().toLowerCase()
+                const loginIntentParam = String(params.get('login_intent') || '').trim().toLowerCase()
+                if (!wlHostParam && loginIntentParam === 'aluno') {
+                  try { sessionStorage.removeItem('connekt_wl_host') } catch (_) {}
+                  try { localStorage.removeItem('connekt_wl_host') } catch (_) {}
+                  try { sessionStorage.removeItem('connekt_wl_handoff_target') } catch (_) {}
+                  try { localStorage.removeItem('connekt_wl_handoff_target') } catch (_) {}
+                }
+                if (wlHostParam && !oauthStarting && !hasOauthProvider && !hasAuthParams && !hasTokens) {
+                  const target =
+                    `/api/producer?type=aluno_redirect&producer_uid=${encodeURIComponent(pid)}` +
+                    `&p=${encodeURIComponent(path)}` +
+                    `&q=${encodeURIComponent(window.location.search || '')}`
+                  window.location.replace(target)
+                  return
+                }
+              } catch (_) {}
+            }
+          }
         }
       } catch (_) {}
 
@@ -230,15 +354,21 @@ function AppContent() {
         const path = String(window.location.pathname || '')
         const isAluno =
           path === '/login-aluno' ||
+          path === '/login-aluno-wl' ||
           path === '/aluno/login' ||
           path === '/aluno' ||
           path.startsWith('/aluno/') ||
           String(nextView || '').startsWith('aluno') ||
-          nextView === 'loginAluno'
+          nextView === 'loginAluno' ||
+          nextView === 'loginAlunoWhitelabel'
         const isProdutor = path === '/login' || nextView === 'login'
         if (isAluno) {
+          try { sessionStorage.setItem('connekt_login_intent', 'aluno') } catch (_) {}
+          try { sessionStorage.setItem('connekt_login_mode', 'aluno') } catch (_) {}
           try { localStorage.setItem('connekt_login_mode', 'aluno') } catch (_) {}
         } else if (isProdutor) {
+          try { sessionStorage.setItem('connekt_login_intent', 'produtor') } catch (_) {}
+          try { sessionStorage.setItem('connekt_login_mode', 'produtor') } catch (_) {}
           try { localStorage.setItem('connekt_login_mode', 'produtor') } catch (_) {}
         }
       } catch (_) {}
@@ -253,9 +383,19 @@ function AppContent() {
 
     // Listen for navigation changes
     window.addEventListener('popstate', handleLocationChange);
+    let lastUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`
+    const pollId = window.setInterval(() => {
+      try {
+        const nextUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`
+        if (nextUrl === lastUrl) return
+        lastUrl = nextUrl
+        handleLocationChange()
+      } catch (_) {}
+    }, 200)
     
     return () => {
       window.removeEventListener('popstate', handleLocationChange);
+      window.clearInterval(pollId)
     };
   }, []);
 
@@ -263,7 +403,7 @@ function AppContent() {
     const originalPushState = window.history.pushState;
     const originalReplaceState = window.history.replaceState;
 
-    const guard = (original) => function guardedHistoryState() {
+    const guardReplaceState = (original) => function guardedReplaceState() {
       if (isUploadInProgress()) {
         toast({ description: 'Upload em andamento. Aguarde concluir para sair desta página.', variant: 'destructive' });
         return;
@@ -271,8 +411,20 @@ function AppContent() {
       return original.apply(window.history, arguments);
     };
 
-    window.history.pushState = guard(originalPushState);
-    window.history.replaceState = guard(originalReplaceState);
+    const guardPushState = (original) => function guardedPushState() {
+      if (isUploadInProgress()) {
+        toast({ description: 'Upload em andamento. Aguarde concluir para sair desta página.', variant: 'destructive' });
+        return;
+      }
+      const r = original.apply(window.history, arguments);
+      try {
+        window.dispatchEvent(new PopStateEvent('popstate'))
+      } catch (_) {}
+      return r;
+    };
+
+    window.history.pushState = guardPushState(originalPushState);
+    window.history.replaceState = guardReplaceState(originalReplaceState);
 
     const onBeforeUnload = (e) => {
       if (!isUploadInProgress()) return;
@@ -382,6 +534,8 @@ function AppContent() {
         return <LoginPage />;
       case 'loginAluno':
         return <LoginAlunoPage />;
+      case 'loginAlunoWhitelabel':
+        return <LoginAlunoWhitelabelPage />;
       case 'alunoDashboard':
         return <AlunoDashboardPage />;
       case 'alunoAula':
@@ -462,7 +616,7 @@ function AppContent() {
     }
   };
 
-  const isPublicView = useMemo(() => (forceResetPassword || currentView === 'login' || currentView === 'loginAluno' || currentView === 'verifyEmail' || currentView === 'resetPassword' || currentView === 'termos'), [currentView, forceResetPassword]);
+  const isPublicView = useMemo(() => (forceResetPassword || currentView === 'login' || currentView === 'loginAluno' || currentView === 'loginAlunoWhitelabel' || currentView === 'verifyEmail' || currentView === 'resetPassword' || currentView === 'termos'), [currentView, forceResetPassword]);
   const isDemoStudent = useMemo(() => {
     try {
       const host = String(window.location.hostname || '').toLowerCase()
@@ -486,7 +640,7 @@ function AppContent() {
 
   const isAlunoFlow = useMemo(() => {
     const path = String(window.location.pathname || '')
-    return loginMode === 'aluno' || path === '/aluno' || path.startsWith('/aluno/') || path === '/login-aluno' || path === '/aluno/login'
+    return loginMode === 'aluno' || path === '/aluno' || path.startsWith('/aluno/') || path === '/login-aluno' || path === '/login-aluno-wl' || path === '/aluno/login'
   }, [loginMode, currentView, locationKey])
 
   useEffect(() => {
@@ -495,12 +649,14 @@ function AppContent() {
     if (isPublicView) return;
     const isAlunoPath = isAlunoFlow
     if ((isAlunoPath || currentView === 'cursoPreviewAluno') && isDemoStudent) return
-    const target = isAlunoPath ? '/login-aluno' : '/login'
+    const host = String(window.location.hostname || '').toLowerCase()
+    const isWhitelabelHost = host.endsWith('.app.connektco.com') && host !== 'app.connektco.com'
+    const target = isAlunoPath ? (isWhitelabelHost ? '/login-aluno-wl' : '/login-aluno') : '/login'
     if (window.location.pathname !== target) {
       window.history.replaceState({}, '', target);
       window.dispatchEvent(new PopStateEvent('popstate'));
     } else {
-      setCurrentView(isAlunoPath ? 'loginAluno' : 'login');
+      setCurrentView(isAlunoPath ? (isWhitelabelHost ? 'loginAlunoWhitelabel' : 'loginAluno') : 'login');
     }
   }, [user, loading, isPublicView, isDemoStudent, currentView, isAlunoFlow]);
 
@@ -517,7 +673,9 @@ function AppContent() {
   }
 
   if (!user && !isPublicView && !(isDemoStudent && (currentView === 'alunoDashboard' || currentView === 'alunoAula' || currentView === 'alunoCurso' || currentView === 'alunoSimulados' || currentView === 'alunoSimuladoAcesso' || currentView === 'alunoSimuladoResultado' || currentView === 'alunoConfiguracoes' || currentView === 'alunoRepostaCorretaSimulado' || currentView === 'cursoPreviewAluno'))) {
-    return isAlunoFlow ? <LoginAlunoPage /> : <LoginPage />;
+    const host = String(window.location.hostname || '').toLowerCase()
+    const isWhitelabelHost = host.endsWith('.app.connektco.com') && host !== 'app.connektco.com'
+    return isAlunoFlow ? (isWhitelabelHost ? <LoginAlunoWhitelabelPage /> : <LoginAlunoPage />) : <LoginPage />;
   }
 
   if (user && deviceLock) {
@@ -526,12 +684,14 @@ function AppContent() {
 
   return (
     <TaxonomyProvider>
-      {(currentView === 'login' || currentView === 'loginAluno' || currentView === 'verifyEmail') ? (
+      {(currentView === 'login' || currentView === 'loginAluno' || currentView === 'loginAlunoWhitelabel' || currentView === 'verifyEmail') ? (
         currentView === 'login'
           ? <LoginPage />
           : currentView === 'loginAluno'
             ? <LoginAlunoPage />
-            : <EmailVerificationPage />
+            : currentView === 'loginAlunoWhitelabel'
+              ? <LoginAlunoWhitelabelPage />
+              : <EmailVerificationPage />
       ) : (forceResetPassword || currentView === 'resetPassword') ? (
         <ResetPasswordPage />
       ) : currentView === 'termos' ? (

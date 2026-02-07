@@ -14,6 +14,7 @@ const ChatArea = ({ conversation, onAddReply, onLikePost, onLikeReply, onEditRep
 
   const threadRef = useRef(null);
   const textareaRef = useRef(null);
+  const posts = useMemo(() => (Array.isArray(conversation?.posts) ? conversation.posts : []), [conversation?.posts]);
 
   useEffect(() => {
     if (threadRef.current) {
@@ -59,11 +60,9 @@ const ChatArea = ({ conversation, onAddReply, onLikePost, onLikeReply, onEditRep
       </section>
     );
   }
-  
-  const posts = useMemo(() => (Array.isArray(conversation.posts) ? conversation.posts : []), [conversation.posts]);
 
   const headerData = activeFilterData || {
-      courseName: conversation.subject || 'Curso',
+      courseName: conversation.lesson_title || conversation.subject || 'Aula',
       professor: conversation.producer?.name || 'Professor',
       imageUrl: `data:image/svg+xml;base64,${btoa('<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M0 4C0 1.79086 1.79086 0 4 0H16C18.2091 0 20 1.79086 20 4V16C20 18.2091 18.2091 20 16 20H4C1.79086 20 0 18.2091 0 16V4Z" fill="#5B4DEA"/><g clip-path="url(#clip0_580_12066)"><path d="M14.875 13.75C14.875 13.8495 14.8355 13.9448 14.7652 14.0152C14.6948 14.0855 14.5995 14.125 14.5 14.125H5.5C5.40054 14.125 5.30516 14.0855 5.23483 14.0152C5.16451 13.9448 5.125 13.8495 5.125 13.75C5.125 13.6505 5.16451 13.5552 5.23483 13.4848C5.30516 13.4145 5.40054 13.375 5.5 13.375H14.5C14.5995 13.375 14.6948 13.4145 14.7652 13.4848C14.8355 13.5552 14.875 13.6505 14.875 13.75ZM14.875 6.625V11.875C14.875 12.0739 14.796 12.2647 14.6553 12.4053C14.5147 12.546 14.3239 12.625 14.125 12.625H5.875C5.67609 12.625 5.48532 12.546 5.34467 12.4053C5.20402 12.2647 5.125 12.0739 5.125 11.875V6.625C5.125 6.42609 5.20402 6.23532 5.34467 6.09467C5.48532 5.95402 5.67609 5.875 5.875 5.875H14.125C14.3239 5.875 14.5147 5.95402 14.6553 6.09467C14.796 6.23532 14.875 6.42609 14.875 6.625ZM11.6875 9.25C11.6875 9.18975 11.6729 9.13038 11.6451 9.07694C11.6173 9.02349 11.577 8.97754 11.5277 8.94297L9.65266 7.63047C9.59647 7.59111 9.53056 7.56792 9.46211 7.56341C9.39366 7.55891 9.32528 7.57327 9.26443 7.60493C9.20357 7.63659 9.15256 7.68434 9.11696 7.74298C9.08136 7.80162 9.06252 7.8689 9.0625 7.9375V10.5625C9.06252 10.6311 9.08136 10.6984 9.11696 10.757C9.15256 10.8157 9.20357 10.8634 9.26443 10.8951C9.32528 10.9267 9.39366 10.9411 9.46211 10.9366C9.53056 10.9321 9.59647 10.9089 9.65266 10.8695L11.5277 9.55703C11.577 9.52246 11.6173 9.47651 11.6451 9.42306C11.6729 9.36962 11.6875 9.31025 11.6875 9.25Z" fill="#F9FAFB"/></g><defs><clipPath id="clip0_580_12066"><rect width="12" height="12" fill="white" transform="translate(4 4)"/></clipPath></defs></svg>')}`
   };
@@ -165,9 +164,9 @@ const ChatArea = ({ conversation, onAddReply, onLikePost, onLikeReply, onEditRep
                   className="bg-[#F9FAFB] rounded-[8px] p-4"
                 >
                   <div className="flex items-start gap-4">
-                    <img className="w-8 h-8 rounded-full object-cover" alt={post.author?.name || conversation.student?.name || 'Aluno'} src={conversation.student?.avatar_url} />
+                    <img className="w-8 h-8 rounded-full object-cover" alt={post.author?.name || conversation.student?.name || 'Aluno'} src={post.author?.avatar_url || conversation.student?.avatar_url} />
                     <div className="flex-1">
-                      <span className="font-semibold text-sm text-[#0f172a]">{conversation.student?.name || post.author?.name || 'Aluno'}</span>
+                      <span className="font-semibold text-sm text-[#0f172a]">{post.author?.name || conversation.student?.name || 'Aluno'}</span>
                       <p className="my-2 text-[#737780] font-normal text-[14px] leading-relaxed">{post.text}</p>
                       <div className="flex items-center gap-2 text-gray-500 text-xs mt-3">
                         <button

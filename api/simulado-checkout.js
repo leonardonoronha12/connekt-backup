@@ -85,6 +85,16 @@ function resolveCoursePriceNumber(courseRow) {
   return 0
 }
 
+function getCourseModules(row) {
+  const parsed = parseJsonMaybe(row?.modules)
+  if (Array.isArray(parsed)) return parsed
+  if (parsed && typeof parsed === 'object') {
+    if (Array.isArray(parsed.modules)) return parsed.modules
+    if (Array.isArray(parsed.items)) return parsed.items
+  }
+  return Array.isArray(row?.modules) ? row.modules : []
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return json(res, 405, { error: 'method_not_allowed' })
 
@@ -102,9 +112,11 @@ export default async function handler(req, res) {
     const parsed = JSON.parse(body.toString('utf-8') || '{}')
     const rawType = String(parsed?.type || parsed?.itemType || parsed?.kind || '').trim().toLowerCase()
     const courseId = String(parsed?.courseId || parsed?.course_id || '').trim()
+    const moduleId = String(parsed?.moduleId || parsed?.module_id || '').trim()
+    const lessonId = String(parsed?.lessonId || parsed?.lesson_id || '').trim()
     const simId = String(parsed?.simId || parsed?.id || '').trim()
-    const type = rawType || (courseId ? 'course' : 'simulado')
-    if (type !== 'course' && type !== 'simulado') return json(res, 400, { error: 'invalid_type' })
+    const type = rawType || (lessonId ? 'lesson' : (moduleId ? 'module' : (courseId ? 'course' : 'simulado')))
+    if (type !== 'course' && type !== 'simulado' && type !== 'module' && type !== 'lesson') return json(res, 400, { error: 'invalid_type' })
 
     if (type === 'course') {
       if (!courseId || !isUuid(courseId)) return json(res, 400, { error: 'invalid_courseId' })
@@ -204,6 +216,220 @@ export default async function handler(req, res) {
       const finalCheckoutUrl = returnUrl ? appendQueryParam(checkoutUrl, 'return_url', returnUrl) : checkoutUrl
 
       return json(res, 200, { checkout_url: finalCheckoutUrl, link_id: String(linkId), courseId, type: 'course' })
+    }
+
+    if (type === 'module') {
+      if (!courseId || !isUuid(courseId)) return json(res, 400, { error: 'invalid_courseId' })
+      if (!moduleId) return json(res, 400, { error: 'invalid_moduleId' })
+
+      const { data: course, error: courseErr } = await admin
+        .from('courses')
+        .select('id,title,description,modules,data')
+        .eq('id', courseId)
+        .maybeSingle()
+      if (courseErr) return json(res, 500, { error: 'supabase_query_failed', message: courseErr.message || String(courseErr) })
+      if (!course) return json(res, 404, { error: 'not_found' })
+
+      const modules = getCourseModules(course)
+      const moduleRow = (Array.isArray(modules) ? modules : []).find((m) => String(m?.id || m?.module_id || m?.moduleId || '').trim() === moduleId) || null
+      if (!moduleRow) return json(res, 404, { error: 'module_not_found', message: 'Módulo não encontrado neste curso.' })
+
+      const paid = String(moduleRow?.visibility || '').trim() === 'Paga' || (Number(moduleRow?.priceCents) > 0)
+      const amountCents = Math.round(Number(moduleRow?.priceCents || 0))
+      if (!paid || !(amountCents > 0)) return json(res, 400, { error: 'module_not_paid', message: 'Este módulo não está configurado como pago (defina visibilidade Paga e valor).' })
+
+      const requestUrl = `${String(GATEWAY_URL).replace(/\/$/, '')}/payments/v1/paymentlink`
+      const validityHours = Number(process.env.VITE_PAYMENT_LINK_VALIDITY_HOURS || 48)
+      const validUntilHuman = formatValidUntil(new Date(Date.now() + validityHours * 3600 * 1000))
+
+      const token = await getGatewayAuthToken()
+      const basicFromEnv = (GATEWAY_AUTH && GATEWAY_AUTH.startsWith('Basic ')) ? GATEWAY_AUTH : (GATEWAY_AUTHDATA ? `Basic ${GATEWAY_AUTHDATA}` : null)
+      const envAuthFallback = (!token && !basicFromEnv && GATEWAY_AUTH) ? GATEWAY_AUTH : null
+      const authModes = []
+      if (token) authModes.push({ mode: 'auth_token', value: String(token) })
+      if (basicFromEnv) authModes.push({ mode: 'basic', value: basicFromEnv })
+      if (envAuthFallback) authModes.push({ mode: envAuthFallback.startsWith('Bearer ') ? 'env_bearer' : 'env_basic', value: envAuthFallback })
+
+      const acceptedTypesRaw = String(process.env.VITE_ACCEPTED_PAYMENTS_TYPE || 'ALL')
+      const acceptedTypesList = acceptedTypesRaw.split(',').map((s) => s.trim()).filter(Boolean)
+      const acceptedPaymentsType = (acceptedTypesList.length === 0 || (acceptedTypesList.length === 1 && acceptedTypesList[0].toUpperCase() === 'ALL'))
+        ? ['PIX', 'Credit', 'Billet']
+        : acceptedTypesList
+
+      const courseTitle = String(course?.title || 'Curso').trim() || 'Curso'
+      const moduleTitle = String(moduleRow?.name || moduleRow?.title || moduleRow?.module_title || 'Módulo').trim() || 'Módulo'
+      const desc = `Compra do módulo ${moduleTitle} (${courseTitle})`
+      const externalOrderNumber = `module:${courseId}:${moduleId}:user:${String(auth.user.id)}`
+      const requestBody = {
+        value: String(amountCents),
+        title: `Módulo: ${moduleTitle}`,
+        description: desc,
+        validity: validUntilHuman,
+        minimumNumberOfInstallments: Number(process.env.VITE_MIN_INSTALLMENTS || 1),
+        maximumQuantityOfInstallments: Number(process.env.VITE_MAX_INSTALLMENTS || 12),
+        numberOfAllowedSales: Number(process.env.VITE_MAX_SALES || 1),
+        showFormAddress: (process.env.VITE_SHOW_FORM_ADDRESS === 'true') ? 1 : 0,
+        customerInterest: (process.env.VITE_CUSTOMER_INTEREST === 'true') ? 1 : 0,
+        acceptedPaymentsType,
+        external_order_number: externalOrderNumber,
+      }
+
+      let r = null
+      let payload = null
+      for (let i = 0; i < Math.max(1, authModes.length); i++) {
+        const selected = authModes[i] || { value: undefined }
+        const headers = {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          'x-api-key': GATEWAY_API_KEY,
+          ...(selected.value ? { Authorization: selected.value } : {}),
+        }
+        r = await fetch(requestUrl, { method: 'POST', headers, body: JSON.stringify(requestBody) })
+        payload = await r.json().catch(() => ({}))
+        if (r.ok) break
+      }
+
+      if (!r || !r.ok) {
+        return json(res, 502, {
+          error: 'create_paymentlink_failed',
+          message: 'Falha ao criar o checkout no gateway.',
+          status: r?.status || 0,
+          payload,
+        })
+      }
+
+      const linkId = payload?.paymentLinkId || payload?.linkId || payload?.id || null
+      const checkoutUrl = String(payload?.link || payload?.url || payload?.checkout_url || payload?.payment_url || '').trim()
+      if (!checkoutUrl || !linkId) {
+        return json(res, 502, { error: 'checkout_url_missing', message: 'O gateway não retornou link de checkout.', payload })
+      }
+
+      const allowReturnUrl = (() => {
+        if (!APP_BASE_URL) return false
+        try {
+          const u = new URL(APP_BASE_URL)
+          const host = String(u.hostname || '')
+          return u.protocol === 'https:' && host && host !== 'localhost' && host !== '127.0.0.1'
+        } catch (_) {
+          return false
+        }
+      })()
+      const returnUrl = allowReturnUrl
+        ? `${String(APP_BASE_URL).replace(/\/$/, '')}/aluno/curso/${encodeURIComponent(courseId)}?moduleId=${encodeURIComponent(moduleId)}&linkId=${encodeURIComponent(String(linkId))}`
+        : null
+      const finalCheckoutUrl = returnUrl ? appendQueryParam(checkoutUrl, 'return_url', returnUrl) : checkoutUrl
+
+      return json(res, 200, { checkout_url: finalCheckoutUrl, link_id: String(linkId), courseId, moduleId, type: 'module' })
+    }
+
+    if (type === 'lesson') {
+      if (!courseId || !isUuid(courseId)) return json(res, 400, { error: 'invalid_courseId' })
+      if (!moduleId) return json(res, 400, { error: 'invalid_moduleId' })
+      if (!lessonId) return json(res, 400, { error: 'invalid_lessonId' })
+
+      const { data: course, error: courseErr } = await admin
+        .from('courses')
+        .select('id,title,description,modules,data')
+        .eq('id', courseId)
+        .maybeSingle()
+      if (courseErr) return json(res, 500, { error: 'supabase_query_failed', message: courseErr.message || String(courseErr) })
+      if (!course) return json(res, 404, { error: 'not_found' })
+
+      const modules = getCourseModules(course)
+      const moduleRow = (Array.isArray(modules) ? modules : []).find((m) => String(m?.id || m?.module_id || m?.moduleId || '').trim() === moduleId) || null
+      if (!moduleRow) return json(res, 404, { error: 'module_not_found', message: 'Módulo não encontrado neste curso.' })
+
+      const lessons = Array.isArray(moduleRow?.lessons) ? moduleRow.lessons : (Array.isArray(moduleRow?.aulas) ? moduleRow.aulas : [])
+      const lessonRow = (Array.isArray(lessons) ? lessons : []).find((l) => String(l?.id || l?.lesson_id || l?.lessonId || '').trim() === lessonId) || null
+      if (!lessonRow) return json(res, 404, { error: 'lesson_not_found', message: 'Aula não encontrada neste módulo.' })
+
+      const paid = String(lessonRow?.visibility || '').trim() === 'Paga' || (Number(lessonRow?.priceCents) > 0)
+      const amountCents = Math.round(Number(lessonRow?.priceCents || 0))
+      if (!paid || !(amountCents > 0)) return json(res, 400, { error: 'lesson_not_paid', message: 'Esta aula não está configurada como paga (defina visibilidade Paga e valor).' })
+
+      const requestUrl = `${String(GATEWAY_URL).replace(/\/$/, '')}/payments/v1/paymentlink`
+      const validityHours = Number(process.env.VITE_PAYMENT_LINK_VALIDITY_HOURS || 48)
+      const validUntilHuman = formatValidUntil(new Date(Date.now() + validityHours * 3600 * 1000))
+
+      const token = await getGatewayAuthToken()
+      const basicFromEnv = (GATEWAY_AUTH && GATEWAY_AUTH.startsWith('Basic ')) ? GATEWAY_AUTH : (GATEWAY_AUTHDATA ? `Basic ${GATEWAY_AUTHDATA}` : null)
+      const envAuthFallback = (!token && !basicFromEnv && GATEWAY_AUTH) ? GATEWAY_AUTH : null
+      const authModes = []
+      if (token) authModes.push({ mode: 'auth_token', value: String(token) })
+      if (basicFromEnv) authModes.push({ mode: 'basic', value: basicFromEnv })
+      if (envAuthFallback) authModes.push({ mode: envAuthFallback.startsWith('Bearer ') ? 'env_bearer' : 'env_basic', value: envAuthFallback })
+
+      const acceptedTypesRaw = String(process.env.VITE_ACCEPTED_PAYMENTS_TYPE || 'ALL')
+      const acceptedTypesList = acceptedTypesRaw.split(',').map((s) => s.trim()).filter(Boolean)
+      const acceptedPaymentsType = (acceptedTypesList.length === 0 || (acceptedTypesList.length === 1 && acceptedTypesList[0].toUpperCase() === 'ALL'))
+        ? ['PIX', 'Credit', 'Billet']
+        : acceptedTypesList
+
+      const courseTitle = String(course?.title || 'Curso').trim() || 'Curso'
+      const moduleTitle = String(moduleRow?.name || moduleRow?.title || moduleRow?.module_title || 'Módulo').trim() || 'Módulo'
+      const lessonTitle = String(lessonRow?.name || lessonRow?.title || lessonRow?.lesson_title || 'Aula').trim() || 'Aula'
+      const desc = `Compra da aula ${lessonTitle} (${moduleTitle} • ${courseTitle})`
+      const externalOrderNumber = `lesson:${courseId}:${moduleId}:${lessonId}:user:${String(auth.user.id)}`
+      const requestBody = {
+        value: String(amountCents),
+        title: `Aula: ${lessonTitle}`,
+        description: desc,
+        validity: validUntilHuman,
+        minimumNumberOfInstallments: Number(process.env.VITE_MIN_INSTALLMENTS || 1),
+        maximumQuantityOfInstallments: Number(process.env.VITE_MAX_INSTALLMENTS || 12),
+        numberOfAllowedSales: Number(process.env.VITE_MAX_SALES || 1),
+        showFormAddress: (process.env.VITE_SHOW_FORM_ADDRESS === 'true') ? 1 : 0,
+        customerInterest: (process.env.VITE_CUSTOMER_INTEREST === 'true') ? 1 : 0,
+        acceptedPaymentsType,
+        external_order_number: externalOrderNumber,
+      }
+
+      let r = null
+      let payload = null
+      for (let i = 0; i < Math.max(1, authModes.length); i++) {
+        const selected = authModes[i] || { value: undefined }
+        const headers = {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          'x-api-key': GATEWAY_API_KEY,
+          ...(selected.value ? { Authorization: selected.value } : {}),
+        }
+        r = await fetch(requestUrl, { method: 'POST', headers, body: JSON.stringify(requestBody) })
+        payload = await r.json().catch(() => ({}))
+        if (r.ok) break
+      }
+
+      if (!r || !r.ok) {
+        return json(res, 502, {
+          error: 'create_paymentlink_failed',
+          message: 'Falha ao criar o checkout no gateway.',
+          status: r?.status || 0,
+          payload,
+        })
+      }
+
+      const linkId = payload?.paymentLinkId || payload?.linkId || payload?.id || null
+      const checkoutUrl = String(payload?.link || payload?.url || payload?.checkout_url || payload?.payment_url || '').trim()
+      if (!checkoutUrl || !linkId) {
+        return json(res, 502, { error: 'checkout_url_missing', message: 'O gateway não retornou link de checkout.', payload })
+      }
+
+      const allowReturnUrl = (() => {
+        if (!APP_BASE_URL) return false
+        try {
+          const u = new URL(APP_BASE_URL)
+          const host = String(u.hostname || '')
+          return u.protocol === 'https:' && host && host !== 'localhost' && host !== '127.0.0.1'
+        } catch (_) {
+          return false
+        }
+      })()
+      const returnUrl = allowReturnUrl
+        ? `${String(APP_BASE_URL).replace(/\/$/, '')}/aluno/curso/${encodeURIComponent(courseId)}?moduleId=${encodeURIComponent(moduleId)}&lessonId=${encodeURIComponent(lessonId)}&linkId=${encodeURIComponent(String(linkId))}`
+        : null
+      const finalCheckoutUrl = returnUrl ? appendQueryParam(checkoutUrl, 'return_url', returnUrl) : checkoutUrl
+
+      return json(res, 200, { checkout_url: finalCheckoutUrl, link_id: String(linkId), courseId, moduleId, lessonId, type: 'lesson' })
     }
 
     if (!simId || !isUuid(simId)) return json(res, 400, { error: 'invalid_simId' })

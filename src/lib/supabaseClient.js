@@ -77,14 +77,21 @@ function createRetryingFetch(baseFetch) {
 
 migrateSupabaseAuthFromSessionToLocal()
 
-export const supabase = createClient(url, anon, {
-  global: {
-    fetch: createRetryingFetch(fetch),
-  },
-  auth: {
-    storage: getAvailableStorage(),
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true,
-  },
-});
+function createSupabaseClient(flowType) {
+  return createClient(url, anon, {
+    global: {
+      fetch: createRetryingFetch(fetch),
+    },
+    auth: {
+      storage: getAvailableStorage(),
+      flowType,
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+    },
+  })
+}
+
+export const supabase = createSupabaseClient('implicit')
+
+export const supabasePkce = createSupabaseClient('pkce')
