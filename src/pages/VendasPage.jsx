@@ -35,14 +35,14 @@ const VendasPage = () => {
     (async () => {
       setLoading(true);
       try {
-        const { data, error } = await supabase
-          .from('sales')
-          .select('id,amount_cents,status,created_at')
-          .eq('producer_id', user.id)
-          .order('created_at', { ascending: false })
-          .limit(500);
-        if (error) throw error;
-        if (!cancelled) setRows(Array.isArray(data) ? data : []);
+        const token = (await supabase.auth.getSession().catch(() => ({ data: null })))?.data?.session?.access_token || ''
+        if (!token) throw new Error('missing_token')
+        const r = await fetch(`/api/producer?type=sales&producerId=${encodeURIComponent(String(user.id))}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        const body = await r.json().catch(() => ({}))
+        if (!r.ok) throw new Error(String(body?.error || 'fetch_failed'))
+        if (!cancelled) setRows(Array.isArray(body?.data) ? body.data : []);
       } catch (_) {
         if (!cancelled) setRows([]);
       } finally {

@@ -89,7 +89,9 @@ export default function AreaAlunoPage() {
             className="h-9 px-4 rounded-[6px] border border-[#E3E4E5] bg-white text-[13px] font-medium text-[#1E1B39] hover:bg-[#F8FAFC]"
             onClick={async () => {
               await signOut()
-              window.history.replaceState({}, '', '/login-aluno')
+              const host = String(window.location.hostname || '').toLowerCase()
+              const isWhitelabelHost = host.endsWith('.app.connektco.com') && host !== 'app.connektco.com'
+              window.history.replaceState({}, '', isWhitelabelHost ? '/login-aluno-wl' : '/login-aluno')
               window.dispatchEvent(new PopStateEvent('popstate'))
             }}
           >
@@ -157,4 +159,3 @@ export default function AreaAlunoPage() {
     </div>
   )
 }
-

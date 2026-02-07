@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import { useAuth } from '@/contexts/SupabaseAuthContext'
 import { useActiveProducerUserId } from '@/hooks/useActiveProducerUserId'
-import { X, Play, ChevronLeft, ChevronRight, ArrowLeft } from 'lucide-react';
+import { X, Play, ChevronLeft, ChevronRight, ArrowLeft, Lock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import CourseFooter from '@/components/CourseFooter'
 import BrandLogo from '@/components/BrandLogo'
+import AlunoInboxThread from '@/components/AlunoInboxThread'
 
 const DEMO_DESCRIPTION = 'Aprenda na prática com módulos organizados, aulas objetivas e conteúdos atualizados para o dia a dia no consultório.';
 const DEMO_PROMO_VIDEO_URL = 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4';
@@ -79,6 +81,8 @@ export default function CursoPreviewAlunoPage() {
     }
   }, [])
 
+  const { user } = useAuth()
+
   const activeProducerUserId = useActiveProducerUserId()
 
   const isBlockedRead = (e) => {
@@ -116,10 +120,16 @@ export default function CursoPreviewAlunoPage() {
   const [videoOpen, setVideoOpen] = useState(false);
   const [signedCover, setSignedCover] = useState(null);
   const [signedPromo, setSignedPromo] = useState(null);
+  const [studentName, setStudentName] = useState('Aluno')
   const [checkoutLoading, setCheckoutLoading] = useState(false)
   const [checkoutError, setCheckoutError] = useState('')
   const [verifyLoading, setVerifyLoading] = useState(false)
   const [ownershipTick, setOwnershipTick] = useState(0)
+  const [moduleCheckoutLoading, setModuleCheckoutLoading] = useState(false)
+  const [moduleCheckoutError, setModuleCheckoutError] = useState('')
+  const [moduleVerifyLoading, setModuleVerifyLoading] = useState(false)
+  const [moduleBuyOpen, setModuleBuyOpen] = useState(false)
+  const [selectedModule, setSelectedModule] = useState(null)
 
   const modulesScrollRef = useRef(null);
 
@@ -207,9 +217,12 @@ export default function CursoPreviewAlunoPage() {
 
   useEffect(() => {
     const onKeyDown = (e) => {
-      if (e.key === 'Escape') setVideoOpen(false);
+      if (e.key === 'Escape') {
+        setVideoOpen(false);
+        setModuleBuyOpen(false);
+      }
     };
-    if (videoOpen) {
+    if (videoOpen || moduleBuyOpen) {
       document.addEventListener('keydown', onKeyDown);
       const prevOverflow = document?.body?.style?.overflow;
       if (document?.body?.style) document.body.style.overflow = 'hidden';
@@ -218,7 +231,12 @@ export default function CursoPreviewAlunoPage() {
         if (document?.body?.style) document.body.style.overflow = prevOverflow || '';
       };
     }
-  }, [videoOpen]);
+  }, [videoOpen, moduleBuyOpen]);
+
+  useEffect(() => {
+    const name = user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email || 'Aluno'
+    setStudentName(String(name))
+  }, [user])
 
   const heroBg = signedCover || coverUrl || moduleLayoutUrl || (showDemo ? '/Preview.png' : null);
   const heroTitle = courseRow?.title || meta?.title || meta?.course_title || 'Nome do curso';
@@ -234,6 +252,11 @@ export default function CursoPreviewAlunoPage() {
   }
   const safeLsRemove = (key) => {
     try { localStorage.removeItem(String(key || '')) } catch (_) {}
+  }
+  const formatCentsBRL = (cents) => {
+    const n = Number(cents || 0)
+    const v = Number.isFinite(n) ? n / 100 : 0
+    try { return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v) } catch (_) { return `R$ ${v.toFixed(2)}` }
   }
 
   const coursePrice = useMemo(() => {
@@ -346,6 +369,141 @@ export default function CursoPreviewAlunoPage() {
     return () => { active = false }
   }, [isAlunoView, isDemoAluno, courseId, isPaidCourse, isOwnedCourse])
 
+  useEffect(() => {
+    const onStorage = (e) => {
+      const k = String(e?.key || '')
+      if (!k) return
+      if (k.startsWith('connekt_course_owned:') || k.startsWith('connekt_module_owned:')) {
+        setOwnershipTick((v) => v + 1)
+      }
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [])
+
+  const findModuleById = (mid) => {
+    const id = String(mid || '').trim()
+    if (!id) return null
+    return (Array.isArray(modules) ? modules : []).find((m) => String(m?.id || m?.module_id || m?.moduleId || '').trim() === id) || null
+  }
+  const moduleOwnedKey = (mid) => {
+    const id = String(mid || '').trim()
+    return courseId && id ? `connekt_module_owned:${String(courseId)}:${id}` : ''
+  }
+  const isPaidModule = (mid) => {
+    const m = findModuleById(mid)
+    if (!m) return false
+    const vis = String(m?.visibility || '').trim()
+    const cents = Number(m?.priceCents || 0)
+    return vis === 'Paga' || (Number.isFinite(cents) && cents > 0)
+  }
+  const modulePriceCents = (mid) => {
+    const m = findModuleById(mid)
+    const cents = Number(m?.priceCents || 0)
+    return Number.isFinite(cents) ? cents : 0
+  }
+  const isOwnedModule = (mid) => {
+    if (!courseId) return false
+    if (isOwnedCourse) return true
+    if (!isPaidModule(mid)) return true
+    const k = moduleOwnedKey(mid)
+    return k ? safeLsGet(k) === '1' : false
+  }
+
+  const startModuleCheckout = async (mid) => {
+    const id = String(mid || '').trim()
+    if (!courseId || !id) return
+    setModuleCheckoutError('')
+    setModuleCheckoutLoading(true)
+    try {
+      const token = await getAccessToken()
+      if (!token) {
+        setModuleCheckoutError('Faça login para comprar.')
+        return
+      }
+      const r = await fetch('/api/simulado-checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ type: 'module', courseId: String(courseId), moduleId: id }),
+      })
+      const body = await r.json().catch(() => ({}))
+      if (!r.ok) {
+        const msg = String(body?.message || body?.error || '').trim()
+        setModuleCheckoutError(msg || 'Não foi possível abrir o checkout.')
+        return
+      }
+      const checkoutUrl = String(body?.checkout_url || '').trim()
+      const linkId = String(body?.link_id || '').trim()
+      if (linkId) safeLsSet(`connekt_module_pending_link:${String(courseId)}:${id}`, linkId)
+      if (!checkoutUrl) {
+        setModuleCheckoutError('Checkout indisponível.')
+        return
+      }
+      const w = window.open(checkoutUrl, '_blank', 'noopener')
+      if (!w) setModuleCheckoutError('Seu navegador bloqueou a abertura do checkout. Permita pop-ups e tente novamente.')
+    } catch (_) {
+      setModuleCheckoutError('Erro ao abrir checkout.')
+    } finally {
+      setModuleCheckoutLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    let active = true
+    const run = async () => {
+      if (!isAlunoView) return
+      if (isDemoAluno) return
+      if (!courseId) return
+      const params = new URLSearchParams(window.location.search || '')
+      const mid = String(params.get('moduleId') || '').trim()
+      if (!mid) return
+      if (!isPaidModule(mid)) return
+      if (isOwnedModule(mid)) return
+      const linkId = String(params.get('linkId') || params.get('paymentLinkId') || safeLsGet(`connekt_module_pending_link:${String(courseId)}:${mid}`) || '').trim()
+      if (!linkId) return
+      setModuleVerifyLoading(true)
+      try {
+        const token = await getAccessToken()
+        if (!token) return
+        const r = await fetch(`/api/simulado-checkout-verify?type=module&courseId=${encodeURIComponent(String(courseId))}&moduleId=${encodeURIComponent(mid)}&linkId=${encodeURIComponent(linkId)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        const body = await r.json().catch(() => ({}))
+        if (!active) return
+        if (!r.ok) return
+        if (body?.paid) {
+          const k = moduleOwnedKey(mid)
+          if (k) safeLsSet(k, '1')
+          safeLsRemove(`connekt_module_pending_link:${String(courseId)}:${mid}`)
+          setOwnershipTick((v) => v + 1)
+          setModuleCheckoutError('')
+          setModuleBuyOpen(false)
+          setSelectedModule(null)
+        }
+      } catch (_) {
+      } finally {
+        if (active) setModuleVerifyLoading(false)
+      }
+    }
+    run()
+    return () => { active = false }
+  }, [isAlunoView, isDemoAluno, courseId, modules, isOwnedCourse, ownershipTick])
+
+  useEffect(() => {
+    if (!isAlunoView) return
+    if (isDemoAluno) return
+    if (!courseId) return
+    const params = new URLSearchParams(window.location.search || '')
+    const mid = String(params.get('moduleId') || '').trim()
+    if (!mid) return
+    if (!isPaidModule(mid)) return
+    if (isOwnedModule(mid)) return
+    const m = findModuleById(mid)
+    if (!m) return
+    setSelectedModule(m)
+    setModuleBuyOpen(true)
+  }, [isAlunoView, isDemoAluno, courseId, modules, ownershipTick])
+
   const primaryCtaLabel = (() => {
     if (loading) return 'Carregando...'
     if (checkoutLoading) return 'Abrindo checkout...'
@@ -434,7 +592,7 @@ export default function CursoPreviewAlunoPage() {
                     <div className="mt-5">
                       <Button
                         className="h-9 px-5 rounded-[6px] text-[12px] font-medium"
-                        style={{ backgroundColor: theme.buttonPrimary, color: '#FFFFFF' }}
+                        style={{ backgroundColor: (isAlunoView && isPaidCourse && !isOwnedCourse) ? '#0047BB' : theme.buttonPrimary, color: '#FFFFFF' }}
                         disabled={primaryCtaDisabled}
                         onClick={() => {
                           if (!isAlunoView) return
@@ -563,23 +721,34 @@ export default function CursoPreviewAlunoPage() {
                 const bg = moduleCardBg(m, idx);
                 const name = m?.name || m?.title || `Módulo ${idx + 1}`;
                 const moduleId = m?.id || m?.module_id || m?.moduleId || null
-                const locked = isAlunoView && !isDemoAluno && isPaidCourse && !isOwnedCourse
+                const lockedCourse = isAlunoView && !isDemoAluno && isPaidCourse && !isOwnedCourse
+                const paidModule = isAlunoView && !isDemoAluno && moduleId && isPaidModule(moduleId)
+                const ownedModule = isAlunoView && !isDemoAluno && moduleId && isOwnedModule(moduleId)
+                const lockedModule = isAlunoView && !isDemoAluno && moduleId && paidModule && !ownedModule
+                const lockedFreeModuleByCourse = lockedCourse && !ownedModule && !paidModule
+                const priceText = (paidModule && moduleId) ? formatCentsBRL(modulePriceCents(moduleId)) : ''
                 return (
                   <button
                     key={m?.id || idx}
-                    className={`shrink-0 w-[180px] h-[326px] rounded-xl overflow-hidden border border-[#E3E4E5] bg-white shadow-sm ${locked ? 'opacity-70 grayscale cursor-not-allowed' : ''}`}
+                    className={`shrink-0 w-[180px] h-[326px] rounded-xl overflow-hidden border border-[#E3E4E5] bg-white shadow-sm ${lockedFreeModuleByCourse ? 'opacity-70 grayscale cursor-not-allowed' : ''}`}
                     type="button"
                     onClick={() => {
                       if (!isAlunoView) return
                       if (!courseId) return
-                      if (locked) return
+                      if (lockedFreeModuleByCourse) return
+                      if (lockedModule) {
+                        setSelectedModule(m)
+                        setModuleCheckoutError('')
+                        setModuleBuyOpen(true)
+                        return
+                      }
                       const qs = new URLSearchParams()
                       qs.set('courseId', String(courseId))
                       if (moduleId) qs.set('moduleId', String(moduleId))
                       if (isDemoAluno) qs.set('demo', '1')
                       navigateTo(`/aluno/aula?${qs.toString()}`)
                     }}
-                    disabled={!isAlunoView || !courseId || locked}
+                    disabled={!isAlunoView || !courseId}
                   >
                     <div
                       className="w-full h-full flex flex-col justify-end"
@@ -591,7 +760,36 @@ export default function CursoPreviewAlunoPage() {
                       }}
                     >
                       <div className="bg-gradient-to-t from-black/70 to-black/0 h-full">
-                        <div className="h-full px-3 pb-5 flex flex-col items-center justify-end text-center">
+                        <div className="h-full px-3 pb-5 flex flex-col items-center justify-end text-center relative">
+                          {paidModule ? (
+                            <div className="absolute top-3 left-3 flex flex-col items-start gap-1">
+                              <span className="inline-flex items-center justify-center h-[18px] px-3 text-[10px] rounded-[54px] leading-none font-medium bg-[#FEF3C7] text-[#92400E]">
+                                Pago
+                              </span>
+                              {priceText ? (
+                                <span className="inline-flex items-center justify-center h-[18px] px-3 text-[10px] rounded-[54px] leading-none font-medium bg-[#FEF3C7] text-[#92400E]">
+                                  {priceText}
+                                </span>
+                              ) : null}
+                            </div>
+                          ) : (
+                            <div className="absolute top-3 left-3">
+                              <span className="inline-flex items-center justify-center h-[18px] px-3 text-[10px] rounded-[54px] leading-none font-medium bg-[#EEF2FF] text-[#0047BB]">
+                                Gratuito
+                              </span>
+                            </div>
+                          )}
+                          {ownedModule && paidModule ? (
+                            <div className="absolute top-3 right-3">
+                              <span className="inline-flex items-center justify-center h-[18px] px-3 text-[10px] rounded-[54px] leading-none font-medium bg-[#E9FFEF] text-[#06C270]">
+                                Adquirido
+                              </span>
+                            </div>
+                          ) : lockedModule ? (
+                            <div className="absolute top-3 right-3 h-8 w-8 rounded-full bg-white/90 flex items-center justify-center">
+                              <Lock className="h-4 w-4 text-[#1E1B39]" />
+                            </div>
+                          ) : null}
                           <svg xmlns="http://www.w3.org/2000/svg" width="119" height="36" viewBox="0 0 119 36" fill="none" className="w-[110px] h-auto">
                             <g clipPath="url(#clip0_914_61509)">
                               <path d="M88.3434 35.5774H85.6503C84.9025 35.5774 84.2022 35.2854 83.6748 34.7536C83.1431 34.2176 82.8535 33.5115 82.8535 32.7575V2.41459C82.8535 2.36665 82.8535 2.31871 82.8535 2.27077C82.9097 1.1681 83.6705 0.278997 84.7469 0.0523619C85.8405 -0.174273 86.9039 0.348731 87.3924 1.35115L91.1358 9.01752V18.0045L90.7079 18.4272C90.1935 18.9371 89.9125 19.6171 89.9125 20.3449C89.9125 21.0727 90.1978 21.757 90.7079 22.2669L91.1358 22.6897V32.7575C91.1358 33.5115 90.8462 34.2219 90.3145 34.7536C89.7871 35.2854 89.0825 35.5774 88.339 35.5774H88.3434ZM85.7065 32.6965H88.2785V23.8447C87.4875 22.8553 87.0552 21.635 87.0552 20.3449C87.0552 19.0548 87.4875 17.8345 88.2785 16.8451V9.6887L85.7065 4.4238V32.7009V32.6965Z" fill="#DADADA" />
@@ -626,6 +824,20 @@ export default function CursoPreviewAlunoPage() {
           </div>
         </div>
       </div>
+
+      {isAlunoView ? (
+        <div className="mx-auto w-full max-w-[1200px] px-6 pb-10">
+          <AlunoInboxThread
+            user={user}
+            studentName={studentName}
+            threadKey={`course:${String(courseId || '')}`}
+            title="Inbox"
+            itemLabel="Mensagens"
+            placeholder="Digite aqui sua mensagem"
+            courseId={courseId}
+          />
+        </div>
+      ) : null}
 
       <CourseFooter className="mt-auto" />
 
@@ -678,6 +890,56 @@ export default function CursoPreviewAlunoPage() {
                   Vídeo não disponível
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {moduleBuyOpen ? (
+        <div className="fixed inset-0 z-[9999] bg-black/70 flex items-center justify-center p-4">
+          <div className="relative w-full max-w-[520px] bg-white rounded-xl overflow-hidden border border-[#E3E4E5]">
+            <button
+              type="button"
+              onClick={() => { setModuleBuyOpen(false); setSelectedModule(null); setModuleCheckoutError('') }}
+              className="absolute top-3 right-3 z-10 h-9 w-9 rounded-full bg-[#F3F4F6] flex items-center justify-center"
+              aria-label="Fechar"
+            >
+              <X className="h-5 w-5 text-[#1E1B39]" />
+            </button>
+            <div className="p-5">
+              <div className="text-[14px] font-semibold text-[#1E1B39]">Módulo pago</div>
+              <div className="mt-1 text-[12px] text-[#737780]">
+                {(selectedModule?.name || selectedModule?.title) ? `Você precisa comprar este módulo para acessar: ${String(selectedModule?.name || selectedModule?.title)}` : 'Você precisa comprar este módulo para acessar.'}
+              </div>
+              <div className="mt-4 flex items-center justify-between rounded-[10px] border border-[#E3E4E5] bg-[#FBFCFF] px-4 py-3">
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex items-center justify-center h-[18px] px-3 text-[10px] rounded-[54px] leading-none font-medium bg-[#FEF3C7] text-[#92400E]">Pago</span>
+                  <span className="text-[12px] font-semibold text-[#1E1B39]">
+                    {formatCentsBRL(modulePriceCents(String(selectedModule?.id || selectedModule?.module_id || selectedModule?.moduleId || '')))}
+                  </span>
+                </div>
+              </div>
+              {moduleCheckoutError ? (
+                <div className="mt-3 text-[12px] text-[#B91C1C]">{moduleCheckoutError}</div>
+              ) : null}
+              <div className="mt-4 flex items-center justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-9"
+                  onClick={() => { setModuleBuyOpen(false); setSelectedModule(null); setModuleCheckoutError('') }}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  type="button"
+                  className="h-9 bg-[#0047BB] hover:bg-[#003a99] text-white"
+                  disabled={moduleCheckoutLoading || moduleVerifyLoading}
+                  onClick={() => startModuleCheckout(String(selectedModule?.id || selectedModule?.module_id || selectedModule?.moduleId || ''))}
+                >
+                  {moduleVerifyLoading ? 'Verificando pagamento...' : (moduleCheckoutLoading ? 'Abrindo checkout...' : 'Comprar módulo')}
+                </Button>
+              </div>
             </div>
           </div>
         </div>

@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { getSupabaseAdmin, isUuid } from '../../src/server/supabaseAdmin.js'
 
 function readEnv(name, fallback = '') {
   const v = process.env[name]
@@ -49,6 +50,12 @@ function escapeHtml(value) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;')
+}
+
+function normalizeHost(raw) {
+  const v = String(raw || '').trim().toLowerCase()
+  if (!v) return ''
+  return v.split(':')[0]
 }
 
 function supabaseBaseUrl() {
@@ -266,6 +273,8 @@ async function handleSignup(req, res) {
   const email = String(payload.email || '').trim().toLowerCase()
   const password = String(payload.password || '')
   const userMetadata = payload.user_metadata && typeof payload.user_metadata === 'object' ? payload.user_metadata : null
+  const producerUidHint = String(payload.producer_uid || payload.producerUid || '').trim()
+  const wlHostHint = normalizeHost(payload.wl_host || payload.wlHost || '')
   if (!isValidEmail(email)) return json(res, 400, { error: 'invalid_email' })
   const pwdErr = validatePassword(password)
   if (pwdErr) return json(res, 400, { error: 'invalid_password', message: pwdErr })
@@ -292,6 +301,60 @@ async function handleSignup(req, res) {
     html,
   })
   if (!sent.ok) return json(res, 500, { error: sent.error, details: sent.details || null })
+
+  const requestHost = normalizeHost(req?.headers?.host || req?.headers?.Host || '')
+  const hostForWl = wlHostHint || requestHost
+  const shouldTryWhitelabel = hostForWl && hostForWl !== 'app.connektco.com'
+  if (shouldTryWhitelabel) {
+    try {
+      const admin = getSupabaseAdmin()
+      if (admin) {
+        const resolveProducerId = async () => {
+          if (producerUidHint && isUuid(producerUidHint)) return producerUidHint
+          const host = normalizeHost(hostForWl)
+          if (!host) return ''
+          const urls = [`https://${host}`, `https://${host}/`, `http://${host}`, `http://${host}/`]
+          const { data } = await admin.from('profiles').select('id, member_area_url').in('member_area_url', urls).limit(1)
+          return data?.[0]?.id ? String(data[0].id) : ''
+        }
+        const producerId = await resolveProducerId()
+        if (producerId && isUuid(producerId)) {
+          const { data } = await admin.auth.admin.getUserById(producerId)
+          const wl = data?.user?.user_metadata?.whitelabel || null
+          const wlSubject = String(wl?.welcomeEmailSubject || wl?.welcome_email_subject || wl?.welcomeSubject || '').trim()
+          const wlMessage = String(wl?.welcomeEmailMessage || wl?.welcome_email_message || wl?.welcomeMessage || '').trim()
+          if (wlSubject && wlMessage) {
+            const displayName =
+              String(userMetadata?.full_name || userMetadata?.name || userMetadata?.first_name || '').trim() ||
+              String(email.split('@')[0] || '').trim()
+            const replaced = wlMessage
+              .replaceAll('{nome}', displayName)
+              .replaceAll('{name}', displayName)
+            const safeMsgHtml = escapeHtml(replaced).replace(/\n/g, '<br/>')
+            const brandName = String(wl?.name || wl?.brandName || fromName || 'Connekt').trim() || 'Connekt'
+            const wlLoginUrl = `https://${normalizeHost(hostForWl)}/login-aluno-wl`
+            const wlHtml = `<!doctype html><html><body style="margin:0;font-family:Arial,sans-serif;background:#f6f7fb;padding:24px;">
+<div style="max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;">
+<div style="padding:18px 20px;background:#0f172a;color:#ffffff;font-size:18px;font-weight:700;">${escapeHtml(brandName)}</div>
+<div style="padding:20px;color:#111827;font-size:14px;line-height:1.6;">${safeMsgHtml}</div>
+<div style="padding:0 20px 20px 20px;">
+<a href="${escapeHtml(wlLoginUrl)}" style="display:inline-block;background:#2563eb;color:#ffffff;text-decoration:none;padding:10px 14px;border-radius:8px;font-size:14px;font-weight:600;">Acessar plataforma</a>
+</div>
+</div></body></html>`
+            await sendSendgridEmail({
+              to: email,
+              fromEmail,
+              fromName: brandName,
+              replyTo: replyTo && isValidEmail(replyTo) ? replyTo : '',
+              subject: wlSubject,
+              html: wlHtml,
+            })
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
   return json(res, 200, { ok: true })
 }
 
@@ -361,4 +424,3 @@ export default async function handler(req, res) {
     return json(res, 500, { error: 'internal_error', message: e?.message || String(e) })
   }
 }
-

@@ -4,6 +4,7 @@ import { Plus } from 'lucide-react';
 import questionBankService from '@/services/questionBankService';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
+import { TaxonomyDropdown } from '@/components/TaxonomyDropdown';
 
 const QuestoesPage = () => {
   const { toast } = useToast();
@@ -86,6 +87,7 @@ const QuestoesPage = () => {
   const [selectedCategories, setSelectedCategories] = useState([]); // array de objetos { id, name, color, description }
   const [selectedSubcategories, setSelectedSubcategories] = useState([]); // array de objetos { id, name, color, description }
   const [selectedTags, setSelectedTags] = useState([]); // array de objetos { id, name, color, description }
+  const [taxonomyPickerOpen, setTaxonomyPickerOpen] = useState(null);
   // Editor rico por escolha (mapeia índice da escolha -> aberto/fechado)
   const [choiceRichEditorOpen, setChoiceRichEditorOpen] = useState({});
   const [choiceMediaUploading, setChoiceMediaUploading] = useState({});
@@ -104,6 +106,35 @@ const QuestoesPage = () => {
       next[selectedQuestionIndex] = { ...current, ...partial };
       return next;
     });
+  };
+
+  const getQuestionTaxonomy = (question) => {
+    const meta = question?.metadata && typeof question.metadata === 'object' ? question.metadata : {};
+    const t = (meta.taxonomy && typeof meta.taxonomy === 'object') ? meta.taxonomy : {};
+    const toArr = (v) => Array.isArray(v) ? v.map((x) => String(x)) : [];
+    return {
+      categoryIds: toArr(t.categoryIds || t.categories || t.category_ids),
+      subcategoryIds: toArr(t.subcategoryIds || t.subcategories || t.subcategory_ids),
+      tagIds: toArr(t.tagIds || t.tags || t.tag_ids),
+    };
+  };
+
+  const updateSelectedQuestionTaxonomy = (partialTaxonomy) => {
+    const q = getSelectedQuestion();
+    if (!q) return;
+    const meta = q?.metadata && typeof q.metadata === 'object' ? { ...q.metadata } : {};
+    const tax = (meta.taxonomy && typeof meta.taxonomy === 'object') ? { ...meta.taxonomy } : {};
+    Object.assign(tax, partialTaxonomy || {});
+    meta.taxonomy = tax;
+    updateSelectedQuestion({ metadata: meta });
+  };
+
+  const validateQuestionHasTaxonomy = (question) => {
+    const t = getQuestionTaxonomy(question);
+    if (!t.categoryIds?.length) return 'Selecione ao menos 1 categoria.';
+    if (!t.subcategoryIds?.length) return 'Selecione ao menos 1 subcategoria.';
+    if (!t.tagIds?.length) return 'Selecione ao menos 1 tag.';
+    return '';
   };
 
   const sanitizeMetadataForPersistence = (meta) => {
@@ -516,16 +547,24 @@ const QuestoesPage = () => {
           }
           // Pré-popular seleções com dados do banco (converter string única em arrays)
           setSelectedCategories(() => {
-            const name = data.category || '';
-            if (!name) return [];
-            const found = (categories || []).find(c => c.name === name);
-            return [found || { id: `tmp-cat-${name}`, name, color: '#8B5CF6', description: '' }];
+            const raw = String(data.category || '').trim();
+            if (!raw) return [];
+            const names = raw.split(',').map(s => s.trim()).filter(Boolean);
+            const unique = Array.from(new Set(names));
+            return unique.map((name) => {
+              const found = (categories || []).find(c => c.name === name);
+              return found || { id: `tmp-cat-${name}`, name, color: '#8B5CF6', description: '' };
+            });
           });
           setSelectedSubcategories(() => {
-            const name = data.subcategory || '';
-            if (!name) return [];
-            const found = (subcategories || []).find(s => s.name === name);
-            return [found || { id: `tmp-sub-${name}`, name, color: '#22C55E', description: '' }];
+            const raw = String(data.subcategory || '').trim();
+            if (!raw) return [];
+            const names = raw.split(',').map(s => s.trim()).filter(Boolean);
+            const unique = Array.from(new Set(names));
+            return unique.map((name) => {
+              const found = (subcategories || []).find(s => s.name === name);
+              return found || { id: `tmp-sub-${name}`, name, color: '#22C55E', description: '' };
+            });
           });
           // Normalizar tags vindas do backend: podem ser strings
           // Mapeamos para objetos usando availableTags, com fallback seguro
@@ -989,6 +1028,10 @@ const QuestoesPage = () => {
       toast({ description: 'Selecione um banco de questões antes de criar.', variant: 'destructive' });
       return;
     }
+    if (selectedCategories.length === 0 || selectedSubcategories.length === 0 || selectedTags.length === 0) {
+      toast({ description: 'Defina Categoria, Subcategoria e Tags do banco antes de criar uma questão.', variant: 'destructive' });
+      return;
+    }
     const baseQuestion = {
       name: `Questão ${questions.length + 1}`,
       type: 'multiple_choice',
@@ -999,6 +1042,13 @@ const QuestoesPage = () => {
       correctChoiceIndex: null,
       points: 5,
       attempts: 3,
+      metadata: {
+        taxonomy: {
+          categoryIds: [String(selectedCategories[0].id)],
+          subcategoryIds: [String(selectedSubcategories[0].id)],
+          tagIds: selectedTags.map((t) => String(t.id)),
+        },
+      },
     };
     try {
       const { data, error } = await questionBankService.createQuestion(currentBankId, baseQuestion);
@@ -1042,6 +1092,17 @@ const QuestoesPage = () => {
   const handleSalvarTodasQuestoes = async () => {
     if (!Array.isArray(questions) || questions.length === 0) {
       return { total: 0, sucesso: 0, falha: 0 };
+    }
+    const missing = [];
+    for (let i = 0; i < questions.length; i++) {
+      const err = validateQuestionHasTaxonomy(questions[i]);
+      if (err) missing.push(i);
+    }
+    if (missing.length > 0) {
+      const nums = missing.slice(0, 8).map((i) => i + 1).join(', ')
+      const more = missing.length > 8 ? ` (+${missing.length - 8})` : ''
+      toast({ description: `Existem questões sem Categoria/Subcategoria/Tags: ${nums}${more}.`, variant: 'destructive' });
+      return { total: questions.length, sucesso: 0, falha: missing.length, missingClassification: missing };
     }
     let sucesso = 0;
     let falha = 0;
@@ -1103,6 +1164,11 @@ const QuestoesPage = () => {
     const current = getSelectedQuestion();
     if (!current) {
       toast({ description: 'Nenhuma questão selecionada para salvar.', variant: 'destructive' });
+      return;
+    }
+    const taxonomyErr = validateQuestionHasTaxonomy(current);
+    if (taxonomyErr) {
+      toast({ description: `Classificação da questão obrigatória. ${taxonomyErr}`, variant: 'destructive' });
       return;
     }
     try {
@@ -1472,7 +1538,6 @@ const QuestoesPage = () => {
     alert('Em breve: criação assistida por A.I.');
   };
 
-  // Estado "Obrigatório" passa a ser por questão (armazenado em questions)
   // Menu de categorias no sidebar direito
   const [isCategoriesOpen, setIsCategoriesOpen] = useState(false);
   // Dropdown de categorias dentro do sidebar
@@ -1899,12 +1964,17 @@ const QuestoesPage = () => {
         const offlineMsg = questionBankService.isSupabaseAvailable ? '' : ' (modo offline/memória)';
         toast({ description: `Questões salvas: ${resumoQuestoes.sucesso}/${resumoQuestoes.total}${offlineMsg}` });
       }
+      if (Array.isArray(resumoQuestoes?.missingClassification) && resumoQuestoes.missingClassification.length > 0) {
+        return;
+      }
       // Coletar dados atuais do banco e validar obrigatórios
       const shouldActivate = bancoAtual?.status === 'draft';
       // Não aplicar fallback de nome ao salvar: respeitar o valor definido no input
       const effectiveName = (bancoAtual?.name ?? '').trim();
-      const effectiveCategory = (selectedCategories[0]?.name || bancoAtual?.category || '').trim();
-      const effectiveSubcategory = (selectedSubcategories[0]?.name || bancoAtual?.subcategory || '').trim();
+      const joinedCategories = selectedCategories.map(c => (c?.name || '').trim()).filter(Boolean).join(', ');
+      const joinedSubcategories = selectedSubcategories.map(s => (s?.name || '').trim()).filter(Boolean).join(', ');
+      const effectiveCategory = (joinedCategories || bancoAtual?.category || '').trim();
+      const effectiveSubcategory = (joinedSubcategories || bancoAtual?.subcategory || '').trim();
       const effectiveDescription = (bancoAtual?.description || '').trim();
       // Montar dados; se for update e o nome estiver vazio, não enviar 'name' para não sobrescrever
       const baseData = {
@@ -2277,28 +2347,6 @@ const QuestoesPage = () => {
                     <span className="text-[12px] font-medium font-inter" style={{ color: '#22252B' }}>Questão de múltipla escolha</span>
                   </div>
                   <div className="flex items-center gap-3">
-                    <span className="text-[12px] font-inter" style={{ color: '#737780' }}>Obrigatório</span>
-                    {/* Toggle real com cor ativa #0047BB */}
-                    <div
-                      className="w-9 h-5 rounded-full relative cursor-pointer"
-                      style={{ backgroundColor: (selectedQuestionIndex !== null && questions[selectedQuestionIndex]?.required) ? '#0047BB' : '#E5E7EB' }}
-                      onClick={() => {
-                        if (selectedQuestionIndex !== null) {
-                          const currentRequired = questions[selectedQuestionIndex]?.required || false;
-                          updateSelectedQuestion({ required: !currentRequired });
-                        }
-                      }}
-                      role="switch"
-                      aria-checked={selectedQuestionIndex !== null && !!questions[selectedQuestionIndex]?.required}
-                    >
-                      <span
-                        className="absolute top-0 w-5 h-5 rounded-full bg-white border shadow"
-                        style={{
-                          left: (selectedQuestionIndex !== null && questions[selectedQuestionIndex]?.required) ? 'calc(100% - 20px)' : 0,
-                          borderColor: (selectedQuestionIndex !== null && questions[selectedQuestionIndex]?.required) ? '#0047BB' : '#D1D5DB'
-                        }}
-                      />
-                    </div>
                     <button
                       type="button"
                       className="w-6 h-6 rounded grid place-items-center hover:bg-gray-100"
@@ -2967,15 +3015,6 @@ const QuestoesPage = () => {
                           </div>
 
                           <div className="mt-3 flex flex-wrap items-center gap-2">
-                            <button
-                              type="button"
-                              className={`px-3 py-2 rounded-md text-[12px] border hover:bg-gray-100 ${hasText ? 'bg-white border-[#0047BB] text-[#0047BB]' : 'bg-[#F6F5FA] border-gray-200 text-[#22252B]'}`}
-                              onClick={() => { setChoiceRichEditorOpen((prev) => ({ ...prev, [idx]: !prev[idx] })); }}
-                              title={hasText ? 'Editar texto adicional' : 'Adicionar texto adicional'}
-                            >
-                              Texto
-                            </button>
-
                             <input
                               type="file"
                               accept="image/*"
@@ -4260,6 +4299,192 @@ const QuestoesPage = () => {
                     ))}
                   </div>
                 </div>
+
+                {getSelectedQuestion() && (() => {
+                  const q = getSelectedQuestion()
+                  const t = getQuestionTaxonomy(q)
+                  const selectedCats = t.categoryIds.map((id) => categories.find((c) => String(c.id) === id) || { id, name: id, color: '#AD89F7' })
+                  const selectedSubs = t.subcategoryIds.map((id) => subcategories.find((s) => String(s.id) === id) || { id, name: id, color: '#22C55E' })
+                  const selectedTg = t.tagIds.map((id) => availableTags.find((tg) => String(tg.id) === id) || { id, name: id, color: '#FFC107' })
+                  return (
+                    <div className="pt-4 border-t border-gray-200">
+                      <h3 className="text-sm font-semibold mb-3" style={{ color: '#22252B', fontFamily: 'Inter' }}>Classificação da questão</h3>
+
+                      <div className="grid grid-cols-1 gap-4">
+                        <div className={`rounded-[12px] border p-4 bg-white ${t.categoryIds.length ? 'border-[#E3E4E5]' : 'border-red-300'}`}>
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="text-[13px] font-semibold" style={{ color: '#22252B', fontFamily: 'Inter' }}>Categorias</div>
+                            <div className="flex items-center gap-2">
+                              <div className="h-6 px-2 rounded-full text-[11px] font-medium flex items-center justify-center" style={{ backgroundColor: '#F6F5FA', color: '#737780', fontFamily: 'Inter' }}>
+                                {t.categoryIds.length}
+                              </div>
+                              <div className="relative">
+                                <button
+                                  type="button"
+                                  className="h-8 px-3 rounded-[8px] text-[12px] font-semibold border border-[#E3E4E5] hover:bg-[#F9FAFB]"
+                                  onClick={() => setTaxonomyPickerOpen((prev) => (prev === 'categories' ? null : 'categories'))}
+                                >
+                                  Selecionar
+                                </button>
+                                <TaxonomyDropdown
+                                  open={taxonomyPickerOpen === 'categories'}
+                                  onOpenChange={(open) => setTaxonomyPickerOpen(open ? 'categories' : null)}
+                                  items={categories}
+                                  onSelect={(item) => {
+                                    const id = String(item?.id || '').trim()
+                                    if (!id) return
+                                    updateSelectedQuestionTaxonomy({ categoryIds: t.categoryIds.includes(id) ? t.categoryIds : [...t.categoryIds, id] })
+                                    setTaxonomyPickerOpen(null)
+                                  }}
+                                  isSelected={(item) => t.categoryIds.includes(String(item?.id))}
+                                  searchPlaceholder="Buscar categoria"
+                                  createLabel="Criar"
+                                  defaultColor="#AD89F7"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                          {selectedCats.length === 0 ? (
+                            <div className="mt-3 text-[12px]" style={{ color: t.categoryIds.length ? '#9291A5' : '#B91C1C', fontFamily: 'Inter' }}>
+                              {t.categoryIds.length ? 'Nenhuma selecionada' : 'Selecione ao menos 1'}
+                            </div>
+                          ) : (
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {selectedCats.map((cat) => (
+                                <button
+                                  key={cat.id}
+                                  type="button"
+                                  onClick={() => updateSelectedQuestionTaxonomy({ categoryIds: t.categoryIds.filter((x) => String(x) !== String(cat.id)) })}
+                                  className="inline-flex items-center gap-2 px-2.5 py-1 rounded-[999px] text-[12px] font-medium hover:bg-black/5"
+                                  style={{ backgroundColor: toRgba(cat.color || '#AD89F7', 0.1), color: cat.color || '#AD89F7', fontFamily: 'Inter' }}
+                                  title="Remover"
+                                >
+                                  <span className="w-2 h-2 rounded-full" style={{ backgroundColor: cat.color || '#AD89F7' }} />
+                                  <span className="max-w-[160px] truncate">{cat.name}</span>
+                                  <span className="text-[12px] leading-none">×</span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className={`rounded-[12px] border p-4 bg-white ${t.subcategoryIds.length ? 'border-[#E3E4E5]' : 'border-red-300'}`}>
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="text-[13px] font-semibold" style={{ color: '#22252B', fontFamily: 'Inter' }}>Subcategorias</div>
+                            <div className="flex items-center gap-2">
+                              <div className="h-6 px-2 rounded-full text-[11px] font-medium flex items-center justify-center" style={{ backgroundColor: '#F6F5FA', color: '#737780', fontFamily: 'Inter' }}>
+                                {t.subcategoryIds.length}
+                              </div>
+                              <div className="relative">
+                                <button
+                                  type="button"
+                                  className="h-8 px-3 rounded-[8px] text-[12px] font-semibold border border-[#E3E4E5] hover:bg-[#F9FAFB]"
+                                  onClick={() => setTaxonomyPickerOpen((prev) => (prev === 'subcategories' ? null : 'subcategories'))}
+                                >
+                                  Selecionar
+                                </button>
+                                <TaxonomyDropdown
+                                  open={taxonomyPickerOpen === 'subcategories'}
+                                  onOpenChange={(open) => setTaxonomyPickerOpen(open ? 'subcategories' : null)}
+                                  items={subcategories}
+                                  onSelect={(item) => {
+                                    const id = String(item?.id || '').trim()
+                                    if (!id) return
+                                    updateSelectedQuestionTaxonomy({ subcategoryIds: t.subcategoryIds.includes(id) ? t.subcategoryIds : [...t.subcategoryIds, id] })
+                                    setTaxonomyPickerOpen(null)
+                                  }}
+                                  isSelected={(item) => t.subcategoryIds.includes(String(item?.id))}
+                                  searchPlaceholder="Buscar subcategoria"
+                                  createLabel="Criar"
+                                  defaultColor="#22C55E"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                          {selectedSubs.length === 0 ? (
+                            <div className="mt-3 text-[12px]" style={{ color: t.subcategoryIds.length ? '#9291A5' : '#B91C1C', fontFamily: 'Inter' }}>
+                              {t.subcategoryIds.length ? 'Nenhuma selecionada' : 'Selecione ao menos 1'}
+                            </div>
+                          ) : (
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {selectedSubs.map((sc) => (
+                                <button
+                                  key={sc.id}
+                                  type="button"
+                                  onClick={() => updateSelectedQuestionTaxonomy({ subcategoryIds: t.subcategoryIds.filter((x) => String(x) !== String(sc.id)) })}
+                                  className="inline-flex items-center gap-2 px-2.5 py-1 rounded-[999px] text-[12px] font-medium hover:bg-black/5"
+                                  style={{ backgroundColor: toRgba(sc.color || '#22C55E', 0.1), color: sc.color || '#22C55E', fontFamily: 'Inter' }}
+                                  title="Remover"
+                                >
+                                  <span className="w-2 h-2 rounded-full" style={{ backgroundColor: sc.color || '#22C55E' }} />
+                                  <span className="max-w-[160px] truncate">{sc.name}</span>
+                                  <span className="text-[12px] leading-none">×</span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className={`rounded-[12px] border p-4 bg-white ${t.tagIds.length ? 'border-[#E3E4E5]' : 'border-red-300'}`}>
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="text-[13px] font-semibold" style={{ color: '#22252B', fontFamily: 'Inter' }}>Tags</div>
+                            <div className="flex items-center gap-2">
+                              <div className="h-6 px-2 rounded-full text-[11px] font-medium flex items-center justify-center" style={{ backgroundColor: '#F6F5FA', color: '#737780', fontFamily: 'Inter' }}>
+                                {t.tagIds.length}
+                              </div>
+                              <div className="relative">
+                                <button
+                                  type="button"
+                                  className="h-8 px-3 rounded-[8px] text-[12px] font-semibold border border-[#E3E4E5] hover:bg-[#F9FAFB]"
+                                  onClick={() => setTaxonomyPickerOpen((prev) => (prev === 'tags' ? null : 'tags'))}
+                                >
+                                  Selecionar
+                                </button>
+                                <TaxonomyDropdown
+                                  open={taxonomyPickerOpen === 'tags'}
+                                  onOpenChange={(open) => setTaxonomyPickerOpen(open ? 'tags' : null)}
+                                  items={availableTags}
+                                  onSelect={(item) => {
+                                    const id = String(item?.id || '').trim()
+                                    if (!id) return
+                                    updateSelectedQuestionTaxonomy({ tagIds: t.tagIds.includes(id) ? t.tagIds : [...t.tagIds, id] })
+                                    setTaxonomyPickerOpen(null)
+                                  }}
+                                  isSelected={(item) => t.tagIds.includes(String(item?.id))}
+                                  searchPlaceholder="Buscar tag"
+                                  createLabel="Criar"
+                                  defaultColor="#FFC107"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                          {selectedTg.length === 0 ? (
+                            <div className="mt-3 text-[12px]" style={{ color: t.tagIds.length ? '#9291A5' : '#B91C1C', fontFamily: 'Inter' }}>
+                              {t.tagIds.length ? 'Nenhuma selecionada' : 'Selecione ao menos 1'}
+                            </div>
+                          ) : (
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {selectedTg.map((tg) => (
+                                <button
+                                  key={tg.id}
+                                  type="button"
+                                  onClick={() => updateSelectedQuestionTaxonomy({ tagIds: t.tagIds.filter((x) => String(x) !== String(tg.id)) })}
+                                  className="inline-flex items-center gap-2 px-2.5 py-1 rounded-[999px] text-[12px] font-medium hover:bg-black/5"
+                                  style={{ backgroundColor: toRgba(tg.color || '#FFC107', 0.125), color: tg.color || '#FFC107', fontFamily: 'Inter' }}
+                                  title="Remover"
+                                >
+                                  <span className="w-2 h-2 rounded-full" style={{ backgroundColor: tg.color || '#FFC107' }} />
+                                  <span className="max-w-[160px] truncate">{tg.name}</span>
+                                  <span className="text-[12px] leading-none">×</span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })()}
               </div>
 
               {/* Barra de ações removida conforme solicitação */}

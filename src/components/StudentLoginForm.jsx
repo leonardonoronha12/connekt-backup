@@ -3,10 +3,10 @@ import { ArrowLeft, Eye, EyeOff } from 'lucide-react'
 import { useAuth } from '@/contexts/SupabaseAuthContext'
 import { useBranding } from '@/contexts/BrandingContext'
 import BrandLogo from '@/components/BrandLogo'
-import { setActiveProducerUserId } from '@/services/producerScope'
+import { clearActiveProducerUserId, getActiveProducerUserId, setActiveProducerUserId } from '@/services/producerScope'
 import { getPublicAppOrigin } from '@/services/publicUrl'
 
-export default function StudentLoginForm() {
+export default function StudentLoginForm({ variant = 'normal' } = {}) {
   const { signIn, signInWithOAuth, resetPassword, signUpWithEmailConfirmation } = useAuth()
   const { brand } = useBranding()
   const [view, setView] = useState('login')
@@ -45,13 +45,91 @@ export default function StudentLoginForm() {
   }, [])
 
   useEffect(() => {
-    try {
-      const params = new URLSearchParams(window.location.search || '')
-      const producerUid = params.get('producer_uid') || params.get('producerUserId') || params.get('producer_uid'.toUpperCase()) || ''
-      if (producerUid) setActiveProducerUserId(producerUid)
-      try { sessionStorage.setItem('connekt_login_intent', 'aluno') } catch (_) {}
-      try { sessionStorage.setItem('connekt_login_mode', 'aluno') } catch (_) { try { localStorage.setItem('connekt_login_mode', 'aluno') } catch (_) {} }
-    } catch (_) {}
+    let cancelled = false
+    const run = async () => {
+      try {
+        const host = String(window.location.hostname || '').toLowerCase()
+        const isWhitelabelHost = host.endsWith('.app.connektco.com') && host !== 'app.connektco.com'
+        const params = new URLSearchParams(window.location.search || '')
+        const path = String(window.location.pathname || '')
+        const isNormalAppLogin = variant === 'normal' && host === 'app.connektco.com' && path === '/login-aluno'
+        if (variant === 'normal' && host === 'app.connektco.com') {
+          try {
+            const u = new URL(window.location.href)
+            let changed = false
+            const intentParam = String(u.searchParams.get('login_intent') || '').trim().toLowerCase()
+            const shouldPreserveProducerUid = path === '/login-aluno' || (path === '/login' && intentParam === 'aluno')
+            if (u.searchParams.has('wl_host')) { u.searchParams.delete('wl_host'); changed = true }
+            if (u.searchParams.has('oauth_provider')) { u.searchParams.delete('oauth_provider'); changed = true }
+            if (!shouldPreserveProducerUid) {
+              if (u.searchParams.has('producer_uid')) { u.searchParams.delete('producer_uid'); changed = true }
+              if (u.searchParams.has('producerUserId')) { u.searchParams.delete('producerUserId'); changed = true }
+              if (u.searchParams.has('PRODUCER_UID')) { u.searchParams.delete('PRODUCER_UID'); changed = true }
+            }
+            if (changed) {
+              window.history.replaceState({}, '', `${u.pathname}${u.search}${u.hash}`)
+            }
+          } catch (_) {}
+          try { sessionStorage.removeItem('connekt_wl_handoff_target') } catch (_) {}
+          try { localStorage.removeItem('connekt_wl_handoff_target') } catch (_) {}
+          try { sessionStorage.removeItem('connekt_wl_host') } catch (_) {}
+          try { localStorage.removeItem('connekt_wl_host') } catch (_) {}
+        }
+        if (isNormalAppLogin) {
+          try { sessionStorage.setItem('connekt_login_intent', 'aluno') } catch (_) { try { localStorage.setItem('connekt_login_intent', 'aluno') } catch (_) {} }
+          try { localStorage.setItem('connekt_login_intent', 'aluno') } catch (_) {}
+          try { sessionStorage.setItem('connekt_login_mode', 'aluno') } catch (_) { try { localStorage.setItem('connekt_login_mode', 'aluno') } catch (_) {} }
+          try { localStorage.setItem('connekt_login_mode', 'aluno') } catch (_) {}
+        }
+        let producerUid =
+          params.get('producer_uid') ||
+          params.get('producerUserId') ||
+          params.get('producer_uid'.toUpperCase()) ||
+          ''
+        producerUid = String(producerUid || '').trim()
+        if (!producerUid) {
+          try {
+            producerUid = String(sessionStorage.getItem('connekt_producer_uid') || localStorage.getItem('connekt_producer_uid') || '').trim()
+          } catch (_) {
+            producerUid = ''
+          }
+        }
+        if (!producerUid) {
+          producerUid = String(getActiveProducerUserId() || '').trim()
+        }
+
+        try { sessionStorage.setItem('connekt_login_intent', 'aluno') } catch (_) { try { localStorage.setItem('connekt_login_intent', 'aluno') } catch (_) {} }
+        try { localStorage.setItem('connekt_login_intent', 'aluno') } catch (_) {}
+        try { sessionStorage.setItem('connekt_login_mode', 'aluno') } catch (_) { try { localStorage.setItem('connekt_login_mode', 'aluno') } catch (_) {} }
+        try { localStorage.setItem('connekt_login_mode', 'aluno') } catch (_) {}
+
+        if (isWhitelabelHost) {
+          try { sessionStorage.setItem('connekt_wl_host', host) } catch (_) { try { localStorage.setItem('connekt_wl_host', host) } catch (_) {} }
+        }
+
+        if (!producerUid && isWhitelabelHost) {
+          const r = await fetch(`/api/producer?type=public_branding&host=${encodeURIComponent(host)}`)
+          const body = await r.json().catch(() => ({}))
+          if (cancelled) return
+          producerUid = String(body?.producerId || '').trim()
+        }
+
+        if (producerUid) {
+          setActiveProducerUserId(producerUid)
+          try { sessionStorage.setItem('connekt_producer_uid', producerUid) } catch (_) { try { localStorage.setItem('connekt_producer_uid', producerUid) } catch (_) {} }
+          if (!params.get('producer_uid')) {
+            try {
+              const u = new URL(window.location.href)
+              u.searchParams.set('producer_uid', producerUid)
+              window.history.replaceState({}, '', `${u.pathname}${u.search}${u.hash}`)
+              window.dispatchEvent(new PopStateEvent('popstate'))
+            } catch (_) {}
+          }
+        }
+      } catch (_) {}
+    }
+    run()
+    return () => { cancelled = true }
   }, [])
   const isRegisterValid = useMemo(() => {
     const firstName = String(registerData.firstName || '').trim()
@@ -201,16 +279,95 @@ export default function StudentLoginForm() {
     setErrorMsg('')
     setSuccessMsg('')
     try {
+      try { sessionStorage.setItem('connekt_login_intent', 'aluno') } catch (_) { try { localStorage.setItem('connekt_login_intent', 'aluno') } catch (_) {} }
+      try { localStorage.setItem('connekt_login_intent', 'aluno') } catch (_) {}
       try { sessionStorage.setItem('connekt_login_mode', 'aluno') } catch (_) { try { localStorage.setItem('connekt_login_mode', 'aluno') } catch (_) {} }
+      try { localStorage.setItem('connekt_login_mode', 'aluno') } catch (_) {}
       let producerUid = ''
-      try { producerUid = String(new URLSearchParams(window.location.search || '').get('producer_uid') || '') } catch (_) { producerUid = '' }
-      const suffix = producerUid ? `?producer_uid=${encodeURIComponent(producerUid)}` : ''
-      const { error } = await signInWithOAuth(provider, `/login-aluno${suffix}`)
+      try {
+        const params = new URLSearchParams(window.location.search || '')
+        producerUid = String(params.get('producer_uid') || params.get('producerUserId') || params.get('producer_uid'.toUpperCase()) || '').trim()
+      } catch (_) {
+        producerUid = ''
+      }
+      if (!producerUid) {
+        try {
+          producerUid = String(sessionStorage.getItem('connekt_producer_uid') || localStorage.getItem('connekt_producer_uid') || '').trim()
+        } catch (_) {
+          producerUid = ''
+        }
+      }
+      if (!producerUid) producerUid = String(getActiveProducerUserId() || '').trim()
+      let wlHost = ''
+      try {
+        const params = new URLSearchParams(window.location.search || '')
+        const wlHostParam = String(params.get('wl_host') || '').trim().toLowerCase()
+        if (wlHostParam) wlHost = wlHostParam
+      } catch (_) {}
+      const hostName = String(window.location.hostname || '').trim().toLowerCase()
+      const isWhitelabelHost = hostName.endsWith('.app.connektco.com') && hostName !== 'app.connektco.com'
+      const isNormalAppLogin = variant !== 'whitelabel' && hostName === 'app.connektco.com' && String(window.location.pathname || '') === '/login-aluno'
+      if (!wlHost && isWhitelabelHost) wlHost = String(window.location.host || '').trim().toLowerCase()
+      if (isNormalAppLogin) {
+        wlHost = ''
+        try { sessionStorage.removeItem('connekt_wl_handoff_target') } catch (_) {}
+        try { localStorage.removeItem('connekt_wl_handoff_target') } catch (_) {}
+        try { sessionStorage.removeItem('connekt_wl_host') } catch (_) {}
+        try { localStorage.removeItem('connekt_wl_host') } catch (_) {}
+      }
+      if (isWhitelabelHost) {
+        const u = new URL('https://app.connektco.com/login-aluno-wl')
+        if (producerUid) u.searchParams.set('producer_uid', producerUid)
+        u.searchParams.set('wl_host', wlHost)
+        u.searchParams.set('oauth_provider', String(provider || 'google'))
+        window.location.assign(u.toString())
+        return
+      }
+      const qp = new URLSearchParams()
+      if (producerUid) qp.set('producer_uid', String(producerUid))
+      if (wlHost) qp.set('wl_host', wlHost)
+      if (variant !== 'whitelabel' && !isWhitelabelHost) qp.set('login_intent', 'aluno')
+      const suffix = qp.toString() ? `?${qp.toString()}` : ''
+      if (!isNormalAppLogin && wlHost && wlHost.endsWith('.app.connektco.com') && wlHost !== 'app.connektco.com') {
+        const stamp = `${wlHost}|${Date.now()}`
+        try { sessionStorage.setItem('connekt_wl_handoff_target', stamp) } catch (_) { try { localStorage.setItem('connekt_wl_handoff_target', stamp) } catch (_) {} }
+      }
+      const redirectPath = (variant === 'whitelabel' || isWhitelabelHost) ? '/login-aluno-wl' : '/login'
+      const { error } = await signInWithOAuth(provider, `${redirectPath}${suffix}`)
       if (error) setErrorMsg(translateErrorMessage(error?.message || String(error)))
     } catch (err) {
       setErrorMsg(translateErrorMessage(err?.message || String(err)))
     }
   }
+
+  useEffect(() => {
+    try {
+      const host = String(window.location.hostname || '').toLowerCase()
+      if (host !== 'app.connektco.com') return
+      if (variant !== 'whitelabel') return
+      const params = new URLSearchParams(window.location.search || '')
+      const provider = String(params.get('oauth_provider') || '').trim().toLowerCase()
+      if (!provider) return
+      try { sessionStorage.setItem('connekt_aluno_oauth_starting', '1') } catch (_) {}
+      const wl = String(params.get('wl_host') || '').trim().toLowerCase()
+      if (wl && wl.endsWith('.app.connektco.com') && wl !== 'app.connektco.com') {
+        const stamp = `${wl}|${Date.now()}`
+        try { sessionStorage.setItem('connekt_wl_handoff_target', stamp) } catch (_) { try { localStorage.setItem('connekt_wl_handoff_target', stamp) } catch (_) {} }
+      }
+      const key = `connekt_oauth_autostarted:${provider}:${String(params.get('producer_uid') || '')}`
+      try {
+        const last = Number(sessionStorage.getItem(key) || 0)
+        if (Number.isFinite(last) && last > 0 && Date.now() - last < 15000) return
+        sessionStorage.setItem(key, String(Date.now()))
+      } catch (_) {}
+      try {
+        params.delete('oauth_provider')
+        const next = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ''}${window.location.hash || ''}`
+        window.history.replaceState({}, '', next)
+      } catch (_) {}
+      handleOAuth(provider)
+    } catch (_) {}
+  }, [])
 
   const handleReset = async (e) => {
     e.preventDefault()
@@ -258,6 +415,12 @@ export default function StudentLoginForm() {
     try {
       const fullName = `${String(registerData.firstName || '').trim()} ${String(registerData.lastName || '').trim()}`.trim()
       try { sessionStorage.setItem('connekt_login_mode', 'aluno') } catch (_) { try { localStorage.setItem('connekt_login_mode', 'aluno') } catch (_) {} }
+      const hostName = String(window.location.hostname || '').trim().toLowerCase()
+      const isWhitelabelHost = hostName.endsWith('.app.connektco.com') && hostName !== 'app.connektco.com'
+      const params = new URLSearchParams(window.location.search || '')
+      const producerUidForSignup = String(params.get('producer_uid') || params.get('producerUserId') || params.get('producer_uid'.toUpperCase()) || '').trim()
+      const wlHostForSignup = String(params.get('wl_host') || '').trim().toLowerCase() || (isWhitelabelHost ? String(window.location.host || '').trim().toLowerCase() : '')
+      const loginPathForSignup = (variant === 'whitelabel' || isWhitelabelHost || wlHostForSignup) ? '/login-aluno-wl' : '/login-aluno'
       const result = await signUpWithEmailConfirmation({
         email: emailValue,
         password: registerData.password,
@@ -266,7 +429,9 @@ export default function StudentLoginForm() {
           last_name: String(registerData.lastName || '').trim(),
           full_name: fullName,
         },
-        redirectTo: `${getPublicAppOrigin() || window.location.origin}/login-aluno?email_confirmed=true`,
+        redirectTo: `${getPublicAppOrigin() || window.location.origin}${loginPathForSignup}?email_confirmed=true`,
+        producerUid: producerUidForSignup || undefined,
+        wlHost: wlHostForSignup || undefined,
       })
       if (!result?.ok) {
         setErrorMsg(translateErrorMessage(String(result?.error || 'Erro no cadastro.')))

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Helmet } from 'react-helmet-async';
 import Sidebar from '@/components/Sidebar';
 import ChatArea from '@/components/ChatArea';
@@ -6,8 +6,8 @@ import StudentInfoSidebar from '@/components/StudentInfoSidebar';
 import UnreadAvatarsBar from '@/components/UnreadAvatarsBar';
 import EmptyInbox from '@/components/EmptyInbox';
 import { supabase } from '@/lib/supabaseClient';
-import { fetchConversationFeed } from '@/services/conversationService';
 import { Button } from '@/components/ui/button';
+import { useActiveProducerUserId } from '@/hooks/useActiveProducerUserId'
 
 // Função para obter parâmetros da URL
 function getUrlParam(name) {
@@ -46,6 +46,7 @@ const filterOptions = [
 ];
 
 function InboxPage() {
+  const activeProducerUserId = useActiveProducerUserId()
   const [conversations, setConversations] = useState([]);
   const [activeConversation, setActiveConversation] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -55,46 +56,83 @@ function InboxPage() {
   const [error, setError] = useState(null);
   const [currentUser, setCurrentUser] = useState(null);
   const [detailError, setDetailError] = useState(null);
+  const initializedRef = useRef(false)
+
+  const fetchAuth = useCallback(async () => {
+    const sess = (await supabase.auth.getSession().catch(() => ({ data: null })))?.data?.session || null
+    const token = sess?.access_token || ''
+    const pid = String(activeProducerUserId || sess?.user?.id || '').trim()
+    return { token, pid, has: Boolean(token && pid) }
+  }, [activeProducerUserId])
+
+  const fetchConversationsFromApi = useCallback(async () => {
+    const { token, pid, has } = await fetchAuth()
+    if (!has) return null
+    const r = await fetch(`/api/producer?type=conversations&producerId=${encodeURIComponent(pid)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    const body = await r.json().catch(() => ({}))
+    if (!r.ok) return null
+    return Array.isArray(body?.data) ? body.data : []
+  }, [fetchAuth])
+
+  const fetchConversationFeedFromApi = useCallback(async (conversationId) => {
+    const { token, pid, has } = await fetchAuth()
+    if (!has) return null
+    const r = await fetch(`/api/producer?type=conversation_feed&producerId=${encodeURIComponent(pid)}&conversationId=${encodeURIComponent(conversationId)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    const body = await r.json().catch(() => ({}))
+    if (!r.ok) return null
+    return Array.isArray(body?.data) ? body.data : []
+  }, [fetchAuth])
 
   const fetchInitialConversations = useCallback(async () => {
     setLoading(true);
     setError(null);
     setDetailError(null);
     
-    // Obter o producer_id da URL
-    const producerId = getUrlParam('producer_id');
-    
-    let query = supabase
-      .from('conversations')
-      .select(`
-        id,
-        subject,
-        tag,
-        unread,
-        date,
-        producer:producers(id, name, external_id),
-        student:students (
-          id, name, email, avatar_url, whatsapp,
-          courses:student_courses(course_name, progress, tag)
-        )
-      `)
-      .order('date', { ascending: false });
-    
-    // Filtrar por producer external_id se especificado
-    if (producerId) {
-      query = query.eq('producer.external_id', producerId);
-    }
-    
-    let { data: convData, error: convError } = await query;
-  
-    if (convError) {
-      console.error('Error fetching conversations:', convError);
-      // Se não conseguir buscar do Supabase, retornar array vazio
-      convData = [];
+    const producerIdParam = getUrlParam('producer_id');
+    const { token, pid, has: hasAuthedProducer } = await fetchAuth()
+    let convData = []
+    if (hasAuthedProducer) {
+      try {
+        const r = await fetchConversationsFromApi()
+        convData = Array.isArray(r) ? r : []
+      } catch (_) {
+        convData = []
+      }
+    } else {
+      let query = supabase
+        .from('conversations')
+        .select(`
+          id,
+          subject,
+          tag,
+          unread,
+          date,
+          producer:producers(id, name, external_id),
+          student:students (
+            id, name, email, avatar_url, whatsapp,
+            courses:student_courses(course_name, progress, tag)
+          )
+        `)
+        .order('date', { ascending: false });
+      
+      if (producerIdParam) {
+        query = query.eq('producer.external_id', producerIdParam);
+      }
+      
+      const result = await query;
+      convData = Array.isArray(result?.data) ? result.data : []
+      if (result?.error) {
+        console.error('Error fetching conversations:', result.error);
+        convData = [];
+      }
     }
 
     // Se não há dados do Supabase, usar dados mock como fallback
-    if (!convData || convData.length === 0) {
+    if ((!convData || convData.length === 0) && !hasAuthedProducer) {
       const mockConversations = [
         {
           id: 1,
@@ -201,39 +239,214 @@ function InboxPage() {
       ];
       
       // Filtrar por producer_id se especificado
-      const filteredMockConversations = producerId 
-        ? mockConversations.filter(conv => conv.producer.external_id === producerId)
+      const filteredMockConversations = producerIdParam 
+        ? mockConversations.filter(conv => conv.producer.external_id === producerIdParam)
         : mockConversations;
       
       convData = filteredMockConversations;
     }
 
     // Formatar dados das conversas
-    const formattedConversations = convData.map(conv => ({
-      ...conv,
-      student: {
-        ...conv.student,
-        initials: conv.student?.name?.split(' ').map(n => n[0]).join('') || '??'
+    const formattedConversations = convData.map(conv => {
+      const s = (conv && typeof conv.student === 'object' && conv.student) ? conv.student : {}
+      const name = String(s?.name || 'Aluno').trim() || 'Aluno'
+      const initials = name.split(' ').map(n => n[0]).join('') || '??'
+      return {
+        ...conv,
+        student: {
+          id: s?.id || null,
+          name,
+          email: String(s?.email || ''),
+          avatar_url: s?.avatar_url || null,
+          whatsapp: s?.whatsapp || null,
+          courses: Array.isArray(s?.courses) ? s.courses : [],
+          initials,
+        },
       }
-    }));
+    });
     
     setConversations(formattedConversations);
-    if (formattedConversations.length > 0) {
-      handleSelectConversation(formattedConversations[0].id, formattedConversations);
-    } else {
+    if (formattedConversations.length > 0 && !initializedRef.current) {
+      const first = formattedConversations[0]
+      setActiveConversation(first)
+      try {
+        if (hasAuthedProducer) {
+          setCurrentUser({ id: pid, name: first?.producer?.name || 'Professor' })
+        }
+      } catch (_) {}
+      initializedRef.current = true
+    } else if (formattedConversations.length === 0) {
       setActiveConversation(null);
     }
     
     setLoading(false);
-  }, []);
+  }, [fetchAuth, fetchConversationsFromApi]);
 
   useEffect(() => {
     fetchInitialConversations();
   }, [fetchInitialConversations]);
 
+  const conversationsRef = useRef([])
+  useEffect(() => { conversationsRef.current = conversations }, [conversations])
+  const conversationsSigRef = useRef('')
+  const feedSigRef = useRef('')
+
+  useEffect(() => {
+    let cancelled = false
+    let timer = null
+    const tick = async () => {
+      if (cancelled) return
+      try {
+        if (document?.hidden) return
+      } catch (_) {}
+      try {
+        const convData = await fetchConversationsFromApi()
+        if (!Array.isArray(convData)) return
+        if (cancelled) return
+        if (convData.length === 0 && Array.isArray(conversationsRef.current) && conversationsRef.current.length > 0) return
+        const formatted = convData.map(conv => {
+          const s = (conv && typeof conv.student === 'object' && conv.student) ? conv.student : {}
+          const name = String(s?.name || 'Aluno').trim() || 'Aluno'
+          const initials = name.split(' ').map(n => n[0]).join('') || '??'
+          return {
+            ...conv,
+            student: {
+              id: s?.id || null,
+              name,
+              email: String(s?.email || ''),
+              avatar_url: s?.avatar_url || null,
+              whatsapp: s?.whatsapp || null,
+              courses: Array.isArray(s?.courses) ? s.courses : [],
+              initials,
+            },
+          }
+        })
+        const nextSig = formatted.map((c) => `${String(c?.id || '')}:${String(c?.unread || 0)}:${String(c?.date || '')}`).join('|')
+        if (nextSig && nextSig === conversationsSigRef.current) return
+        conversationsSigRef.current = nextSig
+        setConversations(formatted)
+        setActiveConversation((prev) => {
+          if (!prev) return prev
+          const updated = formatted.find((c) => String(c?.id || '') === String(prev?.id || ''))
+          if (!updated) return prev
+          return { ...updated, posts: prev.posts }
+        })
+      } catch (_) {}
+    }
+    tick()
+    timer = setInterval(tick, 12000)
+    const onFocus = () => tick()
+    try { window.addEventListener('focus', onFocus) } catch (_) {}
+    return () => {
+      cancelled = true
+      try { if (timer) clearInterval(timer) } catch (_) {}
+      try { window.removeEventListener('focus', onFocus) } catch (_) {}
+    }
+  }, [fetchConversationsFromApi])
+
+  useEffect(() => {
+    const cid = String(activeConversation?.id || '').trim()
+    if (!cid) return
+    let cancelled = false
+    let timer = null
+    let channel = null
+    feedSigRef.current = ''
+    const tick = async () => {
+      if (cancelled) return
+      try {
+        if (document?.hidden) return
+      } catch (_) {}
+      try {
+        const posts = await fetchConversationFeedFromApi(cid)
+        if (!Array.isArray(posts)) return
+        if (cancelled) return
+        const repliesCount = posts.reduce((acc, p) => acc + (Array.isArray(p?.replies) ? p.replies.length : 0), 0)
+        const firstId = posts[0]?.id ? String(posts[0].id) : ''
+        const lastId = posts.length > 0 && posts[posts.length - 1]?.id ? String(posts[posts.length - 1].id) : ''
+        const nextSig = `${posts.length}:${repliesCount}:${firstId}:${lastId}`
+        if (nextSig === feedSigRef.current) return
+        feedSigRef.current = nextSig
+        setActiveConversation((prev) => {
+          if (!prev || String(prev?.id || '').trim() !== cid) return prev
+          if (posts.length === 0 && Array.isArray(prev?.posts) && prev.posts.length > 0) return prev
+          const detailedPosts = (posts || []).map(post => ({
+            ...post,
+            id: post.id,
+            text: post.content,
+            likes: post.likes || 0,
+            liked: post.liked || false,
+            author: prev.student,
+            replies: (post.replies || []).map(reply => ({
+              ...reply,
+              content: reply.content,
+              likes: reply.likes || 0,
+              author: reply.author || { name: 'Professor', role: 'Professor' },
+              liked_by_user: false
+            }))
+          }))
+          return { ...prev, posts: detailedPosts }
+        })
+      } catch (_) {}
+    }
+    tick()
+    timer = setInterval(tick, 8000)
+    const onFocus = () => tick()
+    try { window.addEventListener('focus', onFocus) } catch (_) {}
+    try {
+      channel = supabase
+        .channel(`producer_inbox_${cid}`)
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'posts', filter: `conversation_id=eq.${cid}` }, () => tick())
+        .subscribe()
+    } catch (_) {
+      channel = null
+    }
+    return () => {
+      cancelled = true
+      try { if (timer) clearInterval(timer) } catch (_) {}
+      try { window.removeEventListener('focus', onFocus) } catch (_) {}
+      try { if (channel) channel.unsubscribe() } catch (_) {}
+      try { if (channel) supabase.removeChannel(channel) } catch (_) {}
+    }
+  }, [activeConversation?.id, fetchConversationFeedFromApi])
+
   const fetchConversationDetails = useCallback(async (conversationId, currentUserId) => {
     try {
-      const posts = await fetchConversationFeed(conversationId);
+      const sess = (await supabase.auth.getSession().catch(() => ({ data: null })))?.data?.session || null
+      const token = sess?.access_token || ''
+      const pid = String(activeProducerUserId || sess?.user?.id || '').trim()
+      let posts = []
+      if (pid && token) {
+        const r = await fetch(`/api/producer?type=conversation_feed&producerId=${encodeURIComponent(pid)}&conversationId=${encodeURIComponent(conversationId)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        const body = await r.json().catch(() => ({}))
+        if (r.ok) posts = Array.isArray(body?.data) ? body.data : []
+      } else {
+        const { data, error } = await supabase
+          .from('v_posts_with_replies')
+          .select(`
+            post_id,
+            conversation_id,
+            content,
+            created_at,
+            likes,
+            liked,
+            replies_json
+          `)
+          .eq('conversation_id', conversationId)
+          .order('created_at', { ascending: true })
+          .limit(200)
+        if (error) throw error
+        posts = (Array.isArray(data) ? data : []).map((row) => ({
+          id: row.post_id,
+          conversation_id: row.conversation_id,
+          content: row.content,
+          created_at: row.created_at,
+          likes: row.likes,
+          liked: row.liked,
+          replies: (row.replies_json || []).map((reply) => ({ ...reply, liked_by: reply.liked_by || [] })),
+        }))
+      }
       const activeConv = conversations.find(c => c.id === conversationId);
       if (!activeConv) return null;
 
@@ -243,7 +456,7 @@ function InboxPage() {
         text: post.content,
         likes: post.likes || 0,
         liked: post.liked || false,
-        author: activeConv.student,
+        author: post.author || activeConv.student,
         replies: (post.replies || []).map(reply => ({
           ...reply,
           content: reply.content,
@@ -259,7 +472,7 @@ function InboxPage() {
       // setDetailError("Sem permissão ou conversa não encontrada");
       return null;
     }
-  }, [conversations]);
+  }, [conversations, activeProducerUserId]);
 
   const handleSelectConversation = useCallback(async (id, conversationsList = null) => {
     setDetailError(null);
@@ -268,6 +481,17 @@ function InboxPage() {
     const currentConversations = conversationsList || conversations;
     const existingConv = currentConversations.find(c => c.id === id);
     if (!existingConv) return;
+
+    try {
+      const sess = (await supabase.auth.getSession().catch(() => ({ data: null })))?.data?.session || null
+      const pid = String(activeProducerUserId || sess?.user?.id || '').trim()
+      if (pid) {
+        setCurrentUser({
+          id: pid,
+          name: existingConv.producer?.name || 'Professor'
+        });
+      }
+    } catch (_) {}
     
     // Se a conversa já tem posts (dados mock), definir imediatamente
     if (existingConv.posts && existingConv.posts.length > 0) {
@@ -306,16 +530,24 @@ function InboxPage() {
     }
 
     if (existingConv.unread > 0) {
-      const { error: updateError } = await supabase
-        .from('conversations')
-        .update({ unread: 0 })
-        .eq('id', id);
-
-      if (updateError) {
-        console.error('Error updating unread count:', updateError);
-      }
+      try {
+        const sess = (await supabase.auth.getSession().catch(() => ({ data: null })))?.data?.session || null
+        const token = sess?.access_token || ''
+        const pid = String(activeProducerUserId || sess?.user?.id || '').trim()
+        if (pid && token) {
+          await fetch(`/api/producer?type=conversation_mark_read&producerId=${encodeURIComponent(pid)}&conversationId=${encodeURIComponent(id)}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          })
+        } else {
+          const { error: updateError } = await supabase
+            .from('conversations')
+            .update({ unread: 0 })
+            .eq('id', id);
+          if (updateError) console.error('Error updating unread count:', updateError);
+        }
+      } catch (_) {}
     }
-  }, [conversations, fetchConversationDetails]);
+  }, [conversations, fetchConversationDetails, activeProducerUserId]);
   
   const unreadConversations = conversations.filter(c => c.unread > 0);
 
@@ -329,44 +561,52 @@ function InboxPage() {
       console.error("Não foi possível enviar a resposta. Faltam dados.");
       return;
     }
-  
-    const producerId = currentUser.id;
-  
-    const { data, error } = await supabase
-      .from('replies')
-      .insert([{ post_id: postId, text: newReplyText, producer_id: producerId }])
-      .select(`*, author:producers(id, name)`)
-      .single();
-  
-    if (error) {
-      console.error('Error adding reply:', error);
-      return;
-    }
-  
-    const newReply = {
-      id: data.id,
-      content: data.text,
-      created_at: data.created_at,
-      likes: data.likes || 0,
-      author: {
-        id: currentUser.id,
-        name: currentUser.name
-      },
-      liked_by: [],
-      liked_by_user: false
-    };
-  
-    setActiveConversation(prev => {
-      if (!prev || !prev.posts) return null;
-      const updatedPosts = prev.posts.map((p) => {
-        if (p.id === postId) {
-          const newReplies = [...(p.replies || []), newReply];
-          return { ...p, replies: newReplies };
-        }
-        return p;
+    try {
+      const sess = (await supabase.auth.getSession().catch(() => ({ data: null })))?.data?.session || null
+      const token = sess?.access_token || ''
+      const pid = String(activeProducerUserId || sess?.user?.id || '').trim()
+      if (!pid || !token) throw new Error('missing_token')
+
+      const r = await fetch(`/api/producer?type=reply_create&producerId=${encodeURIComponent(pid)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          conversationId: String(activeConversation?.id || ''),
+          postId: String(postId || ''),
+          text: String(newReplyText || ''),
+          producerName: String(currentUser?.name || 'Professor'),
+        }),
+      })
+      const body = await r.json().catch(() => ({}))
+      const errText = body?.message ? `${String(body?.error || 'reply_failed')}: ${String(body.message)}` : String(body?.error || body?.message || 'reply_failed')
+      if (!r.ok || !body?.reply?.id) throw new Error(errText)
+
+      const reply = body.reply
+      const newReply = {
+        id: reply.id,
+        content: reply.content,
+        created_at: reply.created_at,
+        likes: reply.likes || 0,
+        author: reply.author || { id: pid, name: currentUser.name || 'Professor' },
+        liked_by: Array.isArray(reply.liked_by) ? reply.liked_by : [],
+        liked_by_user: false
+      };
+
+      setActiveConversation(prev => {
+        if (!prev || !prev.posts) return null;
+        const updatedPosts = prev.posts.map((p) => {
+          if (p.id === postId) {
+            const newReplies = [...(p.replies || []), newReply];
+            return { ...p, replies: newReplies };
+          }
+          return p;
+        });
+        return { ...prev, posts: updatedPosts };
       });
-      return { ...prev, posts: updatedPosts };
-    });
+    } catch (e) {
+      console.error('Error adding reply:', e);
+      setDetailError(String(e?.message || 'Não foi possível enviar a resposta.'))
+    }
   };
   
   const handleLikePost = async (postId) => {
@@ -506,9 +746,7 @@ function InboxPage() {
   };
 
   const filteredConversations = conversations
-    .filter(c =>
-      c.student?.name.toLowerCase().includes(searchTerm.toLowerCase())
-    )
+    .filter(c => String(c?.student?.name || '').toLowerCase().includes(String(searchTerm || '').toLowerCase()))
     .filter(c => 
       activeFilters.length === 0 ? true : activeFilters.includes(c.tag)
     );

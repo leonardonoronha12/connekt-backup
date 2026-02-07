@@ -10,6 +10,33 @@ import { deviceSessionService } from '@/services/deviceSessionService.js';
 import { getPublicAppOrigin } from '@/services/publicUrl.js';
 import { ALUNO_NAV_SECTIONS } from '@/constants/alunoNavSections'
 
+function parseHostFromUrl(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  try {
+    return new URL(raw).hostname || '';
+  } catch (_) {
+    return raw.replace(/^https?:\/\//i, '').split('/')[0] || '';
+  }
+}
+
+function normalizeSavedMemberAreaUrlForLink(value) {
+  const host = parseHostFromUrl(value).toLowerCase();
+  if (!host) return { url: '', host: '' };
+
+  if (host.endsWith('.app.connektco.com')) {
+    return { url: `https://${host}`, host };
+  }
+
+  const match = host.match(/^([a-z0-9-]+)\.connektco\.com(?:\.br)?$/i);
+  if (match && match[1]) {
+    const fixedHost = `${match[1].toLowerCase()}.app.connektco.com`;
+    return { url: `https://${fixedHost}`, host: fixedHost };
+  }
+
+  return { url: `https://${host}`, host };
+}
+
 const ConfiguracoesPage = () => {
   const { user, signOut, session } = useAuth();
   const [activeTab, setActiveTab] = useState('Perfil e conta');
@@ -17,12 +44,6 @@ const ConfiguracoesPage = () => {
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
   const [cancelLoading, setCancelLoading] = useState(false);
   const [testEmailLoading, setTestEmailLoading] = useState(false);
-  const [notifications, setNotifications] = useState({
-    novosAlunos: false,
-    novasVendas: false,
-    novosComentarios: false,
-    relatoriosSemanais: false
-  });
 
   const [devices, setDevices] = useState([]);
   const [devicesLoading, setDevicesLoading] = useState(false);
@@ -37,12 +58,23 @@ const ConfiguracoesPage = () => {
   const devicesReqRef = useRef(0);
   const [profileAvatarUrl, setProfileAvatarUrl] = useState('');
   const [avatarUploading, setAvatarUploading] = useState(false);
+  const [subdomainSavedUrl, setSubdomainSavedUrl] = useState('');
   const studentPortalLink = useMemo(() => {
     try {
       const uid = user?.id ? String(user.id).trim() : ''
       if (!uid) return ''
-      const origin = getPublicAppOrigin() || window.location.origin
-      return `${origin}/login-aluno?producer_uid=${encodeURIComponent(uid)}`
+      const host = String(window.location.hostname || '').toLowerCase()
+      const isLocal = host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0'
+      const envUrl =
+        import.meta?.env?.VITE_SITE_URL ||
+        import.meta?.env?.VITE_PUBLIC_APP_URL ||
+        import.meta?.env?.VITE_APP_BASE_URL ||
+        'https://app.connektco.com'
+      const base = (() => {
+        if (isLocal) return window.location.origin
+        try { return new URL(String(envUrl)).origin } catch (_) { return 'https://app.connektco.com' }
+      })()
+      return `${base.replace(/\/$/, '')}/login-aluno?producer_uid=${encodeURIComponent(uid)}`
     } catch (_) {
       return ''
     }
@@ -55,7 +87,6 @@ const ConfiguracoesPage = () => {
   const [profileInstitution, setProfileInstitution] = useState('');
   const [subdomainInput, setSubdomainInput] = useState('');
   const [subdomainSaving, setSubdomainSaving] = useState(false);
-  const [subdomainSavedUrl, setSubdomainSavedUrl] = useState('');
   const [subdomainStatus, setSubdomainStatus] = useState({ state: 'idle', title: '', description: '' });
   const subdomainStatusTimerRef = useRef(null);
   const subdomainStatusTriesRef = useRef(0);
@@ -68,6 +99,8 @@ const ConfiguracoesPage = () => {
   const [whitelabelSidebarTo, setWhitelabelSidebarTo] = useState('rgb(0, 0, 104)');
   const [whitelabelLogoUrl, setWhitelabelLogoUrl] = useState('');
   const [whitelabelLogoCompactUrl, setWhitelabelLogoCompactUrl] = useState('');
+  const [whitelabelWelcomeEmailSubject, setWhitelabelWelcomeEmailSubject] = useState('Bem-vindo à nossa plataforma de cursos!');
+  const [whitelabelWelcomeEmailMessage, setWhitelabelWelcomeEmailMessage] = useState(`Olá {nome}!\n\nSeja muito bem-vindo(a) à nossa plataforma de cursos médicos!\n\nVocê agora tem acesso a conteúdos exclusivos desenvolvidos por especialistas renomados. Explore nossos cursos e aprimore seus conhecimentos.\n\nEm caso de dúvidas, nossa equipe está sempre disponível para ajudá-lo.\n\nBons estudos!\n\n`);
   const [whitelabelSaving, setWhitelabelSaving] = useState(false);
   const [whitelabelUploading, setWhitelabelUploading] = useState(false);
   const [payoutEnabled, setPayoutEnabled] = useState(false);
@@ -504,33 +537,6 @@ const ConfiguracoesPage = () => {
     return () => { cancelled = true; };
   }, [activeTab, user?.id]);
 
-  const parseHostFromUrl = (value) => {
-    const raw = String(value || '').trim();
-    if (!raw) return '';
-    try {
-      return new URL(raw).hostname || '';
-    } catch (_) {
-      return raw.replace(/^https?:\/\//i, '').split('/')[0] || '';
-    }
-  };
-
-  const normalizeSavedMemberAreaUrlForLink = (value) => {
-    const host = parseHostFromUrl(value).toLowerCase();
-    if (!host) return { url: '', host: '' };
-
-    if (host.endsWith('.app.connektco.com')) {
-      return { url: `https://${host}`, host };
-    }
-
-    const match = host.match(/^([a-z0-9-]+)\.connektco\.com(?:\.br)?$/i);
-    if (match && match[1]) {
-      const fixedHost = `${match[1].toLowerCase()}.app.connektco.com`;
-      return { url: `https://${fixedHost}`, host: fixedHost };
-    }
-
-    return { url: `https://${host}`, host };
-  };
-
   const vimeoRedirectUri = `${window.location.origin}/vimeo/callback`;
 
   const isAlunoView = typeof window !== 'undefined' && String(window.location.pathname || '').startsWith('/aluno/')
@@ -668,7 +674,7 @@ const ConfiguracoesPage = () => {
           const memberAreaUrl = data.member_area_url || '';
           const normalizedMemberArea = normalizeSavedMemberAreaUrlForLink(memberAreaUrl);
           setSubdomainSavedUrl(normalizedMemberArea.url || '');
-          setSubdomainInput(normalizedMemberArea.host || '');
+          setSubdomainInput(normalizedMemberArea.url || '');
           setPayoutEnabled(!!data.payout_enabled);
           setPayoutPixKey(data.payout_pix_key || '');
           setPayoutBank(data.payout_bank || '');
@@ -748,6 +754,8 @@ const ConfiguracoesPage = () => {
       setWhitelabelSidebarTo(String(wl.sidebarTo || wl.sidebar_to || 'rgb(0, 0, 104)').trim() || 'rgb(0, 0, 104)');
       setWhitelabelLogoUrl(String(wl.logoUrl || wl.logo_url || '').trim());
       setWhitelabelLogoCompactUrl(String(wl.logoCompactUrl || wl.logo_compact_url || '').trim());
+      setWhitelabelWelcomeEmailSubject(String(wl.welcomeEmailSubject || wl.welcome_email_subject || wl.welcomeSubject || 'Bem-vindo à nossa plataforma de cursos!').trim() || 'Bem-vindo à nossa plataforma de cursos!');
+      setWhitelabelWelcomeEmailMessage(String(wl.welcomeEmailMessage || wl.welcome_email_message || wl.welcomeMessage || `Olá {nome}!\n\nSeja muito bem-vindo(a) à nossa plataforma de cursos médicos!\n\nVocê agora tem acesso a conteúdos exclusivos desenvolvidos por especialistas renomados. Explore nossos cursos e aprimore seus conhecimentos.\n\nEm caso de dúvidas, nossa equipe está sempre disponível para ajudá-lo.\n\nBons estudos!\n\n`).trimEnd());
     } catch (_) {}
   }, [user?.id, user?.user_metadata]);
 
@@ -825,6 +833,8 @@ const ConfiguracoesPage = () => {
           sidebarTo: String(whitelabelSidebarTo || '').trim(),
           logoUrl: String(whitelabelLogoUrl || '').trim() || null,
           logoCompactUrl: String(whitelabelLogoCompactUrl || '').trim() || null,
+          welcomeEmailSubject: String(whitelabelWelcomeEmailSubject || '').trim(),
+          welcomeEmailMessage: String(whitelabelWelcomeEmailMessage || '').trim(),
         },
       };
       const { error } = await supabase.auth.updateUser({ data: next });
@@ -1079,7 +1089,7 @@ const ConfiguracoesPage = () => {
         .upsert({ user_id: user.id, member_area_url: normalized.url }, { onConflict: 'user_id' });
       if (error) throw error;
       setSubdomainSavedUrl(normalized.url);
-      setSubdomainInput(normalized.host);
+      setSubdomainInput(normalized.url);
       setSubdomainStatus({ state: 'checking', title: 'Verificando', description: 'Checando disponibilidade do domínio.' })
       toast({ title: 'Subdomínio salvo', description: normalized.host, duration: 5000 });
     } catch (e) {
@@ -1130,10 +1140,6 @@ const ConfiguracoesPage = () => {
     } finally {
       setSaving(false);
     }
-  };
-
-  const handleNotificationChange = (key) => {
-    setNotifications(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
   const handleDisconnectDevice = async (deviceId) => {
@@ -1374,74 +1380,6 @@ const ConfiguracoesPage = () => {
                     </div>
                   </div>
 
-                  {/* Notifications Section */}
-                  {!isAlunoView ? (
-                    <div className="pt-6">
-                      <h3 className="text-[14px] font-semibold text-[#1E1B39] mb-4">Notificações</h3>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-12 gap-y-4">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[14px] text-[#1E1B39]">Novos alunos matriculados</span>
-                          <button
-                            onClick={() => handleNotificationChange('novosAlunos')}
-                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
-                              notifications.novosAlunos ? 'bg-[#0047BB]' : 'bg-gray-200'
-                            }`}
-                          >
-                            <span
-                              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                                notifications.novosAlunos ? 'translate-x-6' : 'translate-x-1'
-                              }`}
-                            />
-                          </button>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-[14px] text-[#1E1B39]">Novas vendas realizadas</span>
-                          <button
-                            onClick={() => handleNotificationChange('novasVendas')}
-                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
-                              notifications.novasVendas ? 'bg-[#0047BB]' : 'bg-gray-200'
-                            }`}
-                          >
-                            <span
-                              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                                notifications.novasVendas ? 'translate-x-6' : 'translate-x-1'
-                              }`}
-                            />
-                          </button>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-[14px] text-[#1E1B39]">Novos comentários nos cursos</span>
-                          <button
-                            onClick={() => handleNotificationChange('novosComentarios')}
-                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
-                              notifications.novosComentarios ? 'bg-[#0047BB]' : 'bg-gray-200'
-                            }`}
-                          >
-                            <span
-                              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                                notifications.novosComentarios ? 'translate-x-6' : 'translate-x-1'
-                              }`}
-                            />
-                          </button>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-[14px] text-[#1E1B39]">Relatórios semanais</span>
-                          <button
-                            onClick={() => handleNotificationChange('relatoriosSemanais')}
-                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
-                              notifications.relatoriosSemanais ? 'bg-[#0047BB]' : 'bg-gray-200'
-                            }`}
-                          >
-                            <span
-                              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                                notifications.relatoriosSemanais ? 'translate-x-6' : 'translate-x-1'
-                              }`}
-                            />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ) : null}
                 </div>
               </div>
             </>
@@ -1962,7 +1900,8 @@ const ConfiguracoesPage = () => {
                     <label className="text-[12px] text-[#737780]">Assunto</label>
                     <input 
                       type="text" 
-                      defaultValue="Bem-vindo à nossa plataforma de cursos!"
+                      value={whitelabelWelcomeEmailSubject}
+                      onChange={(e) => setWhitelabelWelcomeEmailSubject(e.target.value)}
                       className="w-full px-3 py-2 border border-[#E3E4E5] rounded-[6px] text-[14px] focus:outline-none focus:border-[#0047BB] bg-white"
                     />
                   </div>
@@ -1970,19 +1909,20 @@ const ConfiguracoesPage = () => {
                   <div className="space-y-2">
                     <label className="text-[12px] text-[#737780]">Mensagem</label>
                     <textarea 
-                      defaultValue={`Olá {nome}!
-
-Seja muito bem-vindo(a) à nossa plataforma de cursos médicos!
-
-Você agora tem acesso a conteúdos exclusivos desenvolvidos por especialistas renomados. Explore nossos cursos e aprimore seus conhecimentos.
-
-Em caso de dúvidas, nossa equipe está sempre disponível para ajudá-lo.
-
-Bons estudos!
-
-Dr. Carlos Eduardo Silva`}
+                      value={whitelabelWelcomeEmailMessage}
+                      onChange={(e) => setWhitelabelWelcomeEmailMessage(e.target.value)}
                       className="w-full h-[250px] px-3 py-2 border border-[#E3E4E5] rounded-[6px] text-[14px] focus:outline-none focus:border-[#0047BB] bg-white resize-none"
                     />
+                  </div>
+                  <div className="flex items-end justify-end">
+                    <button
+                      type="button"
+                      disabled={whitelabelSaving || whitelabelUploading}
+                      onClick={handleSaveWhitelabel}
+                      className={`h-10 px-5 rounded-[6px] text-[14px] font-medium text-white transition-colors whitespace-nowrap ${whitelabelSaving || whitelabelUploading ? 'opacity-60 cursor-not-allowed bg-[#0047BB]' : 'bg-[#0047BB] hover:bg-[#003da0]'}`}
+                    >
+                      {whitelabelSaving ? 'Salvando…' : 'Salvar email'}
+                    </button>
                   </div>
                 </div>
               </div>

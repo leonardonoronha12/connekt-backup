@@ -10,26 +10,58 @@ import { supabase } from "@/lib/supabaseClient"
 import { TaxonomyDropdown, type TaxonomyItem } from "@/components/TaxonomyDropdown"
 import { useTaxonomy } from "@/contexts/TaxonomyContext"
 
-type Question = { id: string; name: string }
+type Question = { id: string; name: string; taxonomy?: { categoryIds: string[]; subcategoryIds: string[]; tagIds: string[] } }
 type Category = { id: string; name: string; questions: Question[] }
-type Course = { id: string; name: string }
+type Course = { id: string; name: string; taxonomy?: { categoryIds: string[]; subcategoryIds: string[]; tagIds: string[] } }
 // Dados dinâmicos do banco de questões do usuário
 const initialDynamicCategories: Category[] = []
-
-const coursesData: Course[] = [
-  { id: "c1", name: "Medicina Geral - Fundamentos" },
-  { id: "c2", name: "Cardiologia Clínica Avançada" },
-  { id: "c3", name: "Neurologia e Neurocirurgia" },
-  { id: "c4", name: "Emergências Médicas" },
-  { id: "c5", name: "Pediatria Básica" },
-  { id: "c6", name: "Ginecologia e Obstetrícia" },
-]
 
 export default function NovoSimuladoPage() {
   const { toast } = useToast()
   const [isSaving, setIsSaving] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
   const [isEditing, setIsEditing] = useState<boolean>(false)
+
+  const isBlockedRead = (e: any) => {
+    const msg = String(e?.message || e || '').toLowerCase()
+    const sc = String(e?.status || e?.statusCode || '')
+    return sc === '401' || sc === '403' || msg.includes('row-level security') || msg.includes('permission denied') || msg.includes('not allowed')
+  }
+
+  const getAccessToken = async () => {
+    try {
+      const { data } = await supabase.auth.getSession()
+      return data?.session?.access_token || ''
+    } catch (_) {
+      return ''
+    }
+  }
+
+  const parseObjMaybe = (v: any) => {
+    if (!v) return null
+    if (typeof v === 'object') return v
+    if (typeof v !== 'string') return null
+    try { return JSON.parse(v) } catch { return null }
+  }
+
+  const extractIds = (value: any) => {
+    if (!Array.isArray(value)) return []
+    return value
+      .map((x) => {
+        if (x && typeof x === 'object') return String((x as any).id || (x as any).value || (x as any).name || '').trim()
+        return String(x || '').trim()
+      })
+      .filter(Boolean)
+  }
+
+  const extractCourseTaxonomy = (row: any) => {
+    const meta = parseObjMaybe(row?.data) || {}
+    const tax = (meta?.taxonomy && typeof meta.taxonomy === 'object') ? meta.taxonomy : {}
+    const categoryIds = extractIds(tax.categoryIds || tax.categories || tax.category_ids || meta.selectedCategories || meta.selected_categories || meta.categories || meta.course_categories)
+    const subcategoryIds = extractIds(tax.subcategoryIds || tax.subcategories || tax.subcategory_ids || meta.selectedSubcategories || meta.selected_subcategories || meta.subcategories || meta.course_subcategories)
+    const tagIds = extractIds(tax.tagIds || tax.tags || tax.tag_ids || meta.selectedTags || meta.selected_tags || meta.tags || meta.course_tags)
+    return { categoryIds, subcategoryIds, tagIds }
+  }
 
   function parseBRLToNumber(value: string): number {
     if (!value) return 0
@@ -77,7 +109,7 @@ export default function NovoSimuladoPage() {
       const durationMinutes = parseInt((simulationDuration || "0").toString(), 10) || 0
       const maxGradeNumber = parseInt((maxGrade || "0").toString(), 10) || 0
 
-      const payload: any = {
+        const payload: any = {
         title: titleTrimmed,
         cover_image_url: coverImageUrl,
         is_paid: Boolean(isPaid) || priceNumber > 0,
@@ -87,14 +119,13 @@ export default function NovoSimuladoPage() {
         max_grade: maxGradeNumber,
         // Vincular propriedade ao usuário atual para satisfazer RLS
         user_id: currentUserId,
-        settings: {
+          settings: {
           // Redundância para compatibilidade com schemas antigos
           courseIds: (selectedCourses || []).map((c: any) => c?.id).filter(Boolean),
           questionIds: (selectedQuestions || []).map((q: any) => q?.id).filter(Boolean),
           secondChance,
           shuffleQuestions,
           skipQuestions,
-          enableCalculator,
           categories: selectedCategories,
           subcategories: selectedSubcategories,
           tags: selectedTags,
@@ -314,6 +345,13 @@ export default function NovoSimuladoPage() {
   const [selectedCourses, setSelectedCourses] = useState<Course[]>([])
   const [courseSearchQuery, setCourseSearchQuery] = useState("")
   const [coursesSelectedExpanded, setCoursesSelectedExpanded] = useState(true)
+  const [producerCourses, setProducerCourses] = useState<Course[]>([])
+  const [producerCoursesLoading, setProducerCoursesLoading] = useState(false)
+  const [producerCoursesError, setProducerCoursesError] = useState<string | null>(null)
+  const [courseFilterCategoryIds, setCourseFilterCategoryIds] = useState<string[]>([])
+  const [courseFilterSubcategoryIds, setCourseFilterSubcategoryIds] = useState<string[]>([])
+  const [courseFilterTagIds, setCourseFilterTagIds] = useState<string[]>([])
+  const [courseFilterPickerOpen, setCourseFilterPickerOpen] = useState<null | 'category' | 'subcategory' | 'tag'>(null)
 
   // Payment & availability
   const [isPaid, setIsPaid] = useState(false)
@@ -328,9 +366,6 @@ export default function NovoSimuladoPage() {
   const [secondChance, setSecondChance] = useState(true)
   const [shuffleQuestions, setShuffleQuestions] = useState(false)
   const [skipQuestions, setSkipQuestions] = useState(true)
-  
-  const [enableCalculator, setEnableCalculator] = useState(false)
-  
 
   // Score & timer
   const [maxGrade, setMaxGrade] = useState("100")
@@ -340,6 +375,10 @@ export default function NovoSimuladoPage() {
   const [expandedCategories, setExpandedCategories] = useState<string[]>([])
   const [selectedQuestions, setSelectedQuestions] = useState<Question[]>([])
   const [searchQuery, setSearchQuery] = useState("")
+  const [bankFilterCategoryIds, setBankFilterCategoryIds] = useState<string[]>([])
+  const [bankFilterSubcategoryIds, setBankFilterSubcategoryIds] = useState<string[]>([])
+  const [bankFilterTagIds, setBankFilterTagIds] = useState<string[]>([])
+  const [bankFilterPickerOpen, setBankFilterPickerOpen] = useState<null | { scope: 'top' | 'panel'; panelId?: string; kind: 'category' | 'subcategory' | 'tag' }>(null)
   
   // Detectar modo edição e carregar dados do simulado (deve estar dentro do componente)
   useEffect(() => {
@@ -393,7 +432,6 @@ export default function NovoSimuladoPage() {
           setSecondChance(Boolean(data.settings?.secondChance))
           setShuffleQuestions(Boolean(data.settings?.shuffleQuestions))
           setSkipQuestions(Boolean(data.settings?.skipQuestions))
-          setEnableCalculator(Boolean(data.settings?.enableCalculator))
 
           // Preencher cursos selecionados priorizando settings.courseIds (fallback para course_ids)
           try {
@@ -401,8 +439,7 @@ export default function NovoSimuladoPage() {
               ? data.settings.courseIds
               : (Array.isArray(data.course_ids) ? data.course_ids : [])
             const mappedCourses = ids.map((cid) => {
-              const found = coursesData.find((c) => String(c.id) === String(cid))
-              return found ? found : ({ id: String(cid), name: String(cid) } as Course)
+              return ({ id: String(cid), name: String(cid) } as Course)
             })
             setSelectedCourses(mappedCourses)
           } catch {}
@@ -454,6 +491,18 @@ export default function NovoSimuladoPage() {
       }
     })()
   }, [])
+
+  useEffect(() => {
+    if (producerCourses.length === 0) return
+    setSelectedCourses((prev) =>
+      (Array.isArray(prev) ? prev : []).map((c) => {
+        const id = String(c?.id || '').trim()
+        if (!id) return c
+        const found = producerCourses.find((p) => String(p.id) === id)
+        return found ? { ...c, name: found.name } : c
+      }),
+    )
+  }, [producerCourses])
 
   useEffect(() => {
     if (!availabilityDate) {
@@ -528,7 +577,18 @@ export default function NovoSimuladoPage() {
   const allQuestionCategories = [...bankCategories, ...customCategories]
   const filteredQuestions = allQuestionCategories.map((category) => ({
     ...category,
-    questions: category.questions.filter((q) => q.name.toLowerCase().includes(searchQuery.toLowerCase())),
+    questions: category.questions.filter((q) => {
+      const matchesQuery = q.name.toLowerCase().includes(searchQuery.toLowerCase())
+      if (!matchesQuery) return false
+      const tax: any = (q as any)?.taxonomy || {}
+      const qCats: string[] = Array.isArray(tax?.categoryIds) ? tax.categoryIds.map((x: any) => String(x)) : []
+      const qSubs: string[] = Array.isArray(tax?.subcategoryIds) ? tax.subcategoryIds.map((x: any) => String(x)) : []
+      const qTags: string[] = Array.isArray(tax?.tagIds) ? tax.tagIds.map((x: any) => String(x)) : []
+      if (bankFilterCategoryIds.length > 0 && !bankFilterCategoryIds.some((id) => qCats.includes(String(id)))) return false
+      if (bankFilterSubcategoryIds.length > 0 && !bankFilterSubcategoryIds.some((id) => qSubs.includes(String(id)))) return false
+      if (bankFilterTagIds.length > 0 && !bankFilterTagIds.some((id) => qTags.includes(String(id)))) return false
+      return true
+    }),
   }))
 
   const slugify = (s: string) =>
@@ -766,7 +826,101 @@ export default function NovoSimuladoPage() {
     }
   }
 
-  const filteredCourses = coursesData.filter((c) => c.name.toLowerCase().includes(courseSearchQuery.toLowerCase()))
+  useEffect(() => {
+    let active = true
+    const run = async () => {
+      setProducerCoursesLoading(true)
+      setProducerCoursesError(null)
+      try {
+        const { data } = await supabase.auth.getSession()
+        const uid = String(data?.session?.user?.id || '').trim()
+        if (!uid) {
+          if (active) setProducerCourses([])
+          return
+        }
+        const { data: rows, error } = await supabase
+          .from('courses')
+          .select('id,title,data,user_id,created_at')
+          .eq('user_id', uid)
+          .order('created_at', { ascending: false })
+          .limit(200)
+        if (!active) return
+        if (error) throw error
+        const list = (Array.isArray(rows) ? rows : []).map((r: any) => ({
+          id: String(r?.id || '').trim(),
+          name: String(r?.title || 'Curso').trim() || 'Curso',
+          taxonomy: extractCourseTaxonomy(r),
+        })).filter((c: any) => c.id)
+        setProducerCourses(list)
+      } catch (e: any) {
+        if (!active) return
+        if (!isBlockedRead(e)) {
+          setProducerCourses([])
+          return
+        }
+        try {
+          const { data } = await supabase.auth.getSession()
+          const uid = String(data?.session?.user?.id || '').trim()
+          if (!uid) { setProducerCourses([]); return }
+          const token = await getAccessToken()
+          const r = await fetch(`/api/producer?type=courses&producerId=${encodeURIComponent(uid)}`, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+          })
+          const body = await r.json().catch(() => ({}))
+          if (!active) return
+          if (!r.ok) {
+            setProducerCourses([])
+            return
+          }
+          const list = (Array.isArray(body?.data) ? body.data : []).map((row: any) => ({
+            id: String(row?.id || '').trim(),
+            name: String(row?.title || row?.name || 'Curso').trim() || 'Curso',
+            taxonomy: extractCourseTaxonomy(row),
+          })).filter((c: any) => c.id)
+          setProducerCourses(list)
+        } catch (e2: any) {
+          if (!active) return
+          setProducerCoursesError(e2?.message || 'Falha ao carregar cursos')
+          setProducerCourses([])
+        }
+      } finally {
+        if (active) setProducerCoursesLoading(false)
+      }
+    }
+    run()
+    return () => { active = false }
+  }, [])
+
+  const filteredCourses = useMemo(() => {
+    const q = courseSearchQuery.toLowerCase()
+    const selectedCatKeys = courseFilterCategoryIds.length
+      ? Array.from(new Set([
+          ...courseFilterCategoryIds.map(String),
+          ...courseFilterCategoryIds.map((id) => String(categoryItems.find((c) => String(c.id) === String(id))?.name || '')).filter(Boolean),
+        ]))
+      : []
+    const selectedSubKeys = courseFilterSubcategoryIds.length
+      ? Array.from(new Set([
+          ...courseFilterSubcategoryIds.map(String),
+          ...courseFilterSubcategoryIds.map((id) => String(subcategoryItems.find((s) => String(s.id) === String(id))?.name || '')).filter(Boolean),
+        ]))
+      : []
+    const selectedTagKeys = courseFilterTagIds.length
+      ? Array.from(new Set([
+          ...courseFilterTagIds.map(String),
+          ...courseFilterTagIds.map((id) => String(tagItems.find((t) => String(t.id) === String(id))?.name || '')).filter(Boolean),
+        ]))
+      : []
+    return producerCourses
+      .filter((c) => c.name.toLowerCase().includes(q))
+      .filter((c) => {
+        const t = c?.taxonomy || { categoryIds: [], subcategoryIds: [], tagIds: [] }
+        if (selectedCatKeys.length > 0 && !selectedCatKeys.some((id) => (t.categoryIds || []).includes(String(id)))) return false
+        if (selectedSubKeys.length > 0 && !selectedSubKeys.some((id) => (t.subcategoryIds || []).includes(String(id)))) return false
+        if (selectedTagKeys.length > 0 && !selectedTagKeys.some((id) => (t.tagIds || []).includes(String(id)))) return false
+        return true
+      })
+  }, [producerCourses, courseSearchQuery, courseFilterCategoryIds, courseFilterSubcategoryIds, courseFilterTagIds, categoryItems, subcategoryItems, tagItems])
 
   // Carregar bancos de questões do usuário e suas perguntas
   useEffect(() => {
@@ -786,10 +940,19 @@ export default function NovoSimuladoPage() {
           if (qErr) {
             console.warn('Erro ao buscar perguntas do banco', bank.id, qErr)
           }
-          const mappedQuestions: Question[] = (qs || []).map((q: any) => ({
-            id: String(q.id),
-            name: (q.title?.trim?.() || q.body?.trim?.() || (q.metadata?.text || q.metadata?.statement || q.metadata?.question) || 'Sem título')
-          }))
+          const mappedQuestions: Question[] = (qs || []).map((q: any) => {
+            const meta = (q?.metadata && typeof q.metadata === 'object') ? q.metadata : {}
+            const tax = (meta?.taxonomy && typeof meta.taxonomy === 'object') ? meta.taxonomy : {}
+            const toArr = (v: any) => Array.isArray(v) ? v.map((x) => String(x)) : []
+            const categoryIds = toArr(tax.categoryIds || tax.categories || tax.category_ids || meta.categoryIds || meta.categories)
+            const subcategoryIds = toArr(tax.subcategoryIds || tax.subcategories || tax.subcategory_ids || meta.subcategoryIds || meta.subcategories)
+            const tagIds = toArr(tax.tagIds || tax.tags || tax.tag_ids || meta.tagIds || meta.tags)
+            return {
+              id: String(q.id),
+              name: (q.title?.trim?.() || q.body?.trim?.() || (meta?.text || meta?.statement || meta?.question) || 'Sem título'),
+              taxonomy: { categoryIds, subcategoryIds, tagIds },
+            }
+          })
           categories.push({ id: String(bank.id), name: bank.name || bank.title || 'Banco sem nome', questions: mappedQuestions })
           const catName = (bank.category || '').trim()
           if (catName) categoryNameSet.add(catName)
@@ -1522,10 +1685,95 @@ export default function NovoSimuladoPage() {
                         className="bg-transparent text-[12px] text-[#1E1B39] placeholder:text-[#ABADB3] outline-none"
                       />
                     </div>
-                    {filteredCourses.some((c) => !selectedCourses.some((s) => s.id === c.id)) && (
-                      <></>
-                    )}
-                    {selectedCourses.length > 0 && (<></>)}
+                    {(courseFilterCategoryIds.length > 0 || courseFilterSubcategoryIds.length > 0 || courseFilterTagIds.length > 0) ? (
+                      <button
+                        type="button"
+                        className="text-[11px] font-semibold text-[#0047BB] hover:underline"
+                        onClick={() => {
+                          setCourseFilterCategoryIds([])
+                          setCourseFilterSubcategoryIds([])
+                          setCourseFilterTagIds([])
+                          setCourseFilterPickerOpen(null)
+                        }}
+                      >
+                        Limpar filtros
+                      </button>
+                    ) : null}
+
+                    <div className="relative">
+                      <button
+                        type="button"
+                        className="h-7 px-2 rounded-md border border-[#E3E4E5] bg-white text-[11px] font-semibold text-[#1E1B39] hover:bg-[#F9FAFB]"
+                        onClick={() => setCourseFilterPickerOpen((prev) => (prev === 'category' ? null : 'category'))}
+                      >
+                        Categoria{courseFilterCategoryIds.length ? ` (${courseFilterCategoryIds.length})` : ''}
+                      </button>
+                      <TaxonomyDropdown
+                        open={courseFilterPickerOpen === 'category'}
+                        onOpenChange={(open) => setCourseFilterPickerOpen(open ? 'category' : null)}
+                        items={categoryItems}
+                        onSelect={(item) => {
+                          const id = String(item?.id || '').trim()
+                          if (!id) return
+                          setCourseFilterCategoryIds((prev) => (prev.includes(id) ? prev : [...prev, id]))
+                        }}
+                        isSelected={(item) => courseFilterCategoryIds.includes(String(item?.id))}
+                        searchPlaceholder="Filtrar por categoria"
+                        createLabel="Criar"
+                        defaultColor="#8B5CF6"
+                        align="end"
+                      />
+                    </div>
+
+                    <div className="relative">
+                      <button
+                        type="button"
+                        className="h-7 px-2 rounded-md border border-[#E3E4E5] bg-white text-[11px] font-semibold text-[#1E1B39] hover:bg-[#F9FAFB]"
+                        onClick={() => setCourseFilterPickerOpen((prev) => (prev === 'subcategory' ? null : 'subcategory'))}
+                      >
+                        Sub{courseFilterSubcategoryIds.length ? ` (${courseFilterSubcategoryIds.length})` : ''}
+                      </button>
+                      <TaxonomyDropdown
+                        open={courseFilterPickerOpen === 'subcategory'}
+                        onOpenChange={(open) => setCourseFilterPickerOpen(open ? 'subcategory' : null)}
+                        items={subcategoryItems}
+                        onSelect={(item) => {
+                          const id = String(item?.id || '').trim()
+                          if (!id) return
+                          setCourseFilterSubcategoryIds((prev) => (prev.includes(id) ? prev : [...prev, id]))
+                        }}
+                        isSelected={(item) => courseFilterSubcategoryIds.includes(String(item?.id))}
+                        searchPlaceholder="Filtrar por subcategoria"
+                        createLabel="Criar"
+                        defaultColor="#22C55E"
+                        align="end"
+                      />
+                    </div>
+
+                    <div className="relative">
+                      <button
+                        type="button"
+                        className="h-7 px-2 rounded-md border border-[#E3E4E5] bg-white text-[11px] font-semibold text-[#1E1B39] hover:bg-[#F9FAFB]"
+                        onClick={() => setCourseFilterPickerOpen((prev) => (prev === 'tag' ? null : 'tag'))}
+                      >
+                        Tags{courseFilterTagIds.length ? ` (${courseFilterTagIds.length})` : ''}
+                      </button>
+                      <TaxonomyDropdown
+                        open={courseFilterPickerOpen === 'tag'}
+                        onOpenChange={(open) => setCourseFilterPickerOpen(open ? 'tag' : null)}
+                        items={tagItems}
+                        onSelect={(item) => {
+                          const id = String(item?.id || '').trim()
+                          if (!id) return
+                          setCourseFilterTagIds((prev) => (prev.includes(id) ? prev : [...prev, id]))
+                        }}
+                        isSelected={(item) => courseFilterTagIds.includes(String(item?.id))}
+                        searchPlaceholder="Filtrar por tag"
+                        createLabel="Criar"
+                        defaultColor="#EF4444"
+                        align="end"
+                      />
+                    </div>
                   </div>
                 </div>
                 <div className="px-6 pb-6 pt-0">
@@ -1586,7 +1834,16 @@ export default function NovoSimuladoPage() {
                     </div>
 
                     <div className="overflow-hidden">
-                      {filteredCourses.length === 0 ? (
+                      {producerCoursesLoading ? (
+                        <div className="flex items-center gap-2 px-3 py-3 text-[12px] text-[#9291A5]">
+                          <span className="inline-flex h-3 w-3 animate-pulse rounded-full bg-[#9CA3AF]" />
+                          Carregando cursos...
+                        </div>
+                      ) : producerCoursesError ? (
+                        <div className="flex items-center gap-2 px-3 py-3 text-[12px] text-[#B91C1C]">
+                          Erro ao carregar cursos: {producerCoursesError}
+                        </div>
+                      ) : filteredCourses.length === 0 ? (
                         <div className="flex items-center gap-2 px-3 py-3 text-[12px] text-[#9291A5]">
                           <Search className="h-4 w-4 text-[#9291A5]" />
                           <div>
@@ -1661,10 +1918,99 @@ export default function NovoSimuladoPage() {
                             className="bg-transparent text-[12px] text-[#1E1B39] placeholder:text-[#ABADB3] outline-none"
                           />
                         </div>
+                        {(bankFilterCategoryIds.length > 0 || bankFilterSubcategoryIds.length > 0 || bankFilterTagIds.length > 0) ? (
+                          <button
+                            type="button"
+                            className="text-[11px] font-semibold text-[#0047BB] hover:underline"
+                            onClick={() => {
+                              setBankFilterCategoryIds([])
+                              setBankFilterSubcategoryIds([])
+                              setBankFilterTagIds([])
+                              setBankFilterPickerOpen(null)
+                            }}
+                          >
+                            Limpar filtros
+                          </button>
+                        ) : null}
+
+                        <div className="relative">
+                          <button
+                            type="button"
+                            className="h-7 px-2 rounded-md border border-[#E3E4E5] bg-white text-[11px] font-semibold text-[#1E1B39] hover:bg-[#F9FAFB]"
+                            onClick={() => setBankFilterPickerOpen((prev) => (prev?.scope === 'top' && prev?.kind === 'category' ? null : { scope: 'top', kind: 'category' }))}
+                          >
+                            Categoria{bankFilterCategoryIds.length ? ` (${bankFilterCategoryIds.length})` : ''}
+                          </button>
+                          <TaxonomyDropdown
+                            open={bankFilterPickerOpen?.scope === 'top' && bankFilterPickerOpen?.kind === 'category'}
+                            onOpenChange={(open) => setBankFilterPickerOpen(open ? { scope: 'top', kind: 'category' } : null)}
+                            items={categoryItems}
+                            onSelect={(item) => {
+                              const id = String(item?.id || '').trim()
+                              if (!id) return
+                              setBankFilterCategoryIds((prev) => (prev.includes(id) ? prev : [...prev, id]))
+                            }}
+                            isSelected={(item) => bankFilterCategoryIds.includes(String(item?.id))}
+                            searchPlaceholder="Filtrar por categoria"
+                            createLabel="Criar"
+                            defaultColor="#8B5CF6"
+                            align="end"
+                          />
+                        </div>
+
+                        <div className="relative">
+                          <button
+                            type="button"
+                            className="h-7 px-2 rounded-md border border-[#E3E4E5] bg-white text-[11px] font-semibold text-[#1E1B39] hover:bg-[#F9FAFB]"
+                            onClick={() => setBankFilterPickerOpen((prev) => (prev?.scope === 'top' && prev?.kind === 'subcategory' ? null : { scope: 'top', kind: 'subcategory' }))}
+                          >
+                            Sub{bankFilterSubcategoryIds.length ? ` (${bankFilterSubcategoryIds.length})` : ''}
+                          </button>
+                          <TaxonomyDropdown
+                            open={bankFilterPickerOpen?.scope === 'top' && bankFilterPickerOpen?.kind === 'subcategory'}
+                            onOpenChange={(open) => setBankFilterPickerOpen(open ? { scope: 'top', kind: 'subcategory' } : null)}
+                            items={subcategoryItems}
+                            onSelect={(item) => {
+                              const id = String(item?.id || '').trim()
+                              if (!id) return
+                              setBankFilterSubcategoryIds((prev) => (prev.includes(id) ? prev : [...prev, id]))
+                            }}
+                            isSelected={(item) => bankFilterSubcategoryIds.includes(String(item?.id))}
+                            searchPlaceholder="Filtrar por subcategoria"
+                            createLabel="Criar"
+                            defaultColor="#22C55E"
+                            align="end"
+                          />
+                        </div>
+
+                        <div className="relative">
+                          <button
+                            type="button"
+                            className="h-7 px-2 rounded-md border border-[#E3E4E5] bg-white text-[11px] font-semibold text-[#1E1B39] hover:bg-[#F9FAFB]"
+                            onClick={() => setBankFilterPickerOpen((prev) => (prev?.scope === 'top' && prev?.kind === 'tag' ? null : { scope: 'top', kind: 'tag' }))}
+                          >
+                            Tags{bankFilterTagIds.length ? ` (${bankFilterTagIds.length})` : ''}
+                          </button>
+                          <TaxonomyDropdown
+                            open={bankFilterPickerOpen?.scope === 'top' && bankFilterPickerOpen?.kind === 'tag'}
+                            onOpenChange={(open) => setBankFilterPickerOpen(open ? { scope: 'top', kind: 'tag' } : null)}
+                            items={tagItems}
+                            onSelect={(item) => {
+                              const id = String(item?.id || '').trim()
+                              if (!id) return
+                              setBankFilterTagIds((prev) => (prev.includes(id) ? prev : [...prev, id]))
+                            }}
+                            isSelected={(item) => bankFilterTagIds.includes(String(item?.id))}
+                            searchPlaceholder="Filtrar por tag"
+                            createLabel="Criar"
+                            defaultColor="#EF4444"
+                            align="end"
+                          />
+                        </div>
                       </div>
                     </div>
                     <p className="mb-2 flex items-center gap-1 text-[12px] text-[#9291A5]">
-                      <Info className="h-4 w-4" /> Filtre por nome, expanda uma categoria e adicione.
+                      <Info className="h-4 w-4" /> Filtre por nome/categoria/subcategoria/tags, expanda e adicione.
                     </p>
                     {bankLoading && (
                       <div className="mb-3 flex items-center gap-2 rounded-[6px] border border-[#E3E4E5] bg-white px-3 py-2 text-[12px] text-[#6B7280]">
@@ -1794,15 +2140,107 @@ export default function NovoSimuladoPage() {
                                 <span className="flex items-center gap-2 text-[11px] text-[#4B5563]">
                                   <ListChecks className="h-3 w-3" /> {category.name}: {category.questions.length} itens
                                 </span>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="gap-1 h-7 px-2 border-[#E3E4E5]"
-                                  onClick={() => addAllFromCategory(category)}
-                                  aria-label={`Adicionar todas as questões de ${category.name}`}
-                                >
-                                  <Plus className="h-3 w-3 text-[#1E1B39]" /> Adicionar todas
-                                </Button>
+                                <div className="flex items-center gap-2">
+                                  {(bankFilterCategoryIds.length > 0 || bankFilterSubcategoryIds.length > 0 || bankFilterTagIds.length > 0) ? (
+                                    <button
+                                      type="button"
+                                      className="text-[11px] font-semibold text-[#0047BB] hover:underline"
+                                      onClick={() => {
+                                        setBankFilterCategoryIds([])
+                                        setBankFilterSubcategoryIds([])
+                                        setBankFilterTagIds([])
+                                        setBankFilterPickerOpen(null)
+                                      }}
+                                    >
+                                      Limpar
+                                    </button>
+                                  ) : null}
+
+                                  <div className="relative">
+                                    <button
+                                      type="button"
+                                      className="h-7 px-2 rounded-md border border-[#E3E4E5] bg-white text-[11px] font-semibold text-[#1E1B39] hover:bg-[#F9FAFB]"
+                                      onClick={() => setBankFilterPickerOpen((prev) => (prev?.scope === 'panel' && prev?.panelId === category.id && prev?.kind === 'category' ? null : { scope: 'panel', panelId: category.id, kind: 'category' }))}
+                                    >
+                                      Categoria{bankFilterCategoryIds.length ? ` (${bankFilterCategoryIds.length})` : ''}
+                                    </button>
+                                    <TaxonomyDropdown
+                                      open={bankFilterPickerOpen?.scope === 'panel' && bankFilterPickerOpen?.panelId === category.id && bankFilterPickerOpen?.kind === 'category'}
+                                      onOpenChange={(open) => setBankFilterPickerOpen(open ? { scope: 'panel', panelId: category.id, kind: 'category' } : null)}
+                                      items={categoryItems}
+                                      onSelect={(item) => {
+                                        const id = String(item?.id || '').trim()
+                                        if (!id) return
+                                        setBankFilterCategoryIds((prev) => (prev.includes(id) ? prev : [...prev, id]))
+                                      }}
+                                      isSelected={(item) => bankFilterCategoryIds.includes(String(item?.id))}
+                                      searchPlaceholder="Filtrar por categoria"
+                                      createLabel="Criar"
+                                      defaultColor="#8B5CF6"
+                                      align="end"
+                                    />
+                                  </div>
+
+                                  <div className="relative">
+                                    <button
+                                      type="button"
+                                      className="h-7 px-2 rounded-md border border-[#E3E4E5] bg-white text-[11px] font-semibold text-[#1E1B39] hover:bg-[#F9FAFB]"
+                                      onClick={() => setBankFilterPickerOpen((prev) => (prev?.scope === 'panel' && prev?.panelId === category.id && prev?.kind === 'subcategory' ? null : { scope: 'panel', panelId: category.id, kind: 'subcategory' }))}
+                                    >
+                                      Sub{bankFilterSubcategoryIds.length ? ` (${bankFilterSubcategoryIds.length})` : ''}
+                                    </button>
+                                    <TaxonomyDropdown
+                                      open={bankFilterPickerOpen?.scope === 'panel' && bankFilterPickerOpen?.panelId === category.id && bankFilterPickerOpen?.kind === 'subcategory'}
+                                      onOpenChange={(open) => setBankFilterPickerOpen(open ? { scope: 'panel', panelId: category.id, kind: 'subcategory' } : null)}
+                                      items={subcategoryItems}
+                                      onSelect={(item) => {
+                                        const id = String(item?.id || '').trim()
+                                        if (!id) return
+                                        setBankFilterSubcategoryIds((prev) => (prev.includes(id) ? prev : [...prev, id]))
+                                      }}
+                                      isSelected={(item) => bankFilterSubcategoryIds.includes(String(item?.id))}
+                                      searchPlaceholder="Filtrar por subcategoria"
+                                      createLabel="Criar"
+                                      defaultColor="#22C55E"
+                                      align="end"
+                                    />
+                                  </div>
+
+                                  <div className="relative">
+                                    <button
+                                      type="button"
+                                      className="h-7 px-2 rounded-md border border-[#E3E4E5] bg-white text-[11px] font-semibold text-[#1E1B39] hover:bg-[#F9FAFB]"
+                                      onClick={() => setBankFilterPickerOpen((prev) => (prev?.scope === 'panel' && prev?.panelId === category.id && prev?.kind === 'tag' ? null : { scope: 'panel', panelId: category.id, kind: 'tag' }))}
+                                    >
+                                      Tags{bankFilterTagIds.length ? ` (${bankFilterTagIds.length})` : ''}
+                                    </button>
+                                    <TaxonomyDropdown
+                                      open={bankFilterPickerOpen?.scope === 'panel' && bankFilterPickerOpen?.panelId === category.id && bankFilterPickerOpen?.kind === 'tag'}
+                                      onOpenChange={(open) => setBankFilterPickerOpen(open ? { scope: 'panel', panelId: category.id, kind: 'tag' } : null)}
+                                      items={tagItems}
+                                      onSelect={(item) => {
+                                        const id = String(item?.id || '').trim()
+                                        if (!id) return
+                                        setBankFilterTagIds((prev) => (prev.includes(id) ? prev : [...prev, id]))
+                                      }}
+                                      isSelected={(item) => bankFilterTagIds.includes(String(item?.id))}
+                                      searchPlaceholder="Filtrar por tag"
+                                      createLabel="Criar"
+                                      defaultColor="#EF4444"
+                                      align="end"
+                                    />
+                                  </div>
+
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="gap-1 h-7 px-2 border-[#E3E4E5]"
+                                    onClick={() => addAllFromCategory(category)}
+                                    aria-label={`Adicionar todas as questões de ${category.name}`}
+                                  >
+                                    <Plus className="h-3 w-3 text-[#1E1B39]" /> Adicionar todas
+                                  </Button>
+                                </div>
                               </div>
                               {category.questions.map((q) => {
                                 const isSelected = selectedQuestions.some((s) => s.id === q.id)
@@ -1882,7 +2320,6 @@ export default function NovoSimuladoPage() {
                   <p className="text-[12px] text-[#9291A5]">Ordem diferente de questão, o que evita memorização mecânica e reduz cópia.</p>
                   <div className="flex items-center justify-between"><span className="text-[12px]">Pular questão</span><Switch checked={skipQuestions} onCheckedChange={setSkipQuestions} /></div>
                   <p className="text-[12px] text-[#9291A5]">Avançar sem responder imediatamente e decidir depois.</p>
-                  <div className="flex items-center justify-between"><span className="text-[12px]">Calculadora</span><Switch checked={enableCalculator} onCheckedChange={setEnableCalculator} /></div>
                 </div>
               </div>
               <div className="rounded-[4px] border border-[#E3E4E5] bg-white p-4">

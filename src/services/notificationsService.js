@@ -1,6 +1,9 @@
+import { supabase } from '@/lib/supabaseClient'
+
 const STORAGE_PREFIX = 'connekt_notifications_v1'
 
 const listenersByUser = new Map()
+const syncStateByUser = new Map()
 
 function safeParse(json) {
   try { return JSON.parse(json) } catch (_) { return null }
@@ -49,6 +52,38 @@ function sortDesc(a, b) {
   return tb - ta
 }
 
+async function fetchRemote(userId) {
+  if (!userId) return []
+  try {
+    const { data, error } = await supabase
+      .from('notifications')
+      .select('id,recipient_user_id,type,title,message,actor_name,entity_name,href,created_at,read_at')
+      .eq('recipient_user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(200)
+    if (error) return []
+    return (Array.isArray(data) ? data : []).map((r) => ({
+      id: String(r?.id || ''),
+      createdAt: String(r?.created_at || ''),
+      readAt: r?.read_at ? String(r.read_at) : null,
+      type: r?.type || 'system',
+      title: r?.title || '',
+      message: r?.message || '',
+      actorName: r?.actor_name || null,
+      entityName: r?.entity_name || null,
+      href: r?.href || null,
+    })).filter((n) => n && n.id)
+  } catch (_) {
+    return []
+  }
+}
+
+async function syncRemoteToLocal(userId) {
+  const remote = await fetchRemote(userId)
+  if (remote.length === 0) return
+  writeNotifications(userId, remote)
+}
+
 export const notificationsService = {
   list(userId) {
     return readNotifications(userId).sort(sortDesc)
@@ -63,11 +98,45 @@ export const notificationsService = {
     }
     set.add(cb)
     try { cb(this.list(userId)) } catch (_) {}
+
+    if (userId) {
+      const existing = syncStateByUser.get(userId) || null
+      if (!existing) {
+        const state = { active: true, channel: null, timer: null }
+        syncStateByUser.set(userId, state)
+        syncRemoteToLocal(userId)
+        try {
+          state.channel = supabase
+            .channel(`notifications:${userId}`)
+            .on(
+              'postgres_changes',
+              { event: '*', schema: 'public', table: 'notifications', filter: `recipient_user_id=eq.${userId}` },
+              () => { syncRemoteToLocal(userId) }
+            )
+            .subscribe()
+        } catch (_) {
+          state.timer = window.setInterval(() => { syncRemoteToLocal(userId) }, 30_000)
+        }
+      }
+    }
+
     return () => {
       const s = listenersByUser.get(key)
       if (!s) return
       s.delete(cb)
       if (s.size === 0) listenersByUser.delete(key)
+
+      if (userId) {
+        const st = syncStateByUser.get(userId)
+        if (st && listenersByUser.get(userId)?.size !== 0) return
+        if (st) {
+          if (st.timer) window.clearInterval(st.timer)
+          if (st.channel) {
+            try { supabase.removeChannel(st.channel) } catch (_) {}
+          }
+          syncStateByUser.delete(userId)
+        }
+      }
     }
   },
 
@@ -97,6 +166,11 @@ export const notificationsService = {
     const now = new Date().toISOString()
     const next = list.map(n => (n?.id === notificationId ? { ...n, readAt: n.readAt || now } : n))
     writeNotifications(userId, next)
+    if (userId && notificationId) {
+      try {
+        supabase.from('notifications').update({ read_at: now }).eq('id', notificationId).eq('recipient_user_id', userId)
+      } catch (_) {}
+    }
     return { ok: true }
   },
 
@@ -105,11 +179,19 @@ export const notificationsService = {
     const now = new Date().toISOString()
     const next = list.map(n => ({ ...n, readAt: n.readAt || now }))
     writeNotifications(userId, next)
+    if (userId) {
+      try {
+        supabase.from('notifications').update({ read_at: now }).eq('recipient_user_id', userId).is('read_at', null)
+      } catch (_) {}
+    }
     return { ok: true }
   },
 
   clearAll(userId) {
     writeNotifications(userId, [])
+    if (userId) {
+      try { supabase.from('notifications').delete().eq('recipient_user_id', userId) } catch (_) {}
+    }
     return { ok: true }
   },
 

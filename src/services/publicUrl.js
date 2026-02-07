@@ -13,7 +13,12 @@ export function getPublicAppOrigin() {
   const envUrl = readEnvUrl()
   if (envUrl) {
     try {
-      return new URL(envUrl).origin
+      const envOrigin = new URL(envUrl).origin
+      const currentOrigin = window.location.origin
+      const currentHost = String(window.location.hostname || '').toLowerCase()
+      const isLocal = currentHost === 'localhost' || currentHost === '127.0.0.1' || currentHost === '0.0.0.0'
+      if (!isLocal && currentOrigin && envOrigin && currentOrigin !== envOrigin) return currentOrigin
+      return envOrigin
     } catch (_) {}
   }
 
@@ -23,4 +28,3 @@ export function getPublicAppOrigin() {
     return ''
   }
 }
-
