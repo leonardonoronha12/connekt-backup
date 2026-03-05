@@ -42,13 +42,17 @@ export default async function handler(req, res) {
     const type = String(sp.get('type') || 'all').trim().toLowerCase()
     const showDisabled = sp.get('show_disabled') === '1'
     const courseId = String(sp.get('course_id') || '').trim()
-    const perPage = Math.max(1, Math.min(500, Number(sp.get('per_page') || 50)))
+    const perPageRaw = String(sp.get('per_page') || '').trim().toLowerCase()
+    const perPage =
+      perPageRaw === 'all'
+        ? 10_000
+        : Math.max(1, Math.min(5000, Number(perPageRaw || 50)))
 
     const allowedByCourse = await getCourseAllowedUserIdSet(admin, courseId)
 
     const matches = []
-    const maxScanPages = 20
-    const scanPerPage = Math.max(50, Math.min(200, perPage))
+    const scanPerPage = Math.max(50, Math.min(200, perPage >= 500 ? 200 : perPage))
+    const maxScanPages = Math.max(20, Math.min(200, Math.ceil(perPage / scanPerPage) + 20))
     for (let page = 1; page <= maxScanPages; page += 1) {
       const r = await admin.auth.admin.listUsers({ page, perPage: scanPerPage })
       const users = Array.isArray(r?.data?.users) ? r.data.users : []
@@ -82,9 +86,12 @@ export default async function handler(req, res) {
       if (users.length < scanPerPage) break
     }
 
-    return json(res, 200, { ok: true, users: matches })
+    return json(res, 200, {
+      ok: true,
+      users: matches,
+      meta: { count: matches.length, limit: perPage, truncated: matches.length >= perPage },
+    })
   } catch (e) {
     return json(res, 500, { error: 'internal_error', message: e?.message || String(e) })
   }
 }
-
