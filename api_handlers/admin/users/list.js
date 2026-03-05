@@ -132,10 +132,14 @@ function normalizeFromDbRow(row) {
 }
 
 function getPgClient() {
-  const connectionString = process.env.SUPABASE_DB_URL
-  if (connectionString) {
-    return new Client({ connectionString, ssl: { rejectUnauthorized: false } })
-  }
+  const connectionString =
+    process.env.SUPABASE_DB_URL ||
+    process.env.SUPABASE_DATABASE_URL ||
+    process.env.DATABASE_URL ||
+    process.env.POSTGRES_URL ||
+    process.env.POSTGRES_URL_NON_POOLING ||
+    ''
+  if (connectionString) return new Client({ connectionString, ssl: { rejectUnauthorized: false } })
   const host = process.env.PGHOST || process.env.SUPABASE_PG_HOST
   const port = Number(process.env.PGPORT || process.env.SUPABASE_PG_PORT || 5432)
   const database = process.env.PGDATABASE || process.env.SUPABASE_PG_DATABASE
@@ -282,10 +286,18 @@ export default async function handler(req, res) {
             meta: { count: pgFallback.users.length, limit: perPage, truncated: pgFallback.users.length >= perPage, source: pgFallback.source },
           })
         }
-        const warning =
-          pgFallback.error === 'missing_db_env'
-            ? 'Configure SUPABASE_DB_URL (ou PGHOST/PGUSER/PGPASSWORD/PGDATABASE) na Vercel para exibir email e último login.'
-            : ''
+        const warning = (() => {
+          if (pgFallback.error !== 'missing_db_env') return ''
+          const candidates = [
+            'SUPABASE_DB_URL',
+            'SUPABASE_DATABASE_URL',
+            'DATABASE_URL',
+            'POSTGRES_URL',
+            'POSTGRES_URL_NON_POOLING',
+            'PGHOST/PGUSER/PGPASSWORD/PGDATABASE',
+          ].join(', ')
+          return `Não encontrei env de Postgres nesta function. Configure: ${candidates} (Production + Preview) e faça redeploy.`
+        })()
         const fallback = await listUsersFallbackFromDb(admin, {
           q,
           type,
