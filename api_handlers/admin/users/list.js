@@ -103,6 +103,57 @@ async function getCourseAllowedUserIdSet(admin, courseId) {
   return set
 }
 
+function normalizeFromDbRow(row) {
+  const r = row && typeof row === 'object' ? row : {}
+  const id = String(r?.id || r?.user_id || r?.uid || '').trim()
+  const email = normalizeEmail(r?.email || r?.user_email || r?.mail || '')
+  const name = String(r?.name || r?.full_name || r?.profile_full_name || r?.display_name || '').trim()
+  const accountType = normalizeAccountType(r?.account_type || r?.role || r?.platform_role || r?.type || '')
+  const disabled = Boolean(r?.disabled || r?.is_disabled || r?.banned || r?.blocked)
+  const createdAt = r?.created_at || r?.createdAt || null
+  const lastSignInAt = r?.last_sign_in_at || r?.last_login_at || r?.lastSignInAt || null
+  return {
+    id,
+    email,
+    name: name || email || id,
+    accountType,
+    disabled,
+    createdAt,
+    lastSignInAt,
+  }
+}
+
+async function listUsersFallbackFromDb(admin, opts) {
+  const q = String(opts?.q || '').trim().toLowerCase()
+  const type = String(opts?.type || 'all').trim().toLowerCase()
+  const showDisabled = !!opts?.showDisabled
+  const allowedByCourse = opts?.allowedByCourse || null
+  const perPage = Math.max(1, Math.min(5000, Number(opts?.perPage || 50)))
+
+  const tryTables = ['users', 'profiles']
+  for (const table of tryTables) {
+    const { data, error } = await admin.from(table).select('*').limit(Math.min(5000, perPage))
+    if (error) continue
+    const rows = Array.isArray(data) ? data : []
+    const out = []
+    for (const row of rows) {
+      const u = normalizeFromDbRow(row)
+      if (!u.id) continue
+      if (!showDisabled && u.disabled) continue
+      if (type !== 'all' && normalizeAccountType(type) !== u.accountType) continue
+      if (allowedByCourse && !allowedByCourse.has(u.id)) continue
+      if (q) {
+        const hay = `${u.name} ${u.email}`.toLowerCase()
+        if (!hay.includes(q)) continue
+      }
+      out.push(u)
+      if (out.length >= perPage) break
+    }
+    return { ok: true, users: out, source: `db:${table}` }
+  }
+  return { ok: false, error: 'db_fallback_failed' }
+}
+
 export default async function handler(req, res) {
   try {
     if (req.method !== 'GET') return json(res, 405, { error: 'method_not_allowed' })
@@ -132,6 +183,20 @@ export default async function handler(req, res) {
         const msg = r.error?.message || 'list_users_failed'
         const status = r.error?.status ? ` (status=${r.error.status})` : ''
         const name = r.error?.name ? ` (name=${r.error.name})` : ''
+        const fallback = await listUsersFallbackFromDb(admin, {
+          q,
+          type,
+          showDisabled,
+          allowedByCourse,
+          perPage,
+        })
+        if (fallback.ok) {
+          return json(res, 200, {
+            ok: true,
+            users: fallback.users,
+            meta: { count: fallback.users.length, limit: perPage, truncated: fallback.users.length >= perPage, source: fallback.source },
+          })
+        }
         throw new Error(`${msg}${status}${name}${serviceKeyRoleHint()}`)
       }
       const users = Array.isArray(r?.data?.users) ? r.data.users : []
