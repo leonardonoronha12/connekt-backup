@@ -25,17 +25,39 @@ function parseCsv(text) {
   const raw = String(text || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n')
   const lines = raw.split('\n').map((l) => l.trim()).filter(Boolean)
   if (!lines.length) return []
-  const splitLine = (line) => {
-    const sep = line.includes(';') && !line.includes(',') ? ';' : ','
-    return line.split(sep).map((s) => s.trim().replace(/^"|"$/g, ''))
+  const count = (s, ch) => (String(s || '').match(new RegExp(`\\${ch}`, 'g')) || []).length
+  const detectSep = (line) => {
+    const l = String(line || '')
+    const semi = count(l, ';')
+    const comma = count(l, ',')
+    const tab = count(l, '\t')
+    if (tab >= semi && tab >= comma && tab > 0) return '\t'
+    if (semi >= comma && semi > 0) return ';'
+    return ','
   }
-  const header = splitLine(lines[0]).map((h) => h.toLowerCase())
-  const idx = (k) => header.findIndex((h) => h === k)
-  const idxName = idx('nome')
-  const idxEmail = idx('email')
-  const idxType = idx('tipo')
-  const idxCourseId = idx('course_id')
-  const idxExpires = idx('expires_at')
+  const sep = detectSep(lines[0])
+  const splitLine = (line) => String(line || '').split(sep).map((s) => s.trim().replace(/^"|"$/g, ''))
+  const normalizeKey = (k) => String(k || '')
+    .replace(/^\uFEFF/, '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+  const header = splitLine(lines[0]).map((h) => normalizeKey(h))
+  const idx = (candidates) => {
+    for (const c of candidates) {
+      const i = header.findIndex((h) => h === c)
+      if (i >= 0) return i
+    }
+    return -1
+  }
+  const idxName = idx(['nome', 'name', 'full_name'])
+  const idxEmail = idx(['email', 'e_mail', 'e-mail', 'mail'])
+  const idxType = idx(['tipo', 'type', 'account_type', 'role'])
+  const idxCourseId = idx(['course_id', 'curso_id', 'courseid'])
+  const idxExpires = idx(['expires_at', 'expiresat', 'expira_em', 'expiracao', 'validade'])
 
   const out = []
   for (let i = 1; i < lines.length; i += 1) {
@@ -96,6 +118,9 @@ export default function PlatformAdminPanelPage() {
   const [bulkCsvText, setBulkCsvText] = useState('')
   const [bulkCsvParsed, setBulkCsvParsed] = useState([])
   const [bulkCsvLoading, setBulkCsvLoading] = useState(false)
+  const [bulkCsvParsing, setBulkCsvParsing] = useState(false)
+  const [bulkCsvSource, setBulkCsvSource] = useState('text')
+  const [bulkCsvFileName, setBulkCsvFileName] = useState('')
 
   const authHeaders = useMemo(() => {
     const t = String(session?.access_token || '')
@@ -355,13 +380,117 @@ export default function PlatformAdminPanelPage() {
   }
 
   useEffect(() => {
+    if (bulkCsvSource !== 'text') return
     try {
       const parsed = parseCsv(bulkCsvText)
       setBulkCsvParsed(parsed)
     } catch (_) {
       setBulkCsvParsed([])
     }
-  }, [bulkCsvText])
+  }, [bulkCsvSource, bulkCsvText])
+
+  const parseExpiresFromSpreadsheetValue = (value, XLSX) => {
+    if (typeof value === 'number' && Number.isFinite(value) && XLSX?.SSF?.parse_date_code) {
+      try {
+        const d = XLSX.SSF.parse_date_code(value)
+        const y = Number(d?.y || 0)
+        const m = Number(d?.m || 0)
+        const day = Number(d?.d || 0)
+        if (y > 0 && m > 0 && day > 0) {
+          return `${String(y).padStart(4, '0')}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+        }
+      } catch (_) {}
+    }
+    const s = String(value || '').trim()
+    if (!s) return ''
+    if (isValidIsoDate(s)) return s
+    const m = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
+    if (m) return `${m[3]}-${m[2]}-${m[1]}`
+    const dt = new Date(s)
+    if (Number.isFinite(dt.getTime())) return dt.toISOString().slice(0, 10)
+    return s
+  }
+
+  const handleBulkFile = useCallback(async (file) => {
+    const f = file || null
+    if (!f) return
+    const name = String(f.name || '').trim()
+    const lower = name.toLowerCase()
+    setBulkCsvParsing(true)
+    try {
+      setBulkCsvFileName(name)
+      if (lower.endsWith('.csv') || String(f.type || '').toLowerCase().includes('csv')) {
+        const text = await f.text()
+        setBulkCsvSource('text')
+        setBulkCsvText(text)
+        return
+      }
+
+      if (lower.endsWith('.xlsx') || lower.endsWith('.xls')) {
+        const XLSX = await import('xlsx')
+        const buf = await f.arrayBuffer()
+        const wb = XLSX.read(buf, { type: 'array' })
+        const sheetName = String(wb.SheetNames?.[0] || '')
+        const ws = sheetName ? wb.Sheets?.[sheetName] : null
+        if (!ws) throw new Error('Planilha inválida')
+        const rawRows = XLSX.utils.sheet_to_json(ws, { defval: '', raw: true })
+
+        const normalizeKey = (k) => String(k || '')
+          .trim()
+          .toLowerCase()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .replace(/[^a-z0-9]+/g, '_')
+          .replace(/^_+|_+$/g, '')
+
+        const pick = (obj, keys) => {
+          for (const k of keys) {
+            const v = obj?.[k]
+            if (v === null || v === undefined) continue
+            const s = String(v).trim()
+            if (!s) continue
+            return v
+          }
+          return ''
+        }
+
+        const users = []
+        for (const row of Array.isArray(rawRows) ? rawRows : []) {
+          const normalized = {}
+          for (const [k, v] of Object.entries(row || {})) normalized[normalizeKey(k)] = v
+          const email = String(pick(normalized, ['email', 'e_mail', 'e-mail', 'mail', 'user_email'])).trim().toLowerCase()
+          if (!email) continue
+          const nameValue = pick(normalized, ['nome', 'name', 'full_name', 'profile_full_name', 'display_name'])
+          const typeValue = pick(normalized, ['tipo', 'type', 'account_type', 'role', 'platform_role'])
+          const courseValue = pick(normalized, ['course_id', 'curso_id', 'curso', 'courseid'])
+          const expiresValue = pick(normalized, ['expires_at', 'expiresat', 'expira_em', 'expiracao', 'validade', 'expires'])
+
+          users.push({
+            name: String(nameValue || '').trim(),
+            email,
+            accountType: normalizeType(typeValue || 'aluno'),
+            courseId: String(courseValue || '').trim(),
+            expiresAt: parseExpiresFromSpreadsheetValue(expiresValue, XLSX),
+          })
+        }
+
+        setBulkCsvSource('file')
+        setBulkCsvText('')
+        setBulkCsvParsed(users)
+        return
+      }
+
+      throw new Error('Formato não suportado (use .csv, .xlsx ou .xls)')
+    } catch (e) {
+      setBulkCsvFileName('')
+      setBulkCsvSource('text')
+      setBulkCsvText('')
+      setBulkCsvParsed([])
+      toast({ title: 'Erro', description: e?.message || 'Erro ao ler planilha', variant: 'destructive' })
+    } finally {
+      setBulkCsvParsing(false)
+    }
+  }, [])
 
   const runBulkCreate = async () => {
     const items = Array.isArray(bulkCsvParsed) ? bulkCsvParsed : []
@@ -389,7 +518,10 @@ export default function PlatformAdminPanelPage() {
       const failCount = Number(body?.failCount || 0)
       toast({ title: 'Importação concluída', description: `Sucesso: ${okCount}. Falhas: ${failCount}.` })
       setBulkCsvOpen(false)
+      setBulkCsvSource('text')
       setBulkCsvText('')
+      setBulkCsvParsed([])
+      setBulkCsvFileName('')
       setRefreshTick((v) => v + 1)
     } catch (e) {
       toast({ title: 'Erro', description: e?.message || 'Erro ao importar', variant: 'destructive' })
@@ -519,7 +651,7 @@ export default function PlatformAdminPanelPage() {
                   onClick={() => setBulkCsvOpen(true)}
                 >
                   <Upload className="w-4 h-4 inline-block mr-2" />
-                  Importar CSV
+                  Importar planilha
                 </button>
                 <button
                   type="button"
@@ -834,8 +966,17 @@ export default function PlatformAdminPanelPage() {
           <div className="fixed inset-0 z-[90] bg-black/40 flex items-center justify-center p-6">
             <div className="w-full max-w-[760px] rounded-[14px] border border-[#E3E4E5] bg-white overflow-hidden">
               <div className="px-5 py-4 border-b border-[#E3E4E5] flex items-center justify-between">
-                <div className="text-[14px] font-semibold text-[#1E1B39]">Importar alunos em massa (CSV)</div>
-                <button className="w-9 h-9 rounded-[10px] hover:bg-[#F3F4F6] flex items-center justify-center" onClick={() => setBulkCsvOpen(false)}>
+                <div className="text-[14px] font-semibold text-[#1E1B39]">Importar alunos em massa (planilha)</div>
+                <button
+                  className="w-9 h-9 rounded-[10px] hover:bg-[#F3F4F6] flex items-center justify-center"
+                  onClick={() => {
+                    setBulkCsvOpen(false)
+                    setBulkCsvSource('text')
+                    setBulkCsvText('')
+                    setBulkCsvParsed([])
+                    setBulkCsvFileName('')
+                  }}
+                >
                   <X className="w-4 h-4 text-[#737780]" />
                 </button>
               </div>
@@ -843,19 +984,61 @@ export default function PlatformAdminPanelPage() {
                 <div className="text-[12px] text-[#737780]">
                   Cabeçalho esperado: <span className="font-mono">nome;email;tipo;course_id;expires_at</span> (separador ; ou ,)
                 </div>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <label className="inline-flex items-center gap-2 text-[12px] text-[#1E1B39] font-semibold cursor-pointer">
+                    <input
+                      type="file"
+                      accept=".csv,.xlsx,.xls"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0] || null
+                        if (!f) return
+                        handleBulkFile(f)
+                        e.target.value = ''
+                      }}
+                    />
+                    <span className="h-9 px-3 rounded-[10px] border border-[#E3E4E5] bg-white hover:bg-[#F8FAFC] inline-flex items-center">
+                      <Upload className="w-4 h-4 inline-block mr-2" />
+                      Selecionar arquivo
+                    </span>
+                  </label>
+                  <div className="text-[12px] text-[#737780] truncate">
+                    {bulkCsvFileName ? `Arquivo: ${bulkCsvFileName}` : 'Nenhum arquivo selecionado'}
+                  </div>
+                </div>
                 <textarea
                   value={bulkCsvText}
-                  onChange={(e) => setBulkCsvText(e.target.value)}
+                  onChange={(e) => {
+                    setBulkCsvSource('text')
+                    setBulkCsvText(e.target.value)
+                  }}
                   className="w-full h-[220px] rounded-[12px] border border-[#E3E4E5] p-3 text-[12px] font-mono outline-none focus:border-[#0047BB]"
                   placeholder={'nome;email;tipo;course_id;expires_at\nMaria;teste@exemplo.com;aluno;00000000-0000-0000-0000-000000000000;2026-12-31'}
                 />
                 <div className="text-[12px] text-[#1E1B39] font-semibold">
-                  {bulkCsvParsed.length} linha(s) válida(s)
+                  {bulkCsvParsing ? 'Lendo arquivo...' : `${bulkCsvParsed.length} linha(s) válida(s)`}
                 </div>
               </div>
               <div className="px-5 py-4 border-t border-[#E3E4E5] flex items-center justify-end gap-2">
-                <button type="button" className="h-9 px-3 rounded-[10px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#1E1B39] hover:bg-[#F8FAFC]" onClick={() => setBulkCsvOpen(false)}>Cancelar</button>
-                <button type="button" disabled={bulkCsvLoading || !bulkCsvParsed.length} className="h-9 px-3 rounded-[10px] bg-[#0047BB] text-white text-[12px] font-semibold hover:bg-[#003da0] disabled:opacity-50" onClick={runBulkCreate}>
+                <button
+                  type="button"
+                  className="h-9 px-3 rounded-[10px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#1E1B39] hover:bg-[#F8FAFC]"
+                  onClick={() => {
+                    setBulkCsvOpen(false)
+                    setBulkCsvSource('text')
+                    setBulkCsvText('')
+                    setBulkCsvParsed([])
+                    setBulkCsvFileName('')
+                  }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  disabled={bulkCsvLoading || bulkCsvParsing || !bulkCsvParsed.length}
+                  className="h-9 px-3 rounded-[10px] bg-[#0047BB] text-white text-[12px] font-semibold hover:bg-[#003da0] disabled:opacity-50"
+                  onClick={runBulkCreate}
+                >
                   {bulkCsvLoading ? 'Importando...' : 'Importar'}
                 </button>
               </div>
