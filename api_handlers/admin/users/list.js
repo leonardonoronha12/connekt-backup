@@ -55,6 +55,7 @@ export default async function handler(req, res) {
     const maxScanPages = Math.max(20, Math.min(200, Math.ceil(perPage / scanPerPage) + 20))
     for (let page = 1; page <= maxScanPages; page += 1) {
       const r = await admin.auth.admin.listUsers({ page, perPage: scanPerPage })
+      if (r?.error) throw new Error(r.error?.message || 'list_users_failed')
       const users = Array.isArray(r?.data?.users) ? r.data.users : []
       for (const u of users) {
         const id = String(u?.id || '').trim()
