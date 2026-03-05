@@ -22,12 +22,64 @@ function decodeJwtRole(token) {
   }
 }
 
+function decodeJwtIss(token) {
+  const raw = String(token || '').trim()
+  const parts = raw.split('.')
+  if (parts.length < 2) return ''
+  const p = parts[1] || ''
+  const pad = p.length % 4 === 0 ? '' : '='.repeat(4 - (p.length % 4))
+  const b64 = (p + pad).replace(/-/g, '+').replace(/_/g, '/')
+  try {
+    const jsonText = Buffer.from(b64, 'base64').toString('utf-8')
+    const payload = JSON.parse(jsonText || '{}')
+    return String(payload?.iss || '').trim()
+  } catch (_) {
+    return ''
+  }
+}
+
+function extractProjectRefFromSupabaseUrl(url) {
+  const raw = String(url || '').trim()
+  if (!raw) return ''
+  try {
+    const u = new URL(raw)
+    const host = String(u.hostname || '')
+    const m = host.match(/^([a-z0-9-]+)\.supabase\.co$/i)
+    return m ? String(m[1] || '') : ''
+  } catch (_) {
+    return ''
+  }
+}
+
+function extractProjectRefFromIss(iss) {
+  const raw = String(iss || '').trim()
+  if (!raw) return ''
+  try {
+    const u = new URL(raw)
+    const host = String(u.hostname || '')
+    const m = host.match(/^([a-z0-9-]+)\.supabase\.co$/i)
+    return m ? String(m[1] || '') : ''
+  } catch (_) {
+    return ''
+  }
+}
+
 function serviceKeyRoleHint() {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE || ''
   const role = decodeJwtRole(key)
   if (!role) return ''
   if (role === 'service_role') return ''
   return ` (env role=${role}; use a service_role key)`
+}
+
+function serviceKeyProjectHint() {
+  const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || ''
+  const urlRef = extractProjectRefFromSupabaseUrl(url)
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE || ''
+  const iss = decodeJwtIss(key)
+  const keyRef = extractProjectRefFromIss(iss)
+  if (!urlRef || !keyRef || urlRef === keyRef) return ''
+  return ` (env ref mismatch: url=${urlRef} key=${keyRef})`
 }
 
 async function getCourseAllowedUserIdSet(admin, courseId) {
@@ -79,7 +131,12 @@ export default async function handler(req, res) {
     const maxScanPages = Math.max(20, Math.min(200, Math.ceil(perPage / scanPerPage) + 20))
     for (let page = 1; page <= maxScanPages; page += 1) {
       const r = await admin.auth.admin.listUsers({ page, perPage: scanPerPage })
-      if (r?.error) throw new Error(`${r.error?.message || 'list_users_failed'}${serviceKeyRoleHint()}`)
+      if (r?.error) {
+        const msg = r.error?.message || 'list_users_failed'
+        const status = r.error?.status ? ` (status=${r.error.status})` : ''
+        const name = r.error?.name ? ` (name=${r.error.name})` : ''
+        throw new Error(`${msg}${status}${name}${serviceKeyRoleHint()}${serviceKeyProjectHint()}`)
+      }
       const users = Array.isArray(r?.data?.users) ? r.data.users : []
       for (const u of users) {
         const id = String(u?.id || '').trim()
