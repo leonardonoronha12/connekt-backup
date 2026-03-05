@@ -78,6 +78,8 @@ export default function PlatformAdminPanelPage() {
 
   const [loading, setLoading] = useState(true)
   const [rows, setRows] = useState([])
+  const [usersMeta, setUsersMeta] = useState(null)
+  const [usersError, setUsersError] = useState('')
   const [selectedIds, setSelectedIds] = useState(new Set())
   const [refreshTick, setRefreshTick] = useState(0)
 
@@ -142,21 +144,26 @@ export default function PlatformAdminPanelPage() {
     const r = await fetch(`/api/admin/users/list?${qs.toString()}`, { headers: authHeaders })
     const body = await r.json().catch(() => ({}))
     if (!r.ok) throw new Error(body?.error || 'Falha ao listar usuários')
-    return Array.isArray(body?.users) ? body.users : []
+    return body || {}
   }, [authHeaders, courseFilter, query, showDisabled, typeFilter])
 
   useEffect(() => {
     let active = true
     const run = async () => {
       setLoading(true)
+      setUsersError('')
       try {
-        const list = await fetchUsers()
+        const body = await fetchUsers()
         if (!active) return
+        const list = Array.isArray(body?.users) ? body.users : []
         setRows(list)
+        setUsersMeta(body?.meta || null)
         setSelectedIds(new Set())
       } catch (e) {
         if (!active) return
         setRows([])
+        setUsersMeta(null)
+        setUsersError(String(e?.message || 'Erro ao carregar usuários'))
         toast({ title: 'Erro', description: e?.message || 'Erro ao carregar usuários', variant: 'destructive' })
       } finally {
         if (active) setLoading(false)
@@ -574,7 +581,9 @@ export default function PlatformAdminPanelPage() {
             {loading ? (
               <div className="p-6 text-[13px] text-[#737780]">Carregando...</div>
             ) : rows.length === 0 ? (
-              <div className="p-6 text-[13px] text-[#737780]">Nenhum usuário encontrado.</div>
+              <div className="p-6 text-[13px] text-[#737780]">
+                {usersError ? `Erro: ${usersError}` : 'Nenhum usuário encontrado.'}
+              </div>
             ) : (
               rows.map((u) => {
                 const id = String(u?.id || '')
