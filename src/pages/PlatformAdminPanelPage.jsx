@@ -433,22 +433,6 @@ export default function PlatformAdminPanelPage() {
               <button
                 type="button"
                 className="h-9 px-3 rounded-[10px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#1E1B39] hover:bg-[#F8FAFC]"
-                onClick={() => navigateTo('/admin/deploy')}
-              >
-                <Upload className="w-4 h-4 inline-block mr-2" />
-                Publicar
-              </button>
-              <button
-                type="button"
-                className="h-9 px-3 rounded-[10px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#1E1B39] hover:bg-[#F8FAFC]"
-                onClick={() => setRefreshTick((v) => v + 1)}
-              >
-                <RefreshCcw className="w-4 h-4 inline-block mr-2" />
-                Atualizar
-              </button>
-              <button
-                type="button"
-                className="h-9 px-3 rounded-[10px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#1E1B39] hover:bg-[#F8FAFC]"
                 onClick={async () => {
                   try { await signOut() } catch (_) {}
                   navigateTo('/admin/login')
