@@ -665,6 +665,12 @@ export default function PlatformAdminPanelPage() {
             </div>
           </div>
 
+          {usersMeta?.warning ? (
+            <div className="mt-4 rounded-[12px] border border-[#FCA5A5] bg-[#FEF2F2] p-4 text-[12px] text-[#991B1B]">
+              {String(usersMeta.warning)}
+            </div>
+          ) : null}
+
           {selectedCount ? (
             <div className="mt-4 rounded-[12px] border border-[#E3E4E5] bg-white p-4 flex items-center justify-between gap-3">
               <div className="text-[13px] text-[#1E1B39]">{selectedCount} selecionado(s)</div>

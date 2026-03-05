@@ -282,6 +282,10 @@ export default async function handler(req, res) {
             meta: { count: pgFallback.users.length, limit: perPage, truncated: pgFallback.users.length >= perPage, source: pgFallback.source },
           })
         }
+        const warning =
+          pgFallback.error === 'missing_db_env'
+            ? 'Configure SUPABASE_DB_URL (ou PGHOST/PGUSER/PGPASSWORD/PGDATABASE) na Vercel para exibir email e último login.'
+            : ''
         const fallback = await listUsersFallbackFromDb(admin, {
           q,
           type,
@@ -293,7 +297,7 @@ export default async function handler(req, res) {
           return json(res, 200, {
             ok: true,
             users: fallback.users,
-            meta: { count: fallback.users.length, limit: perPage, truncated: fallback.users.length >= perPage, source: fallback.source },
+            meta: { count: fallback.users.length, limit: perPage, truncated: fallback.users.length >= perPage, source: fallback.source, warning },
           })
         }
         throw new Error(`${msg}${status}${name}${serviceKeyRoleHint()}`)
