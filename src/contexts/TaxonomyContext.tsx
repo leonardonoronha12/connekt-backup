@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '@/contexts/SupabaseAuthContext'
 import { taxonomyService } from '@/services/taxonomyService'
+import { TAXONOMY_CATEGORY_COLOR, TAXONOMY_SUBCATEGORY_COLOR, TAXONOMY_TAG_COLOR } from '@/constants/taxonomyColors'
 
 export type TaxonomyCategory = {
   id: string
@@ -72,40 +73,40 @@ function seedSnapshot(): TaxonomySnapshot {
   const clin = createId('cat')
 
   const tags: TaxonomyTag[] = [
-    { id: createId('tag'), name: 'ECG', color: '#94A3B8', description: 'Tag existente' },
-    { id: createId('tag'), name: 'Arritmias', color: '#94A3B8', description: 'Tag existente' },
-    { id: createId('tag'), name: 'Exames', color: '#94A3B8', description: 'Tag existente' },
-    { id: createId('tag'), name: 'Emergência', color: '#94A3B8', description: 'Tag existente' },
-    { id: createId('tag'), name: 'Neuro', color: '#94A3B8', description: 'Tag existente' },
-    { id: createId('tag'), name: 'Infantil', color: '#94A3B8', description: 'Tag existente' },
-    { id: createId('tag'), name: 'Prevenção', color: '#94A3B8', description: 'Tag existente' },
-    { id: createId('tag'), name: 'Crônico', color: '#94A3B8', description: 'Tag existente' },
-    { id: createId('tag'), name: 'Cardio', color: '#94A3B8', description: 'Tag existente' },
-    { id: createId('tag'), name: 'Urgência', color: '#94A3B8', description: 'Tag existente' },
-    { id: createId('tag'), name: 'Hospitalar', color: '#94A3B8', description: 'Tag existente' },
-    { id: createId('tag'), name: 'Clínica', color: '#94A3B8', description: 'Tag existente' },
-    { id: createId('tag'), name: 'Cirurgia', color: '#94A3B8', description: 'Tag existente' },
-    { id: createId('tag'), name: 'Medicina', color: '#94A3B8', description: 'Tag existente' },
-    { id: createId('tag'), name: 'Saúde', color: '#94A3B8', description: 'Tag existente' },
-    { id: createId('tag'), name: 'Cérebro', color: '#94A3B8', description: 'Tag existente' },
-    { id: createId('tag'), name: 'Nervos', color: '#94A3B8', description: 'Tag existente' },
-    { id: createId('tag'), name: 'Criança', color: '#94A3B8', description: 'Tag existente' },
+    { id: createId('tag'), name: 'ECG', color: TAXONOMY_TAG_COLOR, description: 'Tag existente' },
+    { id: createId('tag'), name: 'Arritmias', color: TAXONOMY_TAG_COLOR, description: 'Tag existente' },
+    { id: createId('tag'), name: 'Exames', color: TAXONOMY_TAG_COLOR, description: 'Tag existente' },
+    { id: createId('tag'), name: 'Emergência', color: TAXONOMY_TAG_COLOR, description: 'Tag existente' },
+    { id: createId('tag'), name: 'Neuro', color: TAXONOMY_TAG_COLOR, description: 'Tag existente' },
+    { id: createId('tag'), name: 'Infantil', color: TAXONOMY_TAG_COLOR, description: 'Tag existente' },
+    { id: createId('tag'), name: 'Prevenção', color: TAXONOMY_TAG_COLOR, description: 'Tag existente' },
+    { id: createId('tag'), name: 'Crônico', color: TAXONOMY_TAG_COLOR, description: 'Tag existente' },
+    { id: createId('tag'), name: 'Cardio', color: TAXONOMY_TAG_COLOR, description: 'Tag existente' },
+    { id: createId('tag'), name: 'Urgência', color: TAXONOMY_TAG_COLOR, description: 'Tag existente' },
+    { id: createId('tag'), name: 'Hospitalar', color: TAXONOMY_TAG_COLOR, description: 'Tag existente' },
+    { id: createId('tag'), name: 'Clínica', color: TAXONOMY_TAG_COLOR, description: 'Tag existente' },
+    { id: createId('tag'), name: 'Cirurgia', color: TAXONOMY_TAG_COLOR, description: 'Tag existente' },
+    { id: createId('tag'), name: 'Medicina', color: TAXONOMY_TAG_COLOR, description: 'Tag existente' },
+    { id: createId('tag'), name: 'Saúde', color: TAXONOMY_TAG_COLOR, description: 'Tag existente' },
+    { id: createId('tag'), name: 'Cérebro', color: TAXONOMY_TAG_COLOR, description: 'Tag existente' },
+    { id: createId('tag'), name: 'Nervos', color: TAXONOMY_TAG_COLOR, description: 'Tag existente' },
+    { id: createId('tag'), name: 'Criança', color: TAXONOMY_TAG_COLOR, description: 'Tag existente' },
   ]
 
   const tagByName = new Map(tags.map(t => [t.name.toLowerCase(), t.id]))
 
   const categories: TaxonomyCategory[] = [
-    { id: cardio, name: 'Cardiologia', color: '#EC4899', description: 'Doenças do coração e sistema cardiovascular.', tagIds: [tagByName.get('medicina')!, tagByName.get('saúde')!].filter(Boolean) },
-    { id: neuro, name: 'Neurologia', color: '#8B5CF6', description: 'Condições do sistema nervoso central e periférico.', tagIds: [tagByName.get('cérebro')!, tagByName.get('nervos')!].filter(Boolean) },
-    { id: pedia, name: 'Pediatria', color: '#10B981', description: 'Saúde e desenvolvimento de crianças e adolescentes.', tagIds: [tagByName.get('criança')!, tagByName.get('infantil')!].filter(Boolean) },
-    { id: clin, name: 'Clínica', color: '#F59E0B', description: 'Medicina geral e atendimento clínico.', tagIds: [] },
+    { id: cardio, name: 'Cardiologia', color: TAXONOMY_CATEGORY_COLOR, description: 'Doenças do coração e sistema cardiovascular.', tagIds: [tagByName.get('medicina')!, tagByName.get('saúde')!].filter(Boolean) },
+    { id: neuro, name: 'Neurologia', color: TAXONOMY_CATEGORY_COLOR, description: 'Condições do sistema nervoso central e periférico.', tagIds: [tagByName.get('cérebro')!, tagByName.get('nervos')!].filter(Boolean) },
+    { id: pedia, name: 'Pediatria', color: TAXONOMY_CATEGORY_COLOR, description: 'Saúde e desenvolvimento de crianças e adolescentes.', tagIds: [tagByName.get('criança')!, tagByName.get('infantil')!].filter(Boolean) },
+    { id: clin, name: 'Clínica', color: TAXONOMY_CATEGORY_COLOR, description: 'Medicina geral e atendimento clínico.', tagIds: [] },
   ]
 
   const subcategories: TaxonomySubcategory[] = [
     {
       id: createId('sub'),
       name: 'Eletrocardiograma',
-      color: '#3B82F6',
+      color: TAXONOMY_SUBCATEGORY_COLOR,
       description: 'Básico e avançado sobre ECG e arritmias.',
       categoryIds: [cardio],
       tagIds: [tagByName.get('ecg')!, tagByName.get('arritmias')!, tagByName.get('exames')!].filter(Boolean),
@@ -114,7 +115,7 @@ function seedSnapshot(): TaxonomySnapshot {
     {
       id: createId('sub'),
       name: 'AVC Agudo',
-      color: '#EF4444',
+      color: TAXONOMY_SUBCATEGORY_COLOR,
       description: 'Protocolos de atendimento ao AVC isquêmico e hemorrágico.',
       categoryIds: [neuro],
       tagIds: [tagByName.get('emergência')!, tagByName.get('neuro')!].filter(Boolean),
@@ -123,7 +124,7 @@ function seedSnapshot(): TaxonomySnapshot {
     {
       id: createId('sub'),
       name: 'Puericultura',
-      color: '#10B981',
+      color: TAXONOMY_SUBCATEGORY_COLOR,
       description: 'Acompanhamento do desenvolvimento infantil.',
       categoryIds: [pedia],
       tagIds: [tagByName.get('infantil')!, tagByName.get('prevenção')!].filter(Boolean),
@@ -132,7 +133,7 @@ function seedSnapshot(): TaxonomySnapshot {
     {
       id: createId('sub'),
       name: 'Insuficiência Cardíaca',
-      color: '#A855F7',
+      color: TAXONOMY_SUBCATEGORY_COLOR,
       description: 'Manejo da IC crônica e aguda.',
       categoryIds: [cardio],
       tagIds: [tagByName.get('crônico')!, tagByName.get('cardio')!].filter(Boolean),
@@ -155,6 +156,15 @@ function parseSnapshot(raw: string | null): TaxonomySnapshot | null {
   }
 }
 
+function normalizeSnapshotColors(snapshot: TaxonomySnapshot): TaxonomySnapshot {
+  return {
+    ...snapshot,
+    categories: (snapshot.categories || []).map(c => ({ ...c, color: TAXONOMY_CATEGORY_COLOR })),
+    subcategories: (snapshot.subcategories || []).map(s => ({ ...s, color: TAXONOMY_SUBCATEGORY_COLOR })),
+    tags: (snapshot.tags || []).map(t => ({ ...t, color: TAXONOMY_TAG_COLOR })),
+  }
+}
+
 export function TaxonomyProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth()
   const userId = user?.id || 'anon'
@@ -163,12 +173,12 @@ export function TaxonomyProvider({ children }: { children: React.ReactNode }) {
 
   const [snapshot, setSnapshot] = useState<TaxonomySnapshot>(() => {
     const fromStorage = parseSnapshot(typeof window !== 'undefined' ? window.localStorage.getItem(storageKey) : null)
-    return fromStorage || seedSnapshot()
+    return normalizeSnapshotColors(fromStorage || seedSnapshot())
   })
 
   useEffect(() => {
     const fromStorage = parseSnapshot(window.localStorage.getItem(storageKey))
-    setSnapshot(fromStorage || seedSnapshot())
+    setSnapshot(normalizeSnapshotColors(fromStorage || seedSnapshot()))
 
     if (!isAuthenticated) return
 
@@ -181,12 +191,13 @@ export function TaxonomyProvider({ children }: { children: React.ReactNode }) {
 
         const hasRemoteData = remoteSnapshot.categories.length > 0 || remoteSnapshot.subcategories.length > 0 || remoteSnapshot.tags.length > 0
         if (hasRemoteData) {
-          setSnapshot(remoteSnapshot)
-          try { window.localStorage.setItem(storageKey, JSON.stringify(remoteSnapshot)) } catch {}
+          const normalized = normalizeSnapshotColors(remoteSnapshot)
+          setSnapshot(normalized)
+          try { window.localStorage.setItem(storageKey, JSON.stringify(normalized)) } catch {}
           return
         }
 
-        const seed = fromStorage || seedSnapshot()
+        const seed = normalizeSnapshotColors(fromStorage || seedSnapshot())
         await taxonomyService.seedAll(seed)
         if (cancelled) return
         setSnapshot(seed)
@@ -209,7 +220,7 @@ export function TaxonomyProvider({ children }: { children: React.ReactNode }) {
     const onStorage = (e: StorageEvent) => {
       if (e.key !== storageKey) return
       const next = parseSnapshot(e.newValue)
-      if (next) setSnapshot(next)
+      if (next) setSnapshot(normalizeSnapshotColors(next))
     }
     window.addEventListener('storage', onStorage)
     return () => window.removeEventListener('storage', onStorage)
@@ -218,10 +229,9 @@ export function TaxonomyProvider({ children }: { children: React.ReactNode }) {
   const createCategory = useCallback((input: Omit<TaxonomyCategory, 'id'> & { id?: string }) => {
     const name = normalizeName(input.name)
     const description = String(input.description || '').trim()
-    const color = String(input.color || '#3B82F6')
     const id = input.id || createId('cat')
     const tagIds = Array.isArray(input.tagIds) ? input.tagIds.map(String) : []
-    const next: TaxonomyCategory = { id, name, description, color, tagIds }
+    const next: TaxonomyCategory = { id, name, description, color: TAXONOMY_CATEGORY_COLOR, tagIds }
 
     setSnapshot(prev => {
       const exists = prev.categories.some(c => c.name.toLowerCase() === name.toLowerCase())
@@ -250,7 +260,7 @@ export function TaxonomyProvider({ children }: { children: React.ReactNode }) {
           ...c,
           ...(updates.name !== undefined ? { name: normalizeName(updates.name) } : null),
           ...(updates.description !== undefined ? { description: String(updates.description || '').trim() } : null),
-          ...(updates.color !== undefined ? { color: String(updates.color || c.color) } : null),
+          color: TAXONOMY_CATEGORY_COLOR,
           ...(updates.tagIds !== undefined ? { tagIds: Array.isArray(updates.tagIds) ? updates.tagIds.map(String) : [] } : null),
         }) : c),
       }
@@ -285,12 +295,11 @@ export function TaxonomyProvider({ children }: { children: React.ReactNode }) {
   const createSubcategory = useCallback((input: Omit<TaxonomySubcategory, 'id' | 'categoryIds' | 'tagIds' | 'productsCount'> & { id?: string; categoryIds?: string[]; tagIds?: string[]; productsCount?: number }) => {
     const name = normalizeName(input.name)
     const description = String(input.description || '').trim()
-    const color = String(input.color || '#3B82F6')
     const id = input.id || createId('sub')
     const categoryIds = Array.isArray(input.categoryIds) ? input.categoryIds.map(String) : []
     const tagIds = Array.isArray(input.tagIds) ? input.tagIds.map(String) : []
     const productsCount = typeof input.productsCount === 'number' ? input.productsCount : 0
-    const next: TaxonomySubcategory = { id, name, description, color, categoryIds, tagIds, productsCount }
+    const next: TaxonomySubcategory = { id, name, description, color: TAXONOMY_SUBCATEGORY_COLOR, categoryIds, tagIds, productsCount }
 
     setSnapshot(prev => {
       const exists = prev.subcategories.some(s => s.name.toLowerCase() === name.toLowerCase())
@@ -319,7 +328,7 @@ export function TaxonomyProvider({ children }: { children: React.ReactNode }) {
           ...s,
           ...(updates.name !== undefined ? { name: normalizeName(updates.name) } : null),
           ...(updates.description !== undefined ? { description: String(updates.description || '').trim() } : null),
-          ...(updates.color !== undefined ? { color: String(updates.color || s.color) } : null),
+          color: TAXONOMY_SUBCATEGORY_COLOR,
           ...(updates.categoryIds !== undefined ? { categoryIds: Array.isArray(updates.categoryIds) ? updates.categoryIds.map(String) : [] } : null),
           ...(updates.tagIds !== undefined ? { tagIds: Array.isArray(updates.tagIds) ? updates.tagIds.map(String) : [] } : null),
           ...(updates.productsCount !== undefined ? { productsCount: typeof updates.productsCount === 'number' ? updates.productsCount : s.productsCount } : null),
@@ -343,9 +352,8 @@ export function TaxonomyProvider({ children }: { children: React.ReactNode }) {
   const createTag = useCallback((input: Omit<TaxonomyTag, 'id'> & { id?: string }) => {
     const name = normalizeName(input.name)
     const description = String(input.description || '').trim()
-    const color = String(input.color || '#94A3B8')
     const id = input.id || createId('tag')
-    const next: TaxonomyTag = { id, name, description, color }
+    const next: TaxonomyTag = { id, name, description, color: TAXONOMY_TAG_COLOR }
 
     setSnapshot(prev => {
       const exists = prev.tags.some(t => t.name.toLowerCase() === name.toLowerCase())
@@ -374,7 +382,7 @@ export function TaxonomyProvider({ children }: { children: React.ReactNode }) {
           ...t,
           ...(updates.name !== undefined ? { name: normalizeName(updates.name) } : null),
           ...(updates.description !== undefined ? { description: String(updates.description || '').trim() } : null),
-          ...(updates.color !== undefined ? { color: String(updates.color || t.color) } : null),
+          color: TAXONOMY_TAG_COLOR,
         }) : t),
       }
       updated = next.tags.find(t => t.id === id) || null

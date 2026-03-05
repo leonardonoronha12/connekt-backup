@@ -9,6 +9,37 @@ const APP_BASE_URL = process.env.APP_BASE_URL || process.env.VITE_APP_BASE_URL |
 
 let cachedAuth = null
 
+function resolveAppBaseUrl(req) {
+  const candidates = [
+    APP_BASE_URL,
+    process.env.PUBLIC_APP_URL,
+    process.env.SITE_URL,
+    process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : '',
+  ]
+  for (const c of candidates) {
+    const raw = String(c || '').trim()
+    if (!raw) continue
+    try {
+      const u = new URL(raw)
+      const host = String(u.hostname || '')
+      if (u.protocol !== 'https:') continue
+      if (!host || host === 'localhost' || host === '127.0.0.1') continue
+      return u.toString().replace(/\/+$/, '')
+    } catch (_) {}
+  }
+  try {
+    const host = String(req?.headers?.['x-forwarded-host'] || req?.headers?.host || '').trim()
+    const proto = String(req?.headers?.['x-forwarded-proto'] || 'https').trim().toLowerCase()
+    if (!host) return ''
+    if (host === 'localhost' || host.startsWith('localhost:') || host === '127.0.0.1' || host.startsWith('127.0.0.1:')) return ''
+    const p = proto === 'http' ? 'http' : 'https'
+    if (p !== 'https') return ''
+    return `https://${host}`.replace(/\/+$/, '')
+  } catch (_) {
+    return ''
+  }
+}
+
 function formatValidUntil(dt) {
   const pad = (n) => String(n).padStart(2, '0')
   const yyyy = dt.getFullYear()
@@ -200,18 +231,9 @@ export default async function handler(req, res) {
         return json(res, 502, { error: 'checkout_url_missing', message: 'O gateway não retornou link de checkout.', payload })
       }
 
-      const allowReturnUrl = (() => {
-        if (!APP_BASE_URL) return false
-        try {
-          const u = new URL(APP_BASE_URL)
-          const host = String(u.hostname || '')
-          return u.protocol === 'https:' && host && host !== 'localhost' && host !== '127.0.0.1'
-        } catch (_) {
-          return false
-        }
-      })()
-      const returnUrl = allowReturnUrl
-        ? `${String(APP_BASE_URL).replace(/\/$/, '')}/aluno/curso/${encodeURIComponent(courseId)}?linkId=${encodeURIComponent(String(linkId))}`
+      const baseUrl = resolveAppBaseUrl(req)
+      const returnUrl = baseUrl
+        ? `${baseUrl}/aluno/curso/${encodeURIComponent(courseId)}?linkId=${encodeURIComponent(String(linkId))}`
         : null
       const finalCheckoutUrl = returnUrl ? appendQueryParam(checkoutUrl, 'return_url', returnUrl) : checkoutUrl
 
@@ -304,18 +326,9 @@ export default async function handler(req, res) {
         return json(res, 502, { error: 'checkout_url_missing', message: 'O gateway não retornou link de checkout.', payload })
       }
 
-      const allowReturnUrl = (() => {
-        if (!APP_BASE_URL) return false
-        try {
-          const u = new URL(APP_BASE_URL)
-          const host = String(u.hostname || '')
-          return u.protocol === 'https:' && host && host !== 'localhost' && host !== '127.0.0.1'
-        } catch (_) {
-          return false
-        }
-      })()
-      const returnUrl = allowReturnUrl
-        ? `${String(APP_BASE_URL).replace(/\/$/, '')}/aluno/curso/${encodeURIComponent(courseId)}?moduleId=${encodeURIComponent(moduleId)}&linkId=${encodeURIComponent(String(linkId))}`
+      const baseUrl = resolveAppBaseUrl(req)
+      const returnUrl = baseUrl
+        ? `${baseUrl}/aluno/curso/${encodeURIComponent(courseId)}?moduleId=${encodeURIComponent(moduleId)}&linkId=${encodeURIComponent(String(linkId))}`
         : null
       const finalCheckoutUrl = returnUrl ? appendQueryParam(checkoutUrl, 'return_url', returnUrl) : checkoutUrl
 
@@ -414,18 +427,9 @@ export default async function handler(req, res) {
         return json(res, 502, { error: 'checkout_url_missing', message: 'O gateway não retornou link de checkout.', payload })
       }
 
-      const allowReturnUrl = (() => {
-        if (!APP_BASE_URL) return false
-        try {
-          const u = new URL(APP_BASE_URL)
-          const host = String(u.hostname || '')
-          return u.protocol === 'https:' && host && host !== 'localhost' && host !== '127.0.0.1'
-        } catch (_) {
-          return false
-        }
-      })()
-      const returnUrl = allowReturnUrl
-        ? `${String(APP_BASE_URL).replace(/\/$/, '')}/aluno/curso/${encodeURIComponent(courseId)}?moduleId=${encodeURIComponent(moduleId)}&lessonId=${encodeURIComponent(lessonId)}&linkId=${encodeURIComponent(String(linkId))}`
+      const baseUrl = resolveAppBaseUrl(req)
+      const returnUrl = baseUrl
+        ? `${baseUrl}/aluno/curso/${encodeURIComponent(courseId)}?moduleId=${encodeURIComponent(moduleId)}&lessonId=${encodeURIComponent(lessonId)}&linkId=${encodeURIComponent(String(linkId))}`
         : null
       const finalCheckoutUrl = returnUrl ? appendQueryParam(checkoutUrl, 'return_url', returnUrl) : checkoutUrl
 
@@ -513,18 +517,9 @@ export default async function handler(req, res) {
       return json(res, 502, { error: 'checkout_url_missing', message: 'O gateway não retornou link de checkout.', payload })
     }
 
-    const allowReturnUrl = (() => {
-      if (!APP_BASE_URL) return false
-      try {
-        const u = new URL(APP_BASE_URL)
-        const host = String(u.hostname || '')
-        return u.protocol === 'https:' && host && host !== 'localhost' && host !== '127.0.0.1'
-      } catch (_) {
-        return false
-      }
-    })()
-    const returnUrl = allowReturnUrl
-      ? `${String(APP_BASE_URL).replace(/\/$/, '')}/aluno/simulados/acesso?simId=${encodeURIComponent(simId)}&linkId=${encodeURIComponent(String(linkId))}`
+    const baseUrl = resolveAppBaseUrl(req)
+    const returnUrl = baseUrl
+      ? `${baseUrl}/aluno/simulados/acesso?simId=${encodeURIComponent(simId)}&linkId=${encodeURIComponent(String(linkId))}`
       : null
     const finalCheckoutUrl = returnUrl ? appendQueryParam(checkoutUrl, 'return_url', returnUrl) : checkoutUrl
 

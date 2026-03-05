@@ -4,6 +4,7 @@ import { FileText, Plus, ChevronDown, MoreVertical, FolderTree, Tag } from 'luci
 import { questionBankService } from '@/services/questionBankService';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext.jsx';
+import ProgressRingIcon from '@/components/ProgressRingIcon.jsx';
 
 // Lista real de simulados do usuário autenticado
 // RLS garante que apenas os simulados do usuário atual sejam retornados
@@ -87,6 +88,7 @@ const SimuladosPage = ({ titleText = 'Simulados', subtitleText = 'Crie e gerenci
         course_ids: Array.isArray(sim?.course_ids) ? sim.course_ids : [],
         question_ids: Array.isArray(sim?.question_ids) ? sim.question_ids : [],
         settings: withStudents,
+        produtor_id: user.id,
         user_id: user.id,
       };
       const { data: inserted, error } = await supabase
@@ -213,8 +215,8 @@ const SimuladosPage = ({ titleText = 'Simulados', subtitleText = 'Crie e gerenci
   // Estado dos seis switches do painel de configurações
   const [panelSwitches, setPanelSwitches] = useState([false, false, false, false, false, false]);
 
-  const renderApprovalIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0047BB" strokeWidth="2"><circle cx="12" cy="12" r="10" opacity="0.3"/><path d="M12 2 a10 10 0 0 1 0 20" /></svg>
+  const renderApprovalIcon = (value) => (
+    <ProgressRingIcon value={value} />
   );
 
   // Carregar simulados do usuário atual
@@ -302,18 +304,61 @@ const SimuladosPage = ({ titleText = 'Simulados', subtitleText = 'Crie e gerenci
           return {};
         };
 
-        // RLS filtra por created_by = auth.uid()
-        const { data, error } = await supabase
-          .from('simulados')
-          .select('*')
-          .order('created_at', { ascending: false });
+        // Filtra explicitamente por usuário para evitar mistura entre produtores
+        let data = null;
+        let error = null;
+        try {
+          const r = await supabase
+            .from('simulados')
+            .select('*')
+            .eq('produtor_id', user.id)
+            .order('created_at', { ascending: false });
+          data = r?.data;
+          error = r?.error;
+        } catch (e) {
+          data = null;
+          error = e;
+        }
+        if (error) {
+          try {
+            const r2 = await supabase
+              .from('simulados')
+              .select('*')
+              .eq('user_id', user.id)
+              .order('created_at', { ascending: false });
+            data = r2?.data;
+            error = r2?.error;
+          } catch (e2) {
+            error = e2;
+          }
+        }
+        if (error) {
+          try {
+            const r3 = await supabase
+              .from('simulados')
+              .select('*')
+              .eq('created_by', user.id)
+              .order('created_at', { ascending: false });
+            data = r3?.data;
+            error = r3?.error;
+          } catch (e3) {
+            error = e3;
+          }
+        }
         if (error) {
           setListError(error.message || 'Erro ao carregar simulados');
           setSimulados([]);
         } else {
           const raw = Array.isArray(data) ? data : [];
-          const participantsBySimId = await fetchParticipantsBySimuladoId(raw.map((s) => s?.id));
-          const withParticipants = raw.map((sim) => ({
+          const uniqueById = Object.values(
+            raw.reduce((acc, row) => {
+              const id = row?.id;
+              if (id) acc[String(id)] = row;
+              return acc;
+            }, {})
+          );
+          const participantsBySimId = await fetchParticipantsBySimuladoId(uniqueById.map((s) => s?.id));
+          const withParticipants = uniqueById.map((sim) => ({
             ...sim,
             participants: Array.isArray(participantsBySimId?.[sim?.id]) ? participantsBySimId[sim.id] : [],
           }));

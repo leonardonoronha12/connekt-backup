@@ -2,8 +2,9 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import Header from '@/components/Header'
 import BrandLogo from '@/components/BrandLogo'
 import { ChevronDown, FileText, LayoutGrid, Menu, Monitor, Search, X } from 'lucide-react'
+import ProgressRingIcon from '@/components/ProgressRingIcon.jsx'
 import { supabase } from '@/lib/supabaseClient'
-import { getActiveProducerUserId } from '@/services/producerScope'
+import { useActiveProducerUserId } from '@/hooks/useActiveProducerUserId'
 import { ALUNO_NAV_SECTIONS } from '@/constants/alunoNavSections'
 
 function navigateTo(path) {
@@ -13,10 +14,16 @@ function navigateTo(path) {
 
 export default function AlunoSimuladosPage() {
   const currentPath = typeof window !== 'undefined' ? window.location.pathname : '/aluno/simulados'
+  const [locationSearch, setLocationSearch] = useState(() => {
+    try { return window.location.search || '' } catch (_) { return '' }
+  })
   const [searchValue, setSearchValue] = useState('')
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [simulados, setSimulados] = useState([])
   const [simuladosLoading, setSimuladosLoading] = useState(false)
+  const [simuladosError, setSimuladosError] = useState('')
+  const [simuladosDebugMeta, setSimuladosDebugMeta] = useState(null)
+  const [ownedSimuladoIds, setOwnedSimuladoIds] = useState([])
   const [filterOpen, setFilterOpen] = useState(false)
   const [filterOptionQuery, setFilterOptionQuery] = useState('')
   const [filterOwned, setFilterOwned] = useState('all')
@@ -43,13 +50,37 @@ export default function AlunoSimuladosPage() {
       return false
     }
   })()
-  const activeProducerUserId = useMemo(() => {
-    try { return getActiveProducerUserId() } catch (_) { return '' }
+  const activeProducerUserId = useActiveProducerUserId()
+  const producerUidFromUrl = useMemo(() => {
+    try {
+      const params = new URLSearchParams(locationSearch || '')
+      return String(params.get('producer_uid') || params.get('producerUserId') || params.get('producer_uid'.toUpperCase()) || '').trim()
+    } catch (_) {
+      return ''
+    }
+  }, [locationSearch])
+  const isValidUuid = (value) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || '').trim())
+
+  useEffect(() => {
+    const sync = () => {
+      try { setLocationSearch(window.location.search || '') } catch (_) { setLocationSearch('') }
+    }
+    window.addEventListener('popstate', sync)
+    return () => window.removeEventListener('popstate', sync)
   }, [])
 
   const safeLsGet = (key) => {
     try { return String(localStorage.getItem(String(key || '')) || '') } catch (_) { return '' }
   }
+
+  const ownedSimuladoIdSet = useMemo(() => {
+    const set = new Set()
+    for (const id of Array.isArray(ownedSimuladoIds) ? ownedSimuladoIds : []) {
+      const v = String(id || '').trim()
+      if (v) set.add(v)
+    }
+    return set
+  }, [ownedSimuladoIds])
 
   const normalize = (value) => String(value || '').trim().toLowerCase()
 
@@ -89,6 +120,57 @@ export default function AlunoSimuladosPage() {
     }
     return []
   }
+
+  useEffect(() => {
+    let active = true
+    const run = async () => {
+      if (isDemoStudent) return
+      try {
+        const token = (await supabase.auth.getSession().catch(() => ({ data: null })))?.data?.session?.access_token || ''
+        if (!token) return
+        const { data, error } = await supabase
+          .from('notifications')
+          .select('type,entity_type,entity_id,entity_name,data,created_at')
+          .eq('type', 'purchase_confirmed')
+          .order('created_at', { ascending: false })
+          .limit(500)
+        if (!active) return
+        if (error) throw error
+        const normalize = (v) => String(v || '').trim().toLowerCase()
+        const titleToId = new Map()
+        for (const s of Array.isArray(simulados) ? simulados : []) {
+          const id = String(s?.id || '').trim()
+          const t = normalize(s?.title || s?.name || '')
+          if (id && t && !titleToId.has(t)) titleToId.set(t, id)
+        }
+        const set = new Set()
+        for (const row of Array.isArray(data) ? data : []) {
+          const entityType = normalize(row?.entity_type)
+          const dataObj = row?.data && typeof row.data === 'object' ? row.data : null
+          const dataType = normalize(dataObj?.type)
+          const entityName = normalize(row?.entity_name)
+          if (entityType === 'simulado' || dataType === 'simulado') {
+            const id = String(row?.entity_id || dataObj?.simId || dataObj?.simuladoId || '').trim()
+            if (id) set.add(id)
+            else if (entityName) {
+              const byTitle = titleToId.get(entityName)
+              if (byTitle) set.add(byTitle)
+            }
+          }
+        }
+        const list = Array.from(set)
+        setOwnedSimuladoIds(list)
+        for (const id of list) {
+          try { localStorage.setItem(`connekt_simulado_owned:${id}`, '1') } catch (_) {}
+        }
+      } catch (_) {
+        if (!active) return
+        setOwnedSimuladoIds([])
+      }
+    }
+    run()
+    return () => { active = false }
+  }, [isDemoStudent, simulados])
 
   const categoryOptions = useMemo(() => {
     const set = new Set()
@@ -310,7 +392,7 @@ export default function AlunoSimuladosPage() {
     return searched.filter((s) => {
       const id = String(s?.id || '').trim()
       const paid = Boolean(s?.is_paid) || Math.max(0, Number(s?.price || 0)) > 0
-      const owned = paid ? safeLsGet(`connekt_simulado_owned:${id}`) === '1' : true
+      const owned = paid ? (safeLsGet(`connekt_simulado_owned:${id}`) === '1' || ownedSimuladoIdSet.has(id)) : true
       if (filterOwned === 'owned' && !owned) return false
       if (filterOwned === 'not_owned' && owned) return false
       const settings = s?.settings && typeof s.settings === 'object' ? s.settings : null
@@ -344,7 +426,7 @@ export default function AlunoSimuladosPage() {
       }
       return true
     })
-  }, [simulados, searchValue, filterOwned, filterCategories, filterSubcategories, filterTags])
+  }, [simulados, searchValue, filterOwned, filterCategories, filterSubcategories, filterTags, ownedSimuladoIdSet])
 
   useEffect(() => {
     let active = true
@@ -352,30 +434,64 @@ export default function AlunoSimuladosPage() {
       if (isDemoStudent) {
         if (!active) return
         setSimulados([])
+        setSimuladosError('')
         return
       }
-      const pid = String(activeProducerUserId || '').trim()
+      const pid = String(producerUidFromUrl || '').trim()
       setSimuladosLoading(true)
       try {
-        const token = (await supabase.auth.getSession().catch(() => ({ data: null })))?.data?.session?.access_token || ''
-        if (!token || !pid) throw new Error('missing_scope')
-        const r = await fetch(`/api/producer?type=simulados&producerId=${encodeURIComponent(pid)}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        })
+        if (!pid || !isValidUuid(pid)) {
+          if (!active) return
+          setSimulados([])
+          setSimuladosError('Produtor inválido ou não encontrado.')
+          setSimuladosDebugMeta(null)
+          return
+        }
+        if (active) {
+          setSimulados([])
+          setSimuladosError('')
+          setSimuladosDebugMeta(null)
+        }
+        const debug = (() => {
+          try {
+            const sp = new URLSearchParams(locationSearch || '')
+            return sp.get('debug') === '1'
+          } catch (_) {
+            return false
+          }
+        })()
+        if (debug) {
+          try { console.debug('[aluno/simulados] producer_uid:', pid) } catch (_) {}
+        }
+        const r = await fetch(`/api/producer?type=public_simulados&producer_uid=${encodeURIComponent(pid)}${debug ? '&debug=1' : ''}`)
         const body = await r.json().catch(() => ({}))
         if (!active) return
-        if (!r.ok) throw new Error(body?.error || 'fetch_failed')
-        setSimulados(Array.isArray(body?.data) ? body.data : [])
+        if (!r.ok) {
+          setSimulados([])
+          setSimuladosError(String(body?.error || 'Não foi possível carregar os simulados do produtor.'))
+          setSimuladosDebugMeta(debug ? (body?.meta || null) : null)
+          return
+        }
+        const list = Array.isArray(body?.data) ? body.data : []
+        if (debug) {
+          try { console.debug('[aluno/simulados] simulados retornados:', list.length) } catch (_) {}
+          try { console.debug('[aluno/simulados] meta:', body?.meta || null) } catch (_) {}
+        }
+        setSimulados(list)
+        setSimuladosError('')
+        setSimuladosDebugMeta(debug ? (body?.meta || null) : null)
       } catch (_) {
         if (!active) return
         setSimulados([])
+        setSimuladosError('Não foi possível carregar os simulados do produtor.')
+        setSimuladosDebugMeta(null)
       } finally {
         if (active) setSimuladosLoading(false)
       }
     }
     run()
     return () => { active = false }
-  }, [activeProducerUserId, isDemoStudent])
+  }, [producerUidFromUrl, isDemoStudent, locationSearch])
 
   useEffect(() => {
     if (!mobileNavOpen) return
@@ -744,11 +860,22 @@ export default function AlunoSimuladosPage() {
                   <div className="mt-4 bg-white border border-[#E3E4E5] rounded-[10px] min-h-[520px] flex items-center justify-center">
                     {simuladosLoading ? (
                       <div className="text-[12px] text-[#737780]">Carregando…</div>
+                    ) : simuladosError ? (
+                      <div className="flex flex-col items-center text-center px-6">
+                        <img src="/icone backup simulados.png" alt="" className="w-[64px] h-[64px] object-contain opacity-60" />
+                        <div className="mt-3 text-[12px] font-semibold text-[#22252B]">Produtor inválido</div>
+                        <div className="mt-1 text-[11px] text-[#737780] max-w-[360px]">{simuladosError}</div>
+                      </div>
                     ) : filteredSimulados.length === 0 ? (
                       <div className="flex flex-col items-center text-center">
                         <img src="/icone backup simulados.png" alt="" className="w-[64px] h-[64px] object-contain opacity-60" />
                         <div className="mt-3 text-[12px] font-semibold text-[#22252B]">Nenhum simulado</div>
                         <div className="mt-1 text-[11px] text-[#737780] max-w-[260px]">Não encontramos nenhum simulado no momento</div>
+                        {simuladosDebugMeta ? (
+                          <pre className="mt-3 w-full max-w-[720px] whitespace-pre-wrap break-words rounded-[10px] border border-[#E3E4E5] bg-[#F9FAFB] p-3 text-left text-[11px] text-[#111827]">
+                            {JSON.stringify(simuladosDebugMeta, null, 2)}
+                          </pre>
+                        ) : null}
                       </div>
                     ) : (
                       <div className="w-full h-full p-5">
@@ -756,7 +883,7 @@ export default function AlunoSimuladosPage() {
                           {filteredSimulados.map((s) => {
                             const id = String(s?.id || '').trim()
                             const paid = Boolean(s?.is_paid) || Math.max(0, Number(s?.price || 0)) > 0
-                            const owned = paid ? safeLsGet(`connekt_simulado_owned:${id}`) === '1' : true
+                            const owned = paid ? (safeLsGet(`connekt_simulado_owned:${id}`) === '1' || ownedSimuladoIdSet.has(id)) : true
                             const progress = Math.max(0, Math.min(100, Number(safeLsGet(`connekt_simulado_progress:${id}`) || 0)))
                             const priceValue = Number(s?.price || 0) || 0
                             const showPrice = paid && Number.isFinite(priceValue) && priceValue > 0
@@ -775,6 +902,8 @@ export default function AlunoSimuladosPage() {
                                   const qs = new URLSearchParams()
                                   qs.set('simId', id)
                                   if (isDemoStudent) qs.set('demo', '1')
+                                  const pid = String(producerUidFromUrl || '').trim()
+                                  if (pid) qs.set('producer_uid', pid)
                                   navigateTo(`/aluno/simulados/acesso?${qs.toString()}`)
                                 }}
                               >
@@ -821,10 +950,7 @@ export default function AlunoSimuladosPage() {
                                     <span className="text-[12px] text-[#1E1B39] font-inter font-bold">Aprovação (%)</span>
                                   </div>
                                   <div className="flex items-center gap-1 text-[#0047BB]">
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0047BB" strokeWidth="2">
-                                      <circle cx="12" cy="12" r="10" opacity="0.3"></circle>
-                                      <path d="M12 2 a10 10 0 0 1 0 20"></path>
-                                    </svg>
+                                    <ProgressRingIcon value={progress} />
                                     <span className="text-[12px] font-bold text-[#0047BB]">{progress}%</span>
                                   </div>
                                 </div>

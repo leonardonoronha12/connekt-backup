@@ -84,6 +84,14 @@ function getQuestionIds(simulado) {
   return ids.filter((v) => isUuid(v))
 }
 
+function getCourseIds(simulado) {
+  const settings = simulado?.settings && typeof simulado.settings === 'object' ? simulado.settings : {}
+  const fromSettings = asArray(settings.courseIds).map((v) => String(v || '').trim()).filter(Boolean)
+  const fromTop = asArray(simulado?.course_ids).map((v) => String(v || '').trim()).filter(Boolean)
+  const ids = fromSettings.length ? fromSettings : fromTop
+  return ids.filter((v) => isUuid(v))
+}
+
 async function fetchJsonWithTimeout(url, timeoutMs) {
   const controller = new AbortController()
   const t = setTimeout(() => controller.abort(), Math.max(250, Number(timeoutMs) || 4500))
@@ -199,6 +207,173 @@ export default async function handler(req, res) {
       return json(res, 200, { producerId: resolvedProducerId, brand: pickWhitelabel(user), member_area_url: memberAreaUrl })
     }
 
+    if (type === 'public_simulados') {
+      res.setHeader('Cache-Control', 'no-store')
+      const producerUid = String(u.searchParams.get('producer_uid') || u.searchParams.get('producerId') || producerId || '').trim()
+      const debug = String(u.searchParams.get('debug') || '').trim() === '1'
+      if (!producerUid || !isUuid(producerUid)) return json(res, 400, { error: 'invalid_producer_uid' })
+
+      const producerKeysSet = new Set([producerUid].filter(Boolean))
+      try {
+        try {
+          const { data: profile } = await admin
+            .from('profiles')
+            .select('id,user_id')
+            .or(`id.eq.${producerUid},user_id.eq.${producerUid}`)
+            .maybeSingle()
+          if (profile?.id) producerKeysSet.add(String(profile.id).trim())
+          if (profile?.user_id) producerKeysSet.add(String(profile.user_id).trim())
+        } catch (_) {}
+        const { data: prod } = await admin
+          .from('producers')
+          .select('id,user_id,external_id')
+          .or(`id.eq.${producerUid},user_id.eq.${producerUid},external_id.eq.${producerUid}`)
+          .maybeSingle()
+        if (prod?.id) producerKeysSet.add(String(prod.id).trim())
+        if (prod?.user_id) producerKeysSet.add(String(prod.user_id).trim())
+        if (prod?.external_id) producerKeysSet.add(String(prod.external_id).trim())
+        if (prod?.user_id) {
+          try {
+            const uid = String(prod.user_id).trim()
+            if (uid) {
+              const { data: third } = await admin.from('producers').select('id').eq('user_id', uid).maybeSingle()
+              if (third?.id) producerKeysSet.add(String(third.id).trim())
+            }
+          } catch (_) {}
+        }
+      } catch (_) {}
+      const producerKeys = Array.from(producerKeysSet).map((v) => String(v || '').trim()).filter(Boolean)
+      if (producerKeys.length === 0) return json(res, 404, { error: 'producer_not_found' })
+
+      const nowIso = new Date().toISOString()
+      const isMissingColumn = (err, col) => {
+        const msg = String(err?.message || err?.details || err || '').toLowerCase()
+        const code = String(err?.code || '').toUpperCase()
+        const c = String(col || '').toLowerCase()
+        return (
+          code === 'PGRST204' ||
+          code === '42703' ||
+          msg.includes(`could not find the '${c}' column`) ||
+          (msg.includes('schema cache') && msg.includes(c)) ||
+          (msg.includes('does not exist') && msg.includes(c))
+        )
+      }
+
+      const selectAttempts = [
+        'id,title,cover_image_url,is_paid,price,availability_date,duration_minutes,max_grade,settings,created_at,produtor_id,user_id,created_by',
+        'id,title,cover_image_url,is_paid,price,availability_date,duration_minutes,max_grade,settings,created_at,user_id,created_by',
+        'id,title,cover_image_url,is_paid,price,availability_date,duration_minutes,max_grade,settings,created_at,user_id',
+        'id,title,cover_image_url,is_paid,price,availability_date,duration_minutes,max_grade,settings,created_at',
+        '*',
+      ]
+
+      const fetchPublishedByOwnerColumn = async (col) => {
+        for (const sel of selectAttempts) {
+          const orAttempts = [
+            `published.eq.true,status.ilike.publicado,availability_date.is.null,availability_date.lte.${nowIso}`,
+            `published.eq.true,availability_date.is.null,availability_date.lte.${nowIso}`,
+            `status.ilike.publicado,availability_date.is.null,availability_date.lte.${nowIso}`,
+            `availability_date.is.null,availability_date.lte.${nowIso}`,
+          ]
+          for (const orExpr of orAttempts) {
+            try {
+              const q = admin
+                .from('simulados')
+                .select(sel)
+                .in(col, producerKeys)
+                .or(orExpr)
+                .order('created_at', { ascending: false })
+                .limit(200)
+              const { data, error } = await q
+              if (error) {
+                if (
+                  isMissingColumn(error, col) ||
+                  (sel.includes('produtor_id') && isMissingColumn(error, 'produtor_id')) ||
+                  (sel.includes('created_by') && isMissingColumn(error, 'created_by')) ||
+                  (orExpr.includes('availability_date') && isMissingColumn(error, 'availability_date')) ||
+                  (orExpr.includes('status.') && isMissingColumn(error, 'status')) ||
+                  (orExpr.includes('published.') && isMissingColumn(error, 'published'))
+                ) {
+                  continue
+                }
+                return { data: [], error }
+              }
+              return { data: Array.isArray(data) ? data : [], error: null }
+            } catch (e) {
+              if (
+                isMissingColumn(e, col) ||
+                (orExpr.includes('availability_date') && isMissingColumn(e, 'availability_date')) ||
+                (orExpr.includes('status.') && isMissingColumn(e, 'status')) ||
+                (orExpr.includes('published.') && isMissingColumn(e, 'published'))
+              ) {
+                continue
+              }
+              return { data: [], error: e }
+            }
+          }
+        }
+        return { data: [], error: null }
+      }
+
+      const merged = []
+      const seen = new Set()
+      let lastError = null
+      for (const col of ['produtor_id', 'user_id', 'created_by']) {
+        const r = await fetchPublishedByOwnerColumn(col)
+        if (r.error) {
+          lastError = r.error
+          continue
+        }
+        for (const row of r.data) {
+          const id = String(row?.id || '').trim()
+          if (!id || seen.has(id)) continue
+          seen.add(id)
+          merged.push(row)
+        }
+      }
+
+      if (merged.length === 0 && lastError) {
+        const msg = String(lastError?.message || lastError || '')
+        const lower = msg.toLowerCase()
+        if (lower.includes('does not exist') || lower.includes('unknown') || lower.includes('column') || lower.includes('not found')) {
+          return json(res, 200, { data: [], meta: debug ? { producer_uid: producerUid, producerKeys, note: 'schema_missing_columns' } : undefined })
+        }
+        return json(res, 500, { error: msg || 'fetch_failed' })
+      }
+
+      if (debug) {
+        const countByOwner = async (col) => {
+          try {
+            const { count, error } = await admin.from('simulados').select('id', { head: true, count: 'exact' }).in(col, producerKeys)
+            if (error) return null
+            return Number(count || 0) || 0
+          } catch (_) {
+            return null
+          }
+        }
+        const countAvailByOwner = async (col) => {
+          try {
+            const { count, error } = await admin
+              .from('simulados')
+              .select('id', { head: true, count: 'exact' })
+              .in(col, producerKeys)
+              .or(`availability_date.is.null,availability_date.lte.${nowIso}`)
+            if (error) return null
+            return Number(count || 0) || 0
+          } catch (_) {
+            return null
+          }
+        }
+        const counts = {}
+        for (const col of ['produtor_id', 'user_id', 'created_by']) {
+          counts[col] = { total: await countByOwner(col), available: await countAvailByOwner(col) }
+        }
+        return json(res, 200, { producer_uid: producerUid, data: merged, meta: { producer_uid: producerUid, producerKeys, nowIso, counts } })
+      }
+
+      return json(res, 200, { producer_uid: producerUid, data: merged })
+    }
+
     if (type === 'aluno_redirect') {
       res.setHeader('Cache-Control', 'no-store')
       const producerUid = String(u.searchParams.get('producer_uid') || producerId || '').trim()
@@ -245,6 +420,192 @@ export default async function handler(req, res) {
     const auth = await getAuthedUser(admin, req)
     if (!auth.user) return json(res, 401, { error: auth.error || 'unauthorized' })
 
+    if (type === 'ensure_courses_media_upload' && (req.method === 'GET' || req.method === 'POST')) {
+      res.setHeader('Cache-Control', 'no-store')
+      const bytesParam = String(u.searchParams.get('bytes') || u.searchParams.get('size') || '').trim()
+      const contentTypeParam = String(u.searchParams.get('contentType') || u.searchParams.get('content_type') || '').trim().toLowerCase()
+      const bodyRaw = req.method === 'POST' ? await readRawBody(req).catch(() => null) : null
+      let body = null
+      try { body = bodyRaw ? JSON.parse(bodyRaw.toString('utf-8') || '{}') : null } catch (_) { body = null }
+      const bytes = Number(bytesParam || body?.bytes || body?.size || 0)
+      if (!Number.isFinite(bytes) || bytes <= 0) return json(res, 400, { ok: false, error: 'invalid_bytes' })
+      const contentType = String(contentTypeParam || body?.contentType || body?.content_type || '').trim().toLowerCase()
+
+      const PLAN_LIMITS_GB = { teste: 1, start: 5, pro: 50, premium: 500, qa: 500 }
+      const userId = String(auth.user.id || '').trim()
+      let activePlan = ''
+      try {
+        const { data } = await admin.from('profiles').select('active_plan').eq('user_id', userId).maybeSingle()
+        if (data?.active_plan) activePlan = String(data.active_plan).trim().toLowerCase()
+      } catch (_) {}
+      const storageGb = PLAN_LIMITS_GB[activePlan] || null
+      const planLimitBytes = typeof storageGb === 'number' ? storageGb * 1024 * 1024 * 1024 : null
+      const maxSingleFileBytes = typeof planLimitBytes === 'number' ? planLimitBytes : null
+      if (typeof planLimitBytes === 'number' && bytes > planLimitBytes) {
+        return json(res, 403, { ok: false, error: 'file_exceeds_plan_storage', planKey: activePlan || null, limitBytes: planLimitBytes, bytes })
+      }
+      if (typeof maxSingleFileBytes === 'number' && bytes > maxSingleFileBytes) {
+        return json(res, 403, { ok: false, error: 'file_exceeds_max_single_file', maxSingleFileBytes, bytes })
+      }
+
+      const supabaseUrl = String(process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '').trim()
+      const serviceRole = String(process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim()
+      if (!supabaseUrl || !serviceRole) return json(res, 501, { ok: false, error: 'missing_supabase_env' })
+
+      const bucketId = 'courses-media'
+      const headers = { Authorization: `Bearer ${serviceRole}`, apikey: serviceRole, 'Content-Type': 'application/json' }
+      const baseAllowed = [
+        'image/*',
+        'video/*',
+        'application/pdf',
+        'application/msword',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/vnd.ms-powerpoint',
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'application/vnd.ms-excel',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'application/octet-stream',
+      ]
+      const unionAllowed = (currentAllowed) => {
+        const set = new Set()
+        for (const v of Array.isArray(currentAllowed) ? currentAllowed : []) {
+          const s = String(v || '').trim()
+          if (s) set.add(s)
+        }
+        for (const v of baseAllowed) set.add(v)
+        if (contentType && contentType.includes('/')) set.add(contentType)
+        return Array.from(set)
+      }
+      const readBucket = async () => {
+        const r = await fetch(`${supabaseUrl.replace(/\/+$/, '')}/storage/v1/bucket/${encodeURIComponent(bucketId)}`, { method: 'GET', headers })
+        const j = await r.json().catch(() => null)
+        return { ok: r.ok, status: r.status, data: j }
+      }
+      const upsertBucket = async (payload) => {
+        const r = await fetch(`${supabaseUrl.replace(/\/+$/, '')}/storage/v1/bucket/${encodeURIComponent(bucketId)}`, { method: 'PUT', headers, body: JSON.stringify(payload || {}) })
+        const j = await r.json().catch(() => null)
+        return { ok: r.ok, status: r.status, data: j }
+      }
+      const createBucket = async (payload) => {
+        const r = await fetch(`${supabaseUrl.replace(/\/+$/, '')}/storage/v1/bucket`, { method: 'POST', headers, body: JSON.stringify(payload || {}) })
+        const j = await r.json().catch(() => null)
+        return { ok: r.ok, status: r.status, data: j }
+      }
+
+      const current = await readBucket()
+      const currentLimit = Number(current?.data?.file_size_limit || current?.data?.fileSizeLimit || 0)
+      const desired = Math.max(currentLimit || 0, bytes)
+      if (!current.ok && current.status === 404) {
+        const created = await createBucket({ id: bucketId, name: bucketId, public: true, allowed_mime_types: unionAllowed(null), file_size_limit: desired })
+        if (!created.ok) return json(res, 500, { ok: false, error: 'bucket_create_failed', status: created.status })
+        return json(res, 200, { ok: true, bucketId, fileSizeLimit: desired, updated: true, created: true })
+      }
+      if (!current.ok) return json(res, 500, { ok: false, error: 'bucket_read_failed', status: current.status })
+      const currentAllowed = Array.isArray(current?.data?.allowed_mime_types) ? current.data.allowed_mime_types : null
+      const nextAllowed = unionAllowed(currentAllowed)
+      const allowedNeedsUpdate = (() => {
+        if (!Array.isArray(currentAllowed)) return true
+        if (currentAllowed.length < nextAllowed.length) return true
+        if (contentType && contentType.includes('/') && !currentAllowed.includes(contentType)) return true
+        return false
+      })()
+      if (currentLimit && currentLimit >= desired && !allowedNeedsUpdate) return json(res, 200, { ok: true, bucketId, fileSizeLimit: currentLimit, updated: false })
+
+      const nextPayload = {
+        id: bucketId,
+        name: current?.data?.name || bucketId,
+        public: typeof current?.data?.public === 'boolean' ? current.data.public : true,
+        allowed_mime_types: nextAllowed,
+        file_size_limit: desired,
+      }
+      const updated = await upsertBucket(nextPayload)
+      if (!updated.ok) {
+        const msg = String(updated?.data?.message || updated?.data?.error || '').toLowerCase()
+        const sc = Number(updated?.data?.statusCode || updated.status || 0)
+        const isTooLarge = sc === 413 || msg.includes('payload too large') || msg.includes('maximum allowed size') || msg.includes('exceeded the maximum allowed size')
+        if (isTooLarge) {
+          const limit = currentLimit > 0 ? currentLimit : null
+          return json(res, 403, { ok: false, error: 'file_exceeds_supabase_max', maxBytes: limit, bytes })
+        }
+        return json(res, 500, { ok: false, error: 'bucket_update_failed', status: updated.status })
+      }
+      return json(res, 200, { ok: true, bucketId, fileSizeLimit: desired, updated: true })
+    }
+
+    const getFileSizeFromMeta = (meta) => {
+      if (!meta) return null
+      const candidates = [
+        meta.size,
+        meta.contentLength,
+        meta['content-length'],
+        meta['Content-Length'],
+        meta['contentLength'],
+      ]
+      for (const c of candidates) {
+        const n = Number(c)
+        if (Number.isFinite(n) && n >= 0) return n
+      }
+      return null
+    }
+
+    const listAllFilesBytes = async (bucket, rootPath, { maxItems = 50000 } = {}) => {
+      const queue = [String(rootPath || '').replace(/\/+$/, '')]
+      const visited = new Set()
+      let total = 0
+      let scanned = 0
+      let truncated = false
+
+      while (queue.length > 0) {
+        const prefix = queue.shift()
+        if (visited.has(prefix)) continue
+        visited.add(prefix)
+        const { data: items, error } = await admin.storage.from(bucket).list(prefix || '', { limit: 1000, offset: 0 })
+        if (error) throw error
+        const arr = Array.isArray(items) ? items : []
+        for (const it of arr) {
+          scanned += 1
+          if (scanned > maxItems) { truncated = true; break }
+          const name = String(it?.name || '')
+          const id = it?.id || null
+          const isFolder = !id && (!it?.metadata || Object.keys(it?.metadata || {}).length === 0)
+          if (isFolder) {
+            const nextPrefix = prefix ? `${prefix}/${name}` : name
+            queue.push(nextPrefix)
+            continue
+          }
+          const sz = getFileSizeFromMeta(it?.metadata)
+          if (typeof sz === 'number') total += sz
+        }
+        if (truncated) break
+      }
+
+      return { bytes: total, truncated }
+    }
+
+    if (req.method === 'GET' && type === 'storage_usage') {
+      res.setHeader('Cache-Control', 'no-store')
+      const askedUserId = String(u.searchParams.get('userId') || '').trim()
+      const userId = askedUserId || String(auth.user.id || '').trim()
+      if (!userId || userId !== String(auth.user.id || '').trim()) return json(res, 403, { error: 'forbidden' })
+
+      const buckets = [
+        { bucket: 'courses-media', prefix: `users/${userId}` },
+        { bucket: 'question-images', prefix: `${userId}` },
+      ]
+      const results = await Promise.all(
+        buckets.map(async (b) => {
+          try {
+            return await listAllFilesBytes(b.bucket, b.prefix)
+          } catch (_) {
+            return { bytes: 0, truncated: false }
+          }
+        })
+      )
+      const bytes = results.reduce((acc, r) => acc + (Number(r?.bytes) || 0), 0)
+      const truncated = results.some((r) => !!r?.truncated)
+      return json(res, 200, { ok: true, userId, bytes, truncated })
+    }
+
     const insertWithColumnPrune = async (table, initialPayload, maxAttempts = 10) => {
       let payload = { ...(initialPayload || {}) }
       for (let i = 0; i < maxAttempts; i += 1) {
@@ -263,6 +624,28 @@ export default async function handler(req, res) {
         delete payload[col]
       }
       return { data: null, error: new Error('Insert failed after pruning columns') }
+    }
+
+    const updateWithColumnPrune = async (table, { eqColumn, eqValue, payload: initialPayload }, maxAttempts = 10) => {
+      const col = String(eqColumn || '').trim() || 'id'
+      const val = String(eqValue || '').trim()
+      let payload = { ...(initialPayload || {}) }
+      for (let i = 0; i < maxAttempts; i += 1) {
+        const { data, error } = await admin.from(table).update(payload).eq(col, val).select().single()
+        if (!error) return { data, error: null }
+        const msg = String(error?.message || '')
+        const lower = msg.toLowerCase()
+        const isMissingColumn =
+          (lower.includes('does not exist') && lower.includes('column')) ||
+          (lower.includes('schema cache') && lower.includes('could not find') && lower.includes('column'))
+        if (!isMissingColumn) return { data: null, error }
+        const m1 = msg.match(/column \"([^\"]+)\"/i)
+        const m2 = msg.match(/the '([^']+)' column/i)
+        const missing = m1?.[1] || m2?.[1] || ''
+        if (!missing || !(missing in payload)) return { data: null, error }
+        delete payload[missing]
+      }
+      return { data: null, error: new Error('Update failed after pruning columns') }
     }
 
     const resolveProducerRowIdFromUserId = async (userId) => {
@@ -520,32 +903,78 @@ export default async function handler(req, res) {
       if (!cid) return []
 
       try {
+        try {
+          const { data, error } = await admin
+            .from('v_posts_with_replies')
+            .select('post_id,conversation_id,content,created_at,likes,liked,replies_json')
+            .eq('conversation_id', cid)
+            .order('created_at', { ascending: true })
+            .limit(200)
+          if (!error && Array.isArray(data)) {
+            return data.map((row) => ({
+              id: row?.post_id || null,
+              conversation_id: row?.conversation_id || cid,
+              content: row?.content || '',
+              created_at: row?.created_at || null,
+              likes: Number(row?.likes || 0),
+              liked: !!row?.liked,
+              author: null,
+              replies: (Array.isArray(row?.replies_json) ? row.replies_json : []).map((reply) => ({ ...reply, liked_by: reply?.liked_by || reply?.likedBy || [] })),
+            })).filter((p) => p.id)
+          }
+        } catch (_) {}
+
         const { data: posts, error } = await admin
           .from('posts')
-          .select('id,conversation_id,text,created_at,likes,liked,author_id')
+          .select('id,conversation_id,text,created_at,likes,liked,author_id,student_id,student_external_id')
           .eq('conversation_id', cid)
           .order('created_at', { ascending: true })
           .limit(200)
         if (error) return await fetchConversationFeedLoose(cid)
 
         const list = Array.isArray(posts) ? posts : []
-        if (list.length === 0) return await fetchConversationFeedLoose(cid)
-        const authorIds = Array.from(new Set(list.map((p) => String(p?.author_id || '').trim()).filter((v) => v && isUuid(v))))
+        if (list.length === 0) return []
+        const authorIds = Array.from(new Set(list.flatMap((p) => ([
+          String(p?.author_id || '').trim(),
+          String(p?.student_id || '').trim(),
+          String(p?.student_external_id || '').trim(),
+        ])).filter((v) => v && isUuid(v))))
         let authors = []
         if (authorIds.length > 0) {
-          const { data } = await admin.from('students').select('id,name,avatar_url,email').in('id', authorIds).limit(200)
-          authors = Array.isArray(data) ? data : []
+          try {
+            const { data } = await admin.from('students').select('id,user_id,external_id,name,avatar_url,email').in('id', authorIds).limit(200)
+            authors = Array.isArray(data) ? data : []
+          } catch (_) {
+            const { data } = await admin.from('students').select('id,name,avatar_url,email').in('id', authorIds).limit(200)
+            authors = Array.isArray(data) ? data : []
+          }
+          if (authors.length === 0) {
+            try {
+              const { data } = await admin.from('students').select('id,user_id,external_id,name,avatar_url,email').in('user_id', authorIds).limit(200)
+              authors = Array.isArray(data) ? data : []
+            } catch (_) {}
+          }
+          if (authors.length === 0) {
+            try {
+              const { data } = await admin.from('students').select('id,user_id,external_id,name,avatar_url,email').in('external_id', authorIds).limit(200)
+              authors = Array.isArray(data) ? data : []
+            } catch (_) {}
+          }
         }
         const authorById = new Map()
         for (const a of authors) {
           const id = String(a?.id || '').trim()
-          if (!id) continue
-          authorById.set(id, {
-            id,
+          const uid = String(a?.user_id || '').trim()
+          const ext = String(a?.external_id || '').trim()
+          const author = {
+            id: id || uid || ext,
             name: String(a?.name || 'Aluno'),
             avatar_url: a?.avatar_url || null,
             email: a?.email || '',
-          })
+          }
+          if (id) authorById.set(id, author)
+          if (uid) authorById.set(uid, author)
+          if (ext) authorById.set(ext, author)
         }
 
         const postIds = list.map((p) => p?.id).filter((v) => v && isUuid(String(v)))
@@ -591,7 +1020,7 @@ export default async function handler(req, res) {
 
         return list.map((p) => {
           const pid = String(p?.id || '').trim()
-          const aid = String(p?.author_id || '').trim()
+          const aid = String(p?.author_id || p?.student_id || p?.student_external_id || '').trim()
           return {
             id: p?.id || null,
             conversation_id: p?.conversation_id || cid,
@@ -620,41 +1049,261 @@ export default async function handler(req, res) {
       return false
     }
 
-    const insertPostForConversation = async ({ conversationId, content, authorId }) => {
+    const insertPostForConversation = async ({ conversationId, content, authorId, authorUserId }) => {
       const cid = String(conversationId || '').trim()
       const bodyText = String(content || '').trim()
       const aid = String(authorId || '').trim()
+      const uid = String(authorUserId || '').trim()
       if (!cid || !bodyText) return { post: null, error: new Error('invalid_post_payload') }
 
-      const conversationCols = ['conversation_id', 'conversation_external_id', 'conversationId', 'conversation_externalId']
-      const textCols = ['text', 'content', 'body', 'message']
-      const authorCols = ['author_id', 'student_id', 'student_external_id']
+      const base = {
+        conversation_id: cid,
+        conversation_external_id: cid,
+        conversationId: cid,
+        conversation_externalId: cid,
+        text: bodyText,
+        content: bodyText,
+        body: bodyText,
+        message: bodyText,
+        likes: 0,
+        liked: false,
+      }
+
+      const candidates = [
+        { ...base, ...(aid ? { author_id: aid } : {}), ...(aid ? { student_id: aid } : {}), ...(uid ? { student_external_id: uid } : {}) },
+        { ...base, ...(uid ? { author_id: uid } : {}), ...(aid ? { student_id: aid } : {}), ...(uid ? { student_external_id: uid } : {}) },
+        { ...base, ...(uid ? { author_id: uid } : {}), ...(aid ? { student_id: aid } : {}) },
+        { ...base, ...(aid ? { author_id: aid } : {}) },
+        { ...base, ...(uid ? { author_id: uid } : {}) },
+      ].map((p) => Object.fromEntries(Object.entries(p).filter(([, v]) => v !== undefined && v !== null && v !== '')))
 
       let lastErr = null
-      for (const convCol of conversationCols) {
-        for (const txtCol of textCols) {
-          const base = { [convCol]: cid, [txtCol]: bodyText, likes: 0, liked: false }
-          for (const aCol of authorCols) {
-            if (aid) base[aCol] = aid
+      for (const payload of candidates) {
+        try {
+          const { data, error } = await insertWithColumnPrune('posts', payload, 20)
+          if (error || !data?.id) {
+            lastErr = error || new Error('insert_failed')
+            continue
           }
-          try {
-            const { data, error } = await insertWithColumnPrune('posts', base, 12)
-            if (error || !data?.id) {
-              lastErr = error || new Error('insert_failed')
-              continue
-            }
-            const insertedCid = String(data?.conversation_id || data?.conversation_external_id || data?.conversationId || data?.conversation_externalId || '').trim()
-            if (!insertedCid || insertedCid !== cid) {
-              lastErr = new Error('post_without_conversation_link')
-              continue
-            }
-            return { post: data, error: null }
-          } catch (e) {
-            lastErr = e
+          const insertedCid = String(data?.conversation_id || data?.conversation_external_id || data?.conversationId || data?.conversation_externalId || '').trim()
+          if (!insertedCid || insertedCid !== cid) {
+            lastErr = new Error('post_without_conversation_link')
+            continue
           }
+          return { post: data, error: null }
+        } catch (e) {
+          lastErr = e
         }
       }
       return { post: null, error: lastErr || new Error('insert_failed') }
+    }
+
+    if (req.method === 'POST' && type === 'student_post_update') {
+      const raw = await readRawBody(req)
+      const parsed = JSON.parse(raw.toString('utf-8') || '{}')
+      const postId = String(parsed?.postId || parsed?.post_id || '').trim()
+      const content = String(parsed?.content || parsed?.text || '').trim()
+      const studentName = String(parsed?.studentName || parsed?.student_name || 'Aluno').trim()
+
+      if (!postId || !isUuid(postId)) return json(res, 400, { error: 'invalid_postId' })
+      if (!content) return json(res, 400, { error: 'invalid_content' })
+
+      const studentResolution = await resolveStudentId(auth.user, studentName)
+      const studentId = String(studentResolution?.id || '').trim()
+      if (!studentId) return json(res, 500, { error: 'student_not_resolved', message: String(studentResolution?.error || '') })
+      const userId = String(auth.user?.id || '').trim()
+
+      const isMissingColumn = (err, col) => {
+        const msg = String(err?.message || err?.details || err || '').toLowerCase()
+        const code = String(err?.code || '').toUpperCase()
+        const c = String(col || '').toLowerCase()
+        return (
+          code === 'PGRST204' ||
+          code === '42703' ||
+          msg.includes(`could not find the '${c}' column`) ||
+          (msg.includes('schema cache') && msg.includes(c)) ||
+          (msg.includes('does not exist') && msg.includes(c))
+        )
+      }
+
+      const fetchPostRow = async () => {
+        const selects = [
+          'id,conversation_id,author_id,student_id,student_external_id,text,content,body,message',
+          'id,conversation_id,author_id,text,content,body,message',
+          '*',
+        ]
+        for (const sel of selects) {
+          try {
+            const { data, error } = await admin.from('posts').select(sel).eq('id', postId).maybeSingle()
+            if (error) {
+              if (sel !== '*' && (isMissingColumn(error, 'student_id') || isMissingColumn(error, 'student_external_id') || isMissingColumn(error, 'author_id'))) continue
+              if (sel !== '*' && isMissingColumn(error, 'body')) continue
+              if (sel !== '*' && isMissingColumn(error, 'message')) continue
+              if (sel !== '*' && isMissingColumn(error, 'content')) continue
+              if (sel !== '*' && isMissingColumn(error, 'text')) continue
+              return { row: null, error }
+            }
+            return { row: data || null, error: null }
+          } catch (e) {
+            if (sel !== '*' && (isMissingColumn(e, 'student_id') || isMissingColumn(e, 'student_external_id') || isMissingColumn(e, 'author_id'))) continue
+            if (sel !== '*' && isMissingColumn(e, 'body')) continue
+            if (sel !== '*' && isMissingColumn(e, 'message')) continue
+            if (sel !== '*' && isMissingColumn(e, 'content')) continue
+            if (sel !== '*' && isMissingColumn(e, 'text')) continue
+            return { row: null, error: e }
+          }
+        }
+        return { row: null, error: null }
+      }
+
+      const { row: postRow, error: postErr } = await fetchPostRow()
+      if (postErr) return json(res, 500, { error: 'post_fetch_failed', message: String(postErr?.message || postErr || '') })
+      if (!postRow) return json(res, 404, { error: 'post_not_found' })
+
+      const authorKeys = [
+        String(postRow?.author_id || '').trim(),
+        String(postRow?.student_id || '').trim(),
+        String(postRow?.student_external_id || '').trim(),
+      ].filter(Boolean)
+      let allowed = authorKeys.includes(studentId) || (userId ? authorKeys.includes(userId) : false)
+
+      const conversationId = String(postRow?.conversation_id || postRow?.conversation_external_id || postRow?.conversationId || postRow?.conversation_externalId || '').trim()
+      if (!allowed && conversationId) {
+        const attempts = [
+          () => admin.from('conversations').select('id').eq('id', conversationId).eq('student_id', studentId).maybeSingle(),
+          () => admin.from('conversations').select('id').eq('id', conversationId).eq('student_external_id', studentId).maybeSingle(),
+          () => admin.from('conversations').select('id').eq('id', conversationId).eq('student_id', userId).maybeSingle(),
+          () => admin.from('conversations').select('id').eq('id', conversationId).eq('student_external_id', userId).maybeSingle(),
+        ]
+        for (const fn of attempts) {
+          try {
+            const { data, error } = await fn()
+            if (!error && data?.id) { allowed = true; break }
+          } catch (_) {}
+        }
+      }
+      if (!allowed) return json(res, 403, { error: 'forbidden' })
+
+      const updatePayload = {
+        text: content,
+        content,
+        body: content,
+        message: content,
+      }
+      const { data: updated, error: upErr } = await updateWithColumnPrune('posts', { eqColumn: 'id', eqValue: postId, payload: updatePayload }, 20)
+      if (upErr || !updated?.id) return json(res, 500, { error: 'post_update_failed', message: String(upErr?.message || upErr || '') })
+
+      try {
+        if (conversationId) await admin.from('conversations').update({ date: new Date().toISOString() }).eq('id', conversationId)
+      } catch (_) {}
+
+      const updatedText = String(updated?.text || updated?.content || updated?.body || updated?.message || content)
+      return json(res, 200, { ok: true, post: { id: updated.id, content: updatedText } })
+    }
+
+    if (req.method === 'POST' && type === 'student_post_delete') {
+      const raw = await readRawBody(req)
+      const parsed = JSON.parse(raw.toString('utf-8') || '{}')
+      const postId = String(parsed?.postId || parsed?.post_id || '').trim()
+      const studentName = String(parsed?.studentName || parsed?.student_name || 'Aluno').trim()
+
+      if (!postId || !isUuid(postId)) return json(res, 400, { error: 'invalid_postId' })
+
+      const studentResolution = await resolveStudentId(auth.user, studentName)
+      const studentId = String(studentResolution?.id || '').trim()
+      if (!studentId) return json(res, 500, { error: 'student_not_resolved', message: String(studentResolution?.error || '') })
+      const userId = String(auth.user?.id || '').trim()
+
+      const isMissingColumn = (err, col) => {
+        const msg = String(err?.message || err?.details || err || '').toLowerCase()
+        const code = String(err?.code || '').toUpperCase()
+        const c = String(col || '').toLowerCase()
+        return (
+          code === 'PGRST204' ||
+          code === '42703' ||
+          msg.includes(`could not find the '${c}' column`) ||
+          (msg.includes('schema cache') && msg.includes(c)) ||
+          (msg.includes('does not exist') && msg.includes(c))
+        )
+      }
+
+      const fetchPostRow = async () => {
+        const selects = [
+          'id,conversation_id,author_id,student_id,student_external_id',
+          'id,conversation_id,author_id',
+          '*',
+        ]
+        for (const sel of selects) {
+          try {
+            const { data, error } = await admin.from('posts').select(sel).eq('id', postId).maybeSingle()
+            if (error) {
+              if (sel !== '*' && (isMissingColumn(error, 'student_id') || isMissingColumn(error, 'student_external_id') || isMissingColumn(error, 'author_id'))) continue
+              return { row: null, error }
+            }
+            return { row: data || null, error: null }
+          } catch (e) {
+            if (sel !== '*' && (isMissingColumn(e, 'student_id') || isMissingColumn(e, 'student_external_id') || isMissingColumn(e, 'author_id'))) continue
+            return { row: null, error: e }
+          }
+        }
+        return { row: null, error: null }
+      }
+
+      const { row: postRow, error: postErr } = await fetchPostRow()
+      if (postErr) return json(res, 500, { error: 'post_fetch_failed', message: String(postErr?.message || postErr || '') })
+      if (!postRow) return json(res, 404, { error: 'post_not_found' })
+
+      const authorKeys = [
+        String(postRow?.author_id || '').trim(),
+        String(postRow?.student_id || '').trim(),
+        String(postRow?.student_external_id || '').trim(),
+      ].filter(Boolean)
+      let allowed = authorKeys.includes(studentId) || (userId ? authorKeys.includes(userId) : false)
+
+      const conversationId = String(postRow?.conversation_id || postRow?.conversation_external_id || postRow?.conversationId || postRow?.conversation_externalId || '').trim()
+      if (!allowed && conversationId) {
+        const attempts = [
+          () => admin.from('conversations').select('id').eq('id', conversationId).eq('student_id', studentId).maybeSingle(),
+          () => admin.from('conversations').select('id').eq('id', conversationId).eq('student_external_id', studentId).maybeSingle(),
+          () => admin.from('conversations').select('id').eq('id', conversationId).eq('student_id', userId).maybeSingle(),
+          () => admin.from('conversations').select('id').eq('id', conversationId).eq('student_external_id', userId).maybeSingle(),
+        ]
+        for (const fn of attempts) {
+          try {
+            const { data, error } = await fn()
+            if (!error && data?.id) { allowed = true; break }
+          } catch (_) {}
+        }
+      }
+      if (!allowed) return json(res, 403, { error: 'forbidden' })
+
+      const deleteReplies = async () => {
+        const cols = ['post_id', 'postId']
+        for (const col of cols) {
+          try {
+            const { error } = await admin.from('replies').delete().eq(col, postId)
+            if (!error) return
+            if (isMissingColumn(error, col)) continue
+          } catch (e) {
+            if (isMissingColumn(e, col)) continue
+          }
+        }
+      }
+
+      try { await deleteReplies() } catch (_) {}
+
+      try {
+        const { error: delErr } = await admin.from('posts').delete().eq('id', postId)
+        if (delErr) return json(res, 500, { error: 'post_delete_failed', message: String(delErr?.message || delErr || '') })
+      } catch (e) {
+        return json(res, 500, { error: 'post_delete_failed', message: String(e?.message || e || '') })
+      }
+
+      try {
+        if (conversationId) await admin.from('conversations').update({ date: new Date().toISOString() }).eq('id', conversationId)
+      } catch (_) {}
+
+      return json(res, 200, { ok: true, postId })
     }
 
     if (req.method === 'POST' && type === 'aluno_inbox_post') {
@@ -687,7 +1336,7 @@ export default async function handler(req, res) {
       const conversationId = await ensureLessonConversationId({ producerKey, subjects, tag, threadKey })
       if (!conversationId) return json(res, 500, { error: 'conversation_create_failed' })
 
-      const inserted = await insertPostForConversation({ conversationId, content, authorId: studentId })
+      const inserted = await insertPostForConversation({ conversationId, content, authorId: studentId, authorUserId: String(auth.user?.id || '') })
       if (inserted?.error || !inserted?.post?.id) return json(res, 500, { error: 'post_create_failed', message: String(inserted?.error?.message || inserted?.error || '') })
 
       let author = null
@@ -724,19 +1373,19 @@ export default async function handler(req, res) {
       if (!postId || !isUuid(postId)) return json(res, 400, { error: 'invalid_postId' })
       if (!text) return json(res, 400, { error: 'invalid_text' })
 
-      const producerIdParam = String(u.searchParams.get('producerId') || '').trim() || String(auth.user?.id || '').trim()
-      if (!producerIdParam) return json(res, 400, { error: 'invalid_producer_id' })
+      const producerUserId = String(auth.user?.id || '').trim()
+      if (!producerUserId) return json(res, 400, { error: 'invalid_producer_id' })
 
-      const producerRowId = await resolveProducerRowIdFromUserId(producerIdParam)
-      const producerKeys = Array.from(new Set([producerIdParam, producerRowId].map((v) => String(v || '').trim()).filter(Boolean)))
+      const producerRowId = await resolveProducerRowIdFromUserId(producerUserId)
+      const producerKeys = Array.from(new Set([producerUserId, producerRowId].map((v) => String(v || '').trim()).filter(Boolean)))
       const allowed = await conversationBelongsToProducerLoose(conversationId, producerKeys)
       if (!allowed) return json(res, 403, { error: 'forbidden' })
 
       let lastErr = null
       let created = null
       const candidates = [
-        { post_id: postId, text, author_id: producerIdParam, producer_id: producerRowId || undefined },
-        { post_id: postId, text, author_id: producerIdParam },
+        { post_id: postId, text, author_id: producerUserId, producer_id: producerRowId || undefined },
+        { post_id: postId, text, author_id: producerUserId },
         { post_id: postId, text, producer_id: producerRowId || undefined },
         { post_id: postId, text },
       ]
@@ -1029,7 +1678,130 @@ export default async function handler(req, res) {
       const conversationId = await ensureLessonConversationId({ producerKey, subjects, tag: 'Curso', threadKey, courseId, title, lessonTitle })
       if (!conversationId) return json(res, 500, { error: 'conversation_create_failed' })
 
-      const inserted = await insertPostForConversation({ conversationId, content, authorId: studentId })
+      const inserted = await insertPostForConversation({ conversationId, content, authorId: studentId, authorUserId: String(auth.user?.id || '') })
+      if (inserted?.error || !inserted?.post?.id) return json(res, 500, { error: 'post_create_failed', message: String(inserted?.error?.message || inserted?.error || '') })
+
+      let author = null
+      try {
+        const { data } = await admin.from('students').select('id,name,avatar_url,email').eq('id', studentId).maybeSingle()
+        if (data?.id) {
+          author = { id: String(data.id), name: String(data.name || 'Aluno'), avatar_url: data.avatar_url || null, email: data.email || '' }
+        }
+      } catch (_) {}
+
+      const post = {
+        id: inserted.post.id,
+        content,
+        created_at: inserted.post.created_at || null,
+        likes: Number(inserted.post.likes || 0),
+        liked: !!inserted.post.liked,
+        author,
+      }
+
+      try {
+        await admin.from('conversations').update({ date: new Date().toISOString(), unread: 1 }).eq('id', conversationId)
+      } catch (_) {}
+
+      return json(res, 200, { ok: true, conversationId, post })
+    }
+
+    if (req.method === 'GET' && type === 'simulado_inbox_thread') {
+      res.setHeader('Cache-Control', 'no-store')
+      const simId = String(u.searchParams.get('simId') || u.searchParams.get('sim_id') || '').trim()
+      const threadKey = String(u.searchParams.get('threadKey') || u.searchParams.get('thread_key') || '').trim()
+      const title = String(u.searchParams.get('title') || 'Inbox').trim() || 'Inbox'
+
+      if (!simId || !isUuid(simId)) return json(res, 400, { error: 'invalid_simId' })
+      if (!threadKey) return json(res, 400, { error: 'invalid_threadKey' })
+
+      const isMissingColumn = (err, col) => {
+        const msg = String(err?.message || err?.details || err || '').toLowerCase()
+        const code = String(err?.code || '').toUpperCase()
+        const c = String(col || '').toLowerCase()
+        return (
+          code === 'PGRST204' ||
+          code === '42703' ||
+          msg.includes(`could not find the '${c}' column`) ||
+          (msg.includes('schema cache') && msg.includes(c)) ||
+          (msg.includes('does not exist') && msg.includes(c))
+        )
+      }
+      let sim = null
+      let simErr = null
+      ;({ data: sim, error: simErr } = await admin.from('simulados').select('id,produtor_id,user_id,created_by,title').eq('id', simId).maybeSingle())
+      if (simErr && isMissingColumn(simErr, 'produtor_id')) {
+        ;({ data: sim, error: simErr } = await admin.from('simulados').select('id,user_id,created_by,title').eq('id', simId).maybeSingle())
+      }
+      if (simErr) return json(res, 500, { error: simErr.message || String(simErr) })
+      if (!sim) return json(res, 404, { error: 'simulado_not_found' })
+
+      const producerUserId = String(sim?.produtor_id || sim?.user_id || sim?.created_by || '').trim()
+      if (!producerUserId) return json(res, 404, { error: 'producer_not_found' })
+      const resolvedProducerRowId = await resolveProducerRowIdFromUserId(producerUserId)
+      const producerKey = String(resolvedProducerRowId || producerUserId || '').trim()
+      if (!producerKey) return json(res, 404, { error: 'producer_not_found' })
+
+      const subjects = [
+        `${title} - ${threadKey}`,
+      ].filter(Boolean)
+      const conversationId = await ensureLessonConversationId({ producerKey, subjects, tag: 'Simulado', threadKey, courseId: '', title, lessonTitle: '' })
+      if (!conversationId) return json(res, 200, { conversationId: '', data: [] })
+
+      const feed = await fetchConversationFeedCanonical(conversationId)
+      return json(res, 200, { conversationId, data: Array.isArray(feed) ? feed : [] })
+    }
+
+    if (req.method === 'POST' && type === 'simulado_inbox_post') {
+      const raw = await readRawBody(req)
+      const parsed = JSON.parse(raw.toString('utf-8') || '{}')
+      const simId = String(parsed?.simId || parsed?.sim_id || '').trim()
+      const threadKey = String(parsed?.threadKey || parsed?.thread_key || '').trim()
+      const title = String(parsed?.title || 'Inbox').trim() || 'Inbox'
+      const content = String(parsed?.content || parsed?.text || '').trim()
+      const studentName = String(parsed?.studentName || parsed?.student_name || 'Aluno').trim()
+
+      if (!simId || !isUuid(simId)) return json(res, 400, { error: 'invalid_simId' })
+      if (!threadKey) return json(res, 400, { error: 'invalid_threadKey' })
+      if (!content) return json(res, 400, { error: 'invalid_content' })
+
+      const isMissingColumn = (err, col) => {
+        const msg = String(err?.message || err?.details || err || '').toLowerCase()
+        const code = String(err?.code || '').toUpperCase()
+        const c = String(col || '').toLowerCase()
+        return (
+          code === 'PGRST204' ||
+          code === '42703' ||
+          msg.includes(`could not find the '${c}' column`) ||
+          (msg.includes('schema cache') && msg.includes(c)) ||
+          (msg.includes('does not exist') && msg.includes(c))
+        )
+      }
+      let sim = null
+      let simErr = null
+      ;({ data: sim, error: simErr } = await admin.from('simulados').select('id,produtor_id,user_id,created_by,title').eq('id', simId).maybeSingle())
+      if (simErr && isMissingColumn(simErr, 'produtor_id')) {
+        ;({ data: sim, error: simErr } = await admin.from('simulados').select('id,user_id,created_by,title').eq('id', simId).maybeSingle())
+      }
+      if (simErr) return json(res, 500, { error: simErr.message || String(simErr) })
+      if (!sim) return json(res, 404, { error: 'simulado_not_found' })
+
+      const producerUserId = String(sim?.produtor_id || sim?.user_id || sim?.created_by || '').trim()
+      if (!producerUserId) return json(res, 404, { error: 'producer_not_found' })
+      const resolvedProducerRowId = await resolveProducerRowIdFromUserId(producerUserId)
+      const producerKey = String(resolvedProducerRowId || producerUserId || '').trim()
+      if (!producerKey) return json(res, 404, { error: 'producer_not_found' })
+
+      const studentResolution = await resolveStudentId(auth.user, studentName)
+      const studentId = String(studentResolution?.id || '').trim()
+      if (!studentId) return json(res, 500, { error: 'student_not_resolved', message: String(studentResolution?.error || '') })
+
+      const subjects = [
+        `${title} - ${threadKey}`,
+      ].filter(Boolean)
+      const conversationId = await ensureLessonConversationId({ producerKey, subjects, tag: 'Simulado', threadKey, courseId: '', title, lessonTitle: '' })
+      if (!conversationId) return json(res, 500, { error: 'conversation_create_failed' })
+
+      const inserted = await insertPostForConversation({ conversationId, content, authorId: studentId, authorUserId: String(auth.user?.id || '') })
       if (inserted?.error || !inserted?.post?.id) return json(res, 500, { error: 'post_create_failed', message: String(inserted?.error?.message || inserted?.error || '') })
 
       let author = null
@@ -1152,51 +1924,149 @@ export default async function handler(req, res) {
     }
 
     if (type === 'courses') {
-      const { data, error } = await admin
-        .from('courses')
-        .select('id,title,cover_image_url,promo_video_url,module_layout_image_url,modules,data,user_id,created_at,status')
-        .eq('user_id', producerId)
-        .order('created_at', { ascending: false })
-        .limit(200)
-      if (error) return json(res, 500, { error: error.message || String(error) })
-      return json(res, 200, { data: Array.isArray(data) ? data : [] })
+      const isMissingColumn = (err, col) => {
+        const msg = String(err?.message || err?.details || err || '').toLowerCase()
+        const code = String(err?.code || '').toUpperCase()
+        const c = String(col || '').toLowerCase()
+        return (
+          code === 'PGRST204' ||
+          code === '42703' ||
+          msg.includes(`could not find the '${c}' column`) ||
+          (msg.includes('schema cache') && msg.includes(c)) ||
+          (msg.includes('does not exist') && msg.includes(c))
+        )
+      }
+
+      const producerKeysSet = new Set([String(producerId || '').trim()].filter(Boolean))
+      try {
+        const { data: prod } = await admin
+          .from('producers')
+          .select('id,user_id,external_id')
+          .or(`id.eq.${producerId},user_id.eq.${producerId},external_id.eq.${producerId}`)
+          .maybeSingle()
+        if (prod?.id) producerKeysSet.add(String(prod.id).trim())
+        if (prod?.user_id) producerKeysSet.add(String(prod.user_id).trim())
+        if (prod?.external_id) producerKeysSet.add(String(prod.external_id).trim())
+        if (prod?.user_id) {
+          const resolved = await resolveProducerRowIdFromUserId(String(prod.user_id))
+          if (resolved) producerKeysSet.add(String(resolved).trim())
+        }
+      } catch (_) {}
+      const producerKeys = Array.from(producerKeysSet).map((v) => String(v || '').trim()).filter(Boolean)
+
+      const select = 'id,title,cover_image_url,promo_video_url,module_layout_image_url,modules,data,user_id,created_at,status'
+      const fetchByColumn = async (col) => {
+        try {
+          const { data, error } = await admin
+            .from('courses')
+            .select(select)
+            .in(col, producerKeys)
+            .order('created_at', { ascending: false })
+            .limit(200)
+          if (error) return { data: [], error }
+          return { data: Array.isArray(data) ? data : [], error: null }
+        } catch (e) {
+          return { data: [], error: e }
+        }
+      }
+
+      const merged = []
+      const seen = new Set()
+      let lastError = null
+      for (const col of ['user_id', 'producer_id', 'producer_user_id', 'producer_external_id']) {
+        const r = await fetchByColumn(col)
+        if (r.error) {
+          lastError = r.error
+          if (isMissingColumn(r.error, col)) continue
+          continue
+        }
+        for (const row of r.data) {
+          const id = String(row?.id || '').trim()
+          if (!id || seen.has(id)) continue
+          seen.add(id)
+          merged.push(row)
+        }
+      }
+
+      if (merged.length === 0 && lastError) {
+        const msg = String(lastError?.message || lastError || '')
+        const lower = msg.toLowerCase()
+        if (lower.includes('does not exist') || lower.includes('unknown') || lower.includes('column') || lower.includes('not found')) {
+          return json(res, 200, { data: [] })
+        }
+        return json(res, 500, { error: msg || 'fetch_failed' })
+      }
+
+      return json(res, 200, { data: merged })
     }
 
   if (type === 'simulados') {
-    const { data, error } = await admin
-      .from('simulados')
-      .select('id,title,cover_image_url,is_paid,price,availability_date,duration_minutes,max_grade,settings,created_at,user_id')
-      .eq('user_id', producerId)
-      .order('created_at', { ascending: false })
-      .limit(200)
-    if (error) return json(res, 500, { error: error.message || String(error) })
-    return json(res, 200, { data: Array.isArray(data) ? data : [] })
-  }
+    const isMissingColumn = (err, col) => {
+      const msg = String(err?.message || err?.details || err || '').toLowerCase()
+      const code = String(err?.code || '').toUpperCase()
+      const c = String(col || '').toLowerCase()
+      return (
+        code === 'PGRST204' ||
+        code === '42703' ||
+        msg.includes(`could not find the '${c}' column`) ||
+        (msg.includes('schema cache') && msg.includes(c)) ||
+        (msg.includes('does not exist') && msg.includes(c))
+      )
+    }
 
-  if (type === 'sales') {
-    const producerRowId = await resolveProducerRowId()
-    const producerKeys = Array.from(new Set([String(producerId || '').trim(), String(producerRowId || '').trim()].filter(Boolean)))
-    const select = 'id,amount_cents,status,created_at,currency,producer_id,producer_external_id,producer_user_id'
+    const producerKeysSet = new Set([String(producerId || '').trim()].filter(Boolean))
+    try {
+      const { data: prod } = await admin
+        .from('producers')
+        .select('id,user_id,external_id')
+        .or(`id.eq.${producerId},user_id.eq.${producerId},external_id.eq.${producerId}`)
+        .maybeSingle()
+      if (prod?.id) producerKeysSet.add(String(prod.id).trim())
+      if (prod?.user_id) producerKeysSet.add(String(prod.user_id).trim())
+      if (prod?.external_id) producerKeysSet.add(String(prod.external_id).trim())
+      if (prod?.user_id) {
+        const resolved = await resolveProducerRowIdFromUserId(String(prod.user_id))
+        if (resolved) producerKeysSet.add(String(resolved).trim())
+      }
+    } catch (_) {}
+    const producerKeys = Array.from(producerKeysSet).filter(Boolean)
+
+    const selectAttempts = [
+      'id,title,cover_image_url,is_paid,price,availability_date,duration_minutes,max_grade,settings,created_at,produtor_id,user_id,created_by',
+      'id,title,cover_image_url,is_paid,price,availability_date,duration_minutes,max_grade,settings,created_at,user_id,created_by',
+      'id,title,cover_image_url,is_paid,price,availability_date,duration_minutes,max_grade,settings,created_at,user_id',
+      'id,title,cover_image_url,is_paid,price,availability_date,duration_minutes,max_grade,settings,created_at',
+      '*',
+    ]
 
     const fetchByColumn = async (col) => {
-      try {
-        const { data, error } = await admin
-          .from('sales')
-          .select(select)
-          .in(col, producerKeys)
-          .order('created_at', { ascending: false })
-          .limit(5000)
-        if (error) return { data: [], error }
-        return { data: Array.isArray(data) ? data : [], error: null }
-      } catch (e) {
-        return { data: [], error: e }
+      for (const sel of selectAttempts) {
+        try {
+          const { data, error } = await admin
+            .from('simulados')
+            .select(sel)
+            .in(col, producerKeys)
+            .order('created_at', { ascending: false })
+            .limit(200)
+          if (error) {
+            if (isMissingColumn(error, col) || (sel.includes('produtor_id') && isMissingColumn(error, 'produtor_id')) || (sel.includes('created_by') && isMissingColumn(error, 'created_by'))) {
+              continue
+            }
+            return { data: [], error }
+          }
+          return { data: Array.isArray(data) ? data : [], error: null }
+        } catch (e) {
+          if (isMissingColumn(e, col)) continue
+          return { data: [], error: e }
+        }
       }
+      return { data: [], error: null }
     }
 
     const merged = []
     const seen = new Set()
     let lastError = null
-    for (const col of ['producer_id', 'producer_external_id', 'producer_user_id']) {
+    for (const col of ['produtor_id', 'user_id', 'created_by']) {
       const r = await fetchByColumn(col)
       if (r.error) {
         lastError = r.error
@@ -1222,9 +2092,545 @@ export default async function handler(req, res) {
     return json(res, 200, { data: merged })
   }
 
-  if (type === 'conversations') {
+  if (type === 'sales') {
     const producerRowId = await resolveProducerRowId()
     const producerKeys = Array.from(new Set([String(producerId || '').trim(), String(producerRowId || '').trim()].filter(Boolean)))
+    const selectCandidates = [
+      'id,amount_cents,status,created_at,currency,producer_id,producer_external_id,producer_user_id',
+      'id,amount_cents,status,created_at,producer_id',
+    ]
+
+    const fetchByColumn = async (col, select) => {
+      try {
+        const { data, error } = await admin
+          .from('sales')
+          .select(select)
+          .in(col, producerKeys)
+          .order('created_at', { ascending: false })
+          .limit(5000)
+        if (error) return { data: [], error }
+        return { data: Array.isArray(data) ? data : [], error: null }
+      } catch (e) {
+        return { data: [], error: e }
+      }
+    }
+
+    const merged = []
+    const seen = new Set()
+    let lastError = null
+    for (const col of ['producer_id', 'producer_external_id', 'producer_user_id']) {
+      for (const select of selectCandidates) {
+        const r = await fetchByColumn(col, select)
+        if (r.error) {
+          lastError = r.error
+          const msg = String(r.error?.message || r.error || '').toLowerCase()
+          const missingCol = msg.includes('does not exist') || msg.includes('schema cache') || msg.includes('could not find the') || msg.includes('column')
+          if (missingCol) continue
+          break
+        }
+        for (const row of r.data) {
+          const id = String(row?.id || '').trim()
+          if (!id || seen.has(id)) continue
+          seen.add(id)
+          merged.push(row)
+        }
+        break
+      }
+    }
+
+    if (merged.length === 0 && lastError) {
+      const msg = String(lastError?.message || lastError || '')
+      const lower = msg.toLowerCase()
+      if (lower.includes('does not exist') || lower.includes('unknown') || lower.includes('column') || lower.includes('not found')) {
+        return json(res, 200, { data: [] })
+      }
+      return json(res, 500, { error: msg || 'fetch_failed' })
+    }
+
+    const parseJsonMaybe = (value) => {
+      if (!value) return null
+      if (typeof value === 'object') return value
+      if (typeof value !== 'string') return null
+      try { return JSON.parse(value) } catch (_) { return null }
+    }
+
+    const normalizeSaleFromNotification = (n) => {
+      const data = parseJsonMaybe(n?.data) || (n?.data && typeof n.data === 'object' ? n.data : null) || {}
+      const saleId = String(data?.sale_id || data?.saleId || '').trim()
+      const id = saleId || String(n?.id || '').trim()
+      if (!id) return null
+      const amount = Number(data?.amount_cents ?? data?.amountCents ?? 0)
+      const createdAt = n?.created_at || n?.createdAt || data?.created_at || data?.createdAt || null
+      return {
+        id,
+        amount_cents: Number.isFinite(amount) ? amount : 0,
+        status: String(data?.status || (String(n?.type || '').trim().toLowerCase() === 'purchase_received' ? 'paid' : 'paid')),
+        created_at: createdAt,
+        payment_method: String(data?.payment_method || data?.paymentMethod || '').trim() || undefined,
+        buyer_id: String(data?.buyer_id || data?.buyerId || '').trim() || undefined,
+        client_name: String(n?.actor_name || data?.buyer_name || data?.buyerName || '').trim() || undefined,
+        client_email: String(data?.buyer_email || data?.buyerEmail || '').trim() || undefined,
+        product_title: String(n?.entity_name || data?.entity_name || data?.entityName || '').trim() || undefined,
+        entity_type: String(data?.type || data?.entity_type || data?.entityType || '').trim() || undefined,
+        course_id: String(data?.courseId || data?.course_id || '').trim() || undefined,
+        module_id: String(data?.moduleId || data?.module_id || '').trim() || undefined,
+        lesson_id: String(data?.lessonId || data?.lesson_id || '').trim() || undefined,
+        sim_id: String(data?.simId || data?.sim_id || data?.simuladoId || data?.simulado_id || '').trim() || undefined,
+      }
+    }
+
+    const fetchNotifications = async () => {
+      if (producerKeys.length === 0) return []
+      const recipientCols = ['recipient_user_id', 'recipientUserId', 'recipient_id', 'recipientId']
+      const selectList = [
+        'id,created_at,type,recipient_user_id,actor_name,entity_name,data',
+        'id,created_at,type,recipient_user_id,actor_name,entity_name',
+        'id,created_at,recipient_user_id,actor_name,entity_name,data',
+        'id,created_at,recipient_user_id,data',
+        '*',
+      ]
+
+      for (const col of recipientCols) {
+        for (const select of selectList) {
+          try {
+            const { data, error } = await admin
+              .from('notifications')
+              .select(select)
+              .in(col, producerKeys)
+              .order('created_at', { ascending: false })
+              .limit(5000)
+            if (error) {
+              const msg = String(error?.message || error || '').toLowerCase()
+              const missing = msg.includes('does not exist') || msg.includes('schema cache') || msg.includes('could not find the') || msg.includes('column')
+              if (missing) continue
+              break
+            }
+            return Array.isArray(data) ? data : []
+          } catch (e) {
+            const msg = String(e?.message || e || '').toLowerCase()
+            const missing = msg.includes('does not exist') || msg.includes('schema cache') || msg.includes('could not find the') || msg.includes('column')
+            if (missing) continue
+            break
+          }
+        }
+      }
+      return []
+    }
+
+    try {
+      const notifications = await fetchNotifications()
+      const purchaseNotifs = notifications.filter((n) => String(n?.type || '').trim().toLowerCase() === 'purchase_received')
+      const notifSales = purchaseNotifs.map(normalizeSaleFromNotification).filter(Boolean)
+      const parseJsonMaybe2 = (value) => {
+        if (!value) return null
+        if (typeof value === 'object') return value
+        if (typeof value !== 'string') return null
+        try { return JSON.parse(value) } catch (_) { return null }
+      }
+      const getCourseMeta = (row) => {
+        const fromData = parseJsonMaybe2(row?.data) || null
+        const parsedModules = parseJsonMaybe2(row?.modules) || null
+        const fromModulesMeta = parsedModules && typeof parsedModules === 'object' ? (parsedModules.meta || null) : null
+        return { ...(fromModulesMeta || {}), ...(fromData || {}) }
+      }
+      const resolveCoursePriceNumber = (courseRow) => {
+        const meta = getCourseMeta(courseRow)
+        const candidates = [
+          courseRow?.price,
+          courseRow?.course_price,
+          meta?.price,
+          meta?.preco,
+          meta?.valor,
+          meta?.value,
+          meta?.coursePrice,
+          meta?.course_price,
+          meta?.productPrice,
+          meta?.product_price,
+          meta?.checkoutPrice,
+          meta?.checkout_price,
+          meta?.checkoutValue,
+          meta?.checkout_value,
+          meta?.paymentValue,
+          meta?.payment_value,
+        ]
+        for (const c of candidates) {
+          const n = Number(c)
+          if (Number.isFinite(n) && n > 0) return n
+        }
+        return 0
+      }
+      const getCourseModules = (row) => {
+        const extractModules = (input, depth = 0) => {
+          if (depth > 2) return []
+          const parsed = parseJsonMaybe2(input)
+          if (Array.isArray(parsed)) return parsed
+          if (!parsed || typeof parsed !== 'object') return []
+          const directKeys = ['modules', 'modulos', 'items', 'aulas', 'lessons', 'module_lessons']
+          for (const k of directKeys) {
+            if (Array.isArray(parsed[k])) return parsed[k]
+          }
+          const nestedKeys = ['course', 'curso', 'content', 'conteudo', 'payload', 'data']
+          for (const k of nestedKeys) {
+            const v = parsed[k]
+            const out = extractModules(v, depth + 1)
+            if (Array.isArray(out) && out.length > 0) return out
+          }
+          return []
+        }
+        const fromModules = extractModules(row?.modules)
+        if (Array.isArray(fromModules) && fromModules.length > 0) return fromModules
+        const fromData = extractModules(row?.data)
+        if (Array.isArray(fromData) && fromData.length > 0) return fromData
+        return []
+      }
+      const getModuleLessons = (mod) => {
+        if (!mod) return []
+        if (Array.isArray(mod.lessons)) return mod.lessons
+        if (Array.isArray(mod.aulas)) return mod.aulas
+        if (Array.isArray(mod.items)) return mod.items
+        if (mod && typeof mod === 'object' && Array.isArray(mod.module_lessons)) return mod.module_lessons
+        return []
+      }
+
+      const courseIds = Array.from(new Set(notifSales.map((s) => String(s?.course_id || '').trim()).filter(Boolean)))
+      const simIds = Array.from(new Set(notifSales.map((s) => String(s?.sim_id || '').trim()).filter(Boolean)))
+      const needTitleMatch = notifSales.some((s) => !String(s?.course_id || '').trim() && !String(s?.sim_id || '').trim() && String(s?.product_title || '').trim())
+      const courseById = new Map()
+      const simById = new Map()
+      const courseByTitle = new Map()
+      const simByTitle = new Map()
+
+      const normTitle = (v) => String(v || '').trim().toLowerCase().replace(/\s+/g, ' ')
+      if (courseIds.length > 0) {
+        const selectCandidates = [
+          'id,title,price,modules,data',
+          'id,title,price,modules',
+          'id,title,modules,data',
+          'id,title,modules',
+          '*',
+        ]
+        for (const select of selectCandidates) {
+          try {
+            const { data, error } = await admin
+              .from('courses')
+              .select(select)
+              .in('id', courseIds)
+              .limit(500)
+            if (error) {
+              const msg = String(error?.message || error || '').toLowerCase()
+              const missing = msg.includes('does not exist') || msg.includes('schema cache') || msg.includes('could not find the') || msg.includes('column')
+              if (missing) continue
+              break
+            }
+            for (const c of (Array.isArray(data) ? data : [])) {
+              const id = String(c?.id || '').trim()
+              if (id) courseById.set(id, c)
+              const title = String(c?.title || '').trim()
+              if (title) courseByTitle.set(normTitle(title), c)
+            }
+            break
+          } catch (e) {
+            const msg = String(e?.message || e || '').toLowerCase()
+            const missing = msg.includes('does not exist') || msg.includes('schema cache') || msg.includes('could not find the') || msg.includes('column')
+            if (missing) continue
+            break
+          }
+        }
+      }
+      if (simIds.length > 0) {
+        const selectCandidates = [
+          'id,title,price,is_paid',
+          'id,title,price',
+          'id,title,is_paid,price',
+          '*',
+        ]
+        for (const select of selectCandidates) {
+          try {
+            const { data, error } = await admin
+              .from('simulados')
+              .select(select)
+              .in('id', simIds)
+              .limit(500)
+            if (error) {
+              const msg = String(error?.message || error || '').toLowerCase()
+              const missing = msg.includes('does not exist') || msg.includes('schema cache') || msg.includes('could not find the') || msg.includes('column')
+              if (missing) continue
+              break
+            }
+            for (const s of (Array.isArray(data) ? data : [])) {
+              const id = String(s?.id || '').trim()
+              if (id) simById.set(id, s)
+              const title = String(s?.title || '').trim()
+              if (title) simByTitle.set(normTitle(title), s)
+            }
+            break
+          } catch (e) {
+            const msg = String(e?.message || e || '').toLowerCase()
+            const missing = msg.includes('does not exist') || msg.includes('schema cache') || msg.includes('could not find the') || msg.includes('column')
+            if (missing) continue
+            break
+          }
+        }
+      }
+
+      if (needTitleMatch) {
+        const fetchCoursesByOwner = async () => {
+          const cols = ['produtor_id', 'user_id', 'created_by']
+          const selectCandidates2 = [
+            'id,title,price,course_price,modules,data,produtor_id,user_id,created_by',
+            'id,title,price,course_price,modules,data,user_id,created_by',
+            'id,title,price,course_price,modules,data,user_id',
+            'id,title,price,course_price,modules,data',
+            '*',
+          ]
+          for (const col of cols) {
+            for (const select of selectCandidates2) {
+              try {
+                const { data, error } = await admin
+                  .from('courses')
+                  .select(select)
+                  .in(col, producerKeys)
+                  .limit(500)
+                if (error) {
+                  const msg = String(error?.message || error || '').toLowerCase()
+                  const missing = msg.includes('does not exist') || msg.includes('schema cache') || msg.includes('could not find the') || msg.includes('column')
+                  if (missing) continue
+                  break
+                }
+                return Array.isArray(data) ? data : []
+              } catch (e) {
+                const msg = String(e?.message || e || '').toLowerCase()
+                const missing = msg.includes('does not exist') || msg.includes('schema cache') || msg.includes('could not find the') || msg.includes('column')
+                if (missing) continue
+                break
+              }
+            }
+          }
+          return []
+        }
+        const fetchSimuladosByOwner = async () => {
+          const cols = ['produtor_id', 'user_id', 'created_by']
+          const selectCandidates2 = [
+            'id,title,price,produtor_id,user_id,created_by',
+            'id,title,price,user_id,created_by',
+            'id,title,price,user_id',
+            'id,title,price',
+            '*',
+          ]
+          for (const col of cols) {
+            for (const select of selectCandidates2) {
+              try {
+                const { data, error } = await admin
+                  .from('simulados')
+                  .select(select)
+                  .in(col, producerKeys)
+                  .limit(500)
+                if (error) {
+                  const msg = String(error?.message || error || '').toLowerCase()
+                  const missing = msg.includes('does not exist') || msg.includes('schema cache') || msg.includes('could not find the') || msg.includes('column')
+                  if (missing) continue
+                  break
+                }
+                return Array.isArray(data) ? data : []
+              } catch (e) {
+                const msg = String(e?.message || e || '').toLowerCase()
+                const missing = msg.includes('does not exist') || msg.includes('schema cache') || msg.includes('could not find the') || msg.includes('column')
+                if (missing) continue
+                break
+              }
+            }
+          }
+          return []
+        }
+
+        const [moreCourses, moreSims] = await Promise.all([
+          fetchCoursesByOwner().catch(() => []),
+          fetchSimuladosByOwner().catch(() => []),
+        ])
+
+        for (const c of moreCourses) {
+          const id = String(c?.id || '').trim()
+          if (id && !courseById.has(id)) courseById.set(id, c)
+          const title = String(c?.title || '').trim()
+          if (title && !courseByTitle.has(normTitle(title))) courseByTitle.set(normTitle(title), c)
+        }
+        for (const s of moreSims) {
+          const id = String(s?.id || '').trim()
+          if (id && !simById.has(id)) simById.set(id, s)
+          const title = String(s?.title || '').trim()
+          if (title && !simByTitle.has(normTitle(title))) simByTitle.set(normTitle(title), s)
+        }
+      }
+
+      const parseBrlNumber = (value) => {
+        if (value === null || value === undefined) return 0
+        if (typeof value === 'number') return Number.isFinite(value) ? value : 0
+        const raw = String(value).trim()
+        if (!raw) return 0
+        const hasDot = raw.includes('.')
+        const hasComma = raw.includes(',')
+        if (hasDot && hasComma) {
+          const normalized = raw.replace(/\./g, '').replace(',', '.')
+          const n = Number(normalized)
+          return Number.isFinite(n) ? n : 0
+        }
+        if (hasComma && !hasDot) {
+          const n = Number(raw.replace(',', '.'))
+          return Number.isFinite(n) ? n : 0
+        }
+        const n = Number(raw)
+        return Number.isFinite(n) ? n : 0
+      }
+
+      const inferPriceCents = (sale) => {
+        const t = String(sale?.entity_type || '').trim().toLowerCase()
+        if (t === 'simulado' || t === 'simulados') {
+          const simId = String(sale?.sim_id || '').trim()
+          let sim = simId ? simById.get(simId) : null
+          if (!sim) {
+            const title = normTitle(sale?.product_title)
+            if (title) sim = simByTitle.get(title) || null
+          }
+          const p = parseBrlNumber(sim?.price || 0)
+          return Number.isFinite(p) && p > 0 ? Math.round(p * 100) : 0
+        }
+        const courseId = String(sale?.course_id || '').trim()
+        let course = courseId ? courseById.get(courseId) : null
+        const titleRaw = String(sale?.product_title || '').trim()
+        const parts = titleRaw.split('•').map((x) => String(x || '').trim()).filter(Boolean)
+        const courseTitle = parts[0] ? normTitle(parts[0]) : ''
+        if (!course && courseTitle) {
+          course = courseByTitle.get(courseTitle) || null
+        }
+        if (!course) return 0
+        if (t === 'course') {
+          const p = resolveCoursePriceNumber(course)
+          return p > 0 ? Math.round(p * 100) : 0
+        }
+        const modules = getCourseModules(course)
+        if (t === 'module') {
+          const mid = String(sale?.module_id || '').trim()
+          const targetModuleTitle = parts[1] ? normTitle(parts[1]) : ''
+          const mod = (Array.isArray(modules) ? modules : []).find((m) => {
+            const id = String(m?.id || m?.module_id || m?.moduleId || '').trim()
+            if (mid && id === mid) return true
+            if (!targetModuleTitle) return false
+            const name = normTitle(m?.name || m?.title || m?.module_title || '')
+            return !!name && name === targetModuleTitle
+          }) || null
+          const cents = Number(mod?.priceCents || mod?.price_cents || 0)
+          if (Number.isFinite(cents) && cents > 0) return Math.round(cents)
+          const brl = parseBrlNumber(mod?.price ?? mod?.preco ?? mod?.valor ?? mod?.value ?? mod?.amount ?? mod?.amount_brl ?? mod?.price_brl)
+          return brl > 0 ? Math.round(brl * 100) : 0
+        }
+        if (t === 'lesson') {
+          const mid = String(sale?.module_id || '').trim()
+          const lid = String(sale?.lesson_id || '').trim()
+          const targetModuleTitle = parts[1] ? normTitle(parts[1]) : ''
+          const targetLessonTitle = parts[2] ? normTitle(parts[2]) : ''
+          const mod = (Array.isArray(modules) ? modules : []).find((m) => {
+            const id = String(m?.id || m?.module_id || m?.moduleId || '').trim()
+            if (mid && id === mid) return true
+            if (!targetModuleTitle) return false
+            const name = normTitle(m?.name || m?.title || m?.module_title || '')
+            return !!name && name === targetModuleTitle
+          }) || null
+          const lessons = getModuleLessons(mod)
+          const lesson = (Array.isArray(lessons) ? lessons : []).find((l) => {
+            const id = String(l?.id || l?.lesson_id || l?.lessonId || '').trim()
+            if (lid && id === lid) return true
+            if (!targetLessonTitle) return false
+            const name = normTitle(l?.title || l?.name || '')
+            return !!name && name === targetLessonTitle
+          }) || null
+          const cents = Number(lesson?.priceCents || lesson?.price_cents || 0)
+          if (Number.isFinite(cents) && cents > 0) return Math.round(cents)
+          const brl = parseBrlNumber(lesson?.price ?? lesson?.preco ?? lesson?.valor ?? lesson?.value ?? lesson?.amount ?? lesson?.amount_brl ?? lesson?.price_brl)
+          return brl > 0 ? Math.round(brl * 100) : 0
+        }
+        return 0
+      }
+
+      for (let i = 0; i < notifSales.length; i += 1) {
+        const s = notifSales[i]
+        const inferred = inferPriceCents(s)
+        const current = Number(s?.amount_cents || 0)
+        if (!(inferred > 0) || !Number.isFinite(current)) continue
+        const mismatch = current === 0 || current === inferred * 100 || current >= inferred * 10 || inferred >= current * 10
+        if (mismatch) {
+          notifSales[i] = { ...s, amount_cents: inferred }
+        }
+      }
+
+      const byId = new Map(notifSales.map((s) => [String(s.id), s]))
+      for (let i = 0; i < merged.length; i += 1) {
+        const row = merged[i]
+        const id = String(row?.id || '').trim()
+        if (!id) continue
+        const extra = byId.get(id)
+        if (!extra) continue
+        merged[i] = { ...row, ...Object.fromEntries(Object.entries(extra).filter(([, v]) => v !== undefined && v !== null && v !== '')) }
+        try {
+          const inferred = inferPriceCents(merged[i])
+          const current = Number(merged[i]?.amount_cents || 0)
+          const mismatch = inferred > 0 && Number.isFinite(current) && current > 0 && (current === inferred * 100 || current >= inferred * 10 || inferred >= current * 10)
+          if (mismatch) {
+            merged[i] = { ...merged[i], amount_cents: inferred }
+            try { await admin.from('sales').update({ amount_cents: inferred }).eq('id', id) } catch (_) {}
+          }
+        } catch (_) {}
+      }
+      for (const s of notifSales) {
+        const id = String(s?.id || '').trim()
+        if (!id || seen.has(id)) continue
+        seen.add(id)
+        merged.push(s)
+      }
+    } catch (_) {}
+
+    try {
+      for (let i = 0; i < merged.length; i += 1) {
+        const r = merged[i]
+        const current = Number(r?.amount_cents || 0)
+        if (!Number.isFinite(current) || !(current > 0)) continue
+        const status = String(r?.status || '').trim().toLowerCase()
+        if (status && status !== 'paid' && status !== 'approved' && status !== 'succeeded' && status !== 'captured') continue
+        const hasAnyRef =
+          !!String(r?.course_id || '').trim() ||
+          !!String(r?.module_id || '').trim() ||
+          !!String(r?.lesson_id || '').trim() ||
+          !!String(r?.sim_id || '').trim() ||
+          !!String(r?.product_title || '').trim() ||
+          !!String(r?.entity_type || '').trim()
+        if (hasAnyRef) continue
+        if (current >= 100000 && current % 10000 === 0) {
+          const corrected = Math.round(current / 10000)
+          if (corrected > 0 && corrected <= 1000000) {
+            merged[i] = { ...r, amount_cents: corrected }
+            const id = String(r?.id || '').trim()
+            if (id) {
+              try { await admin.from('sales').update({ amount_cents: corrected }).eq('id', id) } catch (_) {}
+            }
+          }
+        }
+      }
+    } catch (_) {}
+
+    merged.sort((a, b) => {
+      const ad = a?.created_at || a?.createdAt || null
+      const bd = b?.created_at || b?.createdAt || null
+      const at = ad ? new Date(ad).getTime() : 0
+      const bt = bd ? new Date(bd).getTime() : 0
+      return bt - at
+    })
+
+    return json(res, 200, { data: merged })
+  }
+
+  if (type === 'conversations') {
+    const producerUserId = String(auth.user?.id || '').trim()
+    const producerRowId = await resolveProducerRowIdFromUserId(producerUserId)
+    const producerKeys = Array.from(new Set([producerUserId, producerRowId].map((v) => String(v || '').trim()).filter(Boolean)))
     if (producerKeys.length === 0) return json(res, 200, { data: [] })
     const baseSelect = `
       id,
@@ -1498,8 +2904,9 @@ export default async function handler(req, res) {
   }
 
   if (type === 'conversation_feed') {
-    const producerRowId = await resolveProducerRowId()
-    const producerKeys = Array.from(new Set([String(producerId || '').trim(), String(producerRowId || '').trim()].filter(Boolean)))
+    const producerUserId = String(auth.user?.id || '').trim()
+    const producerRowId = await resolveProducerRowIdFromUserId(producerUserId)
+    const producerKeys = Array.from(new Set([producerUserId, producerRowId].map((v) => String(v || '').trim()).filter(Boolean)))
     if (producerKeys.length === 0) return json(res, 200, { data: [] })
     const conversationId = String(u.searchParams.get('conversationId') || '').trim()
     if (!conversationId || !isUuid(conversationId)) return json(res, 400, { error: 'invalid_conversationId' })
@@ -1510,8 +2917,9 @@ export default async function handler(req, res) {
   }
 
   if (type === 'conversation_mark_read') {
-    const producerRowId = await resolveProducerRowId()
-    const producerKeys = Array.from(new Set([String(producerId || '').trim(), String(producerRowId || '').trim()].filter(Boolean)))
+    const producerUserId = String(auth.user?.id || '').trim()
+    const producerRowId = await resolveProducerRowIdFromUserId(producerUserId)
+    const producerKeys = Array.from(new Set([producerUserId, producerRowId].map((v) => String(v || '').trim()).filter(Boolean)))
     if (producerKeys.length === 0) return json(res, 200, { ok: true })
     const conversationId = String(u.searchParams.get('conversationId') || '').trim()
     if (!conversationId || !isUuid(conversationId)) return json(res, 400, { error: 'invalid_conversationId' })
@@ -1541,7 +2949,23 @@ export default async function handler(req, res) {
 
       if (error) return json(res, 500, { error: error.message || String(error) })
       if (!data) return json(res, 404, { error: 'not_found' })
-      if (String(data.user_id || '') !== String(producerId)) return json(res, 403, { error: 'forbidden' })
+      const owner = String(data.produtor_id || data.user_id || data.created_by || '')
+      const producerKeysSet = new Set([String(producerId || '').trim()].filter(Boolean))
+      try {
+        const { data: prod } = await admin
+          .from('producers')
+          .select('id,user_id,external_id')
+          .or(`id.eq.${producerId},user_id.eq.${producerId},external_id.eq.${producerId}`)
+          .maybeSingle()
+        if (prod?.id) producerKeysSet.add(String(prod.id).trim())
+        if (prod?.user_id) producerKeysSet.add(String(prod.user_id).trim())
+        if (prod?.external_id) producerKeysSet.add(String(prod.external_id).trim())
+        if (prod?.user_id) {
+          const resolved = await resolveProducerRowIdFromUserId(String(prod.user_id))
+          if (resolved) producerKeysSet.add(String(resolved).trim())
+        }
+      } catch (_) {}
+      if (!producerKeysSet.has(String(owner || '').trim())) return json(res, 403, { error: 'forbidden' })
       return json(res, 200, { data })
     }
 
@@ -1549,14 +2973,51 @@ export default async function handler(req, res) {
       const simId = String(u.searchParams.get('simId') || '').trim()
       if (!simId || !isUuid(simId)) return json(res, 400, { error: 'invalid_simId' })
 
-      const { data: simulado, error: simErr } = await admin
+      const isMissingColumn = (err, col) => {
+        const msg = String(err?.message || err?.details || err || '').toLowerCase()
+        const code = String(err?.code || '').toUpperCase()
+        const c = String(col || '').toLowerCase()
+        return (
+          code === 'PGRST204' ||
+          code === '42703' ||
+          msg.includes(`could not find the '${c}' column`) ||
+          (msg.includes('schema cache') && msg.includes(c)) ||
+          (msg.includes('does not exist') && msg.includes(c))
+        )
+      }
+      let simulado = null
+      let simErr = null
+      ;({ data: simulado, error: simErr } = await admin
         .from('simulados')
-        .select('id,title,cover_image_url,is_paid,price,availability_date,duration_minutes,max_grade,settings,question_ids,user_id,created_at')
+        .select('id,title,cover_image_url,is_paid,price,availability_date,duration_minutes,max_grade,settings,question_ids,produtor_id,user_id,created_by,created_at')
         .eq('id', simId)
-        .maybeSingle()
+        .maybeSingle())
+      if (simErr && isMissingColumn(simErr, 'produtor_id')) {
+        ;({ data: simulado, error: simErr } = await admin
+          .from('simulados')
+          .select('id,title,cover_image_url,is_paid,price,availability_date,duration_minutes,max_grade,settings,question_ids,user_id,created_by,created_at')
+          .eq('id', simId)
+          .maybeSingle())
+      }
       if (simErr) return json(res, 500, { error: simErr.message || String(simErr) })
       if (!simulado) return json(res, 404, { error: 'not_found' })
-      if (String(simulado.user_id || '') !== String(producerId)) return json(res, 403, { error: 'forbidden' })
+      const owner = String(simulado.produtor_id || simulado.user_id || simulado.created_by || '')
+      const producerKeysSet = new Set([String(producerId || '').trim()].filter(Boolean))
+      try {
+        const { data: prod } = await admin
+          .from('producers')
+          .select('id,user_id,external_id')
+          .or(`id.eq.${producerId},user_id.eq.${producerId},external_id.eq.${producerId}`)
+          .maybeSingle()
+        if (prod?.id) producerKeysSet.add(String(prod.id).trim())
+        if (prod?.user_id) producerKeysSet.add(String(prod.user_id).trim())
+        if (prod?.external_id) producerKeysSet.add(String(prod.external_id).trim())
+        if (prod?.user_id) {
+          const resolved = await resolveProducerRowIdFromUserId(String(prod.user_id))
+          if (resolved) producerKeysSet.add(String(resolved).trim())
+        }
+      } catch (_) {}
+      if (!producerKeysSet.has(String(owner || '').trim())) return json(res, 403, { error: 'forbidden' })
 
       const questionIds = getQuestionIds(simulado)
       if (!questionIds.length) {
@@ -1593,6 +3054,7 @@ export default async function handler(req, res) {
       }
 
       const settings = simulado?.settings && typeof simulado.settings === 'object' ? simulado.settings : {}
+      const courseIds = getCourseIds(simulado)
       const attempts =
         Number.isFinite(Number(settings.attempts)) ? Number(settings.attempts) :
           (Number.isFinite(Number(settings.tentativas)) ? Number(settings.tentativas) : 1)
@@ -1612,7 +3074,7 @@ export default async function handler(req, res) {
           durationMinutes: Number(durationMinutes) || 0,
           coverImageUrl: simulado.cover_image_url || null,
           questions: ordered,
-          meta: { simId, producerId, questionIds: fetchedIds },
+          meta: { simId, producerId, questionIds: fetchedIds, courseIds },
         },
       })
     }
@@ -1629,7 +3091,30 @@ export default async function handler(req, res) {
 
       if (error) return json(res, 500, { error: error.message || String(error) })
       if (!data) return json(res, 404, { error: 'not_found' })
-      if (String(data.user_id || '') !== String(producerId)) return json(res, 403, { error: 'forbidden' })
+      const producerKeysSet = new Set([String(producerId || '').trim()].filter(Boolean))
+      try {
+        const { data: prod } = await admin
+          .from('producers')
+          .select('id,user_id,external_id')
+          .or(`id.eq.${producerId},user_id.eq.${producerId},external_id.eq.${producerId}`)
+          .maybeSingle()
+        if (prod?.id) producerKeysSet.add(String(prod.id).trim())
+        if (prod?.user_id) producerKeysSet.add(String(prod.user_id).trim())
+        if (prod?.external_id) producerKeysSet.add(String(prod.external_id).trim())
+        if (prod?.user_id) {
+          const resolved = await resolveProducerRowIdFromUserId(String(prod.user_id))
+          if (resolved) producerKeysSet.add(String(resolved).trim())
+        }
+      } catch (_) {}
+      const producerKeys = Array.from(producerKeysSet).map((v) => String(v || '').trim()).filter(Boolean)
+      const courseOwnerCandidates = [
+        data?.user_id,
+        data?.producer_id,
+        data?.producer_user_id,
+        data?.producer_external_id,
+      ].map((v) => String(v || '').trim()).filter(Boolean)
+      const allowed = courseOwnerCandidates.some((v) => producerKeys.includes(v))
+      if (!allowed) return json(res, 403, { error: 'forbidden' })
       return json(res, 200, { data })
     }
 

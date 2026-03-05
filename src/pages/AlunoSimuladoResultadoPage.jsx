@@ -89,6 +89,8 @@ function QuestionResultCard({ index, q, selectedIndex, status, points }) {
     getText(selectedChoice?.name) ||
     getText(selectedChoice?.value) ||
     ''
+  const selectedImageUrl = selectedChoice?.imageUrl || selectedChoice?.image_url || null
+  const selectedVideoUrl = selectedChoice?.videoUrl || selectedChoice?.video_url || null
   const questionText =
     getText(q?.stem) ||
     getText(q?.body) ||
@@ -109,6 +111,8 @@ function QuestionResultCard({ index, q, selectedIndex, status, points }) {
     getText(q?.commentary) ||
     ''
   const questionImageUrl = q?.image_url || q?.imageUrl || q?.question_image_url || q?.questionImageUrl || null
+  const resolutionImageUrl = q?.resolutionImageUrl || q?.resolution_image_url || q?.resolution_image || q?.resolutionImage || null
+  const resolutionVideoUrl = q?.resolutionVideoUrl || q?.resolution_video_url || q?.resolution_video || q?.resolutionVideo || null
   const border = status === 'correct' ? 'border-green-200' : status === 'wrong' ? 'border-red-200' : 'border-[#E3E4E5]'
   const pillBg = status === 'correct' ? 'bg-green-50 text-green-700' : status === 'wrong' ? 'bg-red-50 text-red-700' : 'bg-[#F6F5FA] text-[#22252B]'
   const optionBg = status === 'correct' ? 'bg-green-50 border-green-300' : status === 'wrong' ? 'bg-red-50 border-red-300' : 'bg-white border-[#E3E4E5]'
@@ -116,6 +120,8 @@ function QuestionResultCard({ index, q, selectedIndex, status, points }) {
   const optionLetter = selected != null ? String.fromCharCode(65 + selected) : '-'
   const correctLetter = correctIdx >= 0 ? String.fromCharCode(65 + correctIdx) : ''
   const imgSrc = questionImageUrl ? resolveSupabasePublicUrl(String(questionImageUrl)) : ''
+  const selectedImgSrc = selectedImageUrl ? resolveSupabasePublicUrl(String(selectedImageUrl)) : ''
+  const resolutionImgSrc = resolutionImageUrl ? resolveSupabasePublicUrl(String(resolutionImageUrl)) : ''
   return (
     <div className={`rounded-[10px] bg-white border ${border} overflow-hidden`}>
       <div className="px-5 py-4 border-b border-[#E3E4E5] flex items-center justify-between gap-4">
@@ -133,10 +139,12 @@ function QuestionResultCard({ index, q, selectedIndex, status, points }) {
       </div>
 
       <div className="p-5">
-        <div className="grid grid-cols-1 md:grid-cols-[220px_1fr] gap-5 items-start">
-          <div className="rounded-[8px] overflow-hidden border border-[#E3E4E5] bg-white">
-            <img src={imgSrc || '/simulado-cover.svg'} alt="" className="w-full h-[140px] object-cover" />
-          </div>
+        <div className={`grid grid-cols-1 ${imgSrc ? 'md:grid-cols-[220px_1fr]' : ''} gap-5 items-start`}>
+          {imgSrc ? (
+            <div className="rounded-[8px] overflow-hidden border border-[#E3E4E5] bg-white">
+              <img src={imgSrc} alt="" className="w-full h-[140px] object-cover" />
+            </div>
+          ) : null}
           <div className="min-w-0">
             <div className="text-[12px] font-semibold text-[#0047BB]">Questão</div>
             <div className="mt-2 text-[12px] text-[#22252B] leading-relaxed">{questionText || '—'}</div>
@@ -147,8 +155,20 @@ function QuestionResultCard({ index, q, selectedIndex, status, points }) {
           <div className={`w-9 h-9 rounded-[6px] flex items-center justify-center text-white text-[12px] font-bold ${optionBadgeBg}`}>
             {optionLetter}
           </div>
-          <div className={`flex-1 rounded-[6px] border px-4 py-3 text-[12px] text-[#22252B] ${optionBg}`}>
-            {selectedText || 'Nenhuma alternativa selecionada'}
+          <div className={`flex-1 rounded-[6px] border px-4 py-3 ${optionBg}`}>
+            <div className="text-[12px] text-[#22252B]">
+              {selectedText || (selectedImgSrc || selectedVideoUrl ? 'Alternativa selecionada' : 'Nenhuma alternativa selecionada')}
+            </div>
+            {selectedImgSrc ? (
+              <div className="mt-3 rounded-[8px] overflow-hidden border border-[#E3E4E5] bg-white">
+                <img src={selectedImgSrc} alt="" className="w-full h-[160px] object-contain bg-white" />
+              </div>
+            ) : null}
+            {selectedVideoUrl ? (
+              <div className="mt-3 rounded-[8px] overflow-hidden border border-[#E3E4E5] bg-black">
+                <video src={String(selectedVideoUrl)} className="w-full h-[180px]" controls preload="metadata" playsInline />
+              </div>
+            ) : null}
           </div>
         </div>
 
@@ -161,6 +181,16 @@ function QuestionResultCard({ index, q, selectedIndex, status, points }) {
                 ? `Resposta correta: ${correctLetter}.`
                 : '—')}
           </div>
+          {resolutionImgSrc ? (
+            <div className="mt-3 rounded-[8px] overflow-hidden border border-[#BFDBFE] bg-white">
+              <img src={resolutionImgSrc} alt="" className="w-full h-[180px] object-contain bg-white" />
+            </div>
+          ) : null}
+          {resolutionVideoUrl ? (
+            <div className="mt-3 rounded-[8px] overflow-hidden border border-[#BFDBFE] bg-black">
+              <video src={String(resolutionVideoUrl)} className="w-full h-[200px]" controls preload="metadata" playsInline />
+            </div>
+          ) : null}
         </div>
       </div>
     </div>
@@ -184,6 +214,39 @@ export default function AlunoSimuladoResultadoPage() {
 
   useEffect(() => {
     try {
+      const rawFinish = localStorage.getItem(`connekt_simulado_finish_${params.simId}`)
+      if (rawFinish) {
+        const parsed = JSON.parse(rawFinish)
+        if (parsed?.preview && typeof parsed.preview === 'object' && Array.isArray(parsed.preview?.questions)) {
+          setPreview({
+            title: parsed.preview?.title || '',
+            totalPoints: Number(parsed.preview?.totalPoints) || 0,
+            durationMinutes: Number(parsed.preview?.durationMinutes) || 0,
+            questions: Array.isArray(parsed.preview?.questions) ? parsed.preview.questions : [],
+          })
+        } else {
+          const raw = localStorage.getItem(`connekt_simulationPreview:${params.simId}`) || localStorage.getItem('simulationPreview')
+          if (raw) {
+            const parsedPreview = JSON.parse(raw)
+            setPreview({
+              title: parsedPreview?.title || '',
+              totalPoints: Number(parsedPreview?.totalPoints) || 0,
+              durationMinutes: Number(parsedPreview?.durationMinutes) || 0,
+              questions: Array.isArray(parsedPreview?.questions) ? parsedPreview.questions : [],
+            })
+          }
+        }
+        setFinish({
+          finishedAt: parsed?.finishedAt ? String(parsed.finishedAt) : null,
+          finalRemainingMs: Number.isFinite(Number(parsed?.finalRemainingMs)) ? Number(parsed.finalRemainingMs) : null,
+          aproveitamentoPercent: Math.max(0, Math.min(100, Number(parsed?.aproveitamentoPercent) || 0)),
+          selectedIndices: Array.isArray(parsed?.selectedIndices) ? parsed.selectedIndices : [],
+          questionStatuses: Array.isArray(parsed?.questionStatuses) ? parsed.questionStatuses : [],
+        })
+        return
+      }
+    } catch (_) {}
+    try {
       const raw = localStorage.getItem(`connekt_simulationPreview:${params.simId}`) || localStorage.getItem('simulationPreview')
       if (raw) {
         const parsed = JSON.parse(raw)
@@ -195,19 +258,6 @@ export default function AlunoSimuladoResultadoPage() {
         })
       }
     } catch (_) {}
-    try {
-      const rawFinish = localStorage.getItem(`connekt_simulado_finish_${params.simId}`)
-      if (rawFinish) {
-        const parsed = JSON.parse(rawFinish)
-        setFinish({
-          finishedAt: parsed?.finishedAt ? String(parsed.finishedAt) : null,
-          finalRemainingMs: Number.isFinite(Number(parsed?.finalRemainingMs)) ? Number(parsed.finalRemainingMs) : null,
-          aproveitamentoPercent: Math.max(0, Math.min(100, Number(parsed?.aproveitamentoPercent) || 0)),
-          selectedIndices: Array.isArray(parsed?.selectedIndices) ? parsed.selectedIndices : [],
-          questionStatuses: Array.isArray(parsed?.questionStatuses) ? parsed.questionStatuses : [],
-        })
-      }
-    } catch (_) {}
   }, [params.simId])
 
   const title = preview?.title || 'Simulado'
@@ -215,11 +265,29 @@ export default function AlunoSimuladoResultadoPage() {
   const totalQuestions = questions.length
   const correctCount = Array.isArray(finish?.questionStatuses) ? finish.questionStatuses.filter((s) => s === 'correct').length : 0
   const wrongCount = Array.isArray(finish?.questionStatuses) ? finish.questionStatuses.filter((s) => s === 'wrong').length : 0
-  const percent = Number(finish?.aproveitamentoPercent || 0) || 0
+  const percent = (() => {
+    const raw = Number(finish?.aproveitamentoPercent)
+    if (Number.isFinite(raw)) return Math.max(0, Math.min(100, raw))
+    const total = Math.max(0, totalQuestions)
+    if (total === 0) return 0
+    return Math.max(0, Math.min(100, Math.round((correctCount / total) * 100)))
+  })()
   const totalPoints = Number(preview?.totalPoints || 0) || 0
   const pointsEarned = totalQuestions > 0 ? Math.round((correctCount / totalQuestions) * totalPoints) : 0
   const durationMs = Math.max(0, (Number(preview?.durationMinutes) || 0) * 60_000)
-  const usedMs = (durationMs && finish?.finalRemainingMs != null) ? Math.max(0, durationMs - Math.max(0, Number(finish.finalRemainingMs))) : 0
+  const usedMs = (() => {
+    const raw = Number(finish?.usedMs)
+    if (Number.isFinite(raw) && raw >= 0) return raw
+    if (durationMs && finish?.finalRemainingMs != null) return Math.max(0, durationMs - Math.max(0, Number(finish.finalRemainingMs)))
+    const startedAtIso = String(finish?.startedAt || '').trim()
+    const finishedAtIso = String(finish?.finishedAt || '').trim()
+    if (startedAtIso && finishedAtIso) {
+      const s = new Date(startedAtIso).getTime()
+      const f = new Date(finishedAtIso).getTime()
+      if (isFinite(s) && isFinite(f) && f >= s) return Math.max(0, f - s)
+    }
+    return 0
+  })()
   const userName = user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email || 'Aluno'
   const userEmail = user?.email || ''
   const userAvatar = user?.user_metadata?.avatar_url || user?.user_metadata?.picture || ''
@@ -266,7 +334,7 @@ export default function AlunoSimuladoResultadoPage() {
             <div className="grid grid-cols-1 md:grid-cols-[170px_1fr] gap-4 items-center">
               <div className="rounded-[8px] bg-[#F6F5FA] p-4 text-center">
                 <div className="text-[11px] text-[#737780]">Tempo final</div>
-                <div className="mt-1 text-[18px] font-bold text-[#0047BB]">{usedMs ? formatTime(usedMs) : '—'}</div>
+                <div className="mt-1 text-[18px] font-bold text-[#0047BB]">{finish?.finishedAt ? formatTime(usedMs) : '—'}</div>
               </div>
               <div className="rounded-[8px] bg-[#F6F5FA] p-4">
                 <div className="flex items-center justify-between text-[11px] text-[#737780]">

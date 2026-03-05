@@ -7,7 +7,6 @@ import UnreadAvatarsBar from '@/components/UnreadAvatarsBar';
 import EmptyInbox from '@/components/EmptyInbox';
 import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
-import { useActiveProducerUserId } from '@/hooks/useActiveProducerUserId'
 
 // Função para obter parâmetros da URL
 function getUrlParam(name) {
@@ -46,7 +45,6 @@ const filterOptions = [
 ];
 
 function InboxPage() {
-  const activeProducerUserId = useActiveProducerUserId()
   const [conversations, setConversations] = useState([]);
   const [activeConversation, setActiveConversation] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -57,13 +55,14 @@ function InboxPage() {
   const [currentUser, setCurrentUser] = useState(null);
   const [detailError, setDetailError] = useState(null);
   const initializedRef = useRef(false)
+  const detailReqRef = useRef(0)
 
   const fetchAuth = useCallback(async () => {
     const sess = (await supabase.auth.getSession().catch(() => ({ data: null })))?.data?.session || null
     const token = sess?.access_token || ''
-    const pid = String(activeProducerUserId || sess?.user?.id || '').trim()
+    const pid = String(sess?.user?.id || '').trim()
     return { token, pid, has: Boolean(token && pid) }
-  }, [activeProducerUserId])
+  }, [])
 
   const fetchConversationsFromApi = useCallback(async () => {
     const { token, pid, has } = await fetchAuth()
@@ -368,7 +367,7 @@ function InboxPage() {
         feedSigRef.current = nextSig
         setActiveConversation((prev) => {
           if (!prev || String(prev?.id || '').trim() !== cid) return prev
-          if (posts.length === 0 && Array.isArray(prev?.posts) && prev.posts.length > 0) return prev
+          if (posts.length === 0 && Array.isArray(prev?.posts) && prev.posts.length > 0) return { ...prev, is_loading: false }
           const detailedPosts = (posts || []).map(post => ({
             ...post,
             id: post.id,
@@ -384,8 +383,9 @@ function InboxPage() {
               liked_by_user: false
             }))
           }))
-          return { ...prev, posts: detailedPosts }
+          return { ...prev, posts: detailedPosts, is_loading: false }
         })
+        setDetailError(null)
       } catch (_) {}
     }
     tick()
@@ -413,7 +413,7 @@ function InboxPage() {
     try {
       const sess = (await supabase.auth.getSession().catch(() => ({ data: null })))?.data?.session || null
       const token = sess?.access_token || ''
-      const pid = String(activeProducerUserId || sess?.user?.id || '').trim()
+      const pid = String(sess?.user?.id || '').trim()
       let posts = []
       if (pid && token) {
         const r = await fetch(`/api/producer?type=conversation_feed&producerId=${encodeURIComponent(pid)}&conversationId=${encodeURIComponent(conversationId)}`, {
@@ -472,7 +472,7 @@ function InboxPage() {
       // setDetailError("Sem permissão ou conversa não encontrada");
       return null;
     }
-  }, [conversations, activeProducerUserId]);
+  }, [conversations]);
 
   const handleSelectConversation = useCallback(async (id, conversationsList = null) => {
     setDetailError(null);
@@ -482,9 +482,12 @@ function InboxPage() {
     const existingConv = currentConversations.find(c => c.id === id);
     if (!existingConv) return;
 
+    detailReqRef.current += 1
+    const reqId = detailReqRef.current
+
     try {
       const sess = (await supabase.auth.getSession().catch(() => ({ data: null })))?.data?.session || null
-      const pid = String(activeProducerUserId || sess?.user?.id || '').trim()
+      const pid = String(sess?.user?.id || '').trim()
       if (pid) {
         setCurrentUser({
           id: pid,
@@ -495,7 +498,7 @@ function InboxPage() {
     
     // Se a conversa já tem posts (dados mock), definir imediatamente
     if (existingConv.posts && existingConv.posts.length > 0) {
-      setActiveConversation(existingConv);
+      setActiveConversation({ ...existingConv, is_loading: false });
       
       if (existingConv.producer) {
         setCurrentUser({
@@ -520,20 +523,31 @@ function InboxPage() {
       });
     }
 
-    const detailedConversation = await fetchConversationDetails(id, currentUserId);
-    if (detailedConversation) {
-      setActiveConversation(detailedConversation);
-      setConversations(prev => prev.map(c => c.id === id ? { ...detailedConversation, unread: 0 } : c));
-    } else {
-      // Se não conseguir buscar detalhes, definir a conversa sem posts
-      setActiveConversation(existingConv);
+    setActiveConversation({ ...existingConv, posts: [], is_loading: true });
+    if (existingConv.unread > 0) {
+      setConversations(prev => prev.map(c => c.id === id ? { ...c, unread: 0 } : c));
     }
+
+    ;(async () => {
+      const detailedConversation = await fetchConversationDetails(id, currentUserId);
+      if (detailReqRef.current !== reqId) return
+      if (detailedConversation) {
+        setActiveConversation({ ...detailedConversation, is_loading: false });
+        setConversations(prev => prev.map(c => c.id === id ? { ...detailedConversation, unread: 0, is_loading: false } : c));
+      } else {
+        setDetailError('Não foi possível carregar as mensagens desta conversa.')
+        setActiveConversation((prev) => {
+          if (!prev || String(prev?.id || '').trim() !== String(id || '').trim()) return prev
+          return { ...prev, is_loading: false, posts: Array.isArray(prev?.posts) ? prev.posts : [] }
+        })
+      }
+    })()
 
     if (existingConv.unread > 0) {
       try {
         const sess = (await supabase.auth.getSession().catch(() => ({ data: null })))?.data?.session || null
         const token = sess?.access_token || ''
-        const pid = String(activeProducerUserId || sess?.user?.id || '').trim()
+        const pid = String(sess?.user?.id || '').trim()
         if (pid && token) {
           await fetch(`/api/producer?type=conversation_mark_read&producerId=${encodeURIComponent(pid)}&conversationId=${encodeURIComponent(id)}`, {
             headers: { Authorization: `Bearer ${token}` },
@@ -547,7 +561,7 @@ function InboxPage() {
         }
       } catch (_) {}
     }
-  }, [conversations, fetchConversationDetails, activeProducerUserId]);
+  }, [conversations, fetchConversationDetails]);
   
   const unreadConversations = conversations.filter(c => c.unread > 0);
 
@@ -564,7 +578,7 @@ function InboxPage() {
     try {
       const sess = (await supabase.auth.getSession().catch(() => ({ data: null })))?.data?.session || null
       const token = sess?.access_token || ''
-      const pid = String(activeProducerUserId || sess?.user?.id || '').trim()
+      const pid = String(sess?.user?.id || '').trim()
       if (!pid || !token) throw new Error('missing_token')
 
       const r = await fetch(`/api/producer?type=reply_create&producerId=${encodeURIComponent(pid)}`, {

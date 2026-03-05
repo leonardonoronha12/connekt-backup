@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect, useMemo } from "react"
-import { ArrowLeft, Eye, ChevronDown, ChevronUp, Search, Calendar, Clock, X, DollarSign, Award, Check, Plus, Minus, Info, Tag, Layers, BookOpen, BadgeCheck, CreditCard, Database, ListChecks, Trash2, Users, FileText, Pencil } from "lucide-react"
+import { ArrowLeft, Eye, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Search, Calendar, Clock, X, DollarSign, Award, Check, Plus, Minus, Info, Tag, Layers, BookOpen, BadgeCheck, CreditCard, Database, ListChecks, Trash2, Users, FileText, Pencil } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
 import { useToast } from "@/hooks/use-toast"
@@ -21,6 +21,7 @@ export default function NovoSimuladoPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
   const [isEditing, setIsEditing] = useState<boolean>(false)
+  const restoredFromPreviewRef = useRef(false)
 
   const isBlockedRead = (e: any) => {
     const msg = String(e?.message || e || '').toLowerCase()
@@ -105,7 +106,17 @@ export default function NovoSimuladoPage() {
 
       const priceNumber = parseBRLToNumber(simulationPrice)
       const coverImageUrl = "/simulado-cover.svg"
-      const availabilityISO = availabilityDate ? new Date(availabilityDate).toISOString() : null
+      const availabilityISO = (() => {
+        const iso = String(availabilityDate || '').trim()
+        if (!iso) return null
+        const parts = iso.split('-')
+        if (parts.length !== 3) return null
+        const y = parseInt(parts[0], 10)
+        const m = parseInt(parts[1], 10)
+        const d = parseInt(parts[2], 10)
+        if (!y || m < 1 || m > 12 || d < 1 || d > 31) return null
+        return new Date(Date.UTC(y, m - 1, d)).toISOString()
+      })()
       const durationMinutes = parseInt((simulationDuration || "0").toString(), 10) || 0
       const maxGradeNumber = parseInt((maxGrade || "0").toString(), 10) || 0
 
@@ -118,6 +129,7 @@ export default function NovoSimuladoPage() {
         duration_minutes: durationMinutes,
         max_grade: maxGradeNumber,
         // Vincular propriedade ao usuário atual para satisfazer RLS
+        produtor_id: currentUserId,
         user_id: currentUserId,
           settings: {
           // Redundância para compatibilidade com schemas antigos
@@ -126,11 +138,42 @@ export default function NovoSimuladoPage() {
           secondChance,
           shuffleQuestions,
           skipQuestions,
+          allowRepeat,
+          availabilityStartDate: String(availabilityDate || '').trim() || null,
+          availabilityEndDate: String(availabilityEndDate || '').trim() || null,
           categories: selectedCategories,
           subcategories: selectedSubcategories,
           tags: selectedTags,
           description: (description || "").trim(),
         },
+      }
+
+      const isMissingColumn = (err: any, col: string) => {
+        const msg = String(err?.message || err?.details || err || '').toLowerCase()
+        const code = String(err?.code || '').toUpperCase()
+        const colLc = String(col || '').toLowerCase()
+        return (
+          code === 'PGRST204' ||
+          msg.includes(`could not find the '${colLc}' column`) ||
+          (msg.includes('schema cache') && msg.includes(colLc)) ||
+          (msg.includes('column') && msg.includes(colLc) && msg.includes('does not exist'))
+        )
+      }
+
+      const attemptUpsert = async (payloadAttempt: any) => {
+        if (isEditing && editId) {
+          const { data: updated, error: updateError } = await supabase
+            .from("simulados")
+            .update(payloadAttempt)
+            .eq("id", editId)
+            .select("id,title,settings")
+          return { data: Array.isArray(updated) && updated.length > 0 ? updated[0] : null, error: updateError || null, op: "update" as const }
+        }
+        const { data: inserted, error: insertError } = await supabase
+          .from("simulados")
+          .insert([payloadAttempt])
+          .select("id,title,settings")
+        return { data: Array.isArray(inserted) && inserted.length > 0 ? inserted[0] : null, error: insertError || null, op: "insert" as const }
       }
 
       let error
@@ -162,21 +205,16 @@ export default function NovoSimuladoPage() {
         }
 
         op = "update"
-        const { data: updated, error: updateError } = await supabase
-          .from("simulados")
-          .update(payload)
-          .eq("id", editId)
-          .select("id,title,settings")
-        error = updateError || null
-        savedRow = Array.isArray(updated) && updated.length > 0 ? updated[0] : null
       } else {
         op = "insert"
-        const { data: inserted, error: insertError } = await supabase
-          .from("simulados")
-          .insert([payload])
-          .select("id,title,settings")
-        error = insertError || null
-        savedRow = Array.isArray(inserted) && inserted.length > 0 ? inserted[0] : null
+      }
+
+      let attemptPayload = payload
+      ;({ data: savedRow, error, op } = await attemptUpsert(attemptPayload))
+      if (error && isMissingColumn(error, 'produtor_id')) {
+        attemptPayload = { ...attemptPayload }
+        delete (attemptPayload as any).produtor_id
+        ;({ data: savedRow, error, op } = await attemptUpsert(attemptPayload))
       }
 
       if (error) {
@@ -186,7 +224,7 @@ export default function NovoSimuladoPage() {
           message: (error as any)?.message,
           details: (error as any)?.details,
           hint: (error as any)?.hint,
-          payload,
+          payload: attemptPayload,
         })
         // Não criar duplicado: informar claramente sobre a falta de permissão
         if ((error as any)?.code === "42501" && op === "update") {
@@ -358,14 +396,23 @@ export default function NovoSimuladoPage() {
   const [simulationPrice, setSimulationPrice] = useState("0,00")
   const [availabilityDate, setAvailabilityDate] = useState("")
   const [availabilityDateDisplay, setAvailabilityDateDisplay] = useState("")
+  const [availabilityEndDate, setAvailabilityEndDate] = useState("")
+  const [availabilityEndDateDisplay, setAvailabilityEndDateDisplay] = useState("")
+  const [availabilityPickerOpen, setAvailabilityPickerOpen] = useState(false)
+  const [availabilityPickerMode, setAvailabilityPickerMode] = useState<'start' | 'end'>('start')
+  const [availabilityPickerMonth, setAvailabilityPickerMonth] = useState(() => new Date())
   const [simulationDuration, setSimulationDuration] = useState("")
   const simulationDurationRef = useRef<HTMLInputElement | null>(null)
   const availabilityDateRef = useRef<HTMLInputElement | null>(null)
+  const availabilityEndDateRef = useRef<HTMLInputElement | null>(null)
+  const availabilityPickerWrapRef = useRef<HTMLDivElement | null>(null)
+  const availabilityEndPickerWrapRef = useRef<HTMLDivElement | null>(null)
 
   // Access & behavior
   const [secondChance, setSecondChance] = useState(true)
   const [shuffleQuestions, setShuffleQuestions] = useState(false)
   const [skipQuestions, setSkipQuestions] = useState(true)
+  const [allowRepeat, setAllowRepeat] = useState(true)
 
   // Score & timer
   const [maxGrade, setMaxGrade] = useState("100")
@@ -383,8 +430,44 @@ export default function NovoSimuladoPage() {
   // Detectar modo edição e carregar dados do simulado (deve estar dentro do componente)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
+    if (params.get('fromPreview') === '1') {
+      try {
+        const raw = sessionStorage.getItem('connekt_simulado_draft') || ''
+        const draft = raw ? JSON.parse(raw) : null
+        if (draft && typeof draft === 'object') {
+          if (typeof draft.title === 'string') setTitle(draft.title)
+          if (typeof draft.description === 'string') setDescription(draft.description)
+          if (typeof draft.isPaid === 'boolean') setIsPaid(draft.isPaid)
+          if (typeof draft.simulationPrice === 'string') setSimulationPrice(draft.simulationPrice)
+          if (typeof draft.availabilityDate === 'string') setAvailabilityDate(draft.availabilityDate)
+          if (typeof draft.availabilityDateDisplay === 'string') setAvailabilityDateDisplay(draft.availabilityDateDisplay)
+          if (typeof draft.availabilityEndDate === 'string') setAvailabilityEndDate(draft.availabilityEndDate)
+          if (typeof draft.availabilityEndDateDisplay === 'string') setAvailabilityEndDateDisplay(draft.availabilityEndDateDisplay)
+          if (typeof draft.simulationDuration === 'string') setSimulationDuration(draft.simulationDuration)
+          if (typeof draft.maxGrade === 'string') setMaxGrade(draft.maxGrade)
+          if (Array.isArray(draft.selectedCategories)) setSelectedCategories(draft.selectedCategories.filter((v: any) => typeof v === 'string'))
+          if (Array.isArray(draft.selectedSubcategories)) setSelectedSubcategories(draft.selectedSubcategories.filter((v: any) => typeof v === 'string'))
+          if (Array.isArray(draft.selectedTags)) setSelectedTags(draft.selectedTags.filter((v: any) => typeof v === 'string'))
+          if (typeof draft.secondChance === 'boolean') setSecondChance(draft.secondChance)
+          if (typeof draft.shuffleQuestions === 'boolean') setShuffleQuestions(draft.shuffleQuestions)
+          if (typeof draft.skipQuestions === 'boolean') setSkipQuestions(draft.skipQuestions)
+          if (typeof draft.allowRepeat === 'boolean') setAllowRepeat(draft.allowRepeat)
+          if (Array.isArray(draft.selectedCourses)) setSelectedCourses(draft.selectedCourses)
+          if (Array.isArray(draft.selectedQuestions)) setSelectedQuestions(draft.selectedQuestions)
+          if (typeof draft.isEditing === 'boolean') setIsEditing(draft.isEditing)
+          if (typeof draft.editId === 'string') setEditId(draft.editId)
+          restoredFromPreviewRef.current = true
+        }
+      } catch (_) {}
+      try {
+        const u = new URL(window.location.href)
+        u.searchParams.delete('fromPreview')
+        window.history.replaceState({}, '', `${u.pathname}${u.search}${u.hash}`)
+      } catch (_) {}
+    }
     const id = params.get('edit')
     if (!id) return
+    if (restoredFromPreviewRef.current) return
     setEditId(id)
     setIsEditing(true)
     ;(async () => {
@@ -424,6 +507,13 @@ export default function NovoSimuladoPage() {
           const iso = data.availability_date ? new Date(data.availability_date).toISOString().slice(0,10) : ''
           setAvailabilityDate(iso)
           setAvailabilityDateDisplay(iso ? iso.split('-').reverse().join('/') : '')
+          const endIsoRaw =
+            (typeof data.settings?.availabilityEndDate === 'string' ? data.settings.availabilityEndDate : null)
+            || (typeof data.settings?.availability_end_date === 'string' ? data.settings.availability_end_date : null)
+            || ''
+          const endIso = String(endIsoRaw || '').trim()
+          setAvailabilityEndDate(endIso)
+          setAvailabilityEndDateDisplay(endIso ? endIso.split('-').reverse().join('/') : '')
           setSimulationDuration(data.duration_minutes ? String(data.duration_minutes) : '')
           setMaxGrade(data.max_grade ? String(data.max_grade) : '100')
           setSelectedCategories(Array.isArray(data.settings?.categories) ? data.settings.categories : [])
@@ -432,6 +522,11 @@ export default function NovoSimuladoPage() {
           setSecondChance(Boolean(data.settings?.secondChance))
           setShuffleQuestions(Boolean(data.settings?.shuffleQuestions))
           setSkipQuestions(Boolean(data.settings?.skipQuestions))
+          setAllowRepeat(
+            typeof data.settings?.allowRepeat === 'boolean'
+              ? Boolean(data.settings.allowRepeat)
+              : (typeof data.settings?.allow_repeat === 'boolean' ? Boolean(data.settings.allow_repeat) : true)
+          )
 
           // Preencher cursos selecionados priorizando settings.courseIds (fallback para course_ids)
           try {
@@ -516,6 +611,26 @@ export default function NovoSimuladoPage() {
     if (availabilityDateDisplay !== next) setAvailabilityDateDisplay(next)
   }, [availabilityDate])
 
+  useEffect(() => {
+    if (!availabilityEndDate) {
+      if (availabilityEndDateDisplay) setAvailabilityEndDateDisplay("")
+      return
+    }
+    const parts = String(availabilityEndDate).split("-")
+    if (parts.length !== 3) return
+    const [y, m, d] = parts
+    const next = `${d}/${m}/${y}`
+    if (availabilityEndDateDisplay !== next) setAvailabilityEndDateDisplay(next)
+  }, [availabilityEndDate])
+
+  useEffect(() => {
+    if (!availabilityDate || !availabilityEndDate) return
+    if (availabilityEndDate < availabilityDate) {
+      setAvailabilityEndDate(availabilityDate)
+      setAvailabilityEndDateDisplay(availabilityDate.split("-").reverse().join("/"))
+    }
+  }, [availabilityDate, availabilityEndDate])
+
   const parseBrDateToIso = (value: string) => {
     const digits = String(value || "").replace(/\D/g, "").slice(0, 8)
     if (digits.length !== 8) return null
@@ -530,6 +645,89 @@ export default function NovoSimuladoPage() {
     if (dt.getUTCFullYear() !== yy || dt.getUTCMonth() !== (mm - 1) || dt.getUTCDate() !== dd) return null
     return `${y}-${m}-${d}`
   }
+
+  const getTodayIsoLocal = () => {
+    const now = new Date()
+    const y = now.getFullYear()
+    const m = String(now.getMonth() + 1).padStart(2, '0')
+    const d = String(now.getDate()).padStart(2, '0')
+    return `${y}-${m}-${d}`
+  }
+
+  const isoToLocalDate = (iso: string) => {
+    const s = String(iso || '').trim()
+    const parts = s.split('-')
+    if (parts.length !== 3) return null
+    const y = parseInt(parts[0], 10)
+    const m = parseInt(parts[1], 10)
+    const d = parseInt(parts[2], 10)
+    if (!y || m < 1 || m > 12 || d < 1 || d > 31) return null
+    const dt = new Date(y, m - 1, d)
+    if (Number.isNaN(dt.getTime())) return null
+    return dt
+  }
+
+  const formatMonthYearPtBR = (date: Date) => {
+    const months = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro']
+    return `${months[date.getMonth()]} ${date.getFullYear()}`
+  }
+
+  const pad2 = (n: number) => String(n).padStart(2, '0')
+
+  const localDateToIso = (date: Date) => {
+    const y = date.getFullYear()
+    const m = pad2(date.getMonth() + 1)
+    const d = pad2(date.getDate())
+    return `${y}-${m}-${d}`
+  }
+
+  const setAvailabilityFromIso = (iso: string, mode: 'start' | 'end') => {
+    const todayIso = getTodayIsoLocal()
+    if (mode === 'start') {
+      const safeIso = iso < todayIso ? todayIso : iso
+      setAvailabilityDate(safeIso)
+      setAvailabilityDateDisplay(safeIso.split('-').reverse().join('/'))
+      if (availabilityEndDate && availabilityEndDate < safeIso) {
+        setAvailabilityEndDate(safeIso)
+        setAvailabilityEndDateDisplay(safeIso.split('-').reverse().join('/'))
+      }
+      return
+    }
+    const minIso = availabilityDate ? (availabilityDate < todayIso ? todayIso : availabilityDate) : todayIso
+    const safeIso = iso < minIso ? minIso : iso
+    setAvailabilityEndDate(safeIso)
+    setAvailabilityEndDateDisplay(safeIso.split('-').reverse().join('/'))
+  }
+
+  const openAvailabilityPicker = (mode: 'start' | 'end') => {
+    setAvailabilityPickerMode(mode)
+    const base =
+      mode === 'start'
+        ? (isoToLocalDate(availabilityDate) || new Date())
+        : (isoToLocalDate(availabilityEndDate) || isoToLocalDate(availabilityDate) || new Date())
+    setAvailabilityPickerMonth(new Date(base.getFullYear(), base.getMonth(), 1))
+    setAvailabilityPickerOpen(true)
+  }
+
+  useEffect(() => {
+    if (!availabilityPickerOpen) return
+    const onDown = (e: any) => {
+      const wrap = availabilityPickerWrapRef.current
+      const wrapEnd = availabilityEndPickerWrapRef.current
+      if (wrap && wrap.contains(e?.target)) return
+      if (wrapEnd && wrapEnd.contains(e?.target)) return
+      setAvailabilityPickerOpen(false)
+    }
+    const onKey = (e: any) => {
+      if (e?.key === 'Escape') setAvailabilityPickerOpen(false)
+    }
+    window.addEventListener('mousedown', onDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('mousedown', onDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [availabilityPickerOpen])
 
   const formatBrDateInput = (raw: string) => {
     const digits = String(raw || "").replace(/\D/g, "").slice(0, 8)
@@ -1220,6 +1418,33 @@ export default function NovoSimuladoPage() {
                       console.warn('Falha ao buscar detalhes das questões para preview:', fetchErr)
                     }
                   }
+                  try {
+                    const draft = {
+                      title,
+                      description,
+                      isPaid,
+                      simulationPrice,
+                      availabilityDate,
+                      availabilityDateDisplay,
+                      availabilityEndDate,
+                      availabilityEndDateDisplay,
+                      simulationDuration,
+                      maxGrade,
+                      selectedCategories,
+                      selectedSubcategories,
+                      selectedTags,
+                      secondChance,
+                      shuffleQuestions,
+                      skipQuestions,
+                      allowRepeat,
+                      selectedCourses: Array.isArray(selectedCourses) ? selectedCourses : [],
+                      selectedQuestions: Array.isArray(selectedQuestions) ? selectedQuestions : [],
+                      isEditing,
+                      editId,
+                      savedAt: Date.now(),
+                    }
+                    sessionStorage.setItem('connekt_simulado_draft', JSON.stringify(draft))
+                  } catch (_) {}
                   // Persistir snapshot do simulado para o preview
                   const previewData = {
                     title: (title || '').trim(),
@@ -1229,6 +1454,9 @@ export default function NovoSimuladoPage() {
                       return (selectedQuestions || []).length * 2
                     })(),
                     attempts: 1 + (Boolean(secondChance) ? 1 : 0),
+                    allowRepeat: Boolean(allowRepeat),
+                    availabilityStartDate: String(availabilityDate || '').trim() || null,
+                    availabilityEndDate: String(availabilityEndDate || '').trim() || null,
                     durationMinutes: parseInt((simulationDuration as any) || '0', 10) || 0,
                     questions: (detailed.length > 0
                       ? detailed
@@ -1238,7 +1466,9 @@ export default function NovoSimuladoPage() {
                   localStorage.setItem('simulationPreview', JSON.stringify(previewData))
                   // Salva URL de retorno para reabrir a página que estava sendo editada
                   try {
-                    const backUrl = window.location.pathname + window.location.search
+                    const u = new URL(window.location.href)
+                    u.searchParams.set('fromPreview', '1')
+                    const backUrl = u.pathname + u.search
                     localStorage.setItem('simulationPreviewBackUrl', backUrl)
                   } catch {}
                 } catch (err) {
@@ -1529,20 +1759,22 @@ export default function NovoSimuladoPage() {
                     <div>
                       <label htmlFor="availabilityDate" className="text-[12px] text-[#737780]">Data de Disponibilidade</label>
                       <div
-                        className="mt-2 flex h-[40px] items-center rounded-[6px] border border-[#E3E4E5] bg-white px-2 hover:border-[#D1D5DB] focus-within:border-[#0047BB]"
-                        onClick={() => {
+                        ref={availabilityPickerWrapRef}
+                        className="mt-2 relative flex h-[40px] items-center rounded-[6px] border border-[#E3E4E5] bg-white px-2 hover:border-[#D1D5DB] focus-within:border-[#0047BB]"
+                        onClick={(e) => {
+                          const t = e.target as any
+                          if (availabilityPickerOpen && t?.closest?.('[data-availability-picker-panel="1"]')) return
                           availabilityDateRef.current?.focus()
-                          // Chromium supports showPicker; fallback will just focus
-                          // @ts-expect-error showPicker may not exist in all browsers
-                          availabilityDateRef.current?.showPicker?.()
+                          openAvailabilityPicker('start')
                         }}
                       >
                         <Calendar
                           className="mr-2 h-4 w-4 cursor-pointer text-[#9291A5]"
-                          onClick={() => {
+                          onClick={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
                             availabilityDateRef.current?.focus()
-                            // @ts-expect-error showPicker may not exist in all browsers
-                            availabilityDateRef.current?.showPicker?.()
+                            openAvailabilityPicker('start')
                           }}
                         />
                         <input
@@ -1558,6 +1790,7 @@ export default function NovoSimuladoPage() {
                             if (iso) setAvailabilityDate(iso)
                           }}
                           onBlur={() => {
+                            if (availabilityPickerOpen) return
                             const iso = parseBrDateToIso(availabilityDateDisplay)
                             if (!availabilityDateDisplay) {
                               setAvailabilityDate("")
@@ -1567,7 +1800,7 @@ export default function NovoSimuladoPage() {
                               toast({ title: "Data inválida", description: "Use o formato dd/mm/aaaa.", variant: "destructive" })
                               return
                             }
-                            const todayIso = new Date().toISOString().slice(0, 10)
+                            const todayIso = getTodayIsoLocal()
                             if (iso < todayIso) {
                               toast({ title: "Data inválida", description: "Escolha uma data a partir de hoje.", variant: "destructive" })
                               setAvailabilityDate(todayIso)
@@ -1581,8 +1814,245 @@ export default function NovoSimuladoPage() {
                           aria-label="Data de disponibilidade"
                           aria-describedby="availabilityHelp"
                         />
+                        {availabilityPickerOpen && availabilityPickerMode === 'start' ? (
+                          <div
+                            data-availability-picker-panel="1"
+                            className="absolute left-0 top-full mt-2 z-50 w-[296px] rounded-[10px] border border-[#E3E4E5] bg-white p-3 shadow-lg"
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onClick={(e) => e.stopPropagation()}
+                            role="dialog"
+                            aria-label="Selecionar data"
+                          >
+                            <div className="flex items-center justify-between">
+                              <button
+                                type="button"
+                                className="h-8 w-8 inline-flex items-center justify-center rounded-[8px] border border-[#E3E4E5] bg-white hover:bg-[#F9FAFB]"
+                                onClick={(e) => {
+                                  e.preventDefault()
+                                  e.stopPropagation()
+                                  setAvailabilityPickerMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))
+                                }}
+                                aria-label="Mês anterior"
+                              >
+                                <ChevronLeft className="h-4 w-4 text-[#22252B]" />
+                              </button>
+                              <div className="text-[12px] font-semibold text-[#22252B] capitalize">
+                                {formatMonthYearPtBR(availabilityPickerMonth)}
+                              </div>
+                              <button
+                                type="button"
+                                className="h-8 w-8 inline-flex items-center justify-center rounded-[8px] border border-[#E3E4E5] bg-white hover:bg-[#F9FAFB]"
+                                onClick={(e) => {
+                                  e.preventDefault()
+                                  e.stopPropagation()
+                                  setAvailabilityPickerMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))
+                                }}
+                                aria-label="Próximo mês"
+                              >
+                                <ChevronRight className="h-4 w-4 text-[#22252B]" />
+                              </button>
+                            </div>
+
+                            <div className="mt-3 grid grid-cols-7 gap-1 text-[10px] text-[#737780]">
+                              {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map((d) => (
+                                <div key={d} className="text-center">{d}</div>
+                              ))}
+                            </div>
+
+                            <div className="mt-1 grid grid-cols-7 gap-1">
+                              {(() => {
+                                const y = availabilityPickerMonth.getFullYear()
+                                const m = availabilityPickerMonth.getMonth()
+                                const firstDow = new Date(y, m, 1).getDay()
+                                const daysInMonth = new Date(y, m + 1, 0).getDate()
+                                const todayIso = getTodayIsoLocal()
+                                const selectedIso = String(availabilityDate || '').trim()
+                                const start = 1 - firstDow
+                                const cells = Array.from({ length: 42 }, (_, i) => start + i)
+                                return cells.map((day, idx) => {
+                                  if (day < 1 || day > daysInMonth) return <div key={idx} className="h-9" />
+                                  const iso = `${y}-${pad2(m + 1)}-${pad2(day)}`
+                                  const disabled = iso < todayIso
+                                  const isSelected = selectedIso === iso
+                                  const isToday = iso === todayIso
+                                  const cls = (() => {
+                                    if (disabled) return 'text-[#C4C7CF] cursor-not-allowed'
+                                    if (isSelected) return 'bg-[#0047BB] text-white'
+                                    if (isToday) return 'border border-[#0047BB] text-[#0047BB]'
+                                    return 'hover:bg-[#F3F4F6] text-[#22252B]'
+                                  })()
+                                  return (
+                                    <button
+                                      key={idx}
+                                      type="button"
+                                      disabled={disabled}
+                                      className={`h-9 rounded-[8px] text-[12px] font-medium ${cls}`}
+                                      onClick={() => {
+                                        setAvailabilityFromIso(iso, 'start')
+                                        setAvailabilityPickerOpen(false)
+                                      }}
+                                      aria-label={`Dia ${day}`}
+                                    >
+                                      {day}
+                                    </button>
+                                  )
+                                })
+                              })()}
+                            </div>
+                          </div>
+                        ) : null}
                       </div>
                       <div id="availabilityHelp" className="mt-1 text-[11px] text-[#9291A5]">Data inicial em que o simulado ficará acessível.</div>
+                    </div>
+                    <div>
+                      <label htmlFor="availabilityEndDate" className="text-[12px] text-[#737780]">Data final (opcional)</label>
+                      <div
+                        ref={availabilityEndPickerWrapRef}
+                        className="mt-2 relative flex h-[40px] items-center rounded-[6px] border border-[#E3E4E5] bg-white px-2 hover:border-[#D1D5DB] focus-within:border-[#0047BB]"
+                        onClick={(e) => {
+                          const t = e.target as any
+                          if (availabilityPickerOpen && t?.closest?.('[data-availability-picker-panel="1"]')) return
+                          availabilityEndDateRef.current?.focus()
+                          openAvailabilityPicker('end')
+                        }}
+                      >
+                        <Calendar
+                          className="mr-2 h-4 w-4 cursor-pointer text-[#9291A5]"
+                          onClick={(e) => {
+                            e.preventDefault()
+                            e.stopPropagation()
+                            availabilityEndDateRef.current?.focus()
+                            openAvailabilityPicker('end')
+                          }}
+                        />
+                        <input
+                          id="availabilityEndDate"
+                          ref={availabilityEndDateRef}
+                          type="text"
+                          inputMode="numeric"
+                          value={availabilityEndDateDisplay}
+                          onChange={(e) => {
+                            const formatted = formatBrDateInput(e.target.value)
+                            setAvailabilityEndDateDisplay(formatted)
+                            const iso = parseBrDateToIso(formatted)
+                            if (iso) setAvailabilityEndDate(iso)
+                          }}
+                          onBlur={() => {
+                            if (availabilityPickerOpen) return
+                            const iso = parseBrDateToIso(availabilityEndDateDisplay)
+                            if (!availabilityEndDateDisplay) {
+                              setAvailabilityEndDate("")
+                              return
+                            }
+                            if (!iso) {
+                              toast({ title: "Data inválida", description: "Use o formato dd/mm/aaaa.", variant: "destructive" })
+                              return
+                            }
+                            const todayIso = getTodayIsoLocal()
+                            const minIso = availabilityDate ? (availabilityDate < todayIso ? todayIso : availabilityDate) : todayIso
+                            if (iso < minIso) {
+                              toast({ title: "Data inválida", description: "Escolha uma data igual ou posterior ao início.", variant: "destructive" })
+                              setAvailabilityEndDate(minIso)
+                              setAvailabilityEndDateDisplay(minIso.split("-").reverse().join("/"))
+                              return
+                            }
+                            setAvailabilityEndDate(iso)
+                          }}
+                          placeholder="dd/mm/aaaa"
+                          className="w-full bg-transparent text-[12px] text-[#1E1B39] outline-none placeholder:text-[#ABADB3]"
+                          aria-label="Data final do simulado"
+                          aria-describedby="availabilityEndHelp"
+                        />
+                        {availabilityPickerOpen && availabilityPickerMode === 'end' ? (
+                          <div
+                            data-availability-picker-panel="1"
+                            className="absolute left-0 top-full mt-2 z-50 w-[296px] rounded-[10px] border border-[#E3E4E5] bg-white p-3 shadow-lg"
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onClick={(e) => e.stopPropagation()}
+                            role="dialog"
+                            aria-label="Selecionar data"
+                          >
+                            <div className="flex items-center justify-between">
+                              <button
+                                type="button"
+                                className="h-8 w-8 inline-flex items-center justify-center rounded-[8px] border border-[#E3E4E5] bg-white hover:bg-[#F9FAFB]"
+                                onClick={(e) => {
+                                  e.preventDefault()
+                                  e.stopPropagation()
+                                  setAvailabilityPickerMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))
+                                }}
+                                aria-label="Mês anterior"
+                              >
+                                <ChevronLeft className="h-4 w-4 text-[#22252B]" />
+                              </button>
+                              <div className="text-[12px] font-semibold text-[#22252B] capitalize">
+                                {formatMonthYearPtBR(availabilityPickerMonth)}
+                              </div>
+                              <button
+                                type="button"
+                                className="h-8 w-8 inline-flex items-center justify-center rounded-[8px] border border-[#E3E4E5] bg-white hover:bg-[#F9FAFB]"
+                                onClick={(e) => {
+                                  e.preventDefault()
+                                  e.stopPropagation()
+                                  setAvailabilityPickerMonth((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))
+                                }}
+                                aria-label="Próximo mês"
+                              >
+                                <ChevronRight className="h-4 w-4 text-[#22252B]" />
+                              </button>
+                            </div>
+
+                            <div className="mt-3 grid grid-cols-7 gap-1 text-[10px] text-[#737780]">
+                              {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].map((d) => (
+                                <div key={d} className="text-center">{d}</div>
+                              ))}
+                            </div>
+
+                            <div className="mt-1 grid grid-cols-7 gap-1">
+                              {(() => {
+                                const y = availabilityPickerMonth.getFullYear()
+                                const m = availabilityPickerMonth.getMonth()
+                                const firstDow = new Date(y, m, 1).getDay()
+                                const daysInMonth = new Date(y, m + 1, 0).getDate()
+                                const todayIso = getTodayIsoLocal()
+                                const minIso = availabilityDate ? (availabilityDate < todayIso ? todayIso : availabilityDate) : todayIso
+                                const selectedIso = String(availabilityEndDate || '').trim()
+                                const start = 1 - firstDow
+                                const cells = Array.from({ length: 42 }, (_, i) => start + i)
+                                return cells.map((day, idx) => {
+                                  if (day < 1 || day > daysInMonth) return <div key={idx} className="h-9" />
+                                  const iso = `${y}-${pad2(m + 1)}-${pad2(day)}`
+                                  const disabled = iso < minIso
+                                  const isSelected = selectedIso === iso
+                                  const isToday = iso === todayIso
+                                  const cls = (() => {
+                                    if (disabled) return 'text-[#C4C7CF] cursor-not-allowed'
+                                    if (isSelected) return 'bg-[#0047BB] text-white'
+                                    if (isToday) return 'border border-[#0047BB] text-[#0047BB]'
+                                    return 'hover:bg-[#F3F4F6] text-[#22252B]'
+                                  })()
+                                  return (
+                                    <button
+                                      key={idx}
+                                      type="button"
+                                      disabled={disabled}
+                                      className={`h-9 rounded-[8px] text-[12px] font-medium ${cls}`}
+                                      onClick={() => {
+                                        setAvailabilityFromIso(iso, 'end')
+                                        setAvailabilityPickerOpen(false)
+                                      }}
+                                      aria-label={`Dia ${day}`}
+                                    >
+                                      {day}
+                                    </button>
+                                  )
+                                })
+                              })()}
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+                      <div id="availabilityEndHelp" className="mt-1 text-[11px] text-[#9291A5]">Data final em que o simulado ficará acessível.</div>
                     </div>
                     <div>
                       <label htmlFor="simulationDuration" className="text-[12px] text-[#737780]">Duração do Simulado</label>
@@ -2320,6 +2790,8 @@ export default function NovoSimuladoPage() {
                   <p className="text-[12px] text-[#9291A5]">Ordem diferente de questão, o que evita memorização mecânica e reduz cópia.</p>
                   <div className="flex items-center justify-between"><span className="text-[12px]">Pular questão</span><Switch checked={skipQuestions} onCheckedChange={setSkipQuestions} /></div>
                   <p className="text-[12px] text-[#9291A5]">Avançar sem responder imediatamente e decidir depois.</p>
+                  <div className="flex items-center justify-between"><span className="text-[12px]">Permitir repetir simulado</span><Switch checked={allowRepeat} onCheckedChange={setAllowRepeat} /></div>
+                  <p className="text-[12px] text-[#9291A5]">Quando desativado, o aluno só pode finalizar uma vez.</p>
                 </div>
               </div>
               <div className="rounded-[4px] border border-[#E3E4E5] bg-white p-4">

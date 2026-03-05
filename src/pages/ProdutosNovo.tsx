@@ -1,17 +1,18 @@
 "use client"
 
 import { useState, useEffect, useRef, useMemo } from "react"
-import { ArrowLeft, Plus, FileText, FileSpreadsheet, FileType, Link as LinkIcon, Info, ExternalLink, BookOpen, Search, Layers, X, Users, Check, Trash2, ChevronDown, Folder, Play, Pencil, Timer, Lock, Tag as TagIcon, DownloadCloud, Image as ImageIcon } from "lucide-react"
+import { ArrowLeft, Plus, FileText, FileSpreadsheet, FileType, Link as LinkIcon, Info, ExternalLink, BookOpen, Search, Layers, X, Users, Check, Trash2, ChevronDown, Folder, Play, Pencil, Timer, Lock, Tag as TagIcon, DownloadCloud, Image as ImageIcon, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useAuth } from "@/contexts/SupabaseAuthContext"
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog"
 import { toast } from "@/hooks/use-toast"
 import { useToast } from "@/hooks/use-toast"
-import { supabase } from "@/lib/supabaseClient"
+import { supabase, SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/supabaseClient"
 import { canUploadBytes, resolvePlanKey } from "@/services/planEntitlements"
 import ChatArea from "@/components/ChatArea"
 import { TaxonomyDropdown, type TaxonomyItem } from "@/components/TaxonomyDropdown"
 import { useTaxonomy } from "@/contexts/TaxonomyContext"
+import RichTextNotionEditor from "@/components/RichTextNotionEditor"
 
 type Course = { id: string; name: string }
 type LessonMaterial = { id: string; name: string; sizeLabel: string; type: "pdf" | "doc" | "ppt" | "xls" | "link"; path?: string | null; url?: string | null }
@@ -19,6 +20,7 @@ type Lesson = {
   id: string;
   title: string;
   description?: string;
+  description_rich?: any;
   durationMin: number;
   visibility: "Gratuita" | "Paga";
   priceCents?: number;
@@ -32,7 +34,6 @@ type Lesson = {
   videoId?: string | null;
   videoPath?: string | null;
   materials?: LessonMaterial[];
-  commentsEnabled?: boolean;
 }
 
 export default function NovoCursoPage() {
@@ -83,11 +84,14 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
     if (!user) return
     const fetchSimulados = async () => {
       setIsLoadingSimulados(true)
+      setSimuladosCatalog([])
       try {
+        const pid = String(user.id || '').trim()
+        if (!pid) return
         const { data, error } = await supabase
           .from('simulados')
           .select('*')
-          .eq('user_id', user.id)
+          .eq('user_id', pid)
         
         if (error) throw error
 
@@ -104,6 +108,7 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
         }
       } catch (err) {
         console.error("Erro ao buscar simulados:", err)
+        setSimuladosCatalog([])
         toast({
           title: "Erro ao carregar simulados",
           description: "Não foi possível carregar seus simulados.",
@@ -240,7 +245,6 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
             setDescription(data.description || '');
             if (moduleLayoutUrlFromRow) setModuleLayoutImage(moduleLayoutUrlFromRow)
             if (coverUrlFromRow) setCoverImage(coverUrlFromRow)
-            else if (moduleLayoutUrlFromRow) setCoverImage(moduleLayoutUrlFromRow)
             if (promoUrlFromRow) setPromoVideo(promoUrlFromRow)
 
             let metaFromData: any = null
@@ -696,6 +700,68 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
   const [isModuleEditCoverGalleryOpen, setIsModuleEditCoverGalleryOpen] = useState(false)
   const [price, setPrice] = useState("297,00")
 
+  const parseBrl = (value: any) => {
+    if (typeof value === 'number' && Number.isFinite(value)) return value
+    const raw = String(value ?? '').trim()
+    if (!raw) return 0
+    const cleaned = raw
+      .replace(/R\$\s*/gi, '')
+      .replace(/\u00A0/g, ' ')
+      .replace(/\s/g, '')
+      .replace(/\./g, '')
+      .replace(',', '.')
+    const n = Number.parseFloat(cleaned)
+    return Number.isFinite(n) ? n : 0
+  }
+
+  const paidBreakdown = useMemo(() => {
+    let paidModulesCount = 0
+    let paidLessonsCount = 0
+    let paidModulesTotal = 0
+    let paidLessonsTotal = 0
+
+    for (const mod of (Array.isArray(modules) ? modules : [])) {
+      const modVis = String((mod as any)?.visibility || '').trim()
+      const modCents = Number((mod as any)?.priceCents || 0)
+      const modPaid = modVis === 'Paga' || (Number.isFinite(modCents) && modCents > 0)
+      if (modPaid) {
+        paidModulesCount += 1
+        const modValue =
+          (Number.isFinite(modCents) && modCents > 0)
+            ? modCents / 100
+            : parseBrl((mod as any)?.price ?? (mod as any)?.valor ?? (mod as any)?.preco ?? 0)
+        paidModulesTotal += Math.max(0, modValue || 0)
+      }
+
+      const lessons = Array.isArray((mod as any)?.lessons) ? (mod as any).lessons : []
+      for (const lesson of lessons) {
+        const lesVis = String((lesson as any)?.visibility || '').trim()
+        const lesCents = Number((lesson as any)?.priceCents || 0)
+        const lesPaid = lesVis === 'Paga' || (Number.isFinite(lesCents) && lesCents > 0)
+        if (!lesPaid) continue
+        paidLessonsCount += 1
+        const lesValue =
+          (Number.isFinite(lesCents) && lesCents > 0)
+            ? lesCents / 100
+            : parseBrl((lesson as any)?.price ?? (lesson as any)?.valor ?? (lesson as any)?.preco ?? 0)
+        paidLessonsTotal += Math.max(0, lesValue || 0)
+      }
+    }
+
+    return { paidModulesCount, paidLessonsCount, paidModulesTotal, paidLessonsTotal }
+  }, [modules])
+
+  const baseCourseValue = parseBrl(price)
+  const extrasTotalValue = selectedSimulados
+    ? selectedSimulados.reduce((acc, sim) => acc + parseBrl((sim as any)?.priceLabel || 0), 0)
+    : 0
+  const monetizacaoTotalValue =
+    baseCourseValue + extrasTotalValue + (paidBreakdown?.paidModulesTotal || 0) + (paidBreakdown?.paidLessonsTotal || 0)
+  const monetizacaoFee = monetizacaoTotalValue > 0 ? (monetizacaoTotalValue * 0.0499) + 1 : 0
+  const monetizacaoNet = monetizacaoTotalValue - monetizacaoFee
+  const showPaidModules = (paidBreakdown?.paidModulesCount || 0) > 0
+  const showPaidLessons = (paidBreakdown?.paidLessonsCount || 0) > 0
+
   // Configurações por usuário do Vimeo
   const [isVimeoSettingsOpen, setIsVimeoSettingsOpen] = useState(false)
   const [vimeoSettings, setVimeoSettings] = useState<{ client_id: string; client_secret: string; redirect_uri: string; scope: string }>({
@@ -789,6 +855,7 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
   }
 
   const handleCreateCourse = async () => {
+    if (isSavingCourse) return
     if (!user) {
       toast({ title: 'Erro', description: 'Você precisa estar logado para criar um curso.', variant: 'destructive' })
       return
@@ -799,6 +866,7 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
       return
     }
 
+    setIsSavingCourse(true)
     try {
       const generateUuid = () => {
         const c = globalThis.crypto as Crypto | undefined
@@ -816,10 +884,103 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
 
       const uploadCourseMedia = async (courseId: string, kind: string, file: File) => {
         if (!user?.id) throw new Error('Usuário não autenticado')
-        const allowed = await canUploadBytes(user.id, file.size, resolvePlanKey())
-        if (!allowed.ok) throw new Error('Limite de armazenamento atingido. Faça upgrade do seu plano para continuar.')
         const safeName = sanitizeFilename(file.name || `${kind}`)
         const envAny = (import.meta as any)?.env || {}
+        const isVideo = String(file.type || '').startsWith('video/') || /\.(mp4|mov|m4v|webm|ogg)(\?.*)?$/i.test(String(file.name || ''))
+        const shouldUseResumable = isVideo && file.size >= 15_000_000
+        const formatBytes = (n: number) => {
+          const v = Number(n || 0)
+          if (!isFinite(v) || v <= 0) return '0 B'
+          const kb = v / 1024
+          if (kb < 1024) return `${Math.round(kb)} KB`
+          const mb = kb / 1024
+          if (mb < 1024) return `${mb.toFixed(1)} MB`
+          const gb = mb / 1024
+          return `${gb.toFixed(2)} GB`
+        }
+        const allowed = await canUploadBytes(user.id, file.size, resolvePlanKey())
+        if (!allowed.ok) {
+          const usedText = typeof (allowed as any)?.usedBytes === 'number' ? formatBytes(Number((allowed as any).usedBytes)) : null
+          const limitText = typeof (allowed as any)?.limitBytes === 'number' ? formatBytes(Number((allowed as any).limitBytes)) : null
+          throw new Error(`Limite de armazenamento atingido${usedText && limitText ? ` (${usedText} de ${limitText})` : ''}. Faça upgrade do seu plano para continuar.`)
+        }
+        const ensureBucketLimit = async () => {
+          const token = String(
+            session?.access_token ||
+            (await supabase.auth.getSession().catch(() => ({ data: null })))?.data?.session?.access_token ||
+            ''
+          ).trim()
+          if (!token) throw new Error('Sessão expirada. Faça login novamente para enviar o vídeo.')
+          try {
+            const qs = new URLSearchParams({ type: 'ensure_courses_media_upload', bytes: String(file.size) })
+            const r = await fetch(`/api/producer?${qs.toString()}`, { headers: { Authorization: `Bearer ${token}` } })
+            const body = await r.json().catch(() => ({}))
+            if (r.ok && body?.ok === true) return
+            const err = String(body?.error || 'upload_limit_check_failed')
+            if (err === 'file_exceeds_plan_storage' || err === 'file_exceeds_max_single_file') {
+              throw new Error('Esse arquivo excede o limite permitido para o seu plano.')
+            }
+            if (err === 'file_exceeds_supabase_max') {
+              const maxBytes = Number(body?.maxBytes || 0)
+              const maxText = maxBytes > 0 ? formatBytes(maxBytes) : null
+              const sizeText = formatBytes(file.size)
+              throw new Error(`Esse vídeo (${sizeText}) excede o limite máximo do Storage${maxText ? ` (${maxText})` : ''}. Use Vimeo/VdoCipher.`)
+            }
+          } catch (e) {
+            const msg = String((e as any)?.message || e || '')
+            if (msg) throw new Error(msg)
+          }
+        }
+        const uploadResumable = async () => {
+          const supabaseUrl = String(SUPABASE_URL || '')
+          const supabaseAnon = String(SUPABASE_ANON_KEY || '')
+          if (!supabaseUrl || !supabaseAnon) throw new Error('Env Supabase ausente: verifique VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY')
+          const accessToken = String(session?.access_token || (await supabase.auth.getSession().catch(() => ({ data: null })))?.data?.session?.access_token || '').trim()
+          if (!accessToken) throw new Error('Sessão expirada. Faça login novamente para enviar o vídeo.')
+          const bucket = 'courses-media'
+          const objectPath = `users/${user.id}/courses/${courseId}/${kind}/${Date.now()}_${safeName}`
+          const endpoint = `${supabaseUrl.replace(/\/+$/, '')}/storage/v1/upload/resumable`
+          const tusMod: any = await import('tus-js-client')
+          const Upload = tusMod?.Upload
+          if (typeof Upload !== 'function') throw new Error('Falha ao inicializar upload resumível')
+          await new Promise<void>((resolve, reject) => {
+            try {
+              const upload = new Upload(file, {
+                endpoint,
+                retryDelays: [0, 3000, 5000, 10_000, 20_000],
+                headers: {
+                  authorization: `Bearer ${accessToken}`,
+                  apikey: supabaseAnon,
+                  'x-upsert': 'true',
+                },
+                uploadDataDuringCreation: true,
+                removeFingerprintOnSuccess: true,
+                metadata: {
+                  bucketName: bucket,
+                  objectName: objectPath,
+                  contentType: file.type || 'application/octet-stream',
+                },
+                onError: (err: any) => {
+                  let status = 0
+                  try { status = Number(err?.originalResponse?.getStatus?.() || err?.originalResponse?.getStatusCode?.() || 0) } catch (_) { status = 0 }
+                  const msg = String(err?.message || err || '').toLowerCase()
+                  const isTooLarge = status === 413 || msg.includes('response code: 413') || msg.includes('maximum size exceeded') || msg.includes('maximum allowed size') || msg.includes('payload too large')
+                  if (isTooLarge) {
+                    reject(new Error(`Esse vídeo (${formatBytes(file.size)}) excede o limite máximo do Storage no Supabase. Use Vimeo/VdoCipher.`))
+                    return
+                  }
+                  reject(err)
+                },
+                onSuccess: () => resolve(),
+              })
+              upload.start()
+            } catch (e) {
+              reject(e)
+            }
+          })
+          const { data: pub } = supabase.storage.from(bucket).getPublicUrl(objectPath)
+          return { url: pub?.publicUrl || null, path: objectPath }
+        }
         const shouldTryProxy = Boolean(envAny.DEV && envAny.VITE_USE_LOCAL_UPLOAD_PROXY)
         if (shouldTryProxy) {
           try {
@@ -843,13 +1004,28 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
           }
         }
 
+        await ensureBucketLimit()
+
+        if (shouldUseResumable) {
+          try {
+            return await uploadResumable()
+          } catch (_) {
+          }
+        }
+
         const bucket = 'courses-media'
         const objectPath = `users/${user.id}/courses/${courseId}/${kind}/${Date.now()}_${safeName}`
         const { data, error } = await supabase.storage.from(bucket).upload(objectPath, file, {
           upsert: true,
           contentType: file.type || 'application/octet-stream',
         })
-        if (error) throw error
+        if (error) {
+          const msg = String((error as any)?.message || error || '')
+          if (isVideo && (msg.toLowerCase().includes('maximum allowed size') || msg.toLowerCase().includes('exceeded the maximum'))) {
+            return await uploadResumable()
+          }
+          throw error
+        }
         const storedPath = data?.path || objectPath
         const { data: pub } = supabase.storage.from(bucket).getPublicUrl(storedPath)
         const url = pub?.publicUrl || null
@@ -878,9 +1054,6 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
 
       if (!cover && coverImage) {
         cover = { url: coverImage, path: null }
-      }
-      if (!cover && moduleLayout?.url) {
-        cover = { url: moduleLayout.url, path: null }
       }
 
       const modulesWithUploadedCovers = await (async () => {
@@ -1060,16 +1233,19 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
       if (msg.toLowerCase().includes('payload too large') || msg.toLowerCase().includes('maximum allowed size')) {
         toast({
           title: 'Arquivo muito grande',
-          description: 'O vídeo excede o limite do Storage. Aumente o file_size_limit do bucket courses-media (rode: npm run migrate:courses-media) ou envie um arquivo menor.',
+          description: 'Esse vídeo é grande demais para upload simples. Tente novamente (o sistema usa upload resumível). Se persistir, envie um arquivo menor ou use Vimeo/VdoCipher.',
           variant: 'destructive'
         })
         return
       }
       toast({ title: 'Erro', description: 'Erro ao criar curso: ' + msg, variant: 'destructive' })
+    } finally {
+      setIsSavingCourse(false)
     }
   }
 
   const handleSaveCourse = async () => {
+    if (isSavingCourse) return
     if (!user) {
       toast({ title: 'Erro', description: 'Você precisa estar logado para salvar o curso.', variant: 'destructive' })
       return
@@ -1085,15 +1261,82 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
       return
     }
 
+    setIsSavingCourse(true)
     try {
       const sanitizeFilename = (name: string) => (name || 'file').replace(/[^a-zA-Z0-9_.-]/g, '_')
 
       const uploadCourseMedia = async (courseId: string, kind: string, file: File) => {
         if (!user?.id) throw new Error('Usuário não autenticado')
-        const allowed = await canUploadBytes(user.id, file.size, resolvePlanKey())
-        if (!allowed.ok) throw new Error('Limite de armazenamento atingido. Faça upgrade do seu plano para continuar.')
         const safeName = sanitizeFilename(file.name || `${kind}`)
         const envAny = (import.meta as any)?.env || {}
+        const isVideo = String(file.type || '').startsWith('video/') || /\.(mp4|mov|m4v|webm|ogg)(\?.*)?$/i.test(String(file.name || ''))
+        const shouldUseResumable = isVideo && file.size >= 15_000_000
+        const formatBytes = (n: number) => {
+          const v = Number(n || 0)
+          if (!isFinite(v) || v <= 0) return '0 B'
+          const kb = v / 1024
+          if (kb < 1024) return `${Math.round(kb)} KB`
+          const mb = kb / 1024
+          if (mb < 1024) return `${mb.toFixed(1)} MB`
+          const gb = mb / 1024
+          return `${gb.toFixed(2)} GB`
+        }
+        const allowed = await canUploadBytes(user.id, file.size, resolvePlanKey())
+        if (!allowed.ok) {
+          const usedText = typeof (allowed as any)?.usedBytes === 'number' ? formatBytes(Number((allowed as any).usedBytes)) : null
+          const limitText = typeof (allowed as any)?.limitBytes === 'number' ? formatBytes(Number((allowed as any).limitBytes)) : null
+          throw new Error(`Limite de armazenamento atingido${usedText && limitText ? ` (${usedText} de ${limitText})` : ''}. Faça upgrade do seu plano para continuar.`)
+        }
+        const uploadResumable = async () => {
+          const supabaseUrl = String(SUPABASE_URL || '')
+          const supabaseAnon = String(SUPABASE_ANON_KEY || '')
+          if (!supabaseUrl || !supabaseAnon) throw new Error('Env Supabase ausente: verifique VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY')
+          const accessToken = String(session?.access_token || (await supabase.auth.getSession().catch(() => ({ data: null })))?.data?.session?.access_token || '').trim()
+          if (!accessToken) throw new Error('Sessão expirada. Faça login novamente para enviar o vídeo.')
+          const bucket = 'courses-media'
+          const objectPath = `users/${user.id}/courses/${courseId}/${kind}/${Date.now()}_${safeName}`
+          const endpoint = `${supabaseUrl.replace(/\/+$/, '')}/storage/v1/upload/resumable`
+          const tusMod: any = await import('tus-js-client')
+          const Upload = tusMod?.Upload
+          if (typeof Upload !== 'function') throw new Error('Falha ao inicializar upload resumível')
+          await new Promise<void>((resolve, reject) => {
+            try {
+              const upload = new Upload(file, {
+                endpoint,
+                retryDelays: [0, 3000, 5000, 10_000, 20_000],
+                headers: {
+                  authorization: `Bearer ${accessToken}`,
+                  apikey: supabaseAnon,
+                  'x-upsert': 'true',
+                },
+                uploadDataDuringCreation: true,
+                removeFingerprintOnSuccess: true,
+                metadata: {
+                  bucketName: bucket,
+                  objectName: objectPath,
+                  contentType: file.type || 'application/octet-stream',
+                },
+                onError: (err: any) => {
+                  let status = 0
+                  try { status = Number(err?.originalResponse?.getStatus?.() || err?.originalResponse?.getStatusCode?.() || 0) } catch (_) { status = 0 }
+                  const msg = String(err?.message || err || '').toLowerCase()
+                  const isTooLarge = status === 413 || msg.includes('response code: 413') || msg.includes('maximum size exceeded') || msg.includes('maximum allowed size') || msg.includes('payload too large')
+                  if (isTooLarge) {
+                    reject(new Error(`Esse vídeo (${formatBytes(file.size)}) excede o limite máximo do Storage no Supabase. Use Vimeo/VdoCipher.`))
+                    return
+                  }
+                  reject(err)
+                },
+                onSuccess: () => resolve(),
+              })
+              upload.start()
+            } catch (e) {
+              reject(e)
+            }
+          })
+          const { data: pub } = supabase.storage.from(bucket).getPublicUrl(objectPath)
+          return { url: pub?.publicUrl || null, path: objectPath }
+        }
         const shouldTryProxy = Boolean(envAny.DEV && envAny.VITE_USE_LOCAL_UPLOAD_PROXY)
         if (shouldTryProxy) {
           try {
@@ -1117,13 +1360,26 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
           }
         }
 
+        if (shouldUseResumable) {
+          try {
+            return await uploadResumable()
+          } catch (_) {
+          }
+        }
+
         const bucket = 'courses-media'
         const objectPath = `users/${user.id}/courses/${courseId}/${kind}/${Date.now()}_${safeName}`
         const { data, error } = await supabase.storage.from(bucket).upload(objectPath, file, {
           upsert: true,
           contentType: file.type || 'application/octet-stream',
         })
-        if (error) throw error
+        if (error) {
+          const msg = String((error as any)?.message || error || '')
+          if (isVideo && (msg.toLowerCase().includes('maximum allowed size') || msg.toLowerCase().includes('exceeded the maximum'))) {
+            return await uploadResumable()
+          }
+          throw error
+        }
         const storedPath = data?.path || objectPath
         const { data: pub } = supabase.storage.from(bucket).getPublicUrl(storedPath)
         const url = pub?.publicUrl || null
@@ -1343,12 +1599,14 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
       if (msg.toLowerCase().includes('payload too large') || msg.toLowerCase().includes('maximum allowed size')) {
         toast({
           title: 'Arquivo muito grande',
-          description: 'O vídeo excede o limite do Storage. Aumente o file_size_limit do bucket courses-media (rode: npm run migrate:courses-media) ou envie um arquivo menor.',
+          description: 'Esse vídeo é grande demais para upload simples. Tente novamente (o sistema usa upload resumível). Se persistir, envie um arquivo menor ou use Vimeo/VdoCipher.',
           variant: 'destructive'
         })
         return
       }
       toast({ title: 'Erro', description: 'Erro ao salvar curso: ' + msg, variant: 'destructive' })
+    } finally {
+      setIsSavingCourse(false)
     }
   }
 
@@ -1438,7 +1696,7 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
         window.location.href = `/login?next=${next}`
         return
       }
-      const fnUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vdocipher-connect`
+      const fnUrl = `${SUPABASE_URL}/functions/v1/vdocipher-connect`
       fetch(fnUrl, {
         method: 'POST',
         headers: {
@@ -1516,7 +1774,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
         return
       }
       setIsVdoUploading(true)
-      const fnUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/vdocipher-upload`
+      const fnUrl = `${SUPABASE_URL}/functions/v1/vdocipher-upload`
       const credsRes = await fetch(fnUrl, {
         method: 'POST',
         headers: {
@@ -1586,16 +1844,22 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
     const lessonId = String(editingLessonId || draftLessonId || '').trim()
     const file = lessonUploadFile || (lessonId ? lessonVideoFilesById?.[lessonId] : null)
     const sanitizeFilename = (name: string) => (name || 'file').replace(/[^a-zA-Z0-9_.-]/g, '_')
+    const formatBytes = (n: number) => {
+      const v = Number(n || 0)
+      if (!isFinite(v) || v <= 0) return '0 B'
+      const kb = v / 1024
+      if (kb < 1024) return `${Math.round(kb)} KB`
+      const mb = kb / 1024
+      if (mb < 1024) return `${mb.toFixed(1)} MB`
+      const gb = mb / 1024
+      return `${gb.toFixed(2)} GB`
+    }
 
     try {
       if (!user) {
         toast({ title: 'Faça login', description: 'Entre para enviar vídeos.' })
         const next = encodeURIComponent('/produtos/novo#aulas')
         window.location.href = `/login?next=${next}`
-        return
-      }
-      if (!courseId) {
-        toast({ title: 'Salve o curso', description: 'Salve/crie o curso antes de enviar o vídeo.' })
         return
       }
       if (!lessonId) {
@@ -1609,16 +1873,104 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
       setIsLessonUploadUploading(true)
       const allowed = await canUploadBytes(user.id, file.size, resolvePlanKey())
       if (!allowed.ok) {
-        toast({ title: 'Limite de armazenamento', description: 'Limite de armazenamento atingido. Faça upgrade do seu plano para continuar.', variant: 'destructive' as any })
+        const usedText = typeof (allowed as any)?.usedBytes === 'number' ? formatBytes(Number((allowed as any).usedBytes)) : null
+        const limitText = typeof (allowed as any)?.limitBytes === 'number' ? formatBytes(Number((allowed as any).limitBytes)) : null
+        toast({ title: 'Limite de armazenamento', description: `Limite de armazenamento atingido${usedText && limitText ? ` (${usedText} de ${limitText})` : ''}. Faça upgrade do seu plano para continuar.`, variant: 'destructive' as any })
         setIsLessonUploadUploading(false)
         return
       }
       const bucket = 'courses-media'
       const safeName = sanitizeFilename(file.name || 'video')
-      const objectPath = `users/${user.id}/courses/${courseId}/lesson_video/${lessonId}/${Date.now()}_${safeName}`
-      const { data, error } = await supabase.storage.from(bucket).upload(objectPath, file, { upsert: true, contentType: file.type || 'application/octet-stream' })
-      if (error) throw error
-      const storedPath = data?.path || objectPath
+      const root = courseId ? `users/${user.id}/courses/${courseId}` : `users/${user.id}/drafts`
+      const objectPath = `${root}/lesson_video/${lessonId}/${Date.now()}_${safeName}`
+      const token = String(session?.access_token || '').trim()
+      const effectiveToken = token || String((await supabase.auth.getSession().catch(() => ({ data: null })))?.data?.session?.access_token || '').trim()
+      if (effectiveToken) {
+        const qs = new URLSearchParams({ type: 'ensure_courses_media_upload', bytes: String(file.size) })
+        const r = await fetch(`/api/producer?${qs.toString()}`, { headers: { Authorization: `Bearer ${effectiveToken}` } })
+        const body = await r.json().catch(() => ({}))
+        if (!r.ok || body?.ok !== true) {
+          const err = String(body?.error || '')
+          if (err === 'file_exceeds_plan_storage' || err === 'file_exceeds_max_single_file') {
+            throw new Error('Esse arquivo excede o limite permitido para o seu plano.')
+          }
+          if (err === 'file_exceeds_supabase_max') {
+            const maxBytes = Number(body?.maxBytes || 0)
+            const maxText = maxBytes > 0 ? formatBytes(maxBytes) : null
+            const sizeText = formatBytes(file.size)
+            throw new Error(`Esse vídeo (${sizeText}) excede o limite máximo do Storage${maxText ? ` (${maxText})` : ''}. Use Vimeo/VdoCipher.`)
+          }
+        }
+      } else {
+        throw new Error('Sessão expirada. Faça login novamente para enviar o vídeo.')
+      }
+
+      const supabaseUrl = String(SUPABASE_URL || '')
+      const supabaseAnon = String(SUPABASE_ANON_KEY || '')
+      const isVideo = String(file.type || '').startsWith('video/') || /\.(mp4|mov|m4v|webm|ogg)(\?.*)?$/i.test(String(file.name || ''))
+      const shouldUseResumable = isVideo && file.size >= 15_000_000
+      const uploadResumable = async () => {
+        if (!supabaseUrl || !supabaseAnon) throw new Error('Env Supabase ausente: verifique VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY')
+        const accessToken = String(session?.access_token || (await supabase.auth.getSession().catch(() => ({ data: null })))?.data?.session?.access_token || '').trim()
+        if (!accessToken) throw new Error('Sessão expirada. Faça login novamente para enviar o vídeo.')
+        const endpoint = `${supabaseUrl.replace(/\/+$/, '')}/storage/v1/upload/resumable`
+        const tusMod: any = await import('tus-js-client')
+        const Upload = tusMod?.Upload
+        if (typeof Upload !== 'function') throw new Error('Falha ao inicializar upload resumível')
+        await new Promise<void>((resolve, reject) => {
+          try {
+            const upload = new Upload(file, {
+              endpoint,
+              retryDelays: [0, 3000, 5000, 10_000, 20_000],
+              headers: {
+                authorization: `Bearer ${accessToken}`,
+                apikey: supabaseAnon,
+                'x-upsert': 'true',
+              },
+              uploadDataDuringCreation: true,
+              removeFingerprintOnSuccess: true,
+              metadata: {
+                bucketName: bucket,
+                objectName: objectPath,
+                contentType: file.type || 'application/octet-stream',
+              },
+              onError: (err: any) => {
+                let status = 0
+                try { status = Number(err?.originalResponse?.getStatus?.() || err?.originalResponse?.getStatusCode?.() || 0) } catch (_) { status = 0 }
+                const msg = String(err?.message || err || '').toLowerCase()
+                const isTooLarge = status === 413 || msg.includes('response code: 413') || msg.includes('maximum size exceeded') || msg.includes('maximum allowed size') || msg.includes('payload too large')
+                if (isTooLarge) {
+                  reject(new Error(`Esse vídeo (${formatBytes(file.size)}) excede o limite máximo do Storage no Supabase. Use Vimeo/VdoCipher.`))
+                  return
+                }
+                reject(err)
+              },
+              onSuccess: () => resolve(),
+            })
+            upload.start()
+          } catch (e) {
+            reject(e)
+          }
+        })
+        return { path: objectPath }
+      }
+
+      if (shouldUseResumable) {
+        await uploadResumable()
+      } else {
+        const { data, error } = await supabase.storage.from(bucket).upload(objectPath, file, { upsert: true, contentType: file.type || 'application/octet-stream' })
+        if (error) {
+          const msg = String((error as any)?.message || error || '').toLowerCase()
+          const isTooLarge = msg.includes('maximum allowed size') || msg.includes('exceeded the maximum allowed size') || msg.includes('payload too large')
+          if (isTooLarge && isVideo) {
+            await uploadResumable()
+          } else {
+            throw error
+          }
+        }
+        void data
+      }
+      const storedPath = objectPath
       const { data: pub } = supabase.storage.from(bucket).getPublicUrl(storedPath)
       const url = pub?.publicUrl || ''
       if (!url) throw new Error('Não foi possível obter a URL do vídeo.')
@@ -1634,7 +1986,11 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
       })
       toast({ title: 'Vídeo enviado', description: 'Upload concluído com sucesso.' })
     } catch (e: any) {
-      const msg = String(e?.message || e || '')
+      const raw = String(e?.message || e || '')
+      const lower = raw.toLowerCase()
+      const msg = lower.includes('maximum allowed size') || lower.includes('exceeded the maximum allowed size') || lower.includes('payload too large') || (lower.includes('response code: 413') && lower.includes('tus')) || lower.includes('maximum size exceeded')
+        ? 'Esse vídeo excede o limite máximo do Storage no Supabase. Use Vimeo/VdoCipher.'
+        : raw
       toast({ title: 'Erro no upload', description: msg || 'Tente novamente.', variant: 'destructive' as any })
     } finally {
       setIsLessonUploadUploading(false)
@@ -2015,7 +2371,6 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
   // Critério de liberação da seção de módulos
   const isCourseInfoComplete = (
     title.trim().length > 0 &&
-    selectedCourses.length > 0 &&
     selectedCategories.length > 0 &&
     selectedSubcategories.length > 0 &&
     selectedTags.length > 0 &&
@@ -2026,7 +2381,6 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
   const missingToAdvance = useMemo(() => {
     const missing: string[] = []
     if (!title.trim()) missing.push('nome do curso')
-    if (selectedCourses.length < 1) missing.push('1 curso para vincular')
     if (selectedCategories.length < 1) missing.push('1 categoria para vincular')
     if (selectedSubcategories.length < 1) missing.push('1 subcategoria para vincular')
     if (selectedTags.length < 1) missing.push('1 tag para vincular')
@@ -2035,7 +2389,6 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
     return missing
   }, [
     title,
-    selectedCourses.length,
     selectedCategories.length,
     selectedSubcategories.length,
     selectedTags.length,
@@ -2139,15 +2492,15 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
   const startEditingLesson = (module: { id: string }, lesson: Lesson) => {
     setNewLessonTitle(lesson.title)
     setNewLessonDescription(lesson.description || '')
+    setNewLessonDescriptionRich((lesson as any)?.description_rich || null)
     setNewLessonDurationMin(lesson.durationMin)
     setNewLessonVisibility(lesson.visibility)
     setNewLessonPrice(lesson.visibility === 'Paga' && typeof lesson.priceCents === 'number' ? formatCentsToBRLValue(lesson.priceCents) : '')
     setNewLessonDifficulty(((lesson as any).difficulty as any) || 'Intermediário')
-    setNewLessonCategories(lesson.categories && lesson.categories.length ? lesson.categories : ['Categoria'])
-    setNewLessonSubcategories(lesson.subcategories && lesson.subcategories.length ? lesson.subcategories : ['Subcategoria'])
-    setNewLessonExtraTags(lesson.extraTags && lesson.extraTags.length ? lesson.extraTags : ['Tag'])
+    setNewLessonCategories(lesson.categories && lesson.categories.length ? lesson.categories : [])
+    setNewLessonSubcategories(lesson.subcategories && lesson.subcategories.length ? lesson.subcategories : [])
+    setNewLessonExtraTags(lesson.extraTags && lesson.extraTags.length ? lesson.extraTags : [])
     setNewLessonMaterials(lesson.materials || [])
-    setNewLessonCommentsEnabled(lesson.commentsEnabled || false)
     setDefaultVideoProvider(lesson.videoProvider || 'vimeo')
     setDraftLessonId(String(lesson.id || ''))
     setNewLessonVideoUrl(String(lesson.videoUrl || ''))
@@ -2158,6 +2511,40 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
     setEditingModuleId(module.id)
     setEditingLessonId(lesson.id)
     setIsAddLessonModalOpen(true)
+  }
+
+  const editorJsToPlainText = (data: any) => {
+    const blocks = Array.isArray(data?.blocks) ? data.blocks : []
+    const parts: string[] = []
+    for (const b of blocks) {
+      const type = String(b?.type || '')
+      const d = b?.data || {}
+      if (type === 'header' || type === 'paragraph' || type === 'quote' || type === 'warning') {
+        const t = String(d?.text || d?.message || '').replace(/<[^>]*>/g, '').trim()
+        if (t) parts.push(t)
+        continue
+      }
+      if (type === 'list') {
+        const items = Array.isArray(d?.items) ? d.items : []
+        const text = items.map((it: any) => String(it || '').replace(/<[^>]*>/g, '').trim()).filter(Boolean).join(' ')
+        if (text) parts.push(text)
+        continue
+      }
+      if (type === 'checklist') {
+        const items = Array.isArray(d?.items) ? d.items : []
+        const text = items.map((it: any) => String(it?.text || '').replace(/<[^>]*>/g, '').trim()).filter(Boolean).join(' ')
+        if (text) parts.push(text)
+        continue
+      }
+      if (type === 'table') {
+        const content = Array.isArray(d?.content) ? d.content : []
+        const flat = content.flatMap((row: any) => (Array.isArray(row) ? row : [row]))
+        const text = flat.map((it: any) => String(it || '').replace(/<[^>]*>/g, '').trim()).filter(Boolean).join(' ')
+        if (text) parts.push(text)
+        continue
+      }
+    }
+    return parts.join('\n').trim()
   }
 
   // Tokens (categoria, subcategoria, tags extras)
@@ -2498,6 +2885,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
   const [isPublishAfterCreateOpen, setIsPublishAfterCreateOpen] = useState(false)
   const [createdCourseId, setCreatedCourseId] = useState<string | null>(null)
   const [isPublishingAfterCreate, setIsPublishingAfterCreate] = useState(false)
+  const [isSavingCourse, setIsSavingCourse] = useState(false)
   const [courseStatus, setCourseStatus] = useState<'draft' | 'published'>('draft')
   // Flag para abrir modal de aula após trocar para tela 'aulas'
   const [pendingAddLessonModal, setPendingAddLessonModal] = useState(false)
@@ -2635,16 +3023,17 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
 
   // Modal de criação de aula
   const [isAddLessonModalOpen, setIsAddLessonModalOpen] = useState(false)
-  const [newLessonTitle, setNewLessonTitle] = useState<string>('Nova aula')
+  const [newLessonTitle, setNewLessonTitle] = useState<string>('')
   const [newLessonDescription, setNewLessonDescription] = useState<string>('')
-  const [newLessonDurationMin, setNewLessonDurationMin] = useState<number>(15)
+  const [newLessonDescriptionRich, setNewLessonDescriptionRich] = useState<any>(null)
+  const [newLessonDurationMin, setNewLessonDurationMin] = useState<number>(0)
   const [newLessonVisibility, setNewLessonVisibility] = useState<'Gratuita' | 'Paga'>('Gratuita')
   const [newLessonPrice, setNewLessonPrice] = useState<string>('')
   const [newLessonDifficulty, setNewLessonDifficulty] = useState<Lesson['difficulty']>('Intermediário')
   // Estados para tokens no modal de nova aula
-  const [newLessonCategories, setNewLessonCategories] = useState<string[]>(['Categoria'])
-  const [newLessonSubcategories, setNewLessonSubcategories] = useState<string[]>(['Subcategoria'])
-  const [newLessonExtraTags, setNewLessonExtraTags] = useState<string[]>(['Tag'])
+  const [newLessonCategories, setNewLessonCategories] = useState<string[]>([])
+  const [newLessonSubcategories, setNewLessonSubcategories] = useState<string[]>([])
+  const [newLessonExtraTags, setNewLessonExtraTags] = useState<string[]>([])
   const [modalNewCategory, setModalNewCategory] = useState<string>('')
   const [modalNewSubcategory, setModalNewSubcategory] = useState<string>('')
   const [modalNewTagExtra, setModalNewTagExtra] = useState<string>('')
@@ -2662,7 +3051,6 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
   const [pendingMaterialType, setPendingMaterialType] = useState<LessonMaterial['type'] | null>(null)
   const [showLinkInput, setShowLinkInput] = useState<boolean>(false)
   const [newMaterialLinkUrl, setNewMaterialLinkUrl] = useState<string>('')
-  const [newLessonCommentsEnabled, setNewLessonCommentsEnabled] = useState<boolean>(true)
   // Listas filtradas para os seletores da modal (busca + não selecionados)
   const filteredLessonCategoriesList = (availableCourseCategories || [])
     .filter((n) => n.toLowerCase().includes(lessonCategorySearchQuery.toLowerCase()))
@@ -2685,7 +3073,17 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
     }
     if (editingLessonId) return
     if (!draftLessonId) setDraftLessonId(`lesson-${Date.now()}`)
+    setNewLessonTitle('')
+    setNewLessonDescription('')
+    setNewLessonDescriptionRich(null)
+    setNewLessonDurationMin(0)
+    setNewLessonVisibility('Gratuita')
+    setNewLessonPrice('')
     setNewLessonDifficulty('Intermediário')
+    setNewLessonCategories([])
+    setNewLessonSubcategories([])
+    setNewLessonExtraTags([])
+    setNewLessonMaterials([])
     setNewLessonVideoUrl('')
     setNewLessonVideoId('')
     setNewLessonVideoPath(null)
@@ -2835,11 +3233,38 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
 
     try {
       const allowed = await canUploadBytes(user!.id, file.size, resolvePlanKey())
-      if (!allowed.ok) throw new Error('Limite de armazenamento atingido. Faça upgrade do seu plano para continuar.')
+      if (!allowed.ok) {
+        const formatBytes = (n: number) => {
+          const v = Number(n || 0)
+          if (!isFinite(v) || v <= 0) return '0 B'
+          const kb = v / 1024
+          if (kb < 1024) return `${Math.round(kb)} KB`
+          const mb = kb / 1024
+          if (mb < 1024) return `${mb.toFixed(1)} MB`
+          const gb = mb / 1024
+          return `${gb.toFixed(2)} GB`
+        }
+        const usedText = typeof (allowed as any)?.usedBytes === 'number' ? formatBytes(Number((allowed as any).usedBytes)) : null
+        const limitText = typeof (allowed as any)?.limitBytes === 'number' ? formatBytes(Number((allowed as any).limitBytes)) : null
+        throw new Error(`Limite de armazenamento atingido${usedText && limitText ? ` (${usedText} de ${limitText})` : ''}. Faça upgrade do seu plano para continuar.`)
+      }
 
       const sanitizeFilename = (name: string) => (name || 'file').replace(/[^a-zA-Z0-9_.-]/g, '_')
       const safeName = sanitizeFilename(file.name || `materials`)
       const envAny = (import.meta as any)?.env || {}
+      const token = String(
+        session?.access_token ||
+        (await supabase.auth.getSession().catch(() => ({ data: null })))?.data?.session?.access_token ||
+        ''
+      ).trim()
+      if (token) {
+        const qs0 = new URLSearchParams({
+          type: 'ensure_courses_media_upload',
+          bytes: String(file.size),
+          contentType: String(file.type || 'application/octet-stream'),
+        })
+        await fetch(`/api/producer?${qs0.toString()}`, { headers: { Authorization: `Bearer ${token}` } }).catch(() => null)
+      }
       const shouldTryProxy = Boolean(envAny.DEV && envAny.VITE_USE_LOCAL_UPLOAD_PROXY)
       if (shouldTryProxy) {
         const qs = new URLSearchParams({
@@ -2883,34 +3308,6 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
       toast({ title: 'Erro ao enviar anexo', description: String(err?.message || err || ''), variant: 'destructive' as any })
     }
   }
-
-  // Abrir a página já com o editor de aula visível
-  useEffect(() => {
-    if (modules.length === 0) {
-      const modId = `mod-${Date.now()}`
-      const lessonId = `les-${Date.now()}`
-      const newLesson: Lesson = {
-        id: lessonId,
-        title: "Nova aula",
-        description: "",
-        durationMin: 15,
-        visibility: "Gratuita",
-        tag: "Anatomia",
-        categories: ["Categoria"],
-        subcategories: ["Subcategoria"],
-        extraTags: ["Tag"],
-        videoProvider: defaultVideoProvider,
-        materials: [
-          { id: `mat-${Date.now()}`, name: "Anatomia_Cardiaca_Resumo.pdf", sizeLabel: "2.4 MB", type: "pdf" },
-          { id: `mat-${Date.now()+1}`, name: "Atlas Digital de Anatomia.doc", sizeLabel: "241 MB", type: "doc" },
-          { id: `mat-${Date.now()+2}`, name: "Planilha_Valores_Normais.xlsx", sizeLabel: "856 KB", type: "xls" },
-        ],
-        commentsEnabled: true,
-      }
-      setModules([{ id: modId, name: "Módulo inicial", description: "", lessonsCount: 1, lessons: [newLesson] }])
-      setExpandedModules([modId])
-    }
-  }, [])
 
   return (
     <div className="flex min-h-screen flex-col bg-[#F8F9FB] font-inter text-[#1E1B39]">
@@ -2999,9 +3396,9 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
               <ExternalLink className="h-4 w-4" />
               Preview
             </Button>
-            <Button className="bg-[#0047BB] hover:bg-[#003a99] gap-2" onClick={isEditMode ? handleSaveCourse : handleCreateCourse}>
-              {!isEditMode && <Plus className="h-4 w-4" />}
-              {isEditMode ? 'Salvar curso' : 'Criar curso'}
+            <Button className="bg-[#0047BB] hover:bg-[#003a99] gap-2" disabled={isSavingCourse} onClick={isEditMode ? handleSaveCourse : handleCreateCourse}>
+              {isSavingCourse ? <Loader2 className="h-4 w-4 animate-spin" /> : (!isEditMode ? <Plus className="h-4 w-4" /> : null)}
+              {isSavingCourse ? (isEditMode ? 'Salvando...' : 'Criando...') : (isEditMode ? 'Salvar curso' : 'Criar curso')}
             </Button>
           </div>
         </div>
@@ -3317,7 +3714,22 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
             </div>
             <div>
               <label className="text-[12px] font-medium text-[#374151]">Descrição</label>
-              <textarea value={newLessonDescription} onChange={(e) => setNewLessonDescription(e.target.value)} className="mt-1 w-full rounded-[8px] border border-[#E3E4E5] p-3 text-[12px]" rows={3} placeholder="Digite uma descrição"></textarea>
+              <div className="mt-1">
+                <RichTextNotionEditor
+                  value={
+                    newLessonDescriptionRich
+                    || (newLessonDescription ? { blocks: [{ type: 'paragraph', data: { text: newLessonDescription } }] } : null)
+                  }
+                  placeholder="Digite uma descrição"
+                  onChange={(next) => {
+                    setNewLessonDescriptionRich(next)
+                    const plain = editorJsToPlainText(next)
+                    if (plain) setNewLessonDescription(plain.slice(0, 240))
+                    else setNewLessonDescription('')
+                  }}
+                  minHeight={220}
+                />
+              </div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
@@ -3582,14 +3994,6 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
             </div>
 
             <div className="pt-4">
-              <label className="text-[12px] font-medium text-[#374151]">Configurações da aula</label>
-              <div className="mt-2 flex items-center gap-2">
-                <input id="comments-enabled" type="checkbox" checked={newLessonCommentsEnabled} onChange={(e) => setNewLessonCommentsEnabled(e.target.checked)} />
-                <label htmlFor="comments-enabled" className="text-[12px] text-[#374151]">Comentários habilitados</label>
-              </div>
-            </div>
-
-            <div className="pt-4">
               <p className="text-[12px] font-medium text-[#374151]">Integração de armazenamento de videos</p>
               <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div className={`rounded-[8px] border ${defaultVideoProvider === 'vimeo' ? 'border-[#0047BB]' : 'border-[#E3E4E5]'} bg-white p-3`}>
@@ -3686,7 +4090,12 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                           disabled={isVdoUploading}
                           onClick={handleVdoUpload}
                         >
-                          {isVdoUploading ? 'Enviando...' : 'Enviar vídeo'}
+                          {isVdoUploading ? (
+                            <span className="inline-flex items-center gap-2">
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              Enviando...
+                            </span>
+                          ) : 'Enviar vídeo'}
                         </Button>
                       </div>
                     </div>
@@ -3732,7 +4141,12 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                       disabled={isLessonUploadUploading}
                       onClick={handleLessonStorageUpload}
                     >
-                      {isLessonUploadUploading ? 'Enviando...' : 'Enviar vídeo'}
+                      {isLessonUploadUploading ? (
+                        <span className="inline-flex items-center gap-2">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Enviando...
+                        </span>
+                      ) : 'Enviar vídeo'}
                     </Button>
                   </div>
                 </div>
@@ -3750,6 +4164,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
               setNewLessonVideoId('')
               setNewLessonVideoPath(null)
               setLessonUploadFile(null)
+              setNewLessonDescriptionRich(null)
             }}>Cancelar</AlertDialogCancel>
             <AlertDialogAction onClick={() => {
               let selectedModuleId = editingModuleId ?? modules[0]?.id
@@ -3768,28 +4183,28 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
               const videoUrl = provider === 'vimeo' || provider === 'upload' ? (newLessonVideoUrl || null) : null
               const videoId = provider === 'vdocipher' ? (newLessonVideoId || null) : null
               const videoPath = provider === 'upload' ? (newLessonVideoPath || null) : null
-              const lessonData: Lesson = {
-                id: lessonId,
-                title: newLessonTitle || 'Nova aula',
-                description: newLessonDescription || '',
-                durationMin: newLessonDurationMin || 15,
-                visibility: newLessonVisibility,
-                priceCents: newLessonVisibility === 'Paga' ? (lessonPriceCents || undefined) : undefined,
-                difficulty: newLessonDifficulty || 'Intermediário',
-                tag: newLessonExtraTags.length ? newLessonExtraTags[0] : 'Tag',
-                categories: newLessonCategories.length ? newLessonCategories : ['Categoria'],
-                subcategories: newLessonSubcategories.length ? newLessonSubcategories : ['Subcategoria'],
-                extraTags: newLessonExtraTags.length ? newLessonExtraTags : ['Tag'],
-                videoProvider: provider,
-                videoUrl,
-                videoId,
-                videoPath,
-                materials: newLessonMaterials,
-                commentsEnabled: newLessonCommentsEnabled,
-              }
+                const lessonData: Lesson = {
+                  id: lessonId,
+                  title: newLessonTitle || 'Nova aula',
+                  description: (newLessonDescription || '').trim(),
+                  description_rich: newLessonDescriptionRich || null,
+                  durationMin: newLessonDurationMin || 15,
+                  visibility: newLessonVisibility,
+                  priceCents: newLessonVisibility === 'Paga' ? (lessonPriceCents || undefined) : undefined,
+                  difficulty: newLessonDifficulty || 'Intermediário',
+                  tag: newLessonExtraTags.length ? newLessonExtraTags[0] : '',
+                  categories: newLessonCategories,
+                  subcategories: newLessonSubcategories,
+                  extraTags: newLessonExtraTags,
+                  videoProvider: provider,
+                  videoUrl,
+                  videoId,
+                  videoPath,
+                  materials: newLessonMaterials,
+                }
               if (editingLessonId) {
                 setModules(modules.map((m) => {
-                  if (m.id !== selectedModuleId) return m;
+                  if (m.id !== selectedModuleId) return m
                   return {
                     ...m,
                     lessons: m.lessons.map(l => l.id === editingLessonId ? lessonData : l)
@@ -3804,15 +4219,16 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
               setEditingModuleId(null)
               setDraftLessonId(null)
 
-              setNewLessonTitle('Nova aula')
+              setNewLessonTitle('')
               setNewLessonDescription('')
-              setNewLessonDurationMin(15)
+              setNewLessonDescriptionRich(null)
+              setNewLessonDurationMin(0)
               setNewLessonVisibility('Gratuita')
               setNewLessonPrice('')
               setNewLessonDifficulty('Intermediário')
-              setNewLessonCategories(['Categoria'])
-              setNewLessonSubcategories(['Subcategoria'])
-              setNewLessonExtraTags(['Tag'])
+              setNewLessonCategories([])
+              setNewLessonSubcategories([])
+              setNewLessonExtraTags([])
               setNewLessonMaterials([])
               setNewLessonVideoUrl('')
               setNewLessonVideoId('')
@@ -3845,13 +4261,13 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
       }}>
         <AlertDialogContent className="max-w-md max-h-[80vh] overflow-y-auto overflow-x-hidden">
           <AlertDialogHeader>
-            <AlertDialogTitle>Criar módulo</AlertDialogTitle>
-            <AlertDialogDescription>Defina título e descrição do módulo.</AlertDialogDescription>
-          </AlertDialogHeader>
-          <div className="space-y-4">
-            <div>
-              <label className="text-[12px] font-medium text-[#737780]">Capa do módulo</label>
-              <div className="mt-2">
+          <AlertDialogTitle>Criar módulo</AlertDialogTitle>
+          <AlertDialogDescription>Defina título e descrição do módulo.</AlertDialogDescription>
+        </AlertDialogHeader>
+        <div className="space-y-4">
+          <div>
+            <label className="text-[12px] font-medium text-[#737780]">Capa do módulo</label>
+            <div className="mt-2">
                 <label
                   className={`relative mx-auto w-[180px] h-[326px] rounded-[10px] border border-dashed border-[#C7D2FE] bg-[#F8FAFF] ${newModuleCoverImage ? 'p-0' : 'p-4'} cursor-pointer hover:bg-[#EEF2FF] transition-colors overflow-hidden flex items-center justify-center`}
                   onDragOver={(e) => { e.preventDefault() }}
@@ -3918,6 +4334,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                   />
                 </label>
               </div>
+              <div className="mt-2 text-[11px] text-[#737780]">Tamanho recomendado: 1080×1920 px (9:16). Máx. 5MB.</div>
               <div className="mt-3 flex items-center justify-between">
                 <button
                   type="button"
@@ -4025,15 +4442,6 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                 setModules((prev) => [...prev, { id, name, description: desc, lessonsCount: 0, lessons: [], cover_image_url: newModuleCoverImage || null, cover_image_path: null, visibility: newModuleVisibility, priceCents: newModuleVisibility === 'Paga' ? (priceCents || 0) : undefined } as any]);
                 if (newModuleCoverFile) {
                   setModuleCoverFilesById((prev) => ({ ...prev, [id]: newModuleCoverFile }))
-                }
-                if (newModuleCoverFile) {
-                  setModuleLayoutImage(newModuleCoverImage || null)
-                  setModuleLayoutImageFile(newModuleCoverFile)
-                  setModuleLayoutImagePath(null)
-                } else if (newModuleCoverImage) {
-                  setModuleLayoutImage(newModuleCoverImage)
-                  setModuleLayoutImageFile(null)
-                  setModuleLayoutImagePath(null)
                 }
                 setEditingModuleId(id)
                 setEditingLessonId(null)
@@ -4510,7 +4918,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                     <Button
                       className="bg-[#0047BB] hover:bg-[#003a99] gap-2"
                       onClick={() => {
-                        setNewModuleCoverImage(coverImage || moduleLayoutImage || null)
+                        setNewModuleCoverImage(null)
                         setNewModuleCoverFile(null)
                         if (newModuleCoverInputRef.current) newModuleCoverInputRef.current.value = ''
                         setShowModuleForm(true)
@@ -5313,15 +5721,6 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                                 </div>
                               </div>
 
-                              {/* Configurações da aula */}
-                              <div className="pt-4">
-                                <label className="text-[12px] font-medium text-[#374151]">Configurações da aula</label>
-                                <div className="mt-2 flex items-center gap-2">
-                                  <input id="comments-enabled" type="checkbox" checked={newLessonCommentsEnabled} onChange={(e) => setNewLessonCommentsEnabled(e.target.checked)} />
-                                  <label htmlFor="comments-enabled" className="text-[12px] text-[#374151]">Comentários habilitados</label>
-                                </div>
-                              </div>
-
                               {/* Integração de armazenamento de vídeos */}
                               <div className="pt-4">
                                 <p className="text-[12px] font-medium text-[#374151]">Integração de armazenamento de videos</p>
@@ -5420,7 +5819,12 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                                             disabled={isVdoUploading}
                                             onClick={handleVdoUpload}
                                           >
-                                            {isVdoUploading ? 'Enviando...' : 'Enviar vídeo'}
+                                            {isVdoUploading ? (
+                                              <span className="inline-flex items-center gap-2">
+                                                <Loader2 className="h-4 w-4 animate-spin" />
+                                                Enviando...
+                                              </span>
+                                            ) : 'Enviar vídeo'}
                                           </Button>
                                         </div>
                                       </div>
@@ -5445,13 +5849,12 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                                   description: newLessonDescription || '',
                                   durationMin: newLessonDurationMin || 15,
                                   visibility: newLessonVisibility,
-                                  tag: newLessonExtraTags.length ? newLessonExtraTags[0] : 'Tag',
-                                  categories: newLessonCategories.length ? newLessonCategories : ['Categoria'],
-                                  subcategories: newLessonSubcategories.length ? newLessonSubcategories : ['Subcategoria'],
-                                  extraTags: newLessonExtraTags.length ? newLessonExtraTags : ['Tag'],
+                                  tag: newLessonExtraTags.length ? newLessonExtraTags[0] : '',
+                                  categories: newLessonCategories,
+                                  subcategories: newLessonSubcategories,
+                                  extraTags: newLessonExtraTags,
                                   videoProvider: defaultVideoProvider,
                                   materials: newLessonMaterials,
-                                  commentsEnabled: newLessonCommentsEnabled,
                                 }
 
                                 if (editingLessonId) {
@@ -5865,6 +6268,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                             onChange={handleCoverImageUpload}
                           />
                         </label>
+                        <div className="mt-2 text-[11px] text-[#737780]">Tamanho recomendado: 1200×600 px (JPG/PNG). Máx. 5MB.</div>
                         <div className="mt-3 flex items-center justify-between">
                           <button
                             type="button"
@@ -6075,8 +6479,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                                     return acc + (isNaN(p) ? 0 : p);
                                 }, 0);
                                 const total = baseP + resP;
-                                const connekt = total * 0.0499 + 1;
-                                const gateway = total * 0.034 + 0.40;
+                                const connekt = total > 0 ? (total * 0.0499 + 1) : 0;
                                 
                                 return (
                                   <div className="mt-3 pt-3 border-t border-[#E3E4E5] space-y-1">
@@ -6093,16 +6496,10 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                                         - {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(connekt)}
                                       </span>
                                     </div>
-                                    <div className="flex justify-between items-center text-[12px]">
-                                      <span className="text-[#737780]">Taxa MyGateway (3.4% + R$ 0,40):</span>
-                                      <span className="font-semibold text-[#EF4444]">
-                                        - {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(gateway)}
-                                      </span>
-                                    </div>
                                     <div className="flex justify-between items-center text-[12px] pt-1 border-t border-dashed border-[#E3E4E5]">
                                       <span className="font-medium text-[#1E1B39]">Líquido Estimado:</span>
                                       <span className="font-bold text-[#059669]">
-                                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(total - connekt - gateway)}
+                                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(total - connekt)}
                                       </span>
                                     </div>
                                   </div>
@@ -6323,7 +6720,12 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                               disabled={isVdoUploading}
                               onClick={handleVdoUpload}
                             >
-                              {isVdoUploading ? 'Enviando...' : 'Enviar vídeo'}
+                              {isVdoUploading ? (
+                                <span className="inline-flex items-center gap-2">
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                  Enviando...
+                                </span>
+                              ) : 'Enviar vídeo'}
                             </Button>
                           </div>
                           <p className="mt-2 text-[11px] text-[#737780]">Após o upload, o vídeo entra em processamento no VdoCipher. Você poderá usar o videoId retornado para gerar OTP na reprodução.</p>
@@ -6435,7 +6837,12 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                               disabled={isVimeoUploading}
                               onClick={handleVimeoUpload}
                             >
-                              {isVimeoUploading ? `Enviando... (${vimeoUploadProgress}%)` : 'Enviar vídeo'}
+                              {isVimeoUploading ? (
+                                <span className="inline-flex items-center gap-2">
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                  {`Enviando... (${vimeoUploadProgress}%)`}
+                                </span>
+                              ) : 'Enviar vídeo'}
                             </Button>
                           </div>
                           <p className="mt-2 text-[11px] text-[#737780]">Após o upload, o Vimeo processará o vídeo. Você poderá associá-lo à aula conforme necessário.</p>
@@ -6462,7 +6869,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                         type="button"
                         className="h-9 bg-[#0047BB] hover:bg-[#003a99] text-white"
                         onClick={() => {
-                          setNewModuleCoverImage(coverImage || moduleLayoutImage || null)
+                          setNewModuleCoverImage(null)
                           setNewModuleCoverFile(null)
                           if (newModuleCoverInputRef.current) newModuleCoverInputRef.current.value = ''
                           setShowModuleForm(true)
@@ -6647,6 +7054,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                                           />
                                         </label>
                                       </div>
+                                      <div className="mt-2 text-[11px] text-[#737780]">Tamanho recomendado: 1080×1920 px (9:16). Máx. 5MB.</div>
                                       <div className="mt-3 flex items-center justify-between">
                                         <button
                                           type="button"
@@ -7235,6 +7643,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                       onChange={handleCoverImageUpload}
                     />
                   </label>
+                  <div className="mt-2 text-[11px] text-[#737780]">Tamanho recomendado: 1200×600 px (JPG/PNG). Máx. 5MB.</div>
                 </div>
                 <div className="rounded-[8px] border border-[#E3E4E5] bg-white p-4">
                   <div className="text-[13px] font-semibold mb-2">Vídeo da página do curso</div>
@@ -7388,8 +7797,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                         return acc + (isNaN(p) ? 0 : p);
                     }, 0);
                     const total = baseP + resP;
-                    const connekt = total * 0.0499 + 1;
-                    const gateway = total * 0.034 + 0.40;
+                    const connekt = total > 0 ? (total * 0.0499 + 1) : 0;
                     
                     return (
                       <div className="mt-3 pt-3 border-t border-[#E3E4E5] space-y-1">
@@ -7406,16 +7814,10 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                             - {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(connekt)}
                           </span>
                         </div>
-                        <div className="flex justify-between items-center text-[12px]">
-                          <span className="text-[#737780]">Taxa MyGateway (3.4% + R$ 0,40):</span>
-                          <span className="font-semibold text-[#EF4444]">
-                            - {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(gateway)}
-                          </span>
-                        </div>
                         <div className="flex justify-between items-center text-[12px] pt-1 border-t border-dashed border-[#E3E4E5]">
                           <span className="font-medium text-[#1E1B39]">Líquido Estimado:</span>
                           <span className="font-bold text-[#059669]">
-                            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(total - connekt - gateway)}
+                            {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(total - connekt)}
                           </span>
                         </div>
                       </div>
@@ -7532,6 +7934,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
               />
             </div>
           </div>
+          <div className="mt-2 text-center text-[11px] text-[#737780]">Tamanho recomendado: 1080×1920 px (9:16). Máx. 5MB.</div>
           {isCoverGalleryOpen ? (
             <div className="mt-3 grid grid-cols-2 gap-2">
               {medicalCourseCoverOptions.map((opt) => (
@@ -7568,6 +7971,24 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                       <Play className="h-4 w-4 text-[#9CA3AF]" />
                       <span>Aulas adicionadas: {modules ? modules.reduce((acc, m) => acc + (m.lessons?.length || 0), 0) : 0}</span>
                    </div>
+
+                   {showPaidModules ? (
+                     <div className="flex items-center justify-between gap-2 rounded-[8px] border border-[#E3E4E5] bg-[#F9FAFB] p-2 text-[12px] text-[#374151]">
+                       <span>Módulos pagos: {paidBreakdown.paidModulesCount}</span>
+                       <span className="font-semibold text-[#1E1B39]">
+                         {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(paidBreakdown.paidModulesTotal)}
+                       </span>
+                     </div>
+                   ) : null}
+
+                   {showPaidLessons ? (
+                     <div className="flex items-center justify-between gap-2 rounded-[8px] border border-[#E3E4E5] bg-[#F9FAFB] p-2 text-[12px] text-[#374151]">
+                       <span>Aulas pagas: {paidBreakdown.paidLessonsCount}</span>
+                       <span className="font-semibold text-[#1E1B39]">
+                         {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(paidBreakdown.paidLessonsTotal)}
+                       </span>
+                     </div>
+                   ) : null}
                    
                    {selectedSimulados && selectedSimulados.length > 0 && (
                      <div className="rounded-[8px] border border-[#E3E4E5] bg-[#F9FAFB] p-2">
@@ -7589,11 +8010,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                  <div className="text-[11px] text-[#737780] mb-1">Valor total do curso</div>
                  <div className="text-[18px] font-bold text-[#1E1B39]">
                    {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
-                      ((price && typeof price === 'string') ? (parseFloat(price.replace(/\./g,'').replace(',','.')) || 0) : 0) + 
-                      (selectedSimulados ? selectedSimulados.reduce((acc, sim) => {
-                         const p = parseFloat(sim.priceLabel.replace('R$', '').trim().replace(/\./g, '').replace(',', '.'));
-                         return acc + (isNaN(p) ? 0 : p);
-                      }, 0) : 0)
+                      monetizacaoTotalValue
                    )}
                  </div>
               </div>
@@ -7604,7 +8021,6 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                    <div className="h-8 w-8 rounded bg-white border border-[#E3E4E5] flex items-center justify-center text-[10px] font-bold text-[#6366F1]">MG</div>
                    <div className="flex-1">
                      <div className="text-[12px] font-semibold text-[#1E1B39]">MyGateway</div>
-                     <div className="text-[11px] text-[#737780]">Taxa: 3.4% + R$ 0,40</div>
                    </div>
                 </div>
               </div>
@@ -7616,11 +8032,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                      <span>Valor Bruto</span>
                      <span className="font-medium text-[#1E1B39]">
                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
-                          ((price && typeof price === 'string') ? (parseFloat(price.replace(/\./g,'').replace(',','.')) || 0) : 0) + 
-                          (selectedSimulados ? selectedSimulados.reduce((acc, sim) => {
-                             const p = parseFloat(sim.priceLabel.replace('R$', '').trim().replace(/\./g, '').replace(',', '.'));
-                             return acc + (isNaN(p) ? 0 : p);
-                          }, 0) : 0)
+                          monetizacaoTotalValue
                        )}
                      </span>
                    </div>
@@ -7628,13 +8040,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                      <span>Taxa da Connekt</span>
                      <span>
                        - {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
-                          ((
-                            ((price && typeof price === 'string') ? (parseFloat(price.replace(/\./g,'').replace(',','.')) || 0) : 0) + 
-                            (selectedSimulados ? selectedSimulados.reduce((acc, sim) => {
-                               const p = parseFloat(sim.priceLabel.replace('R$', '').trim().replace(/\./g, '').replace(',', '.'));
-                               return acc + (isNaN(p) ? 0 : p);
-                            }, 0) : 0)
-                          ) * 0.034) + 0.40
+                          monetizacaoFee
                        )}
                      </span>
                    </div>
@@ -7645,21 +8051,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                  <div className="text-[11px] text-[#065F46] mb-1">Você recebe:</div>
                  <div className="text-[20px] font-bold text-[#059669]">
                     {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
-                       (
-                         ((price && typeof price === 'string') ? (parseFloat(price.replace(/\./g,'').replace(',','.')) || 0) : 0) + 
-                         (selectedSimulados ? selectedSimulados.reduce((acc, sim) => {
-                            const p = parseFloat(sim.priceLabel.replace('R$', '').trim().replace(/\./g, '').replace(',', '.'));
-                            return acc + (isNaN(p) ? 0 : p);
-                         }, 0) : 0)
-                       ) - (
-                         ((
-                            ((price && typeof price === 'string') ? (parseFloat(price.replace(/\./g,'').replace(',','.')) || 0) : 0) + 
-                            (selectedSimulados ? selectedSimulados.reduce((acc, sim) => {
-                               const p = parseFloat(sim.priceLabel.replace('R$', '').trim().replace(/\./g, '').replace(',', '.'));
-                               return acc + (isNaN(p) ? 0 : p);
-                            }, 0) : 0)
-                          ) * 0.034) + 0.40
-                       )
+                      monetizacaoNet
                     )}
                  </div>
               </div>

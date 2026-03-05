@@ -1,29 +1,46 @@
-import { Readable } from 'node:stream'
 import { json } from '../src/server/supabaseAdmin.js'
 
 function isAllowedTargetUrl(u) {
   try {
     const parsed = new URL(u)
     const host = String(parsed.hostname || '').toLowerCase()
-    const envUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || ''
-    const envHost = (() => {
-      try { return new URL(envUrl).hostname.toLowerCase() } catch { return '' }
-    })()
-    const isSupabaseHost = host.endsWith('.supabase.co') && (!envHost || host === envHost)
-    const isStoragePath = String(parsed.pathname || '').startsWith('/storage/v1/object/')
-    return isSupabaseHost && isStoragePath
+    const isSupabaseHost = host.endsWith('.supabase.co')
+    const pathname = String(parsed.pathname || '')
+    const isAllowedBucketObject = /^\/storage\/v1\/object\/(public|sign|authenticated)\/(courses-media|question-images)\//.test(pathname)
+    return isSupabaseHost && isAllowedBucketObject
   } catch {
     return false
   }
 }
 
 export default async function handler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*')
+  res.setHeader('Access-Control-Allow-Methods', 'GET,HEAD,OPTIONS')
+  res.setHeader('Access-Control-Allow-Headers', 'range,content-type')
+  res.setHeader('Vary', 'Origin')
+
+  if (req.method === 'OPTIONS') {
+    res.statusCode = 204
+    res.end('')
+    return
+  }
+
   if (req.method !== 'GET' && req.method !== 'HEAD') return json(res, 405, { error: 'method_not_allowed' })
   try {
     const u = new URL(req.url, `http://${req.headers.host}`)
     const target = u.searchParams.get('u') || ''
     if (!target || !isAllowedTargetUrl(target)) return json(res, 400, { error: 'invalid_target' })
 
+    const streamMode = String(u.searchParams.get('stream') || '').trim() === '1'
+    if (!streamMode) {
+      res.statusCode = 307
+      res.setHeader('Location', target)
+      res.setHeader('Cache-Control', 'public, max-age=60')
+      res.end()
+      return
+    }
+
+    const { Readable } = await import('node:stream')
     const headers = {}
     const range = req.headers.range || req.headers.Range
     if (range) headers.Range = range

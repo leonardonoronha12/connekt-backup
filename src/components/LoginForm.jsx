@@ -607,44 +607,6 @@ const LoginForm = ({ onShowRegister, mode = 'producer' }) => {
                 wordWrap: 'break-word'
               }}>{oauthLoading === 'google' ? 'Abrindo...' : 'Google'}</div>
             </button>
-            
-            <button
-              type="button"
-              onClick={() => handleSocialLogin('Facebook')}
-              disabled={oauthLoading === 'facebook'}
-              style={{
-                flex: '1',
-                height: '48px',
-                padding: '12px 16px',
-                overflow: 'hidden',
-                borderRadius: '8px',
-                outline: '1px #E3E4E5 solid',
-                outlineOffset: '-1px',
-                justifyContent: 'center',
-                alignItems: 'center',
-                gap: '8px',
-                display: 'flex',
-                background: 'white',
-                border: 'none',
-                cursor: oauthLoading === 'facebook' ? 'not-allowed' : 'pointer',
-                opacity: oauthLoading === 'facebook' ? 0.7 : 1
-              }}
-            >
-              <svg width="18" height="18" viewBox="0 0 18 18" fill="#1877F2">
-                <path d="M18 9C18 4.03 13.97 0 9 0S0 4.03 0 9c0 4.49 3.29 8.21 7.59 8.94v-6.32H5.31V9h2.28V7.02c0-2.25 1.34-3.49 3.39-3.49.98 0 2.01.18 2.01.18v2.21h-1.13c-1.11 0-1.46.69-1.46 1.4V9h2.49l-.4 2.62h-2.09v6.32C14.71 17.21 18 13.49 18 9z"/>
-              </svg>
-              <div style={{
-                justifyContent: 'center',
-                display: 'flex',
-                flexDirection: 'column',
-                color: '#22252B',
-                fontSize: '16px',
-                fontFamily: 'Inter',
-                fontWeight: '500',
-                lineHeight: '24px',
-                wordWrap: 'break-word'
-              }}>Facebook</div>
-            </button>
           </div>
           ) : null}
 

@@ -139,8 +139,8 @@ const SystemSidebar = () => {
           id: 'configuracoes', 
           label: 'Configurações', 
           icon: Settings, 
-          path: '/?view=dev-admin',
-          isActive: currentSearch.includes('dev-admin')
+          path: '/configuracoes',
+          isActive: currentPath === '/configuracoes' && !currentSearch.includes('tab=plano')
         }
       ]
     }
@@ -208,6 +208,7 @@ const SystemSidebar = () => {
             <button
               onMouseEnter={() => setIsUpgradeHovered(true)}
               onMouseLeave={() => setIsUpgradeHovered(false)}
+              onClick={() => handleMenuNavigation('/configuracoes?tab=plano')}
               className={`w-full py-2.5 px-4 rounded-lg text-sm font-medium transition-all duration-200 ${
                 isUpgradeHovered
                   ? 'bg-white text-[#1a1b3a] shadow-lg transform scale-105'

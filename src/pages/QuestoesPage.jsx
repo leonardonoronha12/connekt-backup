@@ -5,6 +5,7 @@ import questionBankService from '@/services/questionBankService';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { TaxonomyDropdown } from '@/components/TaxonomyDropdown';
+import { TAXONOMY_CATEGORY_COLOR, TAXONOMY_SUBCATEGORY_COLOR, TAXONOMY_TAG_COLOR } from '@/constants/taxonomyColors';
 
 const QuestoesPage = () => {
   const { toast } = useToast();
@@ -83,6 +84,18 @@ const QuestoesPage = () => {
   const [selectedQuestionIndex, setSelectedQuestionIndex] = useState(null);
   const [openQuestionMenuIndex, setOpenQuestionMenuIndex] = useState(null);
   const [pendingDeleteQuestionIndex, setPendingDeleteQuestionIndex] = useState(null);
+  const [addQuestionChoiceOpen, setAddQuestionChoiceOpen] = useState(false);
+  const [searchQuestionOpen, setSearchQuestionOpen] = useState(false);
+  const [searchBanks, setSearchBanks] = useState([]);
+  const [searchBankId, setSearchBankId] = useState('');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [searchQuestions, setSearchQuestions] = useState([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState('');
+  const [searchTaxonomyPickerOpen, setSearchTaxonomyPickerOpen] = useState(null);
+  const [searchFilterCategoryIds, setSearchFilterCategoryIds] = useState([]);
+  const [searchFilterSubcategoryIds, setSearchFilterSubcategoryIds] = useState([]);
+  const [searchFilterTagIds, setSearchFilterTagIds] = useState([]);
   // Seleções para criação do banco (múltiplas, como tags)
   const [selectedCategories, setSelectedCategories] = useState([]); // array de objetos { id, name, color, description }
   const [selectedSubcategories, setSelectedSubcategories] = useState([]); // array de objetos { id, name, color, description }
@@ -1085,6 +1098,165 @@ const QuestoesPage = () => {
         console.error('Erro ao criar questão:', e);
       }
       toast({ description: isTransientNetworkError(e) ? 'Sem conexão. Tente novamente em instantes.' : 'Erro ao criar questão.', variant: 'destructive' });
+    }
+  };
+
+  useEffect(() => {
+    if (!searchQuestionOpen) return;
+    let cancelled = false;
+    setSearchLoading(true);
+    setSearchError('');
+    setSearchTerm('');
+    setSearchTaxonomyPickerOpen(null);
+    setSearchFilterCategoryIds([]);
+    setSearchFilterSubcategoryIds([]);
+    setSearchFilterTagIds([]);
+    (async () => {
+      try {
+        const { data, error } = await questionBankService.getQuestionBanks();
+        if (cancelled) return;
+        if (error) {
+          setSearchBanks([]);
+          setSearchQuestions([]);
+          setSearchBankId('');
+          setSearchError(String(error || 'Erro ao carregar bancos.'));
+          return;
+        }
+        const banks = Array.isArray(data) ? data : [];
+        setSearchBanks(banks);
+        const preferred = currentBankId && banks.some((b) => String(b?.id) === String(currentBankId)) ? String(currentBankId) : (banks[0]?.id ? String(banks[0].id) : '');
+        setSearchBankId(preferred);
+      } catch (e) {
+        if (cancelled) return;
+        setSearchBanks([]);
+        setSearchQuestions([]);
+        setSearchBankId('');
+        setSearchError(isTransientNetworkError(e) ? 'Sem conexão. Tente novamente.' : 'Erro ao carregar bancos.');
+      } finally {
+        if (!cancelled) setSearchLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [searchQuestionOpen, currentBankId]);
+
+  useEffect(() => {
+    if (!searchQuestionOpen) return;
+    const bid = String(searchBankId || '').trim();
+    if (!bid) return;
+    let cancelled = false;
+    setSearchLoading(true);
+    setSearchError('');
+    (async () => {
+      try {
+        const { data, error } = await questionBankService.getQuestionsByBankId(bid);
+        if (cancelled) return;
+        if (error) {
+          setSearchQuestions([]);
+          setSearchError(String(error || 'Erro ao carregar questões.'));
+          return;
+        }
+        setSearchQuestions(Array.isArray(data) ? data : []);
+      } catch (e) {
+        if (cancelled) return;
+        setSearchQuestions([]);
+        setSearchError(isTransientNetworkError(e) ? 'Sem conexão. Tente novamente.' : 'Erro ao carregar questões.');
+      } finally {
+        if (!cancelled) setSearchLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [searchQuestionOpen, searchBankId]);
+
+  const handleOpenAddQuestionChoice = () => {
+    setAddQuestionChoiceOpen(true);
+  };
+
+  const handleChooseCreateBlankQuestion = async () => {
+    setAddQuestionChoiceOpen(false);
+    await handleCriarDoZero();
+  };
+
+  const handleChooseSearchExistingQuestion = () => {
+    setAddQuestionChoiceOpen(false);
+    setSearchQuestionOpen(true);
+  };
+
+  const handleCloseSearchQuestion = () => {
+    setSearchQuestionOpen(false);
+  };
+
+  const handleImportExistingQuestion = async (source) => {
+    if (!currentBankId) {
+      toast({ description: 'Selecione um banco de questões antes de importar.', variant: 'destructive' });
+      return;
+    }
+    if (!source) return;
+    const metaIn = (source?.metadata && typeof source.metadata === 'object') ? source.metadata : {};
+    const taxonomy = (metaIn?.taxonomy && typeof metaIn.taxonomy === 'object') ? metaIn.taxonomy : {};
+    const hasTaxonomy = Array.isArray(taxonomy?.categoryIds) && taxonomy.categoryIds.length && Array.isArray(taxonomy?.subcategoryIds) && taxonomy.subcategoryIds.length && Array.isArray(taxonomy?.tagIds) && taxonomy.tagIds.length;
+    const fallbackTaxonomy = {
+      categoryIds: selectedCategories.length ? [String(selectedCategories[0].id)] : [],
+      subcategoryIds: selectedSubcategories.length ? [String(selectedSubcategories[0].id)] : [],
+      tagIds: selectedTags.map((t) => String(t.id)),
+    };
+    const metaOut = sanitizeMetadataForPersistence({
+      ...metaIn,
+      taxonomy: hasTaxonomy ? taxonomy : fallbackTaxonomy,
+    });
+
+    const baseQuestion = {
+      name: String(source?.title || source?.name || '').trim() || `Questão ${questions.length + 1}`,
+      title: String(source?.title || '').trim() || undefined,
+      type: String(metaOut?.type || source?.type || 'multiple_choice'),
+      required: false,
+      disabled: false,
+      text: '',
+      body: source?.body || source?.text || '',
+      choices: Array.isArray(metaOut?.choices) ? metaOut.choices : (Array.isArray(source?.choices) ? source.choices : ['', '', '', '']),
+      correctChoiceIndex: Number.isFinite(Number(metaOut?.correctChoiceIndex)) ? Number(metaOut.correctChoiceIndex) : null,
+      points: Number.isFinite(Number(metaOut?.points)) ? Number(metaOut.points) : 5,
+      attempts: Number.isFinite(Number(metaOut?.attempts)) ? Number(metaOut.attempts) : 3,
+      metadata: metaOut,
+    };
+
+    try {
+      const { data, error } = await questionBankService.createQuestion(currentBankId, baseQuestion);
+      if (error) {
+        toast({ description: String(error || 'Erro ao importar a questão.'), variant: 'destructive' });
+        return;
+      }
+      const created = {
+        ...baseQuestion,
+        id: data?.id,
+        title: data?.title,
+        body: data?.body,
+        metadata: data?.metadata,
+      };
+      setQuestions(prev => {
+        const next = [...prev, created];
+        setSelectedQuestionIndex(next.length - 1);
+        return next;
+      });
+      setIsCreating(true);
+      setSearchQuestionOpen(false);
+      toast({ description: 'Questão importada e salva no banco.' });
+      try {
+        const full = await questionBankService.getBankWithRelations(currentBankId);
+        if (full?.data) {
+          setBancoAtual(full.data);
+        }
+      } catch (e) {
+        console.warn('Falha ao atualizar cabeçalho do banco após importação:', e);
+      }
+    } catch (e) {
+      if (!isTransientNetworkError(e)) {
+        console.error('Erro ao importar questão:', e);
+      }
+      toast({ description: isTransientNetworkError(e) ? 'Sem conexão. Tente novamente em instantes.' : 'Erro ao importar questão.', variant: 'destructive' });
     }
   };
 
@@ -2163,7 +2335,7 @@ const QuestoesPage = () => {
                 type="button"
                 aria-label="Adicionar"
                 className="w-6 h-6 rounded bg-white border border-gray-200 grid place-items-center"
-                onClick={handleCriarDoZero}
+                onClick={handleOpenAddQuestionChoice}
               >
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
@@ -3020,6 +3192,7 @@ const QuestoesPage = () => {
                               accept="image/*"
                               className="hidden choice-image-input"
                               onChange={async (e) => {
+                                let blobUrl = '';
                                 try {
                                   const file = e.target.files && e.target.files[0];
                                   if (!file) return;
@@ -3056,11 +3229,13 @@ const QuestoesPage = () => {
                                   if (res?.aborted) return;
                                   const finalUrl = (res && res.url) || '';
                                   if (finalUrl) {
-                                    const baseChoicesMedia = (current.metadata && typeof current.metadata === 'object' && current.metadata.choicesMedia && typeof current.metadata.choicesMedia === 'object')
-                                      ? current.metadata.choicesMedia
-                                      : (current.choicesMedia || {});
+                                    const latest = getSelectedQuestion() || current;
+                                    const baseChoicesMedia = (latest.metadata && typeof latest.metadata === 'object' && latest.metadata.choicesMedia && typeof latest.metadata.choicesMedia === 'object')
+                                      ? latest.metadata.choicesMedia
+                                      : (latest.choicesMedia || {});
                                     const nextChoicesMedia = { ...(baseChoicesMedia || {}) };
                                     nextChoicesMedia[idx] = { ...(nextChoicesMedia[idx] || {}), imageUrl: finalUrl };
+                                    updateSelectedQuestion({ choicesMedia: nextChoicesMedia, metadata: { ...(latest.metadata || {}), choicesMedia: nextChoicesMedia } });
                                     try { await persistSelectedQuestionExtras({ choicesMedia: nextChoicesMedia }); } catch {}
                                   }
                                 } catch (err) {
@@ -3068,6 +3243,7 @@ const QuestoesPage = () => {
                                     toast({ description: 'Falha ao enviar imagem da escolha.', variant: 'destructive' });
                                   }
                                 } finally {
+                                  try { if (blobUrl) URL.revokeObjectURL(blobUrl); } catch (_) {}
                                   setChoiceMediaUploading((prev) => ({
                                     ...(prev || {}),
                                     [idx]: { ...((prev && prev[idx]) || {}), image: false }
@@ -3094,6 +3270,7 @@ const QuestoesPage = () => {
                               accept="video/*"
                               className="hidden choice-video-input"
                               onChange={async (e) => {
+                                let blobUrl = '';
                                 try {
                                   const file = e.target.files && e.target.files[0];
                                   if (!file) return;
@@ -3103,7 +3280,8 @@ const QuestoesPage = () => {
                                     ...(prev || {}),
                                     [idx]: { ...((prev && prev[idx]) || {}), video: true }
                                   }));
-                                  const tempUrl = '';
+                                  try { blobUrl = URL.createObjectURL(file); } catch (_) { blobUrl = ''; }
+                                  const tempUrl = blobUrl;
                                   {
                                     const baseChoicesMedia = (current.metadata && typeof current.metadata === 'object' && current.metadata.choicesMedia && typeof current.metadata.choicesMedia === 'object')
                                       ? current.metadata.choicesMedia
@@ -3121,11 +3299,13 @@ const QuestoesPage = () => {
                                   if (res?.aborted) return;
                                   const finalUrl = (res && res.url) || '';
                                   if (finalUrl) {
-                                    const baseChoicesMedia = (current.metadata && typeof current.metadata === 'object' && current.metadata.choicesMedia && typeof current.metadata.choicesMedia === 'object')
-                                      ? current.metadata.choicesMedia
-                                      : (current.choicesMedia || {});
+                                    const latest = getSelectedQuestion() || current;
+                                    const baseChoicesMedia = (latest.metadata && typeof latest.metadata === 'object' && latest.metadata.choicesMedia && typeof latest.metadata.choicesMedia === 'object')
+                                      ? latest.metadata.choicesMedia
+                                      : (latest.choicesMedia || {});
                                     const nextChoicesMedia = { ...(baseChoicesMedia || {}) };
                                     nextChoicesMedia[idx] = { ...(nextChoicesMedia[idx] || {}), videoUrl: finalUrl };
+                                    updateSelectedQuestion({ choicesMedia: nextChoicesMedia, metadata: { ...(latest.metadata || {}), choicesMedia: nextChoicesMedia } });
                                     try { await persistSelectedQuestionExtras({ choicesMedia: nextChoicesMedia }); } catch {}
                                   }
                                 } catch (err) {
@@ -3133,6 +3313,7 @@ const QuestoesPage = () => {
                                     toast({ description: 'Falha ao enviar vídeo da escolha.', variant: 'destructive' });
                                   }
                                 } finally {
+                                  try { if (blobUrl) URL.revokeObjectURL(blobUrl); } catch (_) {}
                                   setChoiceMediaUploading((prev) => ({
                                     ...(prev || {}),
                                     [idx]: { ...((prev && prev[idx]) || {}), video: false }
@@ -3406,62 +3587,6 @@ const QuestoesPage = () => {
                         </div>
                       </div>
                     </div>
-                    <div>
-                      <span
-                        className="font-inter"
-                        style={{
-                          color: 'var(--Typography-Title, #22252B)',
-                          fontFamily: 'var(--Font-Family-Family, Inter)',
-                          fontSize: 'var(--Font-Size-Body-14px, 14px)',
-                          fontStyle: 'normal',
-                          fontWeight: 400,
-                          lineHeight: '20px'
-                        }}
-                      >
-                        Tentativas
-                      </span>
-                      <div className="mt-1 flex items-center h-[40px] py-[var(--Spacing-12px,12px)] px-[var(--Spacing-18px,18px)] gap-[var(--Spacing-16px,16px)] rounded-[var(--Corner-Radius-4px,4px)] bg-[var(--Background-Content,#F6F5FA)]">
-                        <input
-                          type="number"
-                          value={getSelectedQuestion()?.attempts ?? 0}
-                          onChange={(e) => {
-                            const val = parseInt(e.target.value || '0', 10);
-                            updateSelectedQuestion({ attempts: isNaN(val) ? 0 : val });
-                          }}
-                          className="w-[40px] h-[30px] px-2 rounded-[4px] bg-transparent"
-                          style={{
-                            color: 'var(--Typography-Title, #22252B)',
-                            fontFamily: 'var(--Font-Family-Family, Inter)',
-                            fontSize: 'var(--Font-Size-Body-12px, 12px)',
-                            fontStyle: 'normal',
-                            fontWeight: 500,
-                            lineHeight: 'var(--Font-Size-Line-Height-Caption, 18px)'
-                          }}
-                        />
-                        <span className="w-px h-[20px] bg-gray-200" aria-hidden="true"></span>
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          width="12"
-                          height="12"
-                          viewBox="0 0 12 12"
-                          fill="none"
-                          className="w-[12px] h-[12px] aspect-square"
-                          aria-hidden="true"
-                        >
-                          <g clipPath="url(#clip0_300_24727)">
-                            <path d="M7.875 4.5H10.125V2.25" stroke="#0047BB" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
-                            <path d="M10.125 4.4986L8.79938 3.17297C8.03167 2.4053 6.99228 1.97123 5.90662 1.96491C4.82096 1.9586 3.77659 2.38054 3 3.13922" stroke="#0047BB" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
-                            <path d="M4.125 7.5H1.875V9.75" stroke="#0047BB" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
-                            <path d="M1.875 7.5L3.20062 8.82562C3.96833 9.5933 5.00772 10.0274 6.09338 10.0337C7.17904 10.04 8.22341 9.61806 9 8.85937" stroke="#0047BB" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
-                          </g>
-                          <defs>
-                            <clipPath id="clip0_300_24727">
-                              <rect width="12" height="12" fill="white"/>
-                            </clipPath>
-                          </defs>
-                        </svg>
-                      </div>
-                    </div>
                   </div>
                 </div>
               </div>
@@ -3471,7 +3596,7 @@ const QuestoesPage = () => {
                 <button
                   type="button"
                   className="flex items-center justify-center h-[35px] py-[10px] px-[var(--Spacing-18px,18px)] gap-[6px] rounded-[var(--Corner-Radius-4px,4px)] bg-[var(--Background-Content,#F6F5FA)] text-[12px] text-[#22252B] font-inter"
-                  onClick={handleCriarDoZero}
+                  onClick={handleOpenAddQuestionChoice}
                 >
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
@@ -3536,7 +3661,7 @@ const QuestoesPage = () => {
                 <div className="flex items-center justify-center gap-3">
                   <button
                     type="button"
-                    onClick={handleCriarDoZero}
+                    onClick={handleOpenAddQuestionChoice}
                     className="inline-flex items-center justify-center gap-2 px-4 rounded border border-blue-600 hover:bg-blue-50"
                     style={{ width: '146px', height: '35px', color: 'var(--Typography-Title-Color, #0047BB)', fontSize: '14px', fontFamily: 'Inter', fontWeight: 600, lineHeight: '30px', wordWrap: 'break-word' }}
                   >
@@ -3819,14 +3944,14 @@ const QuestoesPage = () => {
                       <span
                         key={cat.id}
                         className="px-2 py-1 text-xs font-medium rounded flex items-center gap-1"
-                        style={{ backgroundColor: toRgba(cat.color || '#AD89F7', 0.1), color: cat.color || '#AD89F7', fontFamily: 'Inter', fontSize: '12px', fontWeight: 500 }}
+                        style={{ backgroundColor: toRgba(TAXONOMY_CATEGORY_COLOR, 0.1), color: TAXONOMY_CATEGORY_COLOR, fontFamily: 'Inter', fontSize: '12px', fontWeight: 500 }}
                       >
-                        <div className="w-[10px] h-[10px] rounded" style={{ backgroundColor: cat.color || '#AD89F7' }}></div>
+                        <div className="w-[10px] h-[10px] rounded" style={{ backgroundColor: TAXONOMY_CATEGORY_COLOR }}></div>
                         {cat.name}
                         <button
                           onClick={() => handleRemoveSelectedCategory(cat.id)}
                           className="w-4 h-4 rounded-full flex items-center justify-center hover:bg-black hover:bg-opacity-10 transition-colors ml-1"
-                          style={{ color: cat.color || '#AD89F7' }}
+                          style={{ color: TAXONOMY_CATEGORY_COLOR }}
                           aria-label="Remover"
                         >
                           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3" aria-hidden="true">
@@ -4052,14 +4177,14 @@ const QuestoesPage = () => {
                       <span
                         key={sc.id}
                         className="px-2 py-1 text-xs font-medium rounded flex items-center gap-1"
-                        style={{ backgroundColor: toRgba(sc.color || '#22C55E', 0.1), color: sc.color || '#22C55E', fontFamily: 'Inter', fontSize: '12px', fontWeight: 500 }}
+                        style={{ backgroundColor: toRgba(TAXONOMY_SUBCATEGORY_COLOR, 0.1), color: TAXONOMY_SUBCATEGORY_COLOR, fontFamily: 'Inter', fontSize: '12px', fontWeight: 500 }}
                       >
-                        <div className="w-[10px] h-[10px] rounded" style={{ backgroundColor: sc.color || '#22C55E' }}></div>
+                        <div className="w-[10px] h-[10px] rounded" style={{ backgroundColor: TAXONOMY_SUBCATEGORY_COLOR }}></div>
                         {sc.name}
                         <button
                           onClick={() => handleRemoveSelectedSubcategory(sc.id)}
                           className="w-4 h-4 rounded-full flex items-center justify-center hover:bg-black hover:bg-opacity-10 transition-colors ml-1"
-                          style={{ color: sc.color || '#22C55E' }}
+                          style={{ color: TAXONOMY_SUBCATEGORY_COLOR }}
                           aria-label="Remover"
                         >
                           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3" aria-hidden="true">
@@ -4165,7 +4290,7 @@ const QuestoesPage = () => {
                                 >
                                   <div
                                     className="w-3 h-3 rounded-full flex-shrink-0"
-                                    style={{ backgroundColor: (tag && tag.color) || '#AD89F7' }}
+                                    style={{ backgroundColor: TAXONOMY_TAG_COLOR }}
                                   ></div>
                                   <div className="flex-1">
                                     <div className="font-medium" style={{ fontFamily: 'Inter', fontSize: '14px', color: '#374151' }}>{tag.name}</div>
@@ -4285,11 +4410,11 @@ const QuestoesPage = () => {
                       <span
                         key={tag.id}
                         className="px-3 py-1 text-sm flex items-center gap-2 rounded"
-                        style={{ backgroundColor: toRgba(tag.color || '#FFC107', 0.125), color: tag.color || '#FFC107', fontFamily: 'Inter', fontSize: '12px', fontWeight: 500 }}
+                        style={{ backgroundColor: toRgba(TAXONOMY_TAG_COLOR, 0.125), color: TAXONOMY_TAG_COLOR, fontFamily: 'Inter', fontSize: '12px', fontWeight: 500 }}
                       >
-                        <div className="w-[10px] h-[10px] rounded" style={{ backgroundColor: tag.color || '#FFC107' }}></div>
+                        <div className="w-[10px] h-[10px] rounded" style={{ backgroundColor: TAXONOMY_TAG_COLOR }}></div>
                         {tag.name}
-                        <button type="button" className="ml-1 hover:bg-black hover:bg-opacity-10 rounded-full p-0.5 transition-colors" style={{ color: tag.color || '#FFC107' }} aria-label="Remover" onClick={() => handleRemoveSelectedTag(tag.id)}>
+                        <button type="button" className="ml-1 hover:bg-black hover:bg-opacity-10 rounded-full p-0.5 transition-colors" style={{ color: TAXONOMY_TAG_COLOR }} aria-label="Remover" onClick={() => handleRemoveSelectedTag(tag.id)}>
                           <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                             <line x1="18" y1="6" x2="6" y2="18"></line>
                             <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -4303,9 +4428,18 @@ const QuestoesPage = () => {
                 {getSelectedQuestion() && (() => {
                   const q = getSelectedQuestion()
                   const t = getQuestionTaxonomy(q)
-                  const selectedCats = t.categoryIds.map((id) => categories.find((c) => String(c.id) === id) || { id, name: id, color: '#AD89F7' })
-                  const selectedSubs = t.subcategoryIds.map((id) => subcategories.find((s) => String(s.id) === id) || { id, name: id, color: '#22C55E' })
-                  const selectedTg = t.tagIds.map((id) => availableTags.find((tg) => String(tg.id) === id) || { id, name: id, color: '#FFC107' })
+                  const selectedCats = t.categoryIds.map((id) => {
+                    const found = categories.find((c) => String(c.id) === id)
+                    return { id, name: found?.name || id, color: TAXONOMY_CATEGORY_COLOR }
+                  })
+                  const selectedSubs = t.subcategoryIds.map((id) => {
+                    const found = subcategories.find((s) => String(s.id) === id)
+                    return { id, name: found?.name || id, color: TAXONOMY_SUBCATEGORY_COLOR }
+                  })
+                  const selectedTg = t.tagIds.map((id) => {
+                    const found = availableTags.find((tg) => String(tg.id) === id)
+                    return { id, name: found?.name || id, color: TAXONOMY_TAG_COLOR }
+                  })
                   return (
                     <div className="pt-4 border-t border-gray-200">
                       <h3 className="text-sm font-semibold mb-3" style={{ color: '#22252B', fontFamily: 'Inter' }}>Classificação da questão</h3>
@@ -4339,7 +4473,7 @@ const QuestoesPage = () => {
                                   isSelected={(item) => t.categoryIds.includes(String(item?.id))}
                                   searchPlaceholder="Buscar categoria"
                                   createLabel="Criar"
-                                  defaultColor="#AD89F7"
+                                  defaultColor={TAXONOMY_CATEGORY_COLOR}
                                 />
                               </div>
                             </div>
@@ -4356,10 +4490,10 @@ const QuestoesPage = () => {
                                   type="button"
                                   onClick={() => updateSelectedQuestionTaxonomy({ categoryIds: t.categoryIds.filter((x) => String(x) !== String(cat.id)) })}
                                   className="inline-flex items-center gap-2 px-2.5 py-1 rounded-[999px] text-[12px] font-medium hover:bg-black/5"
-                                  style={{ backgroundColor: toRgba(cat.color || '#AD89F7', 0.1), color: cat.color || '#AD89F7', fontFamily: 'Inter' }}
+                                  style={{ backgroundColor: toRgba(TAXONOMY_CATEGORY_COLOR, 0.1), color: TAXONOMY_CATEGORY_COLOR, fontFamily: 'Inter' }}
                                   title="Remover"
                                 >
-                                  <span className="w-2 h-2 rounded-full" style={{ backgroundColor: cat.color || '#AD89F7' }} />
+                                  <span className="w-2 h-2 rounded-full" style={{ backgroundColor: TAXONOMY_CATEGORY_COLOR }} />
                                   <span className="max-w-[160px] truncate">{cat.name}</span>
                                   <span className="text-[12px] leading-none">×</span>
                                 </button>
@@ -4396,7 +4530,7 @@ const QuestoesPage = () => {
                                   isSelected={(item) => t.subcategoryIds.includes(String(item?.id))}
                                   searchPlaceholder="Buscar subcategoria"
                                   createLabel="Criar"
-                                  defaultColor="#22C55E"
+                                  defaultColor={TAXONOMY_SUBCATEGORY_COLOR}
                                 />
                               </div>
                             </div>
@@ -4413,10 +4547,10 @@ const QuestoesPage = () => {
                                   type="button"
                                   onClick={() => updateSelectedQuestionTaxonomy({ subcategoryIds: t.subcategoryIds.filter((x) => String(x) !== String(sc.id)) })}
                                   className="inline-flex items-center gap-2 px-2.5 py-1 rounded-[999px] text-[12px] font-medium hover:bg-black/5"
-                                  style={{ backgroundColor: toRgba(sc.color || '#22C55E', 0.1), color: sc.color || '#22C55E', fontFamily: 'Inter' }}
+                                  style={{ backgroundColor: toRgba(TAXONOMY_SUBCATEGORY_COLOR, 0.1), color: TAXONOMY_SUBCATEGORY_COLOR, fontFamily: 'Inter' }}
                                   title="Remover"
                                 >
-                                  <span className="w-2 h-2 rounded-full" style={{ backgroundColor: sc.color || '#22C55E' }} />
+                                  <span className="w-2 h-2 rounded-full" style={{ backgroundColor: TAXONOMY_SUBCATEGORY_COLOR }} />
                                   <span className="max-w-[160px] truncate">{sc.name}</span>
                                   <span className="text-[12px] leading-none">×</span>
                                 </button>
@@ -4453,7 +4587,7 @@ const QuestoesPage = () => {
                                   isSelected={(item) => t.tagIds.includes(String(item?.id))}
                                   searchPlaceholder="Buscar tag"
                                   createLabel="Criar"
-                                  defaultColor="#FFC107"
+                                  defaultColor={TAXONOMY_TAG_COLOR}
                                 />
                               </div>
                             </div>
@@ -4470,10 +4604,10 @@ const QuestoesPage = () => {
                                   type="button"
                                   onClick={() => updateSelectedQuestionTaxonomy({ tagIds: t.tagIds.filter((x) => String(x) !== String(tg.id)) })}
                                   className="inline-flex items-center gap-2 px-2.5 py-1 rounded-[999px] text-[12px] font-medium hover:bg-black/5"
-                                  style={{ backgroundColor: toRgba(tg.color || '#FFC107', 0.125), color: tg.color || '#FFC107', fontFamily: 'Inter' }}
+                                  style={{ backgroundColor: toRgba(TAXONOMY_TAG_COLOR, 0.125), color: TAXONOMY_TAG_COLOR, fontFamily: 'Inter' }}
                                   title="Remover"
                                 >
-                                  <span className="w-2 h-2 rounded-full" style={{ backgroundColor: tg.color || '#FFC107' }} />
+                                  <span className="w-2 h-2 rounded-full" style={{ backgroundColor: TAXONOMY_TAG_COLOR }} />
                                   <span className="max-w-[160px] truncate">{tg.name}</span>
                                   <span className="text-[12px] leading-none">×</span>
                                 </button>
@@ -4492,6 +4626,318 @@ const QuestoesPage = () => {
           )}
         </aside>
       </div>
+      {addQuestionChoiceOpen && (
+        <div className="fixed inset-0 z-[90]">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setAddQuestionChoiceOpen(false)} />
+          <div className="relative w-full h-full flex items-center justify-center p-4">
+            <div className="w-full max-w-[520px] bg-white rounded-[12px] shadow-2xl border border-[#E3E4E5] p-6">
+              <div className="text-[16px] font-semibold text-[#1E1B39]" style={{ fontFamily: 'Inter' }}>Adicionar questão</div>
+              <div className="text-[13px] text-[#737780] mt-1" style={{ fontFamily: 'Inter' }}>Como você deseja adicionar uma questão?</div>
+              <div className="mt-6 grid grid-cols-1 gap-3">
+                <button
+                  type="button"
+                  onClick={handleChooseCreateBlankQuestion}
+                  className="h-11 rounded-[10px] bg-[#0047BB] text-white text-[14px] font-semibold hover:bg-[#003a99]"
+                  style={{ fontFamily: 'Inter' }}
+                >
+                  Criar uma nova questão em branco
+                </button>
+                <button
+                  type="button"
+                  onClick={handleChooseSearchExistingQuestion}
+                  className="h-11 rounded-[10px] bg-white border border-[#E3E4E5] text-[#1E1B39] text-[14px] font-semibold hover:bg-[#F8FAFC]"
+                  style={{ fontFamily: 'Inter' }}
+                >
+                  Pesquisar uma questão já existente no banco de questões
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {searchQuestionOpen && (
+        <div className="fixed inset-0 z-[95]">
+          <div className="absolute inset-0 bg-black/40" onClick={handleCloseSearchQuestion} />
+          <div className="relative w-full h-full flex items-center justify-center p-4">
+            <div className="w-full max-w-[860px] bg-white rounded-[12px] shadow-2xl border border-[#E3E4E5] overflow-hidden">
+              <div className="px-6 py-5 border-b border-[#EDEEF0]">
+                <div className="text-[16px] font-semibold text-[#1E1B39]" style={{ fontFamily: 'Inter' }}>Pesquisar questão</div>
+                <div className="text-[12px] text-[#737780] mt-1" style={{ fontFamily: 'Inter' }}>
+                  Selecione um banco e escolha uma questão para importar para este banco.
+                </div>
+              </div>
+
+              <div className="px-6 py-5 space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <div className="text-[12px] font-semibold text-[#1E1B39] mb-2" style={{ fontFamily: 'Inter' }}>Banco</div>
+                    <select
+                      value={searchBankId}
+                      onChange={(e) => setSearchBankId(e.target.value)}
+                      className="w-full h-10 px-3 rounded-[10px] border border-[#E3E4E5] bg-white text-[13px] text-[#1E1B39] outline-none focus:border-[#0047BB]"
+                      style={{ fontFamily: 'Inter' }}
+                    >
+                      {searchBanks.map((b) => (
+                        <option key={b.id} value={b.id}>{b.name || `Banco ${b.id}`}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <div className="text-[12px] font-semibold text-[#1E1B39] mb-2" style={{ fontFamily: 'Inter' }}>Buscar</div>
+                    <input
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      placeholder="Buscar por título ou conteúdo..."
+                      className="w-full h-10 px-3 rounded-[10px] border border-[#E3E4E5] bg-white text-[13px] text-[#1E1B39] outline-none focus:border-[#0047BB]"
+                      style={{ fontFamily: 'Inter' }}
+                    />
+                  </div>
+                </div>
+
+                {searchError ? (
+                  <div className="text-[13px] text-red-600" style={{ fontFamily: 'Inter' }}>{searchError}</div>
+                ) : null}
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className={`rounded-[12px] border p-4 bg-white ${searchFilterCategoryIds.length ? 'border-[#E3E4E5]' : 'border-[#EDEEF0]'}`}>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-[13px] font-semibold" style={{ color: '#22252B', fontFamily: 'Inter' }}>Categorias</div>
+                      <div className="flex items-center gap-2">
+                        <div className="h-6 px-2 rounded-full text-[11px] font-medium flex items-center justify-center" style={{ backgroundColor: '#F6F5FA', color: '#737780', fontFamily: 'Inter' }}>
+                          {searchFilterCategoryIds.length}
+                        </div>
+                        <div className="relative">
+                          <button
+                            type="button"
+                            className="h-8 px-3 rounded-[8px] text-[12px] font-semibold border border-[#E3E4E5] hover:bg-[#F9FAFB]"
+                            onClick={() => setSearchTaxonomyPickerOpen((prev) => (prev === 'categories' ? null : 'categories'))}
+                          >
+                            Selecionar
+                          </button>
+                          <TaxonomyDropdown
+                            open={searchTaxonomyPickerOpen === 'categories'}
+                            onOpenChange={(open) => setSearchTaxonomyPickerOpen(open ? 'categories' : null)}
+                            items={categories}
+                            onSelect={(item) => {
+                              const id = String(item?.id || '').trim()
+                              if (!id) return
+                              setSearchFilterCategoryIds((prev) => (prev.includes(id) ? prev : [...prev, id]))
+                              setSearchTaxonomyPickerOpen(null)
+                            }}
+                            isSelected={(item) => searchFilterCategoryIds.includes(String(item?.id))}
+                            searchPlaceholder="Buscar categoria"
+                            createLabel="Criar"
+                            defaultColor={TAXONOMY_CATEGORY_COLOR}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    {searchFilterCategoryIds.length ? (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {searchFilterCategoryIds.map((id) => {
+                          const found = categories.find((c) => String(c.id) === String(id))
+                          const label = found?.name || String(id)
+                          return (
+                            <button
+                              key={id}
+                              type="button"
+                              onClick={() => setSearchFilterCategoryIds((prev) => prev.filter((x) => String(x) !== String(id)))}
+                              className="inline-flex items-center gap-2 px-2.5 py-1 rounded-[999px] text-[12px] font-medium hover:bg-black/5"
+                              style={{ backgroundColor: `rgba(0, 71, 187, 0.10)`, color: '#0047BB', fontFamily: 'Inter' }}
+                              title="Remover"
+                            >
+                              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: '#0047BB' }} />
+                              <span className="max-w-[160px] truncate">{label}</span>
+                              <span className="text-[12px] leading-none">×</span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className={`rounded-[12px] border p-4 bg-white ${searchFilterSubcategoryIds.length ? 'border-[#E3E4E5]' : 'border-[#EDEEF0]'}`}>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-[13px] font-semibold" style={{ color: '#22252B', fontFamily: 'Inter' }}>Subcategorias</div>
+                      <div className="flex items-center gap-2">
+                        <div className="h-6 px-2 rounded-full text-[11px] font-medium flex items-center justify-center" style={{ backgroundColor: '#F6F5FA', color: '#737780', fontFamily: 'Inter' }}>
+                          {searchFilterSubcategoryIds.length}
+                        </div>
+                        <div className="relative">
+                          <button
+                            type="button"
+                            className="h-8 px-3 rounded-[8px] text-[12px] font-semibold border border-[#E3E4E5] hover:bg-[#F9FAFB]"
+                            onClick={() => setSearchTaxonomyPickerOpen((prev) => (prev === 'subcategories' ? null : 'subcategories'))}
+                          >
+                            Selecionar
+                          </button>
+                          <TaxonomyDropdown
+                            open={searchTaxonomyPickerOpen === 'subcategories'}
+                            onOpenChange={(open) => setSearchTaxonomyPickerOpen(open ? 'subcategories' : null)}
+                            items={subcategories}
+                            onSelect={(item) => {
+                              const id = String(item?.id || '').trim()
+                              if (!id) return
+                              setSearchFilterSubcategoryIds((prev) => (prev.includes(id) ? prev : [...prev, id]))
+                              setSearchTaxonomyPickerOpen(null)
+                            }}
+                            isSelected={(item) => searchFilterSubcategoryIds.includes(String(item?.id))}
+                            searchPlaceholder="Buscar subcategoria"
+                            createLabel="Criar"
+                            defaultColor={TAXONOMY_SUBCATEGORY_COLOR}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    {searchFilterSubcategoryIds.length ? (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {searchFilterSubcategoryIds.map((id) => {
+                          const found = subcategories.find((s) => String(s.id) === String(id))
+                          const label = found?.name || String(id)
+                          return (
+                            <button
+                              key={id}
+                              type="button"
+                              onClick={() => setSearchFilterSubcategoryIds((prev) => prev.filter((x) => String(x) !== String(id)))}
+                              className="inline-flex items-center gap-2 px-2.5 py-1 rounded-[999px] text-[12px] font-medium hover:bg-black/5"
+                              style={{ backgroundColor: `rgba(34, 197, 94, 0.12)`, color: '#22C55E', fontFamily: 'Inter' }}
+                              title="Remover"
+                            >
+                              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: '#22C55E' }} />
+                              <span className="max-w-[160px] truncate">{label}</span>
+                              <span className="text-[12px] leading-none">×</span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className={`rounded-[12px] border p-4 bg-white ${searchFilterTagIds.length ? 'border-[#E3E4E5]' : 'border-[#EDEEF0]'}`}>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-[13px] font-semibold" style={{ color: '#22252B', fontFamily: 'Inter' }}>Tags</div>
+                      <div className="flex items-center gap-2">
+                        <div className="h-6 px-2 rounded-full text-[11px] font-medium flex items-center justify-center" style={{ backgroundColor: '#F6F5FA', color: '#737780', fontFamily: 'Inter' }}>
+                          {searchFilterTagIds.length}
+                        </div>
+                        <div className="relative">
+                          <button
+                            type="button"
+                            className="h-8 px-3 rounded-[8px] text-[12px] font-semibold border border-[#E3E4E5] hover:bg-[#F9FAFB]"
+                            onClick={() => setSearchTaxonomyPickerOpen((prev) => (prev === 'tags' ? null : 'tags'))}
+                          >
+                            Selecionar
+                          </button>
+                          <TaxonomyDropdown
+                            open={searchTaxonomyPickerOpen === 'tags'}
+                            onOpenChange={(open) => setSearchTaxonomyPickerOpen(open ? 'tags' : null)}
+                            items={availableTags}
+                            onSelect={(item) => {
+                              const id = String(item?.id || '').trim()
+                              if (!id) return
+                              setSearchFilterTagIds((prev) => (prev.includes(id) ? prev : [...prev, id]))
+                              setSearchTaxonomyPickerOpen(null)
+                            }}
+                            isSelected={(item) => searchFilterTagIds.includes(String(item?.id))}
+                            searchPlaceholder="Buscar tag"
+                            createLabel="Criar"
+                            defaultColor={TAXONOMY_TAG_COLOR}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                    {searchFilterTagIds.length ? (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {searchFilterTagIds.map((id) => {
+                          const found = availableTags.find((t) => String(t.id) === String(id))
+                          const label = found?.name || String(id)
+                          return (
+                            <button
+                              key={id}
+                              type="button"
+                              onClick={() => setSearchFilterTagIds((prev) => prev.filter((x) => String(x) !== String(id)))}
+                              className="inline-flex items-center gap-2 px-2.5 py-1 rounded-[999px] text-[12px] font-medium hover:bg-black/5"
+                              style={{ backgroundColor: `rgba(255, 193, 7, 0.15)`, color: '#8A6A00', fontFamily: 'Inter' }}
+                              title="Remover"
+                            >
+                              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: '#FFC107' }} />
+                              <span className="max-w-[160px] truncate">{label}</span>
+                              <span className="text-[12px] leading-none">×</span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="border border-[#EDEEF0] rounded-[12px] overflow-hidden">
+                  <div className="max-h-[420px] overflow-y-auto">
+                    {searchLoading ? (
+                      <div className="p-6 text-[13px] text-[#737780]" style={{ fontFamily: 'Inter' }}>Carregando…</div>
+                    ) : (
+                      (() => {
+                        const term = (searchTerm || '').trim().toLowerCase();
+                        const fCat = (searchFilterCategoryIds || []).map((x) => String(x))
+                        const fSub = (searchFilterSubcategoryIds || []).map((x) => String(x))
+                        const fTag = (searchFilterTagIds || []).map((x) => String(x))
+                        const base = term
+                          ? (searchQuestions || []).filter((q) => {
+                              const t = String(q?.title || q?.name || '').toLowerCase();
+                              const b = String(q?.body || q?.text || '').toLowerCase();
+                              return t.includes(term) || b.includes(term);
+                            })
+                          : (searchQuestions || []);
+                        const intersects = (a, b) => a.some((x) => b.includes(x))
+                        const list = base.filter((q) => {
+                          const tx = getQuestionTaxonomy(q)
+                          const c = (tx?.categoryIds || []).map((x) => String(x))
+                          const s = (tx?.subcategoryIds || []).map((x) => String(x))
+                          const g = (tx?.tagIds || []).map((x) => String(x))
+                          if (fCat.length && !intersects(c, fCat)) return false
+                          if (fSub.length && !intersects(s, fSub)) return false
+                          if (fTag.length && !intersects(g, fTag)) return false
+                          return true
+                        })
+                        if (!list.length) {
+                          return <div className="p-6 text-[13px] text-[#737780]" style={{ fontFamily: 'Inter' }}>Nenhuma questão encontrada.</div>;
+                        }
+                        return list.slice(0, 80).map((q) => (
+                          <button
+                            key={q.id}
+                            type="button"
+                            onClick={() => handleImportExistingQuestion(q)}
+                            className="w-full text-left px-5 py-4 border-b border-[#F2F3F5] hover:bg-[#F8FAFC]"
+                          >
+                            <div className="text-[14px] font-semibold text-[#1E1B39] truncate" style={{ fontFamily: 'Inter' }}>
+                              {q.title || q.name || 'Questão'}
+                            </div>
+                            <div className="text-[12px] text-[#737780] mt-1 line-clamp-2" style={{ fontFamily: 'Inter' }}>
+                              {String(q.body || q.text || '').replace(/\\s+/g, ' ').trim() || 'Sem conteúdo'}
+                            </div>
+                          </button>
+                        ));
+                      })()
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="px-6 py-4 border-t border-[#EDEEF0] bg-white flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={handleCloseSearchQuestion}
+                  className="h-10 px-4 rounded-[10px] border border-[#E3E4E5] bg-white text-[13px] font-semibold text-[#1E1B39] hover:bg-[#F8FAFC]"
+                  style={{ fontFamily: 'Inter' }}
+                >
+                  Fechar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
     </div>
   );

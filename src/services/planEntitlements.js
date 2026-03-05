@@ -32,6 +32,7 @@ const PLANS = {
 const cache = {
   storageByUser: new Map(),
   questionCountByUser: new Map(),
+  planKeyByUser: new Map(),
 }
 
 const nowMs = () => Date.now()
@@ -44,6 +45,32 @@ export function resolvePlanKey() {
   } catch (_) {
     return 'start'
   }
+}
+
+async function resolvePlanKeyForUser(userId, fallbackPlanKey) {
+  const uid = String(userId || '').trim()
+  const fallback = String(fallbackPlanKey || '').trim().toLowerCase() || 'start'
+  if (!uid) return PLANS[fallback] ? fallback : 'start'
+
+  const cached = cache.planKeyByUser.get(uid)
+  if (ttlOk(cached, 60_000)) return cached.value
+
+  let planKey = fallback
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('active_plan')
+      .eq('user_id', uid)
+      .maybeSingle()
+    if (!error) {
+      const k = String(data?.active_plan || '').trim().toLowerCase()
+      if (k && PLANS[k]) planKey = k
+    }
+  } catch (_) {}
+
+  if (!PLANS[planKey]) planKey = 'start'
+  cache.planKeyByUser.set(uid, { ts: nowMs(), value: planKey })
+  return planKey
 }
 
 export function getPlanEntitlements(planKey = resolvePlanKey()) {
@@ -126,11 +153,40 @@ async function listAllFilesBytes(bucket, rootPath, { maxItems = 20000 } = {}) {
   return { bytes: total, truncated }
 }
 
+async function fetchStorageUsedBytesFromApi(userId) {
+  const uid = String(userId || '').trim()
+  if (!uid) return null
+  try {
+    const { data } = await supabase.auth.getSession()
+    const token = data?.session?.access_token || ''
+    if (!token) return null
+    const qs = new URLSearchParams({ type: 'storage_usage', userId: uid })
+    const resp = await fetch(`/api/producer?${qs.toString()}`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!resp.ok) return null
+    const body = await resp.json().catch(() => null)
+    if (!body || body.ok !== true) return null
+    const bytes = Number(body.bytes)
+    const truncated = !!body.truncated
+    if (!Number.isFinite(bytes) || bytes < 0) return null
+    return { bytes, truncated }
+  } catch (_) {
+    return null
+  }
+}
+
 export async function getStorageUsedBytes(userId, { ttlMs = 30_000 } = {}) {
   const key = String(userId || '')
   if (!key) return { bytes: null, truncated: false }
   const cached = cache.storageByUser.get(key)
   if (ttlOk(cached, ttlMs)) return cached.value
+  const fromApi = await fetchStorageUsedBytesFromApi(key)
+  if (fromApi && typeof fromApi.bytes === 'number') {
+    cache.storageByUser.set(key, { ts: nowMs(), value: fromApi })
+    return fromApi
+  }
   const buckets = [
     { bucket: 'courses-media', prefix: `users/${key}` },
     { bucket: 'question-images', prefix: `${key}` },
@@ -152,7 +208,8 @@ export async function getStorageUsedBytes(userId, { ttlMs = 30_000 } = {}) {
 }
 
 export async function canUploadBytes(userId, bytesToAdd, planKey = resolvePlanKey()) {
-  const limit = getStorageLimitBytes(planKey)
+  const effectivePlanKey = await resolvePlanKeyForUser(userId, planKey)
+  const limit = getStorageLimitBytes(effectivePlanKey)
   if (typeof limit !== 'number') return { ok: true, reason: null }
   const add = Number(bytesToAdd || 0)
   if (!isFinite(add) || add <= 0) return { ok: true, reason: null }
@@ -160,9 +217,13 @@ export async function canUploadBytes(userId, bytesToAdd, planKey = resolvePlanKe
     const used = await getStorageUsedBytes(userId)
     if (typeof used?.bytes !== 'number') return { ok: true, reason: null }
     if ((used.bytes + add) > limit) {
-      return { ok: false, reason: 'storage_limit_reached', usedBytes: used.bytes, limitBytes: limit }
+      return { ok: false, reason: 'storage_limit_reached', usedBytes: used.bytes, limitBytes: limit, planKey: effectivePlanKey }
     }
-    return { ok: true, reason: null, usedBytes: used.bytes, limitBytes: limit }
+    try {
+      const key = String(userId || '')
+      if (key) cache.storageByUser.set(key, { ts: nowMs(), value: { bytes: used.bytes + add, truncated: !!used.truncated } })
+    } catch (_) {}
+    return { ok: true, reason: null, usedBytes: used.bytes, limitBytes: limit, planKey: effectivePlanKey }
   } catch (_) {
     return { ok: true, reason: null }
   }

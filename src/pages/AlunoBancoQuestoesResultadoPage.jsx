@@ -46,19 +46,48 @@ function resolveSupabasePublicUrl(rawValue) {
 
 function parseChoices(question) {
   const meta = (question?.metadata && typeof question.metadata === 'object') ? question.metadata : {}
-  const raw = Array.isArray(meta.choices)
-    ? meta.choices
-    : (Array.isArray(meta.alternatives) ? meta.alternatives : (Array.isArray(meta.options) ? meta.options : []))
+  const raw = Array.isArray(question?.choices)
+    ? question.choices
+    : (Array.isArray(meta.choices)
+      ? meta.choices
+      : (Array.isArray(meta.alternatives) ? meta.alternatives : (Array.isArray(meta.options) ? meta.options : [])))
+  const safeHtml = (html) => {
+    const s = String(html || '')
+    if (!s.trim()) return ''
+    let out = s.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+    out = out.replace(/\son\w+\s*=\s*(['"]).*?\1/gi, '')
+    out = out.replace(/\s(href|src)\s*=\s*(['"])\s*javascript:[^'"]*\2/gi, ' $1="#"')
+    return out
+  }
+  const normalize = (list) => {
+    const arr = Array.isArray(list) ? list : []
+    return arr
+      .map((v) => getText(v).trim())
+      .filter(Boolean)
+      .map((u) => resolveSupabasePublicUrl(u))
+  }
   return raw
     .map((c, idx) => {
-      if (typeof c === 'string') return { id: `opt-${idx}`, label: c, is_correct: false }
+      if (typeof c === 'string') {
+        const choiceHtml = safeHtml((meta?.choicesTextHtml && typeof meta.choicesTextHtml === 'object') ? meta.choicesTextHtml?.[idx] : '')
+        const metaChoicesMedia = (meta?.choicesMedia && typeof meta.choicesMedia === 'object') ? meta.choicesMedia : {}
+        const metaChoiceMedia = (metaChoicesMedia?.[idx] && typeof metaChoicesMedia[idx] === 'object') ? metaChoicesMedia[idx] : null
+        const images = normalize([metaChoiceMedia?.imageUrl])
+        const videos = normalize([metaChoiceMedia?.videoUrl])
+        return { id: `opt-${idx}`, label: c, html: choiceHtml, images, videos, is_correct: false }
+      }
       if (c && typeof c === 'object') {
         const label = String(c.label || c.text || c.title || '').trim()
-        return { id: String(c.id || `opt-${idx}`), label, is_correct: !!c.is_correct }
+        const choiceHtml = safeHtml((meta?.choicesTextHtml && typeof meta.choicesTextHtml === 'object') ? meta.choicesTextHtml?.[idx] : '')
+        const metaChoicesMedia = (meta?.choicesMedia && typeof meta.choicesMedia === 'object') ? meta.choicesMedia : {}
+        const metaChoiceMedia = (metaChoicesMedia?.[idx] && typeof metaChoicesMedia[idx] === 'object') ? metaChoicesMedia[idx] : null
+        const images = normalize([metaChoiceMedia?.imageUrl])
+        const videos = normalize([metaChoiceMedia?.videoUrl])
+        return { id: String(c.id || `opt-${idx}`), label, html: choiceHtml, images, videos, is_correct: !!c.is_correct }
       }
       return { id: `opt-${idx}`, label: '', is_correct: false }
     })
-    .filter((c) => String(c.label || '').trim().length > 0)
+    .filter((c) => String(c.label || '').trim().length > 0 || String(c.html || '').trim().length > 0)
 }
 
 function normalizeUrlList(list) {

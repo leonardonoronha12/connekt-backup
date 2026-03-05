@@ -18,7 +18,8 @@ No painel da Vercel (Project → Settings → Environment Variables), configure:
 - `VITE_SUPABASE_QUESTION_IMAGES_BUCKET` (ex.: `question-images`)
 - (opcional) `VITE_TESTER_EMAILS` (lista separada por vírgula para liberar plano QA)
 
-Não configure `SUPABASE_SERVICE_ROLE_KEY` na Vercel (chave administrativa).
+Necessário para rotas `/api/*` que usam Supabase Admin:
+- `SUPABASE_SERVICE_ROLE_KEY`
 
 ## 3) Ajustes no Supabase para produção
 
@@ -28,6 +29,16 @@ Supabase → Authentication → URL Configuration:
   - `https://SEU_DOMINIO_DA_VERCEL/login`
   - `https://SEU_DOMINIO_DA_VERCEL/reset-password`
   - (opcional) `https://SEU_DOMINIO_DA_VERCEL/`
+
+## 3.2) Policies do bucket question-images (upload de mídia nas questões)
+
+Para permitir upload direto (sem proxy) no bucket `question-images`, aplique a migração:
+- `supabase/migrations/20260102232000_question_images_storage_policies.sql`
+
+Atalho:
+```bash
+npm run migrate:question-images
+```
 
 ## 3.1) Google Login (OAuth)
 

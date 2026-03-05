@@ -6,7 +6,6 @@ import { X, Play, ChevronLeft, ChevronRight, ArrowLeft, Lock } from 'lucide-reac
 import { Button } from '@/components/ui/button';
 import CourseFooter from '@/components/CourseFooter'
 import BrandLogo from '@/components/BrandLogo'
-import AlunoInboxThread from '@/components/AlunoInboxThread'
 
 const DEMO_DESCRIPTION = 'Aprenda na prática com módulos organizados, aulas objetivas e conteúdos atualizados para o dia a dia no consultório.';
 const DEMO_PROMO_VIDEO_URL = 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4';
@@ -36,13 +35,29 @@ const parseJsonMaybe = (value) => {
 
 const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0;
 
-const getCourseModules = (row) => {
-  const parsed = parseJsonMaybe(row?.modules);
+const extractModules = (input, depth = 0) => {
+  if (depth > 2) return [];
+  const parsed = parseJsonMaybe(input);
   if (Array.isArray(parsed)) return parsed;
-  if (parsed && typeof parsed === 'object') {
-    if (Array.isArray(parsed.modules)) return parsed.modules;
-    if (Array.isArray(parsed.items)) return parsed.items;
+  if (!parsed || typeof parsed !== 'object') return [];
+  const directKeys = ['modules', 'modulos', 'items', 'aulas', 'lessons', 'module_lessons'];
+  for (const k of directKeys) {
+    if (Array.isArray(parsed[k])) return parsed[k];
   }
+  const nestedKeys = ['course', 'curso', 'content', 'conteudo', 'payload', 'data'];
+  for (const k of nestedKeys) {
+    const v = parsed[k];
+    const out = extractModules(v, depth + 1);
+    if (Array.isArray(out) && out.length > 0) return out;
+  }
+  return [];
+};
+
+const getCourseModules = (row) => {
+  const fromModules = extractModules(row?.modules);
+  if (Array.isArray(fromModules) && fromModules.length > 0) return fromModules;
+  const fromData = extractModules(row?.data);
+  if (Array.isArray(fromData) && fromData.length > 0) return fromData;
   return [];
 };
 
@@ -88,7 +103,20 @@ export default function CursoPreviewAlunoPage() {
   const isBlockedRead = (e) => {
     const msg = String(e?.message || e || '').toLowerCase()
     const sc = String(e?.status || e?.statusCode || '')
-    return sc === '401' || sc === '403' || msg.includes('row-level security') || msg.includes('permission denied') || msg.includes('not allowed')
+    const code = String(e?.code || '').toUpperCase()
+    return (
+      sc === '401' ||
+      sc === '403' ||
+      sc === '404' ||
+      sc === '406' ||
+      code === 'PGRST116' ||
+      msg.includes('row-level security') ||
+      msg.includes('permission denied') ||
+      msg.includes('not allowed') ||
+      msg.includes('0 rows') ||
+      msg.includes('no rows returned') ||
+      msg.includes('multiple (or no) rows returned')
+    )
   }
 
   const getAccessToken = async () => {
@@ -132,10 +160,17 @@ export default function CursoPreviewAlunoPage() {
   const [selectedModule, setSelectedModule] = useState(null)
 
   const modulesScrollRef = useRef(null);
+  const verifyPollCleanupRef = useRef(null)
+  const verifyInFlightRef = useRef(false)
 
   const { coverUrl, promoUrl, moduleLayoutUrl, meta } = useMemo(() => resolveCourseMedia(courseRow), [courseRow]);
   const modules = useMemo(() => getCourseModules(courseRow), [courseRow]);
-  const showDemo = Boolean(error) || !courseRow;
+  const showDemo = Boolean(isDemoAluno) || String(courseId || '').trim() === 'demo';
+  const modulesList = useMemo(() => {
+    if (Array.isArray(modules) && modules.length > 0) return modules
+    if (showDemo) return DEMO_MODULES
+    return []
+  }, [modules, showDemo])
 
   const theme = useMemo(() => {
     const tText = meta?.theme_text_color || '#1E1B39';
@@ -294,6 +329,71 @@ export default function CursoPreviewAlunoPage() {
     return safeLsGet(ownedKey) === '1'
   }, [courseId, ownedKey, isPaidCourse, ownershipTick])
 
+  const verifyPaid = async ({ type, courseId, moduleId, lessonId, linkId }) => {
+    const token = await getAccessToken()
+    if (!token) return false
+    const qs = new URLSearchParams()
+    qs.set('type', String(type))
+    if (courseId) qs.set('courseId', String(courseId))
+    if (moduleId) qs.set('moduleId', String(moduleId))
+    if (lessonId) qs.set('lessonId', String(lessonId))
+    qs.set('linkId', String(linkId))
+    try {
+      if (verifyInFlightRef.current) return false
+      verifyInFlightRef.current = true
+      const r = await fetch(`/api/simulado-checkout-verify?${qs.toString()}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const body = await r.json().catch(() => ({}))
+      return !!(r.ok && body?.paid === true)
+    } catch (e) {
+      const name = String(e?.name || '').toLowerCase()
+      const msg = String(e?.message || e || '').toLowerCase()
+      if (name.includes('abort') || msg.includes('aborted') || msg.includes('aborterror')) return false
+      return false
+    } finally {
+      verifyInFlightRef.current = false
+    }
+  }
+
+  const startVerifyPolling = ({ type, courseId, moduleId, lessonId, linkId, ownedStorageKey }) => {
+    if (verifyPollCleanupRef.current) {
+      try { verifyPollCleanupRef.current() } catch (_) {}
+    }
+    const startedAt = Date.now()
+    const interval = window.setInterval(async () => {
+      try {
+        if (safeLsGet(ownedStorageKey) === '1') {
+          window.clearInterval(interval)
+          return
+        }
+        if (Date.now() - startedAt > 6 * 60_000) {
+          window.clearInterval(interval)
+          return
+        }
+        const paid = await verifyPaid({ type, courseId, moduleId, lessonId, linkId })
+        if (paid) {
+          safeLsSet(ownedStorageKey, '1')
+          setOwnershipTick((v) => v + 1)
+          window.clearInterval(interval)
+        }
+      } catch (_) {}
+    }, 6_000)
+    const cleanup = () => {
+      try { window.clearInterval(interval) } catch (_) {}
+    }
+    verifyPollCleanupRef.current = cleanup
+    return cleanup
+  }
+
+  useEffect(() => {
+    return () => {
+      if (verifyPollCleanupRef.current) {
+        try { verifyPollCleanupRef.current() } catch (_) {}
+      }
+    }
+  }, [])
+
   const startCourseCheckout = async () => {
     if (!courseId) return
     setCheckoutError('')
@@ -318,6 +418,10 @@ export default function CursoPreviewAlunoPage() {
       const checkoutUrl = String(body?.checkout_url || '').trim()
       const linkId = String(body?.link_id || '').trim()
       if (linkId) safeLsSet(`connekt_course_pending_link:${String(courseId)}`, linkId)
+      if (linkId) {
+        safeLsSet(`connekt_course_last_link:${String(courseId)}`, linkId)
+        startVerifyPolling({ type: 'course', courseId: String(courseId), linkId, ownedStorageKey: ownedKey })
+      }
       if (!checkoutUrl) {
         setCheckoutError('Checkout indisponível.')
         return
@@ -435,6 +539,11 @@ export default function CursoPreviewAlunoPage() {
       const checkoutUrl = String(body?.checkout_url || '').trim()
       const linkId = String(body?.link_id || '').trim()
       if (linkId) safeLsSet(`connekt_module_pending_link:${String(courseId)}:${id}`, linkId)
+      if (linkId) {
+        safeLsSet(`connekt_module_last_link:${String(courseId)}:${id}`, linkId)
+        const ownedKey = moduleOwnedKey(id)
+        if (ownedKey) startVerifyPolling({ type: 'module', courseId: String(courseId), moduleId: id, linkId, ownedStorageKey: ownedKey })
+      }
       if (!checkoutUrl) {
         setModuleCheckoutError('Checkout indisponível.')
         return
@@ -510,11 +619,12 @@ export default function CursoPreviewAlunoPage() {
     if (verifyLoading) return 'Verificando pagamento...'
     if (!isAlunoView) return 'Comprar curso'
     if (!courseId) return 'Curso indisponível'
+    if (!showDemo && error) return 'Curso indisponível'
     if (!isPaidCourse) return 'Acessar curso'
     if (isOwnedCourse) return 'Acessar curso'
     return 'Comprar curso'
   })()
-  const primaryCtaDisabled = loading || checkoutLoading || verifyLoading || (isAlunoView && !courseId) || (!isAlunoView && true)
+  const primaryCtaDisabled = loading || checkoutLoading || verifyLoading || (isAlunoView && !courseId) || (!isAlunoView && true) || (!showDemo && !!error)
 
   useEffect(() => {
     const t = String(heroTitle || '').trim()
@@ -526,7 +636,20 @@ export default function CursoPreviewAlunoPage() {
     const el = modulesScrollRef.current;
     if (!el) return;
     const delta = Math.round(el.clientWidth * 0.8) * (dir === 'left' ? -1 : 1);
-    el.scrollBy({ left: delta, behavior: 'smooth' });
+    const nextLeft = Math.max(0, Math.round((el.scrollLeft || 0) + delta))
+    try {
+      if (typeof el.scrollTo === 'function') {
+        el.scrollTo({ left: nextLeft, behavior: 'smooth' })
+        return
+      }
+    } catch (_) {}
+    try {
+      if (typeof el.scrollBy === 'function') {
+        el.scrollBy({ left: delta, behavior: 'smooth' })
+        return
+      }
+    } catch (_) {}
+    try { el.scrollLeft = nextLeft } catch (_) {}
   };
 
   const moduleCardBg = (m, idx) => {
@@ -589,6 +712,11 @@ export default function CursoPreviewAlunoPage() {
                         {heroDescription}
                       </div>
                     ) : null}
+                    {!showDemo && error ? (
+                      <div className="mt-4 rounded-[10px] border border-amber-200 bg-amber-50 px-4 py-3 text-[12px] text-amber-900">
+                        {String(error)}
+                      </div>
+                    ) : null}
                     <div className="mt-5">
                       <Button
                         className="h-9 px-5 rounded-[6px] text-[12px] font-medium"
@@ -631,23 +759,13 @@ export default function CursoPreviewAlunoPage() {
                       <div className="relative w-full max-w-[560px] aspect-video rounded-xl overflow-hidden shadow-xl bg-[#0B1220]/10">
                         {mediaPromo ? (
                           <video
-                            src={(typeof mediaPromo === 'string' && mediaPromo.includes('.supabase.co/storage/v1/object/')) ? `/api/media?u=${encodeURIComponent(mediaPromo)}` : mediaPromo}
+                            src={mediaPromo}
                             className="w-full h-full object-cover"
                             autoPlay
                             loop
                             muted
                             playsInline
                             preload="auto"
-                            onError={(e) => {
-                              const v = e.currentTarget
-                              const proxied = (typeof mediaPromo === 'string' && mediaPromo.includes('.supabase.co/storage/v1/object/')) ? `/api/media?u=${encodeURIComponent(mediaPromo)}` : null
-                              if (!proxied || !String(v?.src || '').includes('/api/media?u=')) return
-                              if (v?.dataset?.fallbackUsed === '1') return
-                              v.dataset.fallbackUsed = '1'
-                              v.src = mediaPromo
-                              try { v.load() } catch (_) {}
-                              try { v.play?.() } catch (_) {}
-                            }}
                           />
                         ) : (
                           <div className="w-full h-full bg-white/60 flex items-center justify-center text-[12px] text-[#737780]">
@@ -717,7 +835,7 @@ export default function CursoPreviewAlunoPage() {
               className="flex gap-4 overflow-x-auto pb-3 scroll-smooth"
               style={{ scrollbarWidth: 'none' }}
             >
-              {(modules.length > 0 ? modules : DEMO_MODULES).map((m, idx) => {
+              {modulesList.length > 0 ? modulesList.map((m, idx) => {
                 const bg = moduleCardBg(m, idx);
                 const name = m?.name || m?.title || `Módulo ${idx + 1}`;
                 const moduleId = m?.id || m?.module_id || m?.moduleId || null
@@ -814,9 +932,10 @@ export default function CursoPreviewAlunoPage() {
                     </div>
                   </button>
                 );
-              })}
+              }) : (
+                <div className="py-6 text-[12px] text-[#737780]">Nenhum módulo encontrado para este curso.</div>
+              )}
             </div>
-
             <div
               className="pointer-events-none absolute right-0 top-0 h-full w-[90px]"
               style={{ background: `linear-gradient(to right, rgba(0,0,0,0), ${theme.pageBg})` }}
@@ -824,20 +943,6 @@ export default function CursoPreviewAlunoPage() {
           </div>
         </div>
       </div>
-
-      {isAlunoView ? (
-        <div className="mx-auto w-full max-w-[1200px] px-6 pb-10">
-          <AlunoInboxThread
-            user={user}
-            studentName={studentName}
-            threadKey={`course:${String(courseId || '')}`}
-            title="Inbox"
-            itemLabel="Mensagens"
-            placeholder="Digite aqui sua mensagem"
-            courseId={courseId}
-          />
-        </div>
-      ) : null}
 
       <CourseFooter className="mt-auto" />
 
@@ -871,19 +976,10 @@ export default function CursoPreviewAlunoPage() {
             <div className="w-full aspect-video">
               {mediaPromo ? (
                 <video
-                  src={(typeof mediaPromo === 'string' && mediaPromo.includes('.supabase.co/storage/v1/object/')) ? `/api/media?u=${encodeURIComponent(mediaPromo)}` : mediaPromo}
+                  src={mediaPromo}
                   className="w-full h-full"
                   controls
                   preload="none"
-                  onError={(e) => {
-                    const v = e.currentTarget
-                    const proxied = (typeof mediaPromo === 'string' && mediaPromo.includes('.supabase.co/storage/v1/object/')) ? `/api/media?u=${encodeURIComponent(mediaPromo)}` : null
-                    if (!proxied || !String(v?.src || '').includes('/api/media?u=')) return
-                    if (v?.dataset?.fallbackUsed === '1') return
-                    v.dataset.fallbackUsed = '1'
-                    v.src = mediaPromo
-                    try { v.load() } catch (_) {}
-                  }}
                 />
               ) : (
                 <div className="w-full h-full flex items-center justify-center text-[12px] text-white/80">

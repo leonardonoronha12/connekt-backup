@@ -26,14 +26,62 @@ function renderFatal(message, detail) {
 }
 
 try {
+  const shouldReloadForChunkError = (err) => {
+    const name = String(err?.name || '').toLowerCase()
+    const msg = String(err?.message || err?.error_description || err || '').toLowerCase()
+    return (
+      name.includes('chunkloaderror') ||
+      msg.includes('chunkloaderror') ||
+      msg.includes('failed to fetch dynamically imported module') ||
+      msg.includes('importing a module script failed') ||
+      msg.includes('dynamically imported module') ||
+      msg.includes('load failed') ||
+      msg.includes('net::err_failed') ||
+      msg.includes('net::err') ||
+      msg.includes('unexpected token') && msg.includes('html') ||
+      msg.includes('mime type') && msg.includes('text/html')
+    )
+  }
+  const tryReloadOnce = () => {
+    try {
+      const key = 'connekt_chunk_reload_ts'
+      const last = Number(sessionStorage.getItem(key) || 0)
+      const now = Date.now()
+      if (Number.isFinite(last) && last > 0 && (now - last) < 20_000) return false
+      sessionStorage.setItem(key, String(now))
+      const url = new URL(window.location.href)
+      url.searchParams.set('__reload', String(now))
+      window.location.replace(url.toString())
+      return true
+    } catch (_) {
+      try {
+        window.location.reload()
+        return true
+      } catch (_) {}
+      return false
+    }
+  }
   window.addEventListener('error', (e) => {
-    const msg = e?.message || 'Erro inesperado'
-    const file = e?.filename ? ` (${e.filename}:${e.lineno || 0}:${e.colno || 0})` : ''
-    const stack = e?.error?.stack || ''
-    renderFatal(String(msg) + String(file), String(stack || ''))
+    const err = e?.error || e
+    if (shouldReloadForChunkError(err)) {
+      const did = tryReloadOnce()
+      if (did) return
+    }
+    try {
+      const msg = e?.message || 'Erro inesperado'
+      const file = e?.filename ? ` (${e.filename}:${e.lineno || 0}:${e.colno || 0})` : ''
+      console.error(String(msg) + String(file), e?.error || e)
+    } catch (_) {}
   })
   window.addEventListener('unhandledrejection', (e) => {
     const r = e?.reason
+    if (shouldReloadForChunkError(r)) {
+      const did = tryReloadOnce()
+      if (did) {
+        try { e.preventDefault() } catch (_) {}
+        return
+      }
+    }
     const name = String(r?.name || '').toLowerCase()
     const msgLower = String(r?.message || r?.error_description || r || '').toLowerCase()
     const isAbort =
@@ -47,9 +95,10 @@ try {
       try { e.preventDefault() } catch (_) {}
       return
     }
-    const msg = r?.message || r?.error_description || String(r || 'Promise rejeitada')
-    const stack = r?.stack || ''
-    renderFatal(String(msg), String(stack))
+    try {
+      const msg = r?.message || r?.error_description || String(r || 'Promise rejeitada')
+      console.error(String(msg), r)
+    } catch (_) {}
   })
 } catch (_) {}
 

@@ -47,24 +47,124 @@ function resolveSupabasePublicUrl(rawValue) {
 
 function parseChoices(question) {
   const meta = (question?.metadata && typeof question.metadata === 'object') ? question.metadata : {}
-  const raw = Array.isArray(meta.choices)
-    ? meta.choices
-    : (Array.isArray(meta.alternatives) ? meta.alternatives : (Array.isArray(meta.options) ? meta.options : []))
+  const raw = Array.isArray(question?.choices)
+    ? question.choices
+    : (Array.isArray(meta.choices)
+      ? meta.choices
+      : (Array.isArray(meta.alternatives) ? meta.alternatives : (Array.isArray(meta.options) ? meta.options : [])))
+  const normalize = (list) => {
+    const arr = Array.isArray(list) ? list : []
+    return arr
+      .map((v) => getText(v).trim())
+      .filter(Boolean)
+      .map((u) => resolveSupabasePublicUrl(u))
+  }
+  const safeHtml = (html) => {
+    const s = String(html || '')
+    if (!s.trim()) return ''
+    let out = s.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+    out = out.replace(/\son\w+\s*=\s*(['"]).*?\1/gi, '')
+    out = out.replace(/\s(href|src)\s*=\s*(['"])\s*javascript:[^'"]*\2/gi, ' $1="#"')
+    return out
+  }
+  const attachmentUrls = (input, kind) => {
+    const arr = Array.isArray(input) ? input : []
+    return arr
+      .filter((a) => a && typeof a === 'object')
+      .filter((a) => {
+        const t = String(a.type || a.kind || a.mediaType || a.mime || '').toLowerCase()
+        if (!t) return false
+        if (kind === 'image') return t.includes('image')
+        if (kind === 'video') return t.includes('video')
+        return t.includes('pdf') || t.includes('doc') || t.includes('document')
+      })
+      .map((a) => a.url || a.href || a.path || a.src || '')
+  }
   return raw
     .map((c, idx) => {
-      if (typeof c === 'string') return { id: `opt-${idx}`, label: c, is_correct: false }
+      if (typeof c === 'string') {
+        const choiceHtml = safeHtml((meta?.choicesTextHtml && typeof meta.choicesTextHtml === 'object') ? meta.choicesTextHtml?.[idx] : '')
+        const metaChoicesMedia = (meta?.choicesMedia && typeof meta.choicesMedia === 'object') ? meta.choicesMedia : {}
+        const metaChoiceMedia = (metaChoicesMedia?.[idx] && typeof metaChoicesMedia[idx] === 'object') ? metaChoicesMedia[idx] : null
+        const images = normalize([metaChoiceMedia?.imageUrl])
+        const videos = normalize([metaChoiceMedia?.videoUrl])
+        return { id: `opt-${idx}`, label: c, html: choiceHtml, is_correct: false, images, videos, docs: [] }
+      }
       if (c && typeof c === 'object') {
         const label = String(c.label || c.text || c.title || '').trim()
-        return { id: String(c.id || `opt-${idx}`), label, is_correct: !!c.is_correct }
+        const choiceHtml = safeHtml((meta?.choicesTextHtml && typeof meta.choicesTextHtml === 'object') ? meta.choicesTextHtml?.[idx] : '')
+        const metaChoicesMedia = (meta?.choicesMedia && typeof meta.choicesMedia === 'object') ? meta.choicesMedia : {}
+        const metaChoiceMedia = (metaChoicesMedia?.[idx] && typeof metaChoicesMedia[idx] === 'object') ? metaChoicesMedia[idx] : null
+        const images = normalize([
+          c.image_url,
+          c.imageUrl,
+          c.image,
+          c.image_path,
+          c.imagePath,
+          metaChoiceMedia?.imageUrl,
+          ...(Array.isArray(c.images) ? c.images : []),
+          ...(Array.isArray(c.image_urls) ? c.image_urls : []),
+          ...(Array.isArray(c.imageUrls) ? c.imageUrls : []),
+          ...(Array.isArray(c.image_paths) ? c.image_paths : []),
+          ...(Array.isArray(c.imagePaths) ? c.imagePaths : []),
+          ...(Array.isArray(c.attachments) ? attachmentUrls(c.attachments, 'image') : []),
+          ...(c.media && typeof c.media === 'object' ? [
+            c.media.image_url,
+            c.media.imageUrl,
+            ...(Array.isArray(c.media.images) ? c.media.images : []),
+          ] : []),
+        ])
+        const videos = normalize([
+          c.video_url,
+          c.videoUrl,
+          c.video,
+          c.video_path,
+          c.videoPath,
+          metaChoiceMedia?.videoUrl,
+          ...(Array.isArray(c.videos) ? c.videos : []),
+          ...(Array.isArray(c.video_urls) ? c.video_urls : []),
+          ...(Array.isArray(c.videoUrls) ? c.videoUrls : []),
+          ...(Array.isArray(c.video_paths) ? c.video_paths : []),
+          ...(Array.isArray(c.videoPaths) ? c.videoPaths : []),
+          ...(Array.isArray(c.attachments) ? attachmentUrls(c.attachments, 'video') : []),
+          ...(c.media && typeof c.media === 'object' ? [
+            c.media.video_url,
+            c.media.videoUrl,
+            ...(Array.isArray(c.media.videos) ? c.media.videos : []),
+          ] : []),
+        ])
+        const docs = normalize([
+          c.doc_url,
+          c.docUrl,
+          c.document_url,
+          c.documentUrl,
+          ...(Array.isArray(c.docs) ? c.docs : []),
+          ...(Array.isArray(c.doc_urls) ? c.doc_urls : []),
+          ...(Array.isArray(c.docUrls) ? c.docUrls : []),
+          ...(Array.isArray(c.attachments) ? attachmentUrls(c.attachments, 'doc') : []),
+          ...(c.media && typeof c.media === 'object' ? [
+            ...(Array.isArray(c.media.docs) ? c.media.docs : []),
+            ...(Array.isArray(c.media.docUrls) ? c.media.docUrls : []),
+          ] : []),
+        ])
+        return { id: String(c.id || `opt-${idx}`), label, html: choiceHtml, is_correct: !!c.is_correct, images, videos, docs }
       }
-      return { id: `opt-${idx}`, label: '', is_correct: false }
+      const label = getText(c).trim()
+      const choiceHtml = safeHtml((meta?.choicesTextHtml && typeof meta.choicesTextHtml === 'object') ? meta.choicesTextHtml?.[idx] : '')
+      const metaChoicesMedia = (meta?.choicesMedia && typeof meta.choicesMedia === 'object') ? meta.choicesMedia : {}
+      const metaChoiceMedia = (metaChoicesMedia?.[idx] && typeof metaChoicesMedia[idx] === 'object') ? metaChoicesMedia[idx] : null
+      const images = normalize([metaChoiceMedia?.imageUrl])
+      const videos = normalize([metaChoiceMedia?.videoUrl])
+      return { id: `opt-${idx}`, label, html: choiceHtml, is_correct: false, images, videos, docs: [] }
     })
-    .filter((c) => String(c.label || '').trim().length > 0)
+    .filter((c) => String(c.label || '').trim().length > 0 || String(c.html || '').trim().length > 0)
 }
 
 function isCorrectChoice(question, choiceIndex) {
   const meta = (question?.metadata && typeof question.metadata === 'object') ? question.metadata : {}
-  const correctIdx = typeof meta.correctChoiceIndex === 'number' ? meta.correctChoiceIndex : null
+  const correctIdx =
+    (typeof question?.correctChoiceIndex === 'number' ? question.correctChoiceIndex : null) ??
+    (typeof meta.correctChoiceIndex === 'number' ? meta.correctChoiceIndex : null)
   if (typeof correctIdx === 'number') return choiceIndex === correctIdx
   const choices = parseChoices(question)
   const c = choices[choiceIndex]
@@ -391,16 +491,81 @@ export default function AlunoQuestoesPage() {
                     if (showWrong) return 'border-[#EF4444] bg-[#FEF2F2]'
                     return 'border-[#E3E4E5] bg-white opacity-80'
                   })()
+                  const images = Array.isArray(c?.images) ? c.images : []
+                  const videos = Array.isArray(c?.videos) ? c.videos : []
+                  const docs = Array.isArray(c?.docs) ? c.docs : []
+                  const hasMedia = images.length || videos.length || docs.length
                   return (
-                    <button
-                      key={c.id || i}
-                      type="button"
-                      className={`w-full text-left px-4 py-3 rounded-[10px] border ${cls}`}
-                      disabled={submitted}
-                      onClick={() => setSelected(i)}
-                    >
-                      <div className="text-[12px] text-[#22252B]">{c.label}</div>
-                    </button>
+                    <div key={c.id || i} className={`rounded-[10px] border ${cls} overflow-hidden`}>
+                      <button
+                        type="button"
+                        className="w-full text-left px-4 py-3"
+                        disabled={submitted}
+                        onClick={() => setSelected(i)}
+                      >
+                        {String(c?.html || '').trim() ? (
+                          <div className="text-[12px] text-[#22252B] leading-relaxed" dangerouslySetInnerHTML={{ __html: c.html }} />
+                        ) : (
+                          <div className="text-[12px] text-[#22252B]">{c.label}</div>
+                        )}
+                      </button>
+                      {hasMedia ? (
+                        <div className="px-4 pb-3">
+                          {images.length ? (
+                            <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              {images.map((src) => (
+                                <a key={src} href={src} target="_blank" rel="noreferrer" className="block rounded-[10px] overflow-hidden border border-[#E3E4E5] bg-white">
+                                  <img src={src} alt="" className="w-full h-[180px] object-cover" />
+                                </a>
+                              ))}
+                            </div>
+                          ) : null}
+
+                          {videos.length ? (
+                            <div className="mt-3 space-y-3">
+                              {videos.map((url) => {
+                                const embed = getEmbedUrl(url)
+                                if (embed) {
+                                  return (
+                                    <div key={url} className="rounded-[10px] overflow-hidden border border-[#E3E4E5] bg-white">
+                                      <iframe
+                                        title="Vídeo"
+                                        src={embed}
+                                        className="w-full h-[240px]"
+                                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                        allowFullScreen
+                                      />
+                                    </div>
+                                  )
+                                }
+                                if (isVideoFile(url)) {
+                                  return (
+                                    <div key={url} className="rounded-[10px] overflow-hidden border border-[#E3E4E5] bg-white">
+                                      <video src={url} controls className="w-full h-[240px] bg-black" />
+                                    </div>
+                                  )
+                                }
+                                return (
+                                  <a key={url} href={url} target="_blank" rel="noreferrer" className="inline-flex text-[12px] font-semibold text-[#0047BB]">
+                                    Abrir vídeo
+                                  </a>
+                                )
+                              })}
+                            </div>
+                          ) : null}
+
+                          {docs.length ? (
+                            <div className="mt-3 flex flex-wrap gap-3">
+                              {docs.map((url) => (
+                                <a key={url} href={url} target="_blank" rel="noreferrer" className="inline-flex text-[12px] font-semibold text-[#0047BB]">
+                                  Abrir arquivo
+                                </a>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
                   )
                 })}
               </div>

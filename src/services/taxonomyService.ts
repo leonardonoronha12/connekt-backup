@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabaseClient'
 import type { TaxonomyCategory, TaxonomySubcategory, TaxonomyTag } from '@/contexts/TaxonomyContext'
+import { TAXONOMY_CATEGORY_COLOR, TAXONOMY_SUBCATEGORY_COLOR, TAXONOMY_TAG_COLOR } from '@/constants/taxonomyColors'
 
 type DbTag = {
   id: string
@@ -37,7 +38,7 @@ function mapTag(row: DbTag): TaxonomyTag {
     id: row.id,
     name: row.name || '',
     description: row.description || '',
-    color: row.color || '#94A3B8',
+    color: TAXONOMY_TAG_COLOR,
   }
 }
 
@@ -46,7 +47,7 @@ function mapCategory(row: DbCategory): TaxonomyCategory {
     id: row.id,
     name: row.name || '',
     description: row.description || '',
-    color: row.color || '#3B82F6',
+    color: TAXONOMY_CATEGORY_COLOR,
     tagIds: Array.isArray(row.tag_ids) ? row.tag_ids : [],
   }
 }
@@ -56,7 +57,7 @@ function mapSubcategory(row: DbSubcategory): TaxonomySubcategory {
     id: row.id,
     name: row.name || '',
     description: row.description || '',
-    color: row.color || '#3B82F6',
+    color: TAXONOMY_SUBCATEGORY_COLOR,
     categoryIds: Array.isArray(row.category_ids) ? row.category_ids : [],
     tagIds: Array.isArray(row.tag_ids) ? row.tag_ids : [],
     productsCount: typeof row.products_count === 'number' ? row.products_count : 0,
@@ -85,7 +86,7 @@ export const taxonomyService = {
   async upsertTag(tag: TaxonomyTag) {
     const { error } = await supabase
       .from('taxonomy_tags')
-      .upsert({ id: tag.id, name: tag.name, description: tag.description || '', color: tag.color || '#94A3B8' }, { onConflict: 'id' })
+      .upsert({ id: tag.id, name: tag.name, description: tag.description || '', color: TAXONOMY_TAG_COLOR }, { onConflict: 'id' })
     if (error) throw error
   },
 
@@ -98,7 +99,7 @@ export const taxonomyService = {
     const { error } = await supabase
       .from('taxonomy_categories')
       .upsert(
-        { id: category.id, name: category.name, description: category.description || '', color: category.color || '#3B82F6', tag_ids: category.tagIds || [] },
+        { id: category.id, name: category.name, description: category.description || '', color: TAXONOMY_CATEGORY_COLOR, tag_ids: category.tagIds || [] },
         { onConflict: 'id' },
       )
     if (error) throw error
@@ -117,7 +118,7 @@ export const taxonomyService = {
           id: subcategory.id,
           name: subcategory.name,
           description: subcategory.description || '',
-          color: subcategory.color || '#3B82F6',
+          color: TAXONOMY_SUBCATEGORY_COLOR,
           category_ids: subcategory.categoryIds || [],
           tag_ids: subcategory.tagIds || [],
           products_count: typeof subcategory.productsCount === 'number' ? subcategory.productsCount : 0,
@@ -133,13 +134,13 @@ export const taxonomyService = {
   },
 
   async seedAll(payload: { tags: TaxonomyTag[]; categories: TaxonomyCategory[]; subcategories: TaxonomySubcategory[] }) {
-    const tagsRows = payload.tags.map(t => ({ id: t.id, name: t.name, description: t.description || '', color: t.color || '#94A3B8' }))
-    const catRows = payload.categories.map(c => ({ id: c.id, name: c.name, description: c.description || '', color: c.color || '#3B82F6', tag_ids: c.tagIds || [] }))
+    const tagsRows = payload.tags.map(t => ({ id: t.id, name: t.name, description: t.description || '', color: TAXONOMY_TAG_COLOR }))
+    const catRows = payload.categories.map(c => ({ id: c.id, name: c.name, description: c.description || '', color: TAXONOMY_CATEGORY_COLOR, tag_ids: c.tagIds || [] }))
     const subRows = payload.subcategories.map(s => ({
       id: s.id,
       name: s.name,
       description: s.description || '',
-      color: s.color || '#3B82F6',
+      color: TAXONOMY_SUBCATEGORY_COLOR,
       category_ids: s.categoryIds || [],
       tag_ids: s.tagIds || [],
       products_count: typeof s.productsCount === 'number' ? s.productsCount : 0,
@@ -159,4 +160,3 @@ export const taxonomyService = {
     }
   },
 }
-

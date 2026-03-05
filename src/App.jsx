@@ -34,12 +34,18 @@ import AlunoConfiguracoesPage from '@/pages/AlunoConfiguracoesPage.jsx';
 import AlunoCursoPage from '@/pages/AlunoCursoPage.jsx';
 import AlunoBancoDeQuestoesPage from '@/pages/AlunoBancoDeQuestoesPage.jsx';
 import AlunoQuestoesPage from '@/pages/AlunoQuestoesPage.jsx';
+import PlatformAdminLoginPage from '@/pages/PlatformAdminLoginPage.jsx';
+import PlatformAdminPanelPage from '@/pages/PlatformAdminPanelPage.jsx';
+import PlatformAdminDeployPage from '@/pages/PlatformAdminDeployPage.jsx';
 import QuestoesPage from '@/pages/QuestoesPage';
 import RepostaCorretaSimuladoPage from '@/pages/RepostaCorretaSimuladoPage';
 import ConfiguracoesPage from '@/pages/ConfiguracoesPage';
 import { Toaster } from '@/components/ui/toaster';
+import DeviceAccessRequestModal from '@/components/DeviceAccessRequestModal.jsx'
+import { supabase } from '@/lib/supabaseClient'
 import { toast } from '@/components/ui/use-toast';
 import { isUploadInProgress, subscribeUploadGuard, getActiveUploadCount } from '@/services/uploadGuard';
+import { setActiveProducerUserId } from '@/services/producerScope'
 
 const ADMIN_VIEW_PARAM = 'dev-admin';
 const QUESTION_BANK_PATH = '/banco-de-questoes';
@@ -81,6 +87,9 @@ const QUESTION_BANK_PATH = '/banco-de-questoes';
   alunoBancoQuestoes: 'Banco de Questões',
   alunoBancoQuestoesResultado: 'Resultado - Banco de Questões',
   alunoQuestoes: 'Questões',
+  platformAdminLogin: 'Admin - Login',
+  platformAdminPanel: 'Admin - Painel',
+  platformAdminDeploy: 'Admin - Publicar',
 };
 
 try {
@@ -99,6 +108,13 @@ const getViewFromLocation = () => {
   const searchParams = new URLSearchParams(window.location.search);
   const path = window.location.pathname;
 
+  if (path === '/admin/login') {
+    return 'platformAdminLogin'
+  } else if (path === '/admin/deploy') {
+    return 'platformAdminDeploy'
+  } else if (path === '/admin' || path.startsWith('/admin/')) {
+    return 'platformAdminPanel'
+  }
   if (searchParams.get('view') === ADMIN_VIEW_PARAM) {
     return 'admin';
   } else if (path === '/') {
@@ -213,6 +229,153 @@ function AppContent() {
   useEffect(() => {
     loadingRef.current = !!loading
   }, [loading])
+
+  useEffect(() => {
+    let cancelled = false
+    const inFlightRef = { current: false }
+    let abortController = null
+    const getAccessToken = async () => {
+      try {
+        const { data } = await supabase.auth.getSession()
+        return String(data?.session?.access_token || '').trim()
+      } catch (_) {
+        return ''
+      }
+    }
+    const safeLsKeys = () => {
+      try {
+        const out = []
+        const ls = localStorage
+        const n = Number(ls?.length || 0)
+        for (let i = 0; i < n; i += 1) {
+          const k = ls.key(i)
+          if (k) out.push(k)
+        }
+        if (out.length > 0) return out
+      } catch (_) {}
+      try { return Object.keys(localStorage || {}) } catch (_) { return [] }
+    }
+    const safeLsGet = (k) => {
+      try { return String(localStorage.getItem(String(k || '')) || '') } catch (_) { return '' }
+    }
+    const safeLsSet = (k, v) => {
+      try { localStorage.setItem(String(k || ''), String(v || '')) } catch (_) {}
+    }
+    const safeLsRemove = (k) => {
+      try { localStorage.removeItem(String(k || '')) } catch (_) {}
+    }
+
+    const verifyLink = async ({ type, courseId, moduleId, lessonId, simId, linkId, signal }) => {
+      const token = await getAccessToken()
+      if (!token) return false
+      const qs = new URLSearchParams()
+      qs.set('type', String(type))
+      if (courseId) qs.set('courseId', String(courseId))
+      if (moduleId) qs.set('moduleId', String(moduleId))
+      if (lessonId) qs.set('lessonId', String(lessonId))
+      if (simId) qs.set('simId', String(simId))
+      qs.set('linkId', String(linkId))
+      try {
+        const r = await fetch(`/api/simulado-checkout-verify?${qs.toString()}`, { headers: { Authorization: `Bearer ${token}` }, signal })
+        const body = await r.json().catch(() => ({}))
+        return !!(r.ok && body?.paid === true)
+      } catch (e) {
+        const name = String(e?.name || '').toLowerCase()
+        const msg = String(e?.message || e || '').toLowerCase()
+        if (name.includes('abort') || msg.includes('aborted') || msg.includes('aborterror')) return false
+        return false
+      }
+    }
+
+    const run = async () => {
+      if (cancelled) return
+      if (loadingRef.current) return
+      if (inFlightRef.current) return
+      const uid = userIdRef.current
+      if (!uid) return
+      try {
+        if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+      } catch (_) {}
+      inFlightRef.current = true
+      try {
+        if (abortController) {
+          try { abortController.abort() } catch (_) {}
+        }
+        abortController = typeof AbortController !== 'undefined' ? new AbortController() : null
+        const signal = abortController?.signal
+
+        const keys = safeLsKeys()
+        const tasks = []
+
+        for (const k of keys) {
+          const key = String(k || '')
+          if (key.startsWith('connekt_course_pending_link:')) {
+            const courseId = key.slice('connekt_course_pending_link:'.length)
+            const linkId = safeLsGet(key).trim()
+            const ownedKey = `connekt_course_owned:${courseId}`
+            if (!courseId || !linkId) continue
+            if (safeLsGet(ownedKey) === '1') { safeLsRemove(key); continue }
+            tasks.push(async () => {
+              const paid = await verifyLink({ type: 'course', courseId, linkId, signal })
+              if (paid) {
+                safeLsSet(ownedKey, '1')
+                safeLsRemove(key)
+              }
+            })
+          }
+          if (key.startsWith('connekt_module_pending_link:')) {
+            const rest = key.slice('connekt_module_pending_link:'.length)
+            const parts = rest.split(':')
+            const courseId = String(parts[0] || '')
+            const moduleId = String(parts[1] || '')
+            const linkId = safeLsGet(key).trim()
+            const ownedKey = `connekt_module_owned:${courseId}:${moduleId}`
+            if (!courseId || !moduleId || !linkId) continue
+            if (safeLsGet(ownedKey) === '1') { safeLsRemove(key); continue }
+            tasks.push(async () => {
+              const paid = await verifyLink({ type: 'module', courseId, moduleId, linkId, signal })
+              if (paid) {
+                safeLsSet(ownedKey, '1')
+                safeLsRemove(key)
+              }
+            })
+          }
+          if (key.startsWith('connekt_simulado_pending_link:')) {
+            const simId = key.slice('connekt_simulado_pending_link:'.length)
+            const linkId = safeLsGet(key).trim()
+            const ownedKey = `connekt_simulado_owned:${simId}`
+            if (!simId || !linkId) continue
+            if (safeLsGet(ownedKey) === '1') { safeLsRemove(key); continue }
+            tasks.push(async () => {
+              const paid = await verifyLink({ type: 'simulado', simId, linkId, signal })
+              if (paid) {
+                safeLsSet(ownedKey, '1')
+                safeLsRemove(key)
+              }
+            })
+          }
+        }
+
+        for (const fn of tasks) {
+          if (cancelled) break
+          try { await fn() } catch (_) {}
+        }
+      } finally {
+        inFlightRef.current = false
+      }
+    }
+
+    const onFocus = () => { run() }
+    run()
+    try { window.addEventListener('focus', onFocus) } catch (_) {}
+    const timer = window.setInterval(() => { run() }, 15_000)
+    return () => {
+      cancelled = true
+      try { abortController?.abort() } catch (_) {}
+      try { window.removeEventListener('focus', onFocus) } catch (_) {}
+      try { window.clearInterval(timer) } catch (_) {}
+    }
+  }, [user?.id])
   let forceResetPassword = false
   try {
     forceResetPassword = String(window.location.pathname || '').startsWith('/reset-password')
@@ -337,6 +500,53 @@ function AppContent() {
                   return
                 }
               } catch (_) {}
+            }
+          }
+        }
+      } catch (_) {}
+
+      try {
+        const path = String(window.location.pathname || '')
+        const isAlunoPath =
+          path === '/login-aluno' ||
+          path === '/login-aluno-wl' ||
+          path === '/aluno/login' ||
+          path === '/aluno' ||
+          path.startsWith('/aluno/')
+        if (isAlunoPath) {
+          const u = new URL(window.location.href)
+          const fromQuery = String(
+            u.searchParams.get('producer_uid') ||
+              u.searchParams.get('producerUserId') ||
+              u.searchParams.get('producer_uid'.toUpperCase()) ||
+              '',
+          ).trim()
+          const readKey = (key) => {
+            try {
+              const s = sessionStorage.getItem(key)
+              if (s && String(s).trim()) return String(s).trim()
+            } catch (_) {}
+            try {
+              const l = localStorage.getItem(key)
+              if (l && String(l).trim()) return String(l).trim()
+            } catch (_) {}
+            return ''
+          }
+          const writeKey = (key, v) => {
+            try { sessionStorage.setItem(key, v) } catch (_) { try { localStorage.setItem(key, v) } catch (_) {} }
+            try { localStorage.setItem(key, v) } catch (_) {}
+          }
+
+          if (fromQuery) {
+            writeKey('connekt_student_producer_uid', fromQuery)
+            writeKey('connekt_producer_uid', fromQuery)
+            try { setActiveProducerUserId(fromQuery) } catch (_) {}
+          } else {
+            const scoped = readKey('connekt_student_producer_uid') || readKey('connekt_producer_uid')
+            if (scoped) {
+              u.searchParams.set('producer_uid', scoped)
+              window.history.replaceState({}, '', `${u.pathname}${u.search}${u.hash}`)
+              try { setActiveProducerUserId(scoped) } catch (_) {}
             }
           }
         }
@@ -496,6 +706,12 @@ function AppContent() {
 
   const renderContent = () => {
     switch (currentView) {
+      case 'platformAdminLogin':
+        return <PlatformAdminLoginPage />;
+      case 'platformAdminPanel':
+        return <PlatformAdminPanelPage />;
+      case 'platformAdminDeploy':
+        return <PlatformAdminDeployPage />;
       case 'admin':
         const AdminPage = React.lazy(() => import('@/pages/AdminPage'));
         return (
@@ -616,7 +832,7 @@ function AppContent() {
     }
   };
 
-  const isPublicView = useMemo(() => (forceResetPassword || currentView === 'login' || currentView === 'loginAluno' || currentView === 'loginAlunoWhitelabel' || currentView === 'verifyEmail' || currentView === 'resetPassword' || currentView === 'termos'), [currentView, forceResetPassword]);
+  const isPublicView = useMemo(() => (forceResetPassword || currentView === 'login' || currentView === 'loginAluno' || currentView === 'loginAlunoWhitelabel' || currentView === 'verifyEmail' || currentView === 'resetPassword' || currentView === 'termos' || currentView === 'platformAdminLogin'), [currentView, forceResetPassword]);
   const isDemoStudent = useMemo(() => {
     try {
       const host = String(window.location.hostname || '').toLowerCase()
@@ -647,6 +863,16 @@ function AppContent() {
     if (loading) return;
     if (user) return;
     if (isPublicView) return;
+    if (currentView === 'platformAdminPanel' || currentView === 'platformAdminDeploy') {
+      const target = '/admin/login'
+      if (window.location.pathname !== target) {
+        window.history.replaceState({}, '', target);
+        window.dispatchEvent(new PopStateEvent('popstate'));
+      } else {
+        setCurrentView('platformAdminLogin')
+      }
+      return
+    }
     const isAlunoPath = isAlunoFlow
     if ((isAlunoPath || currentView === 'cursoPreviewAluno') && isDemoStudent) return
     const host = String(window.location.hostname || '').toLowerCase()
@@ -673,6 +899,9 @@ function AppContent() {
   }
 
   if (!user && !isPublicView && !(isDemoStudent && (currentView === 'alunoDashboard' || currentView === 'alunoAula' || currentView === 'alunoCurso' || currentView === 'alunoSimulados' || currentView === 'alunoSimuladoAcesso' || currentView === 'alunoSimuladoResultado' || currentView === 'alunoConfiguracoes' || currentView === 'alunoRepostaCorretaSimulado' || currentView === 'cursoPreviewAluno'))) {
+    if (currentView === 'platformAdminPanel' || currentView === 'platformAdminDeploy') {
+      return <PlatformAdminLoginPage />
+    }
     const host = String(window.location.hostname || '').toLowerCase()
     const isWhitelabelHost = host.endsWith('.app.connektco.com') && host !== 'app.connektco.com'
     return isAlunoFlow ? (isWhitelabelHost ? <LoginAlunoWhitelabelPage /> : <LoginAlunoPage />) : <LoginPage />;
@@ -684,19 +913,22 @@ function AppContent() {
 
   return (
     <TaxonomyProvider>
-      {(currentView === 'login' || currentView === 'loginAluno' || currentView === 'loginAlunoWhitelabel' || currentView === 'verifyEmail') ? (
+      <DeviceAccessRequestModal />
+      {(currentView === 'login' || currentView === 'loginAluno' || currentView === 'loginAlunoWhitelabel' || currentView === 'verifyEmail' || currentView === 'platformAdminLogin') ? (
         currentView === 'login'
           ? <LoginPage />
           : currentView === 'loginAluno'
             ? <LoginAlunoPage />
             : currentView === 'loginAlunoWhitelabel'
               ? <LoginAlunoWhitelabelPage />
-              : <EmailVerificationPage />
+              : currentView === 'platformAdminLogin'
+                ? <PlatformAdminLoginPage />
+                : <EmailVerificationPage />
       ) : (forceResetPassword || currentView === 'resetPassword') ? (
         <ResetPasswordPage />
       ) : currentView === 'termos' ? (
         <TermosPrivacidadePage />
-      ) : (currentView === 'produtosNovo' || currentView === 'cursoPreviewAluno' || currentView === 'questoes' || currentView === 'alunoDashboard' || currentView === 'alunoAula' || currentView === 'alunoCurso' || currentView === 'alunoSimulados' || currentView === 'alunoSimuladoAcesso' || currentView === 'alunoSimuladoResultado' || currentView === 'alunoConfiguracoes' || currentView === 'alunoRepostaCorretaSimulado' || currentView === 'alunoBancoQuestoes' || currentView === 'alunoBancoQuestoesResultado' || currentView === 'alunoQuestoes') ? (
+      ) : (currentView === 'platformAdminPanel' || currentView === 'platformAdminDeploy' || currentView === 'produtosNovo' || currentView === 'cursoPreviewAluno' || currentView === 'questoes' || currentView === 'alunoDashboard' || currentView === 'alunoAula' || currentView === 'alunoCurso' || currentView === 'alunoSimulados' || currentView === 'alunoSimuladoAcesso' || currentView === 'alunoSimuladoResultado' || currentView === 'alunoConfiguracoes' || currentView === 'alunoRepostaCorretaSimulado' || currentView === 'alunoBancoQuestoes' || currentView === 'alunoBancoQuestoesResultado' || currentView === 'alunoQuestoes') ? (
         renderContent()
       ) : (
         <MainLayout>
