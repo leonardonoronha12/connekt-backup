@@ -138,7 +138,7 @@ export default function PlatformAdminPanelPage() {
     if (typeFilter && typeFilter !== 'all') qs.set('type', typeFilter)
     if (showDisabled) qs.set('show_disabled', '1')
     if (courseFilter && (typeFilter === 'aluno' || typeFilter === 'all')) qs.set('course_id', courseFilter)
-    qs.set('per_page', '50')
+    qs.set('per_page', 'all')
     const r = await fetch(`/api/admin/users/list?${qs.toString()}`, { headers: authHeaders })
     const body = await r.json().catch(() => ({}))
     if (!r.ok) throw new Error(body?.error || 'Falha ao listar usuários')
