@@ -1,5 +1,6 @@
 import { json } from '../../../src/server/supabaseAdmin.js'
 import { computeDisabled, isExpired, normalizeAccountType, normalizeEmail, requireAdmin } from '../_util.js'
+import { Client } from 'pg'
 
 function normalizeNameFromMeta(meta) {
   const m = meta && typeof meta === 'object' ? meta : {}
@@ -109,7 +110,14 @@ function normalizeFromDbRow(row) {
   const email = normalizeEmail(r?.email || r?.user_email || r?.mail || '')
   const name = String(r?.name || r?.full_name || r?.profile_full_name || r?.display_name || '').trim()
   const accountType = normalizeAccountType(r?.account_type || r?.role || r?.platform_role || r?.type || '')
-  const disabled = Boolean(r?.disabled || r?.is_disabled || r?.banned || r?.blocked)
+  const bannedUntil = String(r?.banned_until || '').trim()
+  const bannedActive = (() => {
+    if (!bannedUntil) return false
+    const t = new Date(bannedUntil).getTime()
+    if (!Number.isFinite(t)) return false
+    return t > Date.now()
+  })()
+  const disabled = Boolean(r?.disabled || r?.is_disabled || r?.banned || r?.blocked || bannedActive)
   const createdAt = r?.created_at || r?.createdAt || null
   const lastSignInAt = r?.last_sign_in_at || r?.last_login_at || r?.lastSignInAt || null
   return {
@@ -120,6 +128,83 @@ function normalizeFromDbRow(row) {
     disabled,
     createdAt,
     lastSignInAt,
+  }
+}
+
+function getPgClient() {
+  const connectionString = process.env.SUPABASE_DB_URL
+  if (connectionString) {
+    return new Client({ connectionString, ssl: { rejectUnauthorized: false } })
+  }
+  const host = process.env.PGHOST || process.env.SUPABASE_PG_HOST
+  const port = Number(process.env.PGPORT || process.env.SUPABASE_PG_PORT || 5432)
+  const database = process.env.PGDATABASE || process.env.SUPABASE_PG_DATABASE
+  const user = process.env.PGUSER || process.env.SUPABASE_PG_USER
+  const password = process.env.PGPASSWORD || process.env.SUPABASE_PG_PASSWORD
+  if (!host || !database || !user || !password) return null
+  return new Client({ host, port, database, user, password, ssl: { rejectUnauthorized: false } })
+}
+
+async function listUsersFallbackFromAuthUsersViaPg(opts) {
+  const q = String(opts?.q || '').trim().toLowerCase()
+  const type = String(opts?.type || 'all').trim().toLowerCase()
+  const showDisabled = !!opts?.showDisabled
+  const allowedByCourse = opts?.allowedByCourse || null
+  const perPage = Math.max(1, Math.min(5000, Number(opts?.perPage || 50)))
+
+  const client = getPgClient()
+  if (!client) return { ok: false, error: 'missing_db_env' }
+
+  try {
+    await client.connect()
+    const out = []
+    const scanPerPage = Math.max(200, Math.min(2000, perPage >= 1000 ? 2000 : perPage))
+    const maxScanPages = Math.max(10, Math.min(200, Math.ceil(perPage / scanPerPage) + 20))
+
+    for (let page = 0; page < maxScanPages; page += 1) {
+      const offset = page * scanPerPage
+      const result = await client.query(
+        `
+          select
+            id::text as id,
+            email::text as email,
+            created_at,
+            last_sign_in_at,
+            banned_until,
+            coalesce(raw_user_meta_data->>'name', raw_user_meta_data->>'full_name', raw_user_meta_data->>'profile_full_name', raw_user_meta_data->>'display_name', '') as name,
+            coalesce(raw_user_meta_data->>'account_type', raw_user_meta_data->>'role', raw_user_meta_data->>'platform_role', raw_user_meta_data->>'type', '') as account_type
+          from auth.users
+          order by created_at desc
+          limit $1 offset $2
+        `,
+        [scanPerPage, offset],
+      )
+      const rows = Array.isArray(result?.rows) ? result.rows : []
+      if (!rows.length) break
+
+      for (const row of rows) {
+        const u = normalizeFromDbRow(row)
+        if (!u.id) continue
+        if (!showDisabled && u.disabled) continue
+        if (type !== 'all' && normalizeAccountType(type) !== u.accountType) continue
+        if (allowedByCourse && !allowedByCourse.has(u.id)) continue
+        if (q) {
+          const hay = `${u.name} ${u.email}`.toLowerCase()
+          if (!hay.includes(q)) continue
+        }
+        out.push(u)
+        if (out.length >= perPage) break
+      }
+
+      if (out.length >= perPage) break
+      if (rows.length < scanPerPage) break
+    }
+
+    return { ok: true, users: out, source: 'pg:auth.users' }
+  } catch (e) {
+    return { ok: false, error: 'pg_fallback_failed', message: e?.message || String(e) }
+  } finally {
+    try { await client.end() } catch (_) {}
   }
 }
 
@@ -183,6 +268,20 @@ export default async function handler(req, res) {
         const msg = r.error?.message || 'list_users_failed'
         const status = r.error?.status ? ` (status=${r.error.status})` : ''
         const name = r.error?.name ? ` (name=${r.error.name})` : ''
+        const pgFallback = await listUsersFallbackFromAuthUsersViaPg({
+          q,
+          type,
+          showDisabled,
+          allowedByCourse,
+          perPage,
+        })
+        if (pgFallback.ok) {
+          return json(res, 200, {
+            ok: true,
+            users: pgFallback.users,
+            meta: { count: pgFallback.users.length, limit: perPage, truncated: pgFallback.users.length >= perPage, source: pgFallback.source },
+          })
+        }
         const fallback = await listUsersFallbackFromDb(admin, {
           q,
           type,
