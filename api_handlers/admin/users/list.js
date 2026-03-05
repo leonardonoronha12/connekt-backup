@@ -6,6 +6,30 @@ function normalizeNameFromMeta(meta) {
   return String(m?.name || m?.full_name || m?.profile_full_name || '').trim()
 }
 
+function decodeJwtRole(token) {
+  const raw = String(token || '').trim()
+  const parts = raw.split('.')
+  if (parts.length < 2) return ''
+  const p = parts[1] || ''
+  const pad = p.length % 4 === 0 ? '' : '='.repeat(4 - (p.length % 4))
+  const b64 = (p + pad).replace(/-/g, '+').replace(/_/g, '/')
+  try {
+    const jsonText = Buffer.from(b64, 'base64').toString('utf-8')
+    const payload = JSON.parse(jsonText || '{}')
+    return String(payload?.role || '').trim().toLowerCase()
+  } catch (_) {
+    return ''
+  }
+}
+
+function serviceKeyRoleHint() {
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE || ''
+  const role = decodeJwtRole(key)
+  if (!role) return ''
+  if (role === 'service_role') return ''
+  return ` (env role=${role}; use a service_role key)`
+}
+
 async function getCourseAllowedUserIdSet(admin, courseId) {
   const cid = String(courseId || '').trim()
   if (!cid) return null
@@ -55,7 +79,7 @@ export default async function handler(req, res) {
     const maxScanPages = Math.max(20, Math.min(200, Math.ceil(perPage / scanPerPage) + 20))
     for (let page = 1; page <= maxScanPages; page += 1) {
       const r = await admin.auth.admin.listUsers({ page, perPage: scanPerPage })
-      if (r?.error) throw new Error(r.error?.message || 'list_users_failed')
+      if (r?.error) throw new Error(`${r.error?.message || 'list_users_failed'}${serviceKeyRoleHint()}`)
       const users = Array.isArray(r?.data?.users) ? r.data.users : []
       for (const u of users) {
         const id = String(u?.id || '').trim()
