@@ -65,21 +65,18 @@ function extractProjectRefFromIss(iss) {
 }
 
 function serviceKeyRoleHint() {
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE || ''
-  const role = decodeJwtRole(key)
-  if (!role) return ''
-  if (role === 'service_role') return ''
-  return ` (env role=${role}; use a service_role key)`
-}
-
-function serviceKeyProjectHint() {
   const url = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || ''
   const urlRef = extractProjectRefFromSupabaseUrl(url)
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE || ''
+  const role = decodeJwtRole(key)
   const iss = decodeJwtIss(key)
   const keyRef = extractProjectRefFromIss(iss)
-  if (!urlRef || !keyRef || urlRef === keyRef) return ''
-  return ` (env ref mismatch: url=${urlRef} key=${keyRef})`
+  const roleOut = role || 'unknown'
+  const urlOut = urlRef || 'unknown'
+  const keyOut = keyRef || 'unknown'
+  const mismatch = urlRef && keyRef && urlRef !== keyRef ? ' mismatch=1' : ''
+  const wrongRole = role && role !== 'service_role' ? ' expected=service_role' : role ? '' : ' expected=service_role'
+  return ` (env key_role=${roleOut} url_ref=${urlOut} key_ref=${keyOut}${mismatch}${wrongRole})`
 }
 
 async function getCourseAllowedUserIdSet(admin, courseId) {
@@ -135,7 +132,7 @@ export default async function handler(req, res) {
         const msg = r.error?.message || 'list_users_failed'
         const status = r.error?.status ? ` (status=${r.error.status})` : ''
         const name = r.error?.name ? ` (name=${r.error.name})` : ''
-        throw new Error(`${msg}${status}${name}${serviceKeyRoleHint()}${serviceKeyProjectHint()}`)
+        throw new Error(`${msg}${status}${name}${serviceKeyRoleHint()}`)
       }
       const users = Array.isArray(r?.data?.users) ? r.data.users : []
       for (const u of users) {
