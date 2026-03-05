@@ -115,7 +115,7 @@ function normalizeFromDbRow(row) {
   return {
     id,
     email,
-    name: name || email || id,
+    name: name || email || (id ? `Usuário ${id.slice(0, 8)}` : ''),
     accountType,
     disabled,
     createdAt,
@@ -218,7 +218,7 @@ export default async function handler(req, res) {
         matches.push({
           id,
           email,
-          name: name || email || id,
+          name: name || email || (id ? `Usuário ${id.slice(0, 8)}` : ''),
           accountType,
           disabled,
           createdAt: u?.created_at || null,
