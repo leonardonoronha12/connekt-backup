@@ -143,7 +143,7 @@ export default function PlatformAdminPanelPage() {
     qs.set('per_page', 'all')
     const r = await fetch(`/api/admin/users/list?${qs.toString()}`, { headers: authHeaders })
     const body = await r.json().catch(() => ({}))
-    if (!r.ok) throw new Error(body?.error || 'Falha ao listar usuários')
+    if (!r.ok) throw new Error(body?.message || body?.error || 'Falha ao listar usuários')
     return body || {}
   }, [authHeaders, courseFilter, query, showDisabled, typeFilter])
 

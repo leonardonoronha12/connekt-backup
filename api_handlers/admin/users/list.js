@@ -93,6 +93,7 @@ export default async function handler(req, res) {
       meta: { count: matches.length, limit: perPage, truncated: matches.length >= perPage },
     })
   } catch (e) {
-    return json(res, 500, { error: 'internal_error', message: e?.message || String(e) })
+    const msg = e?.message || String(e)
+    return json(res, 500, { error: 'internal_error', message: msg })
   }
 }
