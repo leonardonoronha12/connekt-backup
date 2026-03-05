@@ -3,6 +3,66 @@ import { supabase } from '@/lib/supabaseClient';
 import { useActiveProducerUserId } from '@/hooks/useActiveProducerUserId';
 import { useAuth } from '@/contexts/SupabaseAuthContext'
 
+function InlineDeferredVideo({ src }) {
+  const [armed, setArmed] = useState(false)
+  const videoRef = useRef(null)
+
+  useEffect(() => {
+    setArmed(false)
+  }, [src])
+
+  useEffect(() => {
+    if (!armed) return
+    const v = videoRef.current
+    if (!v) return
+    try {
+      const p = v.play?.()
+      if (p && typeof p.catch === 'function') p.catch(() => {})
+    } catch (_) {}
+  }, [armed])
+
+  if (!src) return null
+  const finalSrc = (typeof src === 'string' && src.includes('.supabase.co/storage/v1/object/')) ? `/api/media?u=${encodeURIComponent(src)}` : src
+
+  if (!armed) {
+    return (
+      <button
+        type="button"
+        className="w-full aspect-video rounded-[4px] border border-gray-200 bg-black flex items-center justify-center"
+        onClick={() => setArmed(true)}
+        aria-label="Carregar vídeo"
+      >
+        <div className="w-12 h-12 rounded-full bg-white/90 flex items-center justify-center text-black text-[18px]">
+          ▶
+        </div>
+      </button>
+    )
+  }
+
+  return (
+    <video
+      ref={videoRef}
+      className="w-full rounded-[4px] border border-gray-200 bg-black"
+      controls
+      preload="metadata"
+      playsInline
+      src={finalSrc}
+      onError={(e) => {
+        const v = e.currentTarget
+        if (!finalSrc.startsWith('/api/media?u=')) return
+        if (v?.dataset?.fallbackUsed === '1') return
+        v.dataset.fallbackUsed = '1'
+        v.src = src
+        try {
+          v.load()
+          const p = v.play?.()
+          if (p && typeof p.catch === 'function') p.catch(() => {})
+        } catch (_) {}
+      }}
+    />
+  )
+}
+
 function Badge({ children }) {
   return (
     <span className="inline-flex items-center rounded-md bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700">
@@ -38,7 +98,14 @@ function StatItem({ label, value, color = 'text-gray-700', icon, labelFirst = fa
 }
 
 function QuestionListItem({ index, label, status }) {
-  const statusColor = status === 'correct' ? 'bg-green-500' : status === 'wrong' ? 'bg-red-500' : 'bg-gray-300';
+  const statusColor =
+    status === 'correct'
+      ? 'bg-green-500'
+      : status === 'wrong'
+        ? 'bg-red-500'
+        : status === 'answered'
+          ? 'bg-blue-500'
+          : 'bg-gray-300';
   return (
     <button
       type="button"
@@ -50,7 +117,7 @@ function QuestionListItem({ index, label, status }) {
         <span className={`${statusColor} inline-flex items-center justify-center rounded-full ${statusColor === 'bg-green-500' || statusColor === 'bg-gray-300' || statusColor === 'bg-red-500' ? 'w-[16.250003814697266px] h-[16.250003814697266px]' : 'w-2 h-2'}`}>
           {statusColor === 'bg-red-500' ? (
             <img src="/errada.png" alt="Errada" className="w-full h-full rotate-0 opacity-100 object-contain" />
-          ) : (statusColor === 'bg-green-500' || statusColor === 'bg-gray-300') ? (
+          ) : statusColor === 'bg-green-500' ? (
             <img src="/certa.png" alt="Certa" className="w-full h-full rotate-0 opacity-100 object-contain" />
           ) : null}
         </span>
@@ -105,6 +172,7 @@ function RepostaCorretaSimuladoPage() {
   const pauseKey = `connekt_simulado_pause_${params.simId}`;
   const finishKey = `connekt_simulado_finish_${params.simId}`;
   const progressKey = `connekt_simulado_progress:${params.simId}`;
+  const startKey = `connekt_simulado_started_${params.simId}`
   const previewKey = params.simId && params.simId !== 'preview' ? `connekt_simulationPreview:${params.simId}` : 'simulationPreview'
   const navigateTo = (path) => {
     window.history.pushState({}, '', path);
@@ -126,16 +194,108 @@ function RepostaCorretaSimuladoPage() {
   const [finishedAt, setFinishedAt] = useState(null);
   const [finalRemainingMs, setFinalRemainingMs] = useState(null);
   const endTimeRef = useRef(null);
+  const interactedRef = useRef(false)
   const [studentProfile, setStudentProfile] = useState({ name: '', avatar_url: '' })
   const [confirmModal, setConfirmModal] = useState({ open: false, mode: '' })
+
+  const getAllowRepeat = () => {
+    try {
+      const raw = localStorage.getItem(`connekt_simulado_allowRepeat:${params.simId}`)
+      if (raw === '0') return false
+      if (raw === '1') return true
+    } catch (_) {}
+    try {
+      const raw = localStorage.getItem(previewKey) || localStorage.getItem('simulationPreview')
+      if (!raw) return true
+      const parsed = JSON.parse(raw)
+      if (typeof parsed?.allowRepeat === 'boolean') return Boolean(parsed.allowRepeat)
+      if (typeof parsed?.allow_repeat === 'boolean') return Boolean(parsed.allow_repeat)
+      return true
+    } catch (_) {
+      return true
+    }
+  }
+
+  const getAvailabilityWindow = () => {
+    const parseStartMs = (v) => {
+      const s = String(v || '').trim()
+      if (!s) return null
+      const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+      if (m) return Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 0, 0, 0, 0)
+      const t = new Date(s).getTime()
+      if (!Number.isFinite(t)) return null
+      return t
+    }
+    const parseEndMsInclusive = (v) => {
+      const s = String(v || '').trim()
+      if (!s) return null
+      const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+      if (m) return Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 23, 59, 59, 999)
+      const t = new Date(s).getTime()
+      if (!Number.isFinite(t)) return null
+      return t
+    }
+    let startRaw = ''
+    let endRaw = ''
+    try {
+      startRaw = localStorage.getItem(`connekt_simulado_windowStart:${params.simId}`) || ''
+      endRaw = localStorage.getItem(`connekt_simulado_windowEnd:${params.simId}`) || ''
+    } catch (_) {}
+    if (!startRaw || !endRaw) {
+      try {
+        const raw = localStorage.getItem(previewKey) || localStorage.getItem('simulationPreview')
+        if (raw) {
+          const parsed = JSON.parse(raw)
+          if (!startRaw && parsed?.availabilityStartDate) startRaw = String(parsed.availabilityStartDate || '')
+          if (!endRaw && parsed?.availabilityEndDate) endRaw = String(parsed.availabilityEndDate || '')
+        }
+      } catch (_) {}
+    }
+    const startMs = parseStartMs(startRaw)
+    const endMs = parseEndMsInclusive(endRaw)
+    return { startMs, endMs }
+  }
 
   useEffect(() => {
     try {
       if (isAlunoView && !params.resultado) {
+        if (!params.demo) {
+          const { startMs, endMs } = getAvailabilityWindow()
+          const now = Date.now()
+          if (startMs != null && now < startMs) {
+            const suffix = params.demo ? `&demo=1` : ''
+            navigateTo(`/aluno/simulados/acesso?simId=${encodeURIComponent(params.simId)}${suffix}`)
+            return
+          }
+          if (endMs != null && now > endMs) {
+            let hasFinish = false
+            try { hasFinish = !!localStorage.getItem(finishKey) } catch (_) { hasFinish = false }
+            const suffix = params.demo ? `&demo=1` : ''
+            if (hasFinish) {
+              navigateTo(`/aluno/simulados/resultado?simId=${encodeURIComponent(params.simId)}${suffix}`)
+              return
+            }
+            navigateTo(`/aluno/simulados/acesso?simId=${encodeURIComponent(params.simId)}${suffix}`)
+            return
+          }
+        }
+        const allowRepeat = getAllowRepeat()
+        let hasFinish = false
+        try {
+          hasFinish = !!localStorage.getItem(finishKey)
+        } catch (_) {
+          hasFinish = false
+        }
+        if (hasFinish && !allowRepeat) {
+          const suffix = params.demo ? `&demo=1` : ''
+          navigateTo(`/aluno/simulados/resultado?simId=${encodeURIComponent(params.simId)}${suffix}`)
+          return
+        }
         try {
           localStorage.removeItem(pauseKey);
-          localStorage.removeItem(finishKey);
+          if (allowRepeat) localStorage.removeItem(finishKey);
           localStorage.setItem(progressKey, '0');
+          localStorage.setItem(startKey, String(Date.now()))
         } catch (_) {}
       }
       const raw = localStorage.getItem(previewKey) || localStorage.getItem('simulationPreview');
@@ -281,7 +441,6 @@ function RepostaCorretaSimuladoPage() {
       if (!isAlunoView) return
       if (params.demo) return
       if (!params.simId || params.simId === 'preview') return
-      if (Array.isArray(preview?.questions) && preview.questions.length > 0) return
       const producerId = String(activeProducerUserId || '').trim()
       if (!producerId) return
       try {
@@ -295,13 +454,36 @@ function RepostaCorretaSimuladoPage() {
         if (!r.ok) return
         const data = body?.data || null
         if (!data || typeof data !== 'object') return
+        if (interactedRef.current) return
         const nextPreview = {
           title: data?.title || '',
           totalPoints: Number(data?.totalPoints) || 0,
           attempts: Number(data?.attempts) || 1,
           durationMinutes: Number(data?.durationMinutes) || 0,
           questions: Array.isArray(data?.questions) ? data.questions : [],
+          meta: data?.meta && typeof data.meta === 'object' ? data.meta : null,
         }
+        const normalizeIds = (list) =>
+          (Array.isArray(list) ? list : [])
+            .map((v) => String(v?.id || v || '').trim())
+            .filter(Boolean)
+        let storedPreview = null
+        try {
+          const raw = localStorage.getItem(previewKey)
+          if (raw) storedPreview = JSON.parse(raw)
+        } catch (_) {}
+        const currentQuestionIds = normalizeIds(storedPreview?.questions || preview?.questions)
+        const nextQuestionIds = normalizeIds(nextPreview?.questions)
+        const sameIds =
+          currentQuestionIds.length === nextQuestionIds.length &&
+          currentQuestionIds.every((v, idx) => v === nextQuestionIds[idx])
+        const shouldReplace =
+          !sameIds ||
+          String(storedPreview?.title || preview?.title || '') !== String(nextPreview?.title || '') ||
+          Number(storedPreview?.durationMinutes || preview?.durationMinutes || 0) !== Number(nextPreview?.durationMinutes || 0) ||
+          Number(storedPreview?.totalPoints || preview?.totalPoints || 0) !== Number(nextPreview?.totalPoints || 0) ||
+          Number(storedPreview?.attempts || preview?.attempts || 1) !== Number(nextPreview?.attempts || 1)
+        if (!shouldReplace) return
         setPreview(nextPreview)
         try { localStorage.setItem(previewKey, JSON.stringify(nextPreview)) } catch (_) {}
         try { localStorage.setItem('simulationPreview', JSON.stringify(nextPreview)) } catch (_) {}
@@ -318,7 +500,7 @@ function RepostaCorretaSimuladoPage() {
     }
     run()
     return () => { cancelled = true }
-  }, [isAlunoView, params.demo, params.simId, activeProducerUserId, previewKey, preview?.questions?.length]);
+  }, [isAlunoView, params.demo, params.simId, activeProducerUserId, previewKey]);
 
   useEffect(() => {
     if (!isAlunoView) return;
@@ -351,20 +533,79 @@ function RepostaCorretaSimuladoPage() {
   const correctCount = questionStatuses.filter((s) => s === 'correct').length;
   const wrongCount = questionStatuses.filter((s) => s === 'wrong').length;
   const answeredCount = correctCount + wrongCount;
-  const isFinished = params.resultado || (typeof finishedAt === 'string' && finishedAt.length > 0) || (totalQuestions > 0 && answeredCount >= totalQuestions);
+  const isFinished = params.resultado || (typeof finishedAt === 'string' && finishedAt.length > 0);
+  const canRevealAnswer = !isAlunoView || isFinished;
   const durationMs = Math.max(0, (Number(preview.durationMinutes) || 0) * 60_000);
   const usedMs = Math.max(0, durationMs - Math.max(0, Number(finalRemainingMs != null ? finalRemainingMs : remainingMs) || 0));
   const resultTitle = isFinished ? 'Resultado final' : 'Simulado';
 
+  const finalizeSimulado = () => {
+    const pct = totalQuestions > 0 ? Math.round((questionStatuses.filter((s) => s === 'correct').length / totalQuestions) * 100) : 0
+    try {
+      const fAt = new Date().toISOString()
+      const startedAtMs = (() => {
+        try {
+          const raw = localStorage.getItem(startKey)
+          const n = Number(raw)
+          return Number.isFinite(n) && n > 0 ? n : null
+        } catch (_) {
+          return null
+        }
+      })()
+      const durationMs = Math.max(0, (Number(preview.durationMinutes) || 0) * 60_000)
+      const usedMs =
+        durationMs > 0
+          ? Math.max(0, durationMs - Math.max(0, Number(remainingMs) || 0))
+          : (startedAtMs != null ? Math.max(0, Date.now() - startedAtMs) : 0)
+      localStorage.setItem(
+        finishKey,
+        JSON.stringify({
+          finishedAt: fAt,
+          finalRemainingMs: remainingMs,
+          aproveitamentoPercent: pct,
+          startedAt: startedAtMs != null ? new Date(startedAtMs).toISOString() : null,
+          usedMs,
+          selectedIndices,
+          questionStatuses,
+          preview: {
+            title: preview?.title || '',
+            totalPoints: Number(preview?.totalPoints) || 0,
+            attempts: Number(preview?.attempts) || 1,
+            durationMinutes: Number(preview?.durationMinutes) || 0,
+            questions: Array.isArray(preview?.questions) ? preview.questions : [],
+          },
+        })
+      )
+      localStorage.removeItem(pauseKey)
+      try { localStorage.setItem(progressKey, '100') } catch (_) {}
+      setFinishedAt(fAt)
+      setFinalRemainingMs(remainingMs)
+      setAproveitamentoPercent(pct)
+    } catch (_) {}
+
+    try {
+      const url = new URL('/aluno/simulados/resultado', window.location.origin)
+      url.searchParams.set('simId', String(params.simId || 'preview'))
+      if (params.demo) url.searchParams.set('demo', '1')
+      navigateTo(`${url.pathname}${url.search}`)
+    } catch (_) {
+      navigateTo(`/aluno/simulados/resultado?simId=${encodeURIComponent(String(params.simId || 'preview'))}${params.demo ? '&demo=1' : ''}`)
+    }
+  }
+
   const handleClick = (e) => {
-    const el = e.target.closest('[data-action]');
-    if (!el) return;
-    const action = el.getAttribute('data-action');
-    const value = el.getAttribute('data-value');
+    const t = e?.target
+    const el =
+      (t && typeof t.closest === 'function' ? t.closest('[data-action]') : null) ||
+      (t?.parentElement && typeof t.parentElement.closest === 'function' ? t.parentElement.closest('[data-action]') : null)
+    if (!el) return
+    const action = el.getAttribute('data-action')
+    const value = el.getAttribute('data-value')
     switch (action) {
       case 'select-option':
         {
           if (isFinished) break;
+          interactedRef.current = true
           const idx = Number(value);
           const q = preview.questions?.[activeQuestion - 1];
           const choices = Array.isArray(q?.choices) ? q.choices : [];
@@ -380,35 +621,6 @@ function RepostaCorretaSimuladoPage() {
           setSelectedIndices(nextSelected);
           setQuestionStatuses(nextStatuses);
           setAproveitamentoPercent(pct);
-
-          if (totalQuestions > 0 && nextAnswered >= totalQuestions && isAlunoView) {
-            try {
-              const fAt = new Date().toISOString();
-              localStorage.setItem(
-                finishKey,
-                JSON.stringify({
-                  finishedAt: fAt,
-                  finalRemainingMs: remainingMs,
-                  aproveitamentoPercent: pct,
-                  selectedIndices: nextSelected,
-                  questionStatuses: nextStatuses,
-                })
-              );
-              localStorage.removeItem(pauseKey);
-              try { localStorage.setItem(progressKey, '100'); } catch (_) {}
-              setFinishedAt(fAt);
-              setFinalRemainingMs(remainingMs);
-            } catch (_) {}
-
-            try {
-              const url = new URL('/aluno/simulados/resultado', window.location.origin);
-              url.searchParams.set('simId', String(params.simId || 'preview'));
-              if (params.demo) url.searchParams.set('demo', '1');
-              navigateTo(`${url.pathname}${url.search}`);
-            } catch (_) {
-              navigateTo(`/aluno/simulados/resultado?simId=${encodeURIComponent(String(params.simId || 'preview'))}${params.demo ? '&demo=1' : ''}`);
-            }
-          }
         }
         break;
       case 'open-question':
@@ -418,6 +630,13 @@ function RepostaCorretaSimuladoPage() {
         // Pular para próxima questão
         setActiveQuestion((q) => Math.min(q + 1, Math.max(totalQuestions, 1)));
         break;
+      case 'next':
+        setActiveQuestion((q) => Math.min(q + 1, Math.max(totalQuestions, 1)))
+        break
+      case 'finish':
+        if (isFinished) break
+        finalizeSimulado()
+        break
       case 'pause':
         if (!isAlunoView) break;
         if (isFinished) break;
@@ -439,8 +658,8 @@ function RepostaCorretaSimuladoPage() {
           if (params.demo) url.searchParams.set('demo', '1');
           navigateTo(`${url.pathname}${url.search}`);
         } catch (_) {
-          navigateTo(`/aluno/simulados${params.demo ? '?demo=1' : ''}`);
-        }
+            navigateTo(`/aluno/simulados${params.demo ? '?demo=1' : ''}`);
+          }
         break;
       default:
         break;
@@ -513,45 +732,6 @@ function RepostaCorretaSimuladoPage() {
     return null;
   };
   const isVideoFile = (url) => /\.(mp4|webm|ogg)(\?|#|$)/i.test(normalize(url));
-
-  const InlineDeferredVideo = ({ src }) => {
-    const [armed, setArmed] = useState(false);
-    useEffect(() => {
-      setArmed(false);
-    }, [src]);
-    if (!src) return null;
-    const finalSrc = (typeof src === 'string' && src.includes('.supabase.co/storage/v1/object/')) ? `/api/media?u=${encodeURIComponent(src)}` : src
-    if (!armed) {
-      return (
-        <button
-          type="button"
-          className="w-full aspect-video rounded-[4px] border border-gray-200 bg-black flex items-center justify-center"
-          onClick={() => setArmed(true)}
-          aria-label="Carregar vídeo"
-        >
-          <div className="w-12 h-12 rounded-full bg-white/90 flex items-center justify-center text-black text-[18px]">
-            ▶
-          </div>
-        </button>
-      );
-    }
-    return (
-      <video
-        className="w-full rounded-[4px] border border-gray-200 bg-black"
-        controls
-        preload="none"
-        src={finalSrc}
-        onError={(e) => {
-          const v = e.currentTarget
-          if (!finalSrc.startsWith('/api/media?u=')) return
-          if (v?.dataset?.fallbackUsed === '1') return
-          v.dataset.fallbackUsed = '1'
-          v.src = src
-          try { v.load() } catch (_) {}
-        }}
-      />
-    );
-  };
 
   const renderVideo = (url) => {
     if (!isUrl(url)) return null;
@@ -711,27 +891,31 @@ function RepostaCorretaSimuladoPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-3 sm:flex sm:items-center sm:justify-between sm:gap-6">
+            <div className={isFinished ? "grid grid-cols-3 gap-3 sm:flex sm:items-center sm:justify-between sm:gap-6" : "flex items-center justify-center"}>
               <StatItem
                 label="Questões"
                 value={totalQuestions}
                 icon={<img src="/questoes.png" alt="Questões" className="w-[44px] h-[44px] object-contain" />}
                 labelFirst
               />
-              <StatItem
-                label="Certas"
-                value={correctCount}
-                color="text-green-600"
-                icon={<img src="/certas.png" alt="Certas" className="w-[44px] h-[44px] object-contain" />}
-                labelFirst
-              />
-              <StatItem
-                label="Erradas"
-                value={wrongCount}
-                color="text-red-600"
-                icon={<img src="/erradas.png" alt="Erradas" className="w-[44px] h-[44px] object-contain" />}
-                labelFirst
-              />
+              {isFinished ? (
+                <StatItem
+                  label="Certas"
+                  value={correctCount}
+                  color="text-green-600"
+                  icon={<img src="/certas.png" alt="Certas" className="w-[44px] h-[44px] object-contain" />}
+                  labelFirst
+                />
+              ) : null}
+              {isFinished ? (
+                <StatItem
+                  label="Erradas"
+                  value={wrongCount}
+                  color="text-red-600"
+                  icon={<img src="/erradas.png" alt="Erradas" className="w-[44px] h-[44px] object-contain" />}
+                  labelFirst
+                />
+              ) : null}
             </div>
 
             <div className="rounded-md bg-[#F6F5FA] p-3 flex items-center justify-between gap-3">
@@ -835,8 +1019,8 @@ function RepostaCorretaSimuladoPage() {
                     {choices.map((c, i) => {
                       const isSelected = selectedForActive === i;
                       const isCorrect = !!c?.is_correct;
-                      const borderColor = isSelected ? (isCorrect ? 'border-green-500' : 'border-red-500') : 'border-transparent';
-                      const bgColor = isSelected ? (isCorrect ? 'bg-green-50' : 'bg-red-50') : 'bg-[#F6F5FA]';
+                      const borderColor = isSelected ? (canRevealAnswer ? (isCorrect ? 'border-green-500' : 'border-red-500') : 'border-[#0047BB]') : 'border-transparent';
+                      const bgColor = isSelected ? (canRevealAnswer ? (isCorrect ? 'bg-green-50' : 'bg-red-50') : 'bg-white') : 'bg-[#F6F5FA]';
                       const optionText =
                         getText(c?.label) ||
                         getText(c?.text) ||
@@ -878,7 +1062,7 @@ function RepostaCorretaSimuladoPage() {
                         </div>
                       );
                     })}
-                    {typeof selectedForActive === 'number' && questionStatuses[activeQuestion - 1] === 'wrong' && correctIdxActive >= 0 && (
+                    {canRevealAnswer && typeof selectedForActive === 'number' && questionStatuses[activeQuestion - 1] === 'wrong' && correctIdxActive >= 0 && (
                       <div className="text-sm text-red-700">
                         Resposta correta: {String.fromCharCode(65 + correctIdxActive)} — {getText(choicesActive[correctIdxActive]?.label) || getText(choicesActive[correctIdxActive]?.text) || getText(choicesActive[correctIdxActive]?.name) || getText(choicesActive[correctIdxActive]?.value) || ''}
                       </div>
@@ -888,7 +1072,7 @@ function RepostaCorretaSimuladoPage() {
               })()}
             </div>
 
-            {(resolutionText || resolutionImageUrl || resolutionVideoUrl) ? (
+            {canRevealAnswer && (resolutionText || resolutionImageUrl || resolutionVideoUrl) ? (
               <div className="rounded-lg bg-[#F6F5FA] p-3 sm:p-4 flex flex-col gap-3">
                 <div className="font-inter font-semibold text-[14px] leading-[20px] tracking-[0px] text-[#22252B]">
                   Resolução
@@ -908,13 +1092,32 @@ function RepostaCorretaSimuladoPage() {
                 Questão {activeQuestion} / {totalQuestions || 1}
               </span>
               {!isFinished ? (
-                <button
-                  type="button"
-                  data-action="skip"
-                  className="inline-flex items-center justify-center h-[36px] w-full sm:w-auto rounded-md border border-[#0047BB] bg-[#F6F5FA] px-5 font-inter text-center text-[#0047BB] text-[14px] leading-[20px] font-semibold"
-                >
-                  Pular
-                </button>
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                  <button
+                    type="button"
+                    data-action="skip"
+                    className="inline-flex items-center justify-center h-[36px] flex-1 sm:flex-none rounded-md border border-[#0047BB] bg-[#F6F5FA] px-5 font-inter text-center text-[#0047BB] text-[14px] leading-[20px] font-semibold"
+                  >
+                    Pular
+                  </button>
+                  {activeQuestion >= (totalQuestions || 1) ? (
+                    <button
+                      type="button"
+                      data-action="finish"
+                      className="inline-flex items-center justify-center h-[36px] flex-1 sm:flex-none rounded-md bg-[#0047BB] hover:bg-[#003a99] px-5 font-inter text-center text-white text-[14px] leading-[20px] font-semibold"
+                    >
+                      Finalizar simulado
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      data-action="next"
+                      className="inline-flex items-center justify-center h-[36px] flex-1 sm:flex-none rounded-md bg-[#0047BB] hover:bg-[#003a99] px-5 font-inter text-center text-white text-[14px] leading-[20px] font-semibold"
+                    >
+                      Próxima questão
+                    </button>
+                  )}
+                </div>
               ) : null}
             </div>
           </div>
@@ -939,7 +1142,15 @@ function RepostaCorretaSimuladoPage() {
                   ? preview.questions
                   : Array.from({ length: Math.max(totalQuestions || 1, 1) }))
                   .map((_, i) => (
-                    <QuestionListItem key={i} index={i + 1} status={questionStatuses[i] || 'neutral'} />
+                    <QuestionListItem
+                      key={i}
+                      index={i + 1}
+                      status={
+                        canRevealAnswer
+                          ? (questionStatuses[i] || 'neutral')
+                          : (typeof selectedIndices?.[i] === 'number' ? 'answered' : 'neutral')
+                      }
+                    />
                   ))}
               </div>
             </div>

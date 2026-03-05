@@ -9,6 +9,7 @@ const CollapsibleSidebar = () => {
   });
   
   const [currentPath, setCurrentPath] = useState(window.location.pathname);
+  const [currentSearch, setCurrentSearch] = useState(window.location.search);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
   const [hasActivePlan, setHasActivePlan] = useState(false);
 
@@ -32,6 +33,7 @@ const CollapsibleSidebar = () => {
   useEffect(() => {
     const handleLocationChange = () => {
       setCurrentPath(window.location.pathname);
+      setCurrentSearch(window.location.search);
     };
 
     const handleResize = () => {
@@ -72,6 +74,7 @@ const CollapsibleSidebar = () => {
   const handleNavigation = (path) => {
     window.history.pushState({}, '', path);
     setCurrentPath(window.location.pathname);
+    setCurrentSearch(window.location.search);
     window.dispatchEvent(new PopStateEvent('popstate'));
     
     // Fechar sidebar em mobile após navegação
@@ -158,25 +161,18 @@ const CollapsibleSidebar = () => {
           isActive: currentPath === '/vendas'
         },
         {
-          id: 'planos',
-          label: 'Planos',
-          icon: '/bank-icon.svg',
-          path: '/planos',
-          isActive: currentPath === '/planos'
-        },
-        {
           id: 'configuracoes',
           label: 'Configurações',
           icon: '/icons/cog-6-tooth.svg',
           path: '/configuracoes',
-          isActive: currentPath === '/configuracoes' || window.location.search.includes('dev-admin')
+          isActive: currentPath === '/configuracoes' && !currentSearch.includes('tab=plano')
         }
       ]
     }
   ];
 
   // Ocultar temporariamente algumas abas
-  const hiddenLabels = new Set(['KPlay', 'KHub', 'Alunos', 'Vendas']);
+  const hiddenLabels = new Set(['KPlay', 'KHub', 'Alunos']);
 
   const sidebarWidth = isExpanded ? '260px' : '92px';
 

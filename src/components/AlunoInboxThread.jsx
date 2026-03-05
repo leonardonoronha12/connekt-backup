@@ -1,11 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { Edit2, Heart, Trash2 } from 'lucide-react'
+import { Edit2, Trash2, Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { fetchConversationFeed } from '@/services/conversationService'
 import { toast } from '@/components/ui/use-toast'
 
 export default function AlunoInboxThread({ user, studentName, threadKey, title, lessonTitle, itemLabel, placeholder, submitLabel = 'Enviar', successTitle = 'Mensagem enviada', courseId, producerId }) {
   const [loading, setLoading] = useState(false)
+  const [sending, setSending] = useState(false)
+  const [savingPostId, setSavingPostId] = useState(null)
+  const [deletingPostId, setDeletingPostId] = useState(null)
   const [conversationId, setConversationId] = useState(null)
   const [posts, setPosts] = useState([])
   const [composer, setComposer] = useState('')
@@ -17,10 +20,19 @@ export default function AlunoInboxThread({ user, studentName, threadKey, title, 
   const [postToDeleteId, setPostToDeleteId] = useState(null)
   const composerRef = useRef(null)
   const lastLoadErrorRef = useRef({ at: 0, message: '' })
+  const refreshAbortRef = useRef(null)
 
   const headerTitle = String(title || 'Inbox')
   const unitLabel = String(itemLabel || 'Mensagens')
   const subjectPrefix = headerTitle
+  const simuladoIdFromThreadKey = useMemo(() => {
+    const raw = String(threadKey || '').trim()
+    if (!raw.toLowerCase().startsWith('simulado:')) return ''
+    const id = raw.split(':').slice(1).join(':').trim()
+    return id
+  }, [threadKey])
+  const isUuidValue = (value) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || '').trim())
+  const isSimuladoThread = Boolean(simuladoIdFromThreadKey && isUuidValue(simuladoIdFromThreadKey))
   const singularLabel = useMemo(() => {
     const t = headerTitle.trim().toLowerCase()
     if (t.includes('coment')) return 'Comentário'
@@ -218,23 +230,32 @@ export default function AlunoInboxThread({ user, studentName, threadKey, title, 
       if (!silent) setLoadError('')
       if (!user?.id) {
         loadDemo()
-        setInlineEditingPostId(null)
-        setInlineEditingText('')
-        setPostToDeleteId(null)
+        if (!silent) {
+          setInlineEditingPostId(null)
+          setInlineEditingText('')
+          setPostToDeleteId(null)
+        }
         return
       }
 
       const courseIdText = String(courseId || '').trim()
       if (courseIdText) {
+        if (refreshAbortRef.current) {
+          try { refreshAbortRef.current.abort() } catch (_) {}
+        }
+        const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
+        refreshAbortRef.current = controller
+
         const conversationStorageKey = `connekt_aluno_inbox_conversation_${courseIdText}_${String(threadKey || '')}`
         let storedConversationId = ''
         try { storedConversationId = String(localStorage.getItem(conversationStorageKey) || '').trim() } catch (_) {}
         const token = await getAccessToken()
         if (!token) throw new Error('missing_token')
         const url = `/api/producer?type=lesson_comments_thread&courseId=${encodeURIComponent(courseIdText)}&threadKey=${encodeURIComponent(String(threadKey || ''))}&title=${encodeURIComponent(String(title || 'Comentários'))}&lessonTitle=${encodeURIComponent(String(lessonTitle || ''))}`
-        const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } })
+        const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, ...(controller ? { signal: controller.signal } : null) })
         const body = await r.json().catch(() => ({}))
         if (!r.ok) throw new Error(String(body?.error || body?.message || 'load_failed'))
+        if (controller && refreshAbortRef.current !== controller) return
         const serverConversationId = String(body?.conversationId || '').trim()
         if (serverConversationId) setConversationId(serverConversationId)
         if (serverConversationId) {
@@ -253,9 +274,54 @@ export default function AlunoInboxThread({ user, studentName, threadKey, title, 
           author: (p.author && typeof p.author === 'object') ? p.author : null,
         }))
         setPosts(mapped)
-        setInlineEditingPostId(null)
-        setInlineEditingText('')
-        setPostToDeleteId(null)
+        if (!silent) {
+          setInlineEditingPostId(null)
+          setInlineEditingText('')
+          setPostToDeleteId(null)
+        }
+        return
+      }
+
+      if (isSimuladoThread) {
+        if (refreshAbortRef.current) {
+          try { refreshAbortRef.current.abort() } catch (_) {}
+        }
+        const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
+        refreshAbortRef.current = controller
+
+        const conversationStorageKey = `connekt_aluno_simulado_inbox_conversation_${simuladoIdFromThreadKey}_${String(threadKey || '')}`
+        let storedConversationId = ''
+        try { storedConversationId = String(localStorage.getItem(conversationStorageKey) || '').trim() } catch (_) {}
+        const token = await getAccessToken()
+        if (!token) throw new Error('missing_token')
+        const url = `/api/producer?type=simulado_inbox_thread&simId=${encodeURIComponent(simuladoIdFromThreadKey)}&threadKey=${encodeURIComponent(String(threadKey || ''))}&title=${encodeURIComponent(String(title || 'Inbox'))}`
+        const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, ...(controller ? { signal: controller.signal } : null) })
+        const body = await r.json().catch(() => ({}))
+        if (!r.ok) throw new Error(String(body?.error || body?.message || 'load_failed'))
+        if (controller && refreshAbortRef.current !== controller) return
+        const serverConversationId = String(body?.conversationId || '').trim()
+        if (serverConversationId) setConversationId(serverConversationId)
+        if (serverConversationId) {
+          try { localStorage.setItem(conversationStorageKey, serverConversationId) } catch (_) {}
+        } else if (storedConversationId) {
+          setConversationId(storedConversationId)
+        }
+        const list = Array.isArray(body?.data) ? body.data : []
+        const mapped = list.map((p) => ({
+          id: p.id,
+          text: p.content,
+          created_at: p.created_at,
+          likes: Number(p.likes || 0),
+          liked: !!p.liked,
+          replies: Array.isArray(p.replies) ? p.replies : [],
+          author: (p.author && typeof p.author === 'object') ? p.author : null,
+        }))
+        setPosts(mapped)
+        if (!silent) {
+          setInlineEditingPostId(null)
+          setInlineEditingText('')
+          setPostToDeleteId(null)
+        }
         return
       }
 
@@ -266,9 +332,11 @@ export default function AlunoInboxThread({ user, studentName, threadKey, title, 
       }
       if (!id) {
         loadDemo()
-        setInlineEditingPostId(null)
-        setInlineEditingText('')
-        setPostToDeleteId(null)
+        if (!silent) {
+          setInlineEditingPostId(null)
+          setInlineEditingText('')
+          setPostToDeleteId(null)
+        }
         return
       }
       const feed = await fetchConversationFeed(id, { limit: 50, offset: 0 })
@@ -281,10 +349,13 @@ export default function AlunoInboxThread({ user, studentName, threadKey, title, 
         replies: Array.isArray(p.replies) ? p.replies : [],
       }))
       setPosts(mapped)
-      setInlineEditingPostId(null)
-      setInlineEditingText('')
-      setPostToDeleteId(null)
+      if (!silent) {
+        setInlineEditingPostId(null)
+        setInlineEditingText('')
+        setPostToDeleteId(null)
+      }
     } catch (e) {
+      if (e && typeof e === 'object' && (e.name === 'AbortError' || String(e?.message || '').toLowerCase().includes('aborted'))) return
       const msg = String(e?.message || e || '').toLowerCase()
       if (msg.includes('abort')) return
       const courseIdText = String(courseId || '').trim()
@@ -309,6 +380,14 @@ export default function AlunoInboxThread({ user, studentName, threadKey, title, 
   useEffect(() => {
     refresh()
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (refreshAbortRef.current) {
+        try { refreshAbortRef.current.abort() } catch (_) {}
+      }
+    }
   }, [])
 
   useEffect(() => {
@@ -354,27 +433,11 @@ export default function AlunoInboxThread({ user, studentName, threadKey, title, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id, conversationId])
 
-  const handleLikePost = async (postId) => {
-    const post = posts.find((p) => p.id === postId)
-    if (!post) return
-    const nextLiked = !post.liked
-    const nextLikes = nextLiked ? post.likes + 1 : Math.max(0, post.likes - 1)
-    setPosts((prev) => prev.map((p) => (p.id === postId ? { ...p, liked: nextLiked, likes: nextLikes } : p)))
-
-    if (!user?.id || !conversationId) {
-      const next = posts.map((p) => (p.id === postId ? { ...p, liked: nextLiked, likes: nextLikes } : p))
-      saveDemo(next)
-      return
-    }
-
-    try {
-      await supabase.from('posts').update({ likes: nextLikes, liked: nextLiked }).eq('id', postId)
-    } catch (_) {}
-  }
-
   const handleSubmit = async () => {
     const text = composer.trim()
     if (!text) return
+    if (sending) return
+    setSending(true)
     setSendError('')
     if (!user?.id) {
       const next = [
@@ -391,6 +454,7 @@ export default function AlunoInboxThread({ user, studentName, threadKey, title, 
       setPosts(next)
       saveDemo(next)
       setComposer('')
+      setSending(false)
       toast({ title: successTitle })
       return
     }
@@ -432,11 +496,59 @@ export default function AlunoInboxThread({ user, studentName, threadKey, title, 
           ...(prev || []),
         ])
         setComposer('')
+        setSending(false)
         toast({ title: successTitle })
         return
       } catch (e) {
         const msg = String(e?.message || 'Não foi possível enviar para o inbox do produtor.')
         setSendError(msg)
+        setSending(false)
+        toast({ title: 'Erro ao enviar', description: msg })
+        return
+      }
+    }
+
+    if (isSimuladoThread) {
+      const conversationStorageKey = `connekt_aluno_simulado_inbox_conversation_${simuladoIdFromThreadKey}_${String(threadKey || '')}`
+      try {
+        const token = await getAccessToken()
+        if (!token) throw new Error('missing_token')
+        const r = await fetch('/api/producer?type=simulado_inbox_post', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            simId: simuladoIdFromThreadKey,
+            threadKey: String(threadKey || ''),
+            title: String(title || ''),
+            content: text,
+            studentName: String(studentName || 'Aluno'),
+          }),
+        })
+        const body = await r.json().catch(() => ({}))
+        const errText = body?.message ? `${String(body?.error || 'send_failed')}: ${String(body.message)}` : String(body?.error || body?.message || 'send_failed')
+        if (!r.ok || !body?.conversationId || !body?.post?.id) throw new Error(errText)
+        setConversationId(String(body.conversationId))
+        try { localStorage.setItem(conversationStorageKey, String(body.conversationId)) } catch (_) {}
+        setPosts((prev) => [
+          {
+            id: body.post.id,
+            text: body.post.content,
+            created_at: body.post.created_at,
+            likes: Number(body.post.likes || 0),
+            liked: !!body.post.liked,
+            replies: [],
+            author: (body.post.author && typeof body.post.author === 'object') ? body.post.author : null,
+          },
+          ...(prev || []),
+        ])
+        setComposer('')
+        setSending(false)
+        toast({ title: successTitle })
+        return
+      } catch (e) {
+        const msg = String(e?.message || 'Não foi possível enviar para o inbox do produtor.')
+        setSendError(msg)
+        setSending(false)
         toast({ title: 'Erro ao enviar', description: msg })
         return
       }
@@ -523,8 +635,10 @@ export default function AlunoInboxThread({ user, studentName, threadKey, title, 
         ...prev,
       ])
       setComposer('')
+      setSending(false)
       toast({ title: successTitle })
     } catch (_) {
+      setSending(false)
       toast({ title: 'Erro ao enviar', description: 'Tente novamente.' })
     }
   }
@@ -544,32 +658,37 @@ export default function AlunoInboxThread({ user, studentName, threadKey, title, 
   const handleSaveInlineEdit = async (postId) => {
     const text = String(inlineEditingText || '').trim()
     if (!postId || !text) return
+    if (String(savingPostId || '') === String(postId)) return
+    setSavingPostId(String(postId))
 
     if (!user?.id || String(postId).startsWith('demo-')) {
       const next = posts.map((p) => (p.id === postId ? { ...p, text } : p))
       setPosts(next)
       saveDemo(next)
       handleCancelInlineEdit()
+      setSavingPostId(null)
       toast({ title: `${singularLabel} atualizado` })
       return
     }
 
     try {
-      const { data, error } = await supabase
-        .from('posts')
-        .update({ content: text })
-        .eq('id', postId)
-        .select('id,content')
-        .single()
-      if (error) throw error
-      try {
-        if (conversationId) await supabase.from('conversations').update({ date: new Date().toISOString() }).eq('id', conversationId)
-      } catch (_) {}
-      setPosts((prev) => prev.map((p) => (p.id === postId ? { ...p, text: String(data?.content ?? text) } : p)))
+      const token = await getAccessToken()
+      if (!token) throw new Error('missing_token')
+      const r = await fetch('/api/producer?type=student_post_update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ postId: String(postId), content: text, studentName: String(studentName || 'Aluno') }),
+      })
+      const body = await r.json().catch(() => ({}))
+      if (!r.ok || !body?.post?.id) throw new Error(String(body?.message || body?.error || 'post_update_failed'))
+      const nextText = String(body?.post?.content || text)
+      setPosts((prev) => prev.map((p) => (p.id === postId ? { ...p, text: nextText } : p)))
       handleCancelInlineEdit()
       toast({ title: `${singularLabel} atualizado` })
     } catch (_) {
       toast({ title: 'Erro ao atualizar', description: 'Tente novamente.' })
+    } finally {
+      setSavingPostId(null)
     }
   }
 
@@ -580,21 +699,34 @@ export default function AlunoInboxThread({ user, studentName, threadKey, title, 
   const handleDeletePost = async (postId) => {
     if (!postId) return
     setPostToDeleteId(null)
+    if (String(deletingPostId || '') === String(postId)) return
+    setDeletingPostId(String(postId))
     if (!user?.id || String(postId).startsWith('demo-')) {
       const next = posts.filter((p) => p.id !== postId)
       setPosts(next)
       saveDemo(next)
       if (inlineEditingPostId === postId) handleCancelInlineEdit()
+      setDeletingPostId(null)
       toast({ title: `${singularLabel} excluído` })
       return
     }
     try {
-      await supabase.from('posts').delete().eq('id', postId)
+      const token = await getAccessToken()
+      if (!token) throw new Error('missing_token')
+      const r = await fetch('/api/producer?type=student_post_delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ postId: String(postId), studentName: String(studentName || 'Aluno') }),
+      })
+      const body = await r.json().catch(() => ({}))
+      if (!r.ok || !body?.ok) throw new Error(String(body?.message || body?.error || 'post_delete_failed'))
       setPosts((prev) => prev.filter((p) => p.id !== postId))
       if (inlineEditingPostId === postId) handleCancelInlineEdit()
       toast({ title: `${singularLabel} excluído` })
     } catch (_) {
       toast({ title: 'Erro ao excluir', description: 'Tente novamente.' })
+    } finally {
+      setDeletingPostId(null)
     }
   }
 
@@ -623,16 +755,22 @@ export default function AlunoInboxThread({ user, studentName, threadKey, title, 
             type="button"
             className="h-9 px-4 rounded-[8px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#22252B]"
             onClick={handleCancelComposer}
+            disabled={sending}
           >
             Cancelar
           </button>
           <button
             type="button"
             className="h-9 px-4 rounded-[8px] bg-[#0047BB] text-white text-[12px] font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-            disabled={!composer.trim() || loading}
+            disabled={!composer.trim() || loading || sending}
             onClick={handleSubmit}
           >
-            {submitLabel}
+            {sending ? (
+              <span className="inline-flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                {submitLabel}
+              </span>
+            ) : submitLabel}
           </button>
         </div>
       </div>
@@ -643,6 +781,8 @@ export default function AlunoInboxThread({ user, studentName, threadKey, title, 
           const replies = Array.isArray(p.replies) ? p.replies : []
           const open = !!openRepliesById[p.id]
           const isInlineEditing = inlineEditingPostId === p.id
+          const isSaving = String(savingPostId || '') === String(p.id || '')
+          const isDeleting = String(deletingPostId || '') === String(p.id || '')
           const authorName = String(p?.author?.name || studentName || 'Aluno')
           return (
             <div key={p.id} className="rounded-[10px] border border-[#E3E4E5] bg-white p-4">
@@ -665,16 +805,22 @@ export default function AlunoInboxThread({ user, studentName, threadKey, title, 
                           type="button"
                           className="h-8 px-3 rounded-[8px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#22252B]"
                           onClick={handleCancelInlineEdit}
+                          disabled={isSaving}
                         >
                           Cancelar
                         </button>
                         <button
                           type="button"
                           className="h-8 px-3 rounded-[8px] bg-[#0047BB] text-white text-[12px] font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-                          disabled={!String(inlineEditingText || '').trim()}
+                          disabled={!String(inlineEditingText || '').trim() || isSaving}
                           onClick={() => handleSaveInlineEdit(p.id)}
                         >
-                          Salvar
+                          {isSaving ? (
+                            <span className="inline-flex items-center gap-2">
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                              Salvar
+                            </span>
+                          ) : 'Salvar'}
                         </button>
                       </div>
                     </div>
@@ -685,20 +831,31 @@ export default function AlunoInboxThread({ user, studentName, threadKey, title, 
                     {isInlineEditing ? null : postToDeleteId === p.id ? (
                       <div className="flex items-center gap-2 text-[11px]">
                         <span className="text-[#B91C1C] font-semibold">Excluir?</span>
-                        <button type="button" className="text-[#B91C1C] font-semibold hover:underline" onClick={() => handleDeletePost(p.id)}>Sim</button>
-                        <button type="button" className="text-[#737780] font-semibold hover:underline" onClick={() => setPostToDeleteId(null)}>Não</button>
+                        <button
+                          type="button"
+                          className="text-[#B91C1C] font-semibold hover:underline disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center gap-2"
+                          disabled={isDeleting}
+                          onClick={() => handleDeletePost(p.id)}
+                        >
+                          {isDeleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                          Sim
+                        </button>
+                        <button
+                          type="button"
+                          className="text-[#737780] font-semibold hover:underline disabled:opacity-60 disabled:cursor-not-allowed"
+                          disabled={isDeleting}
+                          onClick={() => setPostToDeleteId(null)}
+                        >
+                          Não
+                        </button>
                       </div>
                     ) : (
                       <>
-                        <button type="button" className="inline-flex items-center gap-1 hover:text-[#22252B]" onClick={() => handleLikePost(p.id)}>
-                          <Heart className={`w-4 h-4 ${p.liked ? 'text-[#EF4444]' : 'text-[#737780]'}`} />
-                          Curtir {p.likes ? `(${p.likes})` : ''}
-                        </button>
-                        <button type="button" className="inline-flex items-center gap-1 hover:text-[#22252B]" onClick={() => handleStartInlineEdit(p)}>
+                        <button type="button" className="inline-flex items-center gap-1 hover:text-[#22252B]" disabled={isDeleting} onClick={() => handleStartInlineEdit(p)}>
                           <Edit2 className="w-4 h-4 text-[#737780]" />
                           Editar
                         </button>
-                        <button type="button" className="inline-flex items-center gap-1 hover:text-[#B91C1C]" onClick={() => setPostToDeleteId(p.id)}>
+                        <button type="button" className="inline-flex items-center gap-1 hover:text-[#B91C1C]" disabled={isDeleting} onClick={() => setPostToDeleteId(p.id)}>
                           <Trash2 className="w-4 h-4 text-[#737780]" />
                           Excluir
                         </button>

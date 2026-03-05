@@ -6,9 +6,11 @@ export default function DeviceLockPage() {
   const { deviceLock, resolveDeviceLock } = useAuth()
 
   const device = deviceLock?.activeDevice || null
-  const label = device?.active_device_label || 'Outro dispositivo'
-  const expiresAt = device?.active_device_expires_at ? new Date(device.active_device_expires_at) : null
-  const lastSeenAt = device?.active_device_last_seen_at ? new Date(device.active_device_last_seen_at) : null
+  const label = device?.label || device?.active_device_label || 'Outro dispositivo'
+  const expiresAtRaw = device?.expires_at || device?.active_device_expires_at || null
+  const lastSeenAtRaw = device?.last_seen_at || device?.active_device_last_seen_at || null
+  const expiresAt = expiresAtRaw ? new Date(expiresAtRaw) : null
+  const lastSeenAt = lastSeenAtRaw ? new Date(lastSeenAtRaw) : null
 
   const minutesToExpire = useMemo(() => {
     try {
@@ -18,7 +20,7 @@ export default function DeviceLockPage() {
     } catch (_) {
       return null
     }
-  }, [device?.active_device_expires_at])
+  }, [expiresAtRaw])
 
   const formatTime = (d) => {
     try {
@@ -29,10 +31,12 @@ export default function DeviceLockPage() {
     }
   }
 
-  const isMobile = (() => {
-    const ua = String(device?.active_device_user_agent || '')
+  const deviceType = String(deviceLock?.deviceType || '').toLowerCase() === 'mobile' ? 'mobile' : 'desktop'
+  const isMobile = deviceType === 'mobile' || (() => {
+    const ua = String(device?.user_agent || device?.active_device_user_agent || '')
     return /iphone|ipad|ipod|android/i.test(ua)
   })()
+  const isAwaiting = String(deviceLock?.reason || '') === 'awaiting_approval'
 
   return (
     <div className="min-h-screen bg-[#F8F9FA] flex items-center justify-center p-4">
@@ -44,7 +48,7 @@ export default function DeviceLockPage() {
             </div>
             <div>
               <div className="text-[16px] font-bold text-[#1E1B39]">Limite de dispositivo atingido</div>
-              <div className="text-[12px] text-[#737780]">Sua conta permite apenas 1 dispositivo por vez.</div>
+              <div className="text-[12px] text-[#737780]">Sua conta permite apenas 1 desktop e 1 mobile cadastrados.</div>
             </div>
           </div>
           <button
@@ -77,16 +81,19 @@ export default function DeviceLockPage() {
           </div>
 
           <div className="bg-[#F8FAFC] border border-[#E3E4E5] rounded-[10px] p-4 text-[12px] text-[#404040]">
-            Para usar esta conta aqui, você pode desconectar o outro dispositivo. O outro dispositivo será deslogado automaticamente em poucos instantes.
+            {isAwaiting
+              ? 'Solicitação enviada. Assim que for aprovada em um dispositivo cadastrado, você poderá entrar automaticamente.'
+              : 'Para usar esta conta aqui, envie uma solicitação de entrada. A aprovação deve ser feita em um dos dispositivos cadastrados.'}
           </div>
 
           <div className="flex flex-col sm:flex-row gap-3">
             <button
               type="button"
-              onClick={() => resolveDeviceLock('takeover')}
-              className="flex-1 bg-[#0047BB] text-white px-4 py-3 rounded-[8px] text-[14px] font-semibold hover:bg-[#003da0] transition-colors"
+              disabled={isAwaiting}
+              onClick={() => resolveDeviceLock('request')}
+              className={`flex-1 px-4 py-3 rounded-[8px] text-[14px] font-semibold transition-colors ${isAwaiting ? 'bg-[#0047BB] text-white opacity-60 cursor-not-allowed' : 'bg-[#0047BB] text-white hover:bg-[#003da0]'}`}
             >
-              Desconectar outro dispositivo e continuar
+              {isAwaiting ? 'Aguardando aprovação…' : 'Solicitar entrada deste dispositivo'}
             </button>
             <button
               type="button"

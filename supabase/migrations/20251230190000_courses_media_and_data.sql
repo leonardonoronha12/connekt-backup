@@ -12,7 +12,18 @@ do $$
 begin
   begin
     update storage.buckets
-      set allowed_mime_types = array['image/*','video/*']
+      set allowed_mime_types = array[
+        'image/*',
+        'video/*',
+        'application/pdf',
+        'application/msword',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/vnd.ms-powerpoint',
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'application/vnd.ms-excel',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'application/octet-stream'
+      ]
       where id = 'courses-media';
   exception when undefined_column then
     null;

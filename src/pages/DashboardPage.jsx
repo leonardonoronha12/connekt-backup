@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { useAuth } from '@/contexts/SupabaseAuthContext.jsx';
 import { supabase } from '@/lib/supabaseClient.js';
@@ -41,6 +41,26 @@ const DashboardPage = () => {
     return formatarMoeda(value);
   };
 
+  const normalizeText = (value) => String(value || '').trim().toLowerCase();
+
+  const resolveMethodKey = (row) => {
+    const raw = normalizeText(row?.payment_method || row?.paymentMethod || row?.method || row?.gateway_method || row?.brand);
+    if (raw.includes('pix')) return 'pix';
+    if (raw.includes('boleto') || raw.includes('billet')) return 'boleto';
+    if (raw.includes('card') || raw.includes('credito') || raw.includes('credit') || raw.includes('visa') || raw.includes('master')) return 'card';
+    return 'card';
+  };
+
+  const resolveStatusBucket = (row) => {
+    const s = normalizeText(row?.status);
+    if (s === 'paid' || s === 'aprovado' || s === 'approved' || s === 'succeeded' || s === 'captured') return 'approved';
+    if (s === 'refunded' || s === 'reembolsado') return 'refunded';
+    if (s === 'chargeback') return 'chargeback';
+    if (s === 'canceled' || s === 'cancelled') return 'canceled';
+    if (s === 'declined' || s === 'refused' || s === 'failed' || s === 'rejected' || s === 'denied' || s === 'not_authorized' || s === 'not authorized') return 'declined';
+    return 'pending';
+  };
+
   useEffect(() => {
     if (!user?.id) return;
     let cancelled = false;
@@ -76,7 +96,11 @@ const DashboardPage = () => {
   useEffect(() => {
     if (!user?.id) return;
     let cancelled = false;
-    (async () => {
+    let inFlight = false;
+    const run = async () => {
+      if (cancelled) return;
+      if (inFlight) return;
+      inFlight = true;
       try {
         const token = (await supabase.auth.getSession().catch(() => ({ data: null })))?.data?.session?.access_token || ''
         if (!token) throw new Error('missing_token')
@@ -88,91 +112,208 @@ const DashboardPage = () => {
         if (!cancelled) setSalesRows(Array.isArray(body?.data) ? body.data : []);
       } catch (_) {
         if (!cancelled) setSalesRows([]);
+      } finally {
+        inFlight = false;
       }
-    })();
-    return () => { cancelled = true; };
+    };
+    const onFocus = () => { run(); };
+    run();
+    try { window.addEventListener('focus', onFocus); } catch (_) {}
+    const timer = window.setInterval(() => { run(); }, 15_000);
+    return () => {
+      cancelled = true;
+      try { window.removeEventListener('focus', onFocus); } catch (_) {}
+      try { window.clearInterval(timer); } catch (_) {}
+    };
   }, [user?.id]);
 
-  const sumCentsByStatus = (statusKey) => {
-    const key = String(statusKey || '').toLowerCase();
-    return (salesRows || []).reduce((sum, r) => {
-      const status = String(r?.status || '').toLowerCase();
-      if (status !== key) return sum;
+  const dashboardAgg = useMemo(() => {
+    const toDayKey = (d) => {
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      return `${yyyy}-${mm}-${dd}`;
+    };
+    const toLabelDDMM = (d) => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const safeDate = (row) => {
+      const raw = row?.created_at || row?.createdAt || null;
+      const dt = raw ? new Date(raw) : null;
+      return dt && isFinite(dt.getTime()) ? dt : null;
+    };
+
+    const totals = {
+      approved: { count: 0, cents: 0 },
+      refunded: { count: 0, cents: 0 },
+      chargeback: { count: 0, cents: 0 },
+    };
+
+    const students = new Set();
+    const methodAgg = {
+      pix: { approved: 0, pending: 0, canceled: 0, total: 0, approvedCount: 0, totalCount: 0 },
+      card: { approved: 0, pending: 0, canceled: 0, total: 0, approvedCount: 0, totalCount: 0 },
+      boleto: { approved: 0, pending: 0, canceled: 0, total: 0, approvedCount: 0, totalCount: 0 },
+    };
+
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const dayBuckets = new Map();
+
+    const startOfWeek = (d) => {
+      const out = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+      const day = out.getDay();
+      const diff = (day === 0 ? -6 : 1) - day;
+      out.setDate(out.getDate() + diff);
+      out.setHours(0, 0, 0, 0);
+      return out;
+    };
+    const weekBuckets = new Map();
+    const monthBuckets = new Map();
+
+    for (const r of (salesRows || [])) {
+      const bucket = resolveStatusBucket(r);
       const cents = Number(r?.amount_cents || 0);
-      return sum + (isFinite(cents) ? cents : 0);
-    }, 0);
-  };
+      const amountCents = isFinite(cents) ? cents : 0;
+      const dt = safeDate(r);
+      const method = resolveMethodKey(r);
 
-  const countByStatus = (statusKey) => {
-    const key = String(statusKey || '').toLowerCase();
-    return (salesRows || []).reduce((sum, r) => sum + (String(r?.status || '').toLowerCase() === key ? 1 : 0), 0);
-  };
+      if (bucket === 'approved') {
+        totals.approved.count += 1;
+        totals.approved.cents += amountCents;
+        const buyerId = String(r?.buyer_id || r?.buyerId || '').trim();
+        const email = String(r?.client_email || r?.clientEmail || '').trim().toLowerCase();
+        const key = buyerId || email;
+        if (key) students.add(key);
+      } else if (bucket === 'refunded') {
+        totals.refunded.count += 1;
+        totals.refunded.cents += amountCents;
+      } else if (bucket === 'chargeback') {
+        totals.chargeback.count += 1;
+        totals.chargeback.cents += amountCents;
+      }
 
-  const paidCents = sumCentsByStatus('paid');
-  const refundedCents = sumCentsByStatus('refunded');
-  const chargebackCents = sumCentsByStatus('chargeback');
+      const methodRow = methodAgg[method] || methodAgg.card;
+      const cancelBucket = (bucket === 'canceled' || bucket === 'declined' || bucket === 'refunded' || bucket === 'chargeback') ? 'canceled' : bucket;
+      if (cancelBucket === 'approved') {
+        methodRow.approved += amountCents;
+        methodRow.approvedCount += 1;
+      } else if (cancelBucket === 'pending') {
+        methodRow.pending += amountCents;
+      } else {
+        methodRow.canceled += amountCents;
+      }
+      methodRow.total += amountCents;
+      methodRow.totalCount += 1;
 
-  const stats = {
-    alunos: { qtde: 0, valor: formatarCentavos(0), delta: "0,00%" },
-    vendas: { qtde: countByStatus('paid'), valor: formatarCentavos(paidCents), delta: "0,00%" },
-    reembolsadas: { qtde: countByStatus('refunded'), valor: formatarCentavos(refundedCents), delta: "0,00%" },
-    chargeback: { qtde: countByStatus('chargeback'), valor: formatarCentavos(chargebackCents), delta: "0,00%" }
-  };
+      if (dt && bucket === 'approved') {
+        const dayKey = toDayKey(dt);
+        dayBuckets.set(dayKey, (dayBuckets.get(dayKey) || 0) + amountCents);
 
-  const meiosPagamento = [
-    { tipo: 'PIX', conversao: '0%', emAnalise: formatarCentavos(0), aprovados: formatarCentavos(0), cancelados: formatarCentavos(0), corFundo: '#DEFFFC' },
-    { tipo: 'Cartão de crédito', conversao: '0%', emAnalise: formatarCentavos(0), aprovados: formatarCentavos(0), cancelados: formatarCentavos(0), corFundo: '#FAEFE0' },
-    { tipo: 'Boleto', conversao: '0%', emAnalise: formatarCentavos(0), aprovados: formatarCentavos(0), cancelados: formatarCentavos(0), corFundo: '#F4F4F4' }
-  ];
+        const wk = startOfWeek(dt);
+        const weekKey = toDayKey(wk);
+        weekBuckets.set(weekKey, (weekBuckets.get(weekKey) || 0) + amountCents);
 
-  const dadosGrafico = {
-    diario: [
-      { data: '01/01', valor: 0 },
-      { data: '02/01', valor: 0 },
-      { data: '03/01', valor: 0 },
-      { data: '04/01', valor: 0 },
-      { data: '05/01', valor: 0 },
-      { data: '06/01', valor: 0 },
-      { data: '07/01', valor: 0 },
-      { data: '08/01', valor: 0 },
-      { data: '09/01', valor: 0 },
-      { data: '10/01', valor: 0 },
-      { data: '11/01', valor: 0 },
-      { data: '12/01', valor: 0 },
-      { data: '13/01', valor: 0 },
-      { data: '14/01', valor: 0 }
-    ],
-    semanal: [
-      { data: 'Sem 1', valor: 0 },
-      { data: 'Sem 2', valor: 0 },
-      { data: 'Sem 3', valor: 0 },
-      { data: 'Sem 4', valor: 0 },
-      { data: 'Sem 5', valor: 0 },
-      { data: 'Sem 6', valor: 0 },
-      { data: 'Sem 7', valor: 0 },
-      { data: 'Sem 8', valor: 0 },
-      { data: 'Sem 9', valor: 0 },
-      { data: 'Sem 10', valor: 0 },
-      { data: 'Sem 11', valor: 0 },
-      { data: 'Sem 12', valor: 0 }
-    ],
-    anual: [
-      { data: 'Jan', valor: 0 },
-      { data: 'Fev', valor: 0 },
-      { data: 'Mar', valor: 0 },
-      { data: 'Abr', valor: 0 },
-      { data: 'Mai', valor: 0 },
-      { data: 'Jun', valor: 0 },
-      { data: 'Jul', valor: 0 },
-      { data: 'Ago', valor: 0 },
-      { data: 'Set', valor: 0 },
-      { data: 'Out', valor: 0 },
-      { data: 'Nov', valor: 0 },
-      { data: 'Dez', valor: 0 }
-    ]
-  };
+        const monthKey = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`;
+        monthBuckets.set(monthKey, (monthBuckets.get(monthKey) || 0) + amountCents);
+      }
+    }
 
-  const receitaTotalLabel = formatarCentavos(paidCents);
+    const diario = [];
+    for (let i = 13; i >= 0; i -= 1) {
+      const d = new Date(today.getTime());
+      d.setDate(d.getDate() - i);
+      const key = toDayKey(d);
+      const cents = dayBuckets.get(key) || 0;
+      diario.push({ data: toLabelDDMM(d), valor: cents / 100 });
+    }
+
+    const semanal = [];
+    const thisWeek = startOfWeek(today);
+    for (let i = 11; i >= 0; i -= 1) {
+      const d = new Date(thisWeek.getTime());
+      d.setDate(d.getDate() - i * 7);
+      const key = toDayKey(d);
+      const cents = weekBuckets.get(key) || 0;
+      semanal.push({ data: toLabelDDMM(d), valor: cents / 100 });
+    }
+
+    const monthLabels = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+    const year = today.getFullYear();
+    const anual = monthLabels.map((label, idx) => {
+      const key = `${year}-${String(idx + 1).padStart(2, '0')}`;
+      const cents = monthBuckets.get(key) || 0;
+      return { data: label, valor: cents / 100 };
+    });
+
+    const pct = (cur, prev) => {
+      const c = Number(cur || 0);
+      const p = Number(prev || 0);
+      if (!(p > 0)) return c > 0 ? 100 : 0;
+      return ((c - p) / p) * 100;
+    };
+    const formatPct = (n) => {
+      const value = Number(n || 0);
+      const sign = value > 0 ? '+' : '';
+      return `${sign}${value.toFixed(2).replace('.', ',')}%`;
+    };
+    const sumLast = (arr, n) => arr.slice(-n).reduce((acc, it) => acc + Number(it?.valor || 0), 0);
+
+    const dailyCur = sumLast(diario, 7);
+    const dailyPrev = diario.slice(0, Math.max(0, diario.length - 7)).slice(-7).reduce((acc, it) => acc + Number(it?.valor || 0), 0);
+    const weeklyCur = sumLast(semanal, 4);
+    const weeklyPrev = semanal.slice(0, Math.max(0, semanal.length - 4)).slice(-4).reduce((acc, it) => acc + Number(it?.valor || 0), 0);
+    const monthIdx = today.getMonth();
+    const monthCur = anual[monthIdx]?.valor || 0;
+    const monthPrev = monthIdx > 0 ? (anual[monthIdx - 1]?.valor || 0) : 0;
+
+    const deltaByPeriodo = {
+      diario: pct(dailyCur, dailyPrev),
+      semanal: pct(weeklyCur, weeklyPrev),
+      anual: pct(monthCur, monthPrev),
+    };
+
+    const meiosPagamento = [
+      {
+        tipo: 'PIX',
+        conversao: `${Math.round(((methodAgg.pix.approvedCount || 0) / Math.max(1, methodAgg.pix.totalCount || 0)) * 100)}%`,
+        emAnalise: formatarCentavos(methodAgg.pix.pending),
+        aprovados: formatarCentavos(methodAgg.pix.approved),
+        cancelados: formatarCentavos(methodAgg.pix.canceled),
+        corFundo: '#DEFFFC',
+      },
+      {
+        tipo: 'Cartão de crédito',
+        conversao: `${Math.round(((methodAgg.card.approvedCount || 0) / Math.max(1, methodAgg.card.totalCount || 0)) * 100)}%`,
+        emAnalise: formatarCentavos(methodAgg.card.pending),
+        aprovados: formatarCentavos(methodAgg.card.approved),
+        cancelados: formatarCentavos(methodAgg.card.canceled),
+        corFundo: '#FAEFE0',
+      },
+      {
+        tipo: 'Boleto',
+        conversao: `${Math.round(((methodAgg.boleto.approvedCount || 0) / Math.max(1, methodAgg.boleto.totalCount || 0)) * 100)}%`,
+        emAnalise: formatarCentavos(methodAgg.boleto.pending),
+        aprovados: formatarCentavos(methodAgg.boleto.approved),
+        cancelados: formatarCentavos(methodAgg.boleto.canceled),
+        corFundo: '#F4F4F4',
+      },
+    ];
+
+    return {
+      totals,
+      studentsCount: students.size,
+      receitaTotalLabel: formatarCentavos(totals.approved.cents),
+      stats: {
+        alunos: { qtde: students.size, valor: formatarCentavos(totals.approved.cents), delta: '0,00%' },
+        vendas: { qtde: totals.approved.count, valor: formatarCentavos(totals.approved.cents), delta: '0,00%' },
+        reembolsadas: { qtde: totals.refunded.count, valor: formatarCentavos(totals.refunded.cents), delta: '0,00%' },
+        chargeback: { qtde: totals.chargeback.count, valor: formatarCentavos(totals.chargeback.cents), delta: '0,00%' },
+      },
+      dadosGrafico: { diario, semanal, anual },
+      meiosPagamento,
+      aumentoPctRaw: deltaByPeriodo[periodo] || 0,
+      aumentoPctLabel: formatPct(deltaByPeriodo[periodo] || 0),
+    };
+  }, [salesRows, periodo]);
 
   const navigateTo = (path) => {
     try {
@@ -208,6 +349,14 @@ const DashboardPage = () => {
     setOnboardingAnim({ type: 'success', title: 'Onboarding concluído', subtitle: 'Sua conta está pronta para uso.' });
     window.setTimeout(() => setOnboardingAnim(null), 1200);
   };
+
+  const debugSales = (() => {
+    try {
+      return new URLSearchParams(window.location.search || '').get('debugSales') === '1'
+    } catch (_) {
+      return false
+    }
+  })();
 
   return (
     <div className="min-h-screen min-h-[100dvh] overflow-y-auto bg-gray-50">
@@ -294,12 +443,12 @@ const DashboardPage = () => {
                 <p className="text-xs font-medium text-[#1E1B39]">Total de alunos</p>
               </div>
               <span className="bg-[#F1EDFF] text-[#331A88] text-xs font-medium px-2 py-1 rounded">
-                {stats.alunos.delta}
+                {dashboardAgg.stats.alunos.delta}
               </span>
             </div>
             <div className="flex justify-between items-end">
-              <span className="text-[28px] font-semibold">{stats.alunos.qtde.toLocaleString()}</span>
-              <span className="text-sm font-medium">{stats.alunos.valor}</span>
+              <span className="text-[28px] font-semibold">{dashboardAgg.stats.alunos.qtde.toLocaleString()}</span>
+              <span className="text-sm font-medium">{dashboardAgg.stats.alunos.valor}</span>
             </div>
           </div>
 
@@ -311,12 +460,12 @@ const DashboardPage = () => {
                 <p className="text-xs font-medium text-[#1E1B39]">Total de vendas</p>
               </div>
               <span className="bg-[#EAFFF0] text-[#34A853] text-xs font-medium px-2 py-1 rounded">
-                {stats.vendas.delta}
+                {dashboardAgg.stats.vendas.delta}
               </span>
             </div>
             <div className="flex justify-between items-end">
-              <span className="text-[28px] font-semibold">{stats.vendas.qtde.toLocaleString()}</span>
-              <span className="text-sm font-medium">{stats.vendas.valor}</span>
+              <span className="text-[28px] font-semibold">{dashboardAgg.stats.vendas.qtde.toLocaleString()}</span>
+              <span className="text-sm font-medium">{dashboardAgg.stats.vendas.valor}</span>
             </div>
           </div>
 
@@ -328,12 +477,12 @@ const DashboardPage = () => {
                 <p className="text-xs font-medium text-[#1E1B39]">Vendas Reembolsadas</p>
               </div>
               <span className="bg-[#EAF2FF] text-[#0047BB] text-xs font-medium px-2 py-1 rounded">
-                {stats.reembolsadas.delta}
+                {dashboardAgg.stats.reembolsadas.delta}
               </span>
             </div>
             <div className="flex justify-between items-end">
-              <span className="text-[28px] font-semibold">{stats.reembolsadas.qtde.toLocaleString()}</span>
-              <span className="text-sm font-medium">{stats.reembolsadas.valor}</span>
+              <span className="text-[28px] font-semibold">{dashboardAgg.stats.reembolsadas.qtde.toLocaleString()}</span>
+              <span className="text-sm font-medium">{dashboardAgg.stats.reembolsadas.valor}</span>
             </div>
           </div>
 
@@ -345,12 +494,12 @@ const DashboardPage = () => {
                 <p className="text-xs font-medium text-[#1E1B39]">Chargeback</p>
               </div>
               <span className="bg-[#F3F3F3] text-[#414244] text-xs font-medium px-2 py-1 rounded">
-                {stats.chargeback.delta}
+                {dashboardAgg.stats.chargeback.delta}
               </span>
             </div>
             <div className="flex justify-between items-end">
-              <span className="text-[28px] font-semibold">{stats.chargeback.qtde.toLocaleString()}</span>
-              <span className="text-sm font-medium">{stats.chargeback.valor}</span>
+              <span className="text-[28px] font-semibold">{dashboardAgg.stats.chargeback.qtde.toLocaleString()}</span>
+              <span className="text-sm font-medium">{dashboardAgg.stats.chargeback.valor}</span>
             </div>
           </div>
         </div>
@@ -363,10 +512,10 @@ const DashboardPage = () => {
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6">
               <div className="mb-4 sm:mb-0">
                 <p className="text-sm text-[#9291A5] mb-1">Receita total</p>
-                <p className="text-2xl font-semibold mb-2">{receitaTotalLabel}</p>
+                <p className="text-2xl font-semibold mb-2">{dashboardAgg.receitaTotalLabel}</p>
                 <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 bg-[#04CE00] rounded-full"></div>
-                  <span className="text-xs font-semibold text-[#04CE00]">0,00%</span>
+                  <div className={`w-2 h-2 rounded-full ${dashboardAgg.aumentoPctRaw >= 0 ? 'bg-[#04CE00]' : 'bg-[#E53935]'}`}></div>
+                  <span className={`text-xs font-semibold ${dashboardAgg.aumentoPctRaw >= 0 ? 'text-[#04CE00]' : 'text-[#E53935]'}`}>{dashboardAgg.aumentoPctLabel}</span>
                   <span className="text-xs text-[#9291A5]">AUMENTO DE VENDAS</span>
                 </div>
               </div>
@@ -393,7 +542,7 @@ const DashboardPage = () => {
             {/* Gráfico */}
             <div className="h-[399px]">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={dadosGrafico[periodo]}>
+                <LineChart data={dashboardAgg.dadosGrafico[periodo]}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                   <XAxis 
                     dataKey="data" 
@@ -431,7 +580,7 @@ const DashboardPage = () => {
 
           {/* Bloco D - Meios de Pagamento */}
           <div className="w-full xl:w-[270px] space-y-[22px]">
-            {meiosPagamento.map((meio, index) => (
+            {dashboardAgg.meiosPagamento.map((meio, index) => (
               <div key={index} className="bg-white rounded-[10px] shadow-[0_1px_4px_rgba(13,10,44,0.08)] px-[22px] py-8">
                 {/* Cabeçalho com ícone */}
                 <div className="flex items-center gap-3 mb-3">
@@ -511,6 +660,15 @@ const DashboardPage = () => {
             ))}
           </div>
         </div>
+
+        {debugSales && (
+          <div className="bg-white rounded-[10px] px-[22px] py-6 border border-[#E3E4E5]">
+            <div className="text-[12px] font-semibold text-[#1E1B39] mb-3">debugSales=1</div>
+            <pre className="text-[11px] whitespace-pre-wrap break-words text-[#111827] bg-[#F9FAFB] border border-[#E5E7EB] rounded p-3 max-h-[420px] overflow-auto">
+              {JSON.stringify({ salesRows: (salesRows || []).slice(0, 25), dashboardAgg }, null, 2)}
+            </pre>
+          </div>
+        )}
       </div>
 
       {/* Grupo Flutuante do lado direito */}

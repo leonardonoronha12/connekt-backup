@@ -6,8 +6,9 @@ import { Switch } from '@/components/ui/switch.jsx'
 import Header from '@/components/Header'
 import BrandLogo from '@/components/BrandLogo'
 import CourseFooter from '@/components/CourseFooter'
-import AlunoInboxThread from '@/components/AlunoInboxThread'
+import ProgressRingIcon from '@/components/ProgressRingIcon.jsx'
 import { supabase } from '@/lib/supabaseClient'
+import { captureVideoElementFrameDataUrl, captureVideoFrameDataUrl } from '@/lib/videoThumb'
 import { useActiveProducerUserId } from '@/hooks/useActiveProducerUserId'
 import { ALUNO_NAV_SECTIONS } from '@/constants/alunoNavSections'
 
@@ -348,91 +349,9 @@ function resolveLessonPlayableVideoUrl(lesson) {
       const h = String(window.location.hostname || '').toLowerCase()
       isLocal = h === 'localhost' || h === '127.0.0.1'
     } catch (_) {}
-    return isLocal ? u : `/api/media?u=${encodeURIComponent(u)}`
+    return isLocal ? u : `/api/media?stream=1&u=${encodeURIComponent(u)}`
   }
   return u
-}
-
-async function captureVideoFrameDataUrl(src, seekSeconds) {
-  const url = String(src || '').trim()
-  if (!url) return ''
-  const seekTo = Number.isFinite(Number(seekSeconds)) ? Number(seekSeconds) : 0.2
-
-  const v = document.createElement('video')
-  v.crossOrigin = 'anonymous'
-  v.muted = true
-  v.playsInline = true
-  v.preload = 'metadata'
-
-  const cleanup = () => {
-    try { v.pause() } catch (_) {}
-    try { v.removeAttribute('src') } catch (_) {}
-    try { v.load() } catch (_) {}
-  }
-
-  const withTimeout = (p, ms) => new Promise((resolve) => {
-    let done = false
-    const t = setTimeout(() => {
-      if (done) return
-      done = true
-      resolve('')
-    }, Math.max(500, Number(ms) || 3500))
-    Promise.resolve(p)
-      .then((val) => {
-        if (done) return
-        done = true
-        clearTimeout(t)
-        resolve(val)
-      })
-      .catch(() => {
-        if (done) return
-        done = true
-        clearTimeout(t)
-        resolve('')
-      })
-  })
-
-  return withTimeout(new Promise((resolve) => {
-    v.onloadedmetadata = () => {
-      try {
-        const d = Number.isFinite(Number(v.duration)) ? Number(v.duration) : 0
-        const target = Math.max(0, Math.min(d > 0 ? d - 0.05 : seekTo, seekTo))
-        try { v.currentTime = target } catch (_) {}
-      } catch (_) {
-        resolve('')
-      }
-    }
-    v.onseeked = () => {
-      try {
-        const w = Math.max(1, v.videoWidth || 0)
-        const h = Math.max(1, v.videoHeight || 0)
-        if (!w || !h) return resolve('')
-        const canvas = document.createElement('canvas')
-        canvas.width = w
-        canvas.height = h
-        const ctx = canvas.getContext('2d')
-        if (!ctx) return resolve('')
-        ctx.drawImage(v, 0, 0, w, h)
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.72)
-        resolve(dataUrl || '')
-      } catch (_) {
-        resolve('')
-      } finally {
-        cleanup()
-      }
-    }
-    v.onerror = () => {
-      cleanup()
-      resolve('')
-    }
-    try {
-      v.src = url
-      v.load()
-    } catch (_) {
-      cleanup()
-      resolve('')
-    }
-  }), 5000)
 }
 
 function ProgressRing({ value }) {
@@ -955,7 +874,9 @@ export default function AlunoAulaPage() {
   }, [])
   const [studentName, setStudentName] = useState('Aluno')
   const [isCompleted, setIsCompleted] = useState(false)
+  const [videoEndedForCurrent, setVideoEndedForCurrent] = useState(false)
   const [isNpsOpen, setIsNpsOpen] = useState(false)
+  const [pendingLessonNavUrl, setPendingLessonNavUrl] = useState('')
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [isRecommendedOpen, setIsRecommendedOpen] = useState(true)
   const [openModules, setOpenModules] = useState({})
@@ -974,11 +895,14 @@ export default function AlunoAulaPage() {
   const [vdocipherEmbedUrl, setVdocipherEmbedUrl] = useState('')
   const [vdocipherStatus, setVdocipherStatus] = useState('idle')
   const [videoUrlOverride, setVideoUrlOverride] = useState('')
+  const playbackVideoRef = useRef(null)
+  const lastPlaybackCoverCaptureAtRef = useRef(0)
   const lessonThumbTickRef = useRef(0)
   const [lessonThumbTick, setLessonThumbTick] = useState(0)
   const lessonThumbCacheRef = useRef(new Map())
   const lessonThumbInFlightRef = useRef(new Set())
   const [progressTick, setProgressTick] = useState(0)
+  const [ownedSimuladoIds, setOwnedSimuladoIds] = useState([])
   const [moduleSimulados, setModuleSimulados] = useState([])
   const [moduleSimuladosLoading, setModuleSimuladosLoading] = useState(false)
   const simuladosScrollRef = useRef(null)
@@ -1019,6 +943,56 @@ export default function AlunoAulaPage() {
       return false
     }
   }, [])
+
+  useEffect(() => {
+    let active = true
+    const run = async () => {
+      if (isDemoStudent) return
+      try {
+        const token = (await supabase.auth.getSession().catch(() => ({ data: null })))?.data?.session?.access_token || ''
+        if (!token) return
+        const { data, error } = await supabase
+          .from('notifications')
+          .select('type,entity_type,entity_id,data,created_at')
+          .eq('type', 'purchase_confirmed')
+          .order('created_at', { ascending: false })
+          .limit(500)
+        if (!active) return
+        if (error) throw error
+        const isExpired = (expiresAtIso) => {
+          const v = String(expiresAtIso || '').trim()
+          if (!v) return false
+          const m = v.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+          if (!m) return false
+          const endMs = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 23, 59, 59, 999)
+          return Date.now() > endMs
+        }
+        const set = new Set()
+        for (const row of Array.isArray(data) ? data : []) {
+          const entityType = String(row?.entity_type || '').trim().toLowerCase()
+          const dataObj = row?.data && typeof row.data === 'object' ? row.data : null
+          const dataType = String(dataObj?.type || '').trim().toLowerCase()
+          if (entityType === 'simulado' || dataType === 'simulado') {
+            const id = String(row?.entity_id || dataObj?.simId || dataObj?.simuladoId || '').trim()
+            const expiresAt = String(dataObj?.expires_at || dataObj?.expiresAt || '').trim()
+            if (id && !(expiresAt && isExpired(expiresAt))) set.add(id)
+          }
+        }
+        const list = Array.from(set)
+        setOwnedSimuladoIds(list)
+        for (const id of list) {
+          try { localStorage.setItem(`connekt_simulado_owned:${id}`, '1') } catch (_) {}
+        }
+      } catch (_) {
+        if (!active) return
+        setOwnedSimuladoIds([])
+      }
+    }
+    run()
+    return () => { active = false }
+  }, [isDemoStudent])
+
+  const ownedSimuladoIdSet = useMemo(() => new Set((Array.isArray(ownedSimuladoIds) ? ownedSimuladoIds : []).map((v) => String(v || '').trim()).filter(Boolean)), [ownedSimuladoIds])
 
   const activeProducerUserId = useActiveProducerUserId()
   const courseOwnedKey = useMemo(() => {
@@ -1061,7 +1035,20 @@ export default function AlunoAulaPage() {
   const isBlockedRead = (e) => {
     const msg = String(e?.message || e || '').toLowerCase()
     const sc = String(e?.status || e?.statusCode || '')
-    return sc === '401' || sc === '403' || msg.includes('row-level security') || msg.includes('permission denied') || msg.includes('not allowed')
+    const code = String(e?.code || '').toUpperCase()
+    return (
+      sc === '401' ||
+      sc === '403' ||
+      sc === '404' ||
+      sc === '406' ||
+      code === 'PGRST116' ||
+      msg.includes('row-level security') ||
+      msg.includes('permission denied') ||
+      msg.includes('not allowed') ||
+      msg.includes('0 rows') ||
+      msg.includes('no rows returned') ||
+      msg.includes('multiple (or no) rows returned')
+    )
   }
 
   const getAccessToken = async () => {
@@ -1138,7 +1125,7 @@ export default function AlunoAulaPage() {
         }
         setCourseRow(null)
         setCourseError(String(e?.message || 'Erro ao carregar curso'))
-        setResolvedPromoUrl(DEMO_PROMO_VIDEO_URL)
+        setResolvedPromoUrl('')
       } finally {
         if (active) setCourseLoading(false)
       }
@@ -1609,7 +1596,7 @@ export default function AlunoAulaPage() {
           const h = String(window.location.hostname || '').toLowerCase()
           isLocal = h === 'localhost' || h === '127.0.0.1'
         } catch (_) {}
-        return isLocal ? u : `/api/media?u=${encodeURIComponent(u)}`
+        return isLocal ? u : `/api/media?stream=1&u=${encodeURIComponent(u)}`
       }
       return u
     })()
@@ -1682,14 +1669,27 @@ export default function AlunoAulaPage() {
   const ensureLessonCover = async (k, coverCandidate, playableUrl) => {
     const key = String(k || '').trim()
     if (!key) return
-    if (isNonEmptyString(coverCandidate)) {
+    const normalizedCandidate = (() => {
+      const raw = String(coverCandidate || '').trim()
+      if (!raw) return ''
+      const lower = raw.toLowerCase()
+      if (lower.endsWith('/preview.png') || lower.includes('/preview.png?') || lower === 'preview.png') return ''
+      return raw
+    })()
+    if (isNonEmptyString(normalizedCandidate)) {
       if (!lessonThumbCacheRef.current.get(key)) {
-        lessonThumbCacheRef.current.set(key, String(coverCandidate))
+        lessonThumbCacheRef.current.set(key, String(normalizedCandidate))
         lessonThumbTickRef.current += 1
         setLessonThumbTick(lessonThumbTickRef.current)
       }
       return
     }
+    let isLocal = false
+    try {
+      const h = String(window.location.hostname || '').toLowerCase()
+      isLocal = h === 'localhost' || h === '127.0.0.1'
+    } catch (_) {}
+    if (!isLocal) return
     if (!isNonEmptyString(playableUrl)) return
     if (lessonThumbCacheRef.current.get(key)) return
     if (lessonThumbInFlightRef.current.has(key)) return
@@ -1775,10 +1775,64 @@ export default function AlunoAulaPage() {
     })
   }, [courseId, current])
 
+  const requestNpsThenNavigate = (targetModuleKey, url) => {
+    const nextUrl = String(url || '').trim()
+    if (!nextUrl) return
+    const cid = String(courseId || '').trim()
+    const mk = String(targetModuleKey || '').trim()
+    if (!cid || !mk) {
+      navigateTo(nextUrl)
+      return
+    }
+    if (mk !== String(currentModuleKey || '').trim()) {
+      navigateTo(nextUrl)
+      return
+    }
+    const gateKey = `connekt_aluno_nps_done:${cid}:${mk}`
+    if (safeLsGet(gateKey) === '1') {
+      navigateTo(nextUrl)
+      return
+    }
+    setPendingLessonNavUrl(nextUrl)
+    setIsNpsOpen(true)
+    toast({ title: 'Avaliação necessária', description: 'Conclua a avaliação NPS para acessar outras aulas deste módulo.' })
+  }
+
   const currentThumbKey = useMemo(() => {
     const k = String(currentLessonKey || '').trim()
     return k ? `thumb:${k}` : ''
   }, [currentLessonKey])
+
+  const currentSidebarThumbKey = useMemo(() => {
+    const mid = String(current?.moduleId || '').trim()
+    const moduleKey = mid ? `id:${mid}` : `idx:${String(current?.moduleIndex ?? '0')}`
+    const lid = String(current?.lessonId || '').trim()
+    const li = Number.isFinite(Number(current?.lessonIndex)) ? Number(current.lessonIndex) : -1
+    const lessonKey = lid || (li >= 0 ? String(li) : '')
+    return lessonKey ? `${moduleKey}:${lessonKey}` : ''
+  }, [current])
+
+  const updateCoversFromPlaybackFrame = (videoEl, force) => {
+    if (player.videoMode !== 'video') return
+    if (!videoEl) return
+    const now = Date.now()
+    if (!force && now - lastPlaybackCoverCaptureAtRef.current < 1600) return
+    lastPlaybackCoverCaptureAtRef.current = now
+    const dataUrl = captureVideoElementFrameDataUrl(videoEl, 420)
+    if (!dataUrl) return
+    let changed = false
+    if (currentThumbKey) {
+      lessonThumbCacheRef.current.set(currentThumbKey, dataUrl)
+      changed = true
+    }
+    if (currentSidebarThumbKey) {
+      lessonThumbCacheRef.current.set(currentSidebarThumbKey, dataUrl)
+      changed = true
+    }
+    if (!changed) return
+    lessonThumbTickRef.current += 1
+    setLessonThumbTick(lessonThumbTickRef.current)
+  }
 
   useEffect(() => {
     if (player.videoMode !== 'video') return
@@ -1796,6 +1850,10 @@ export default function AlunoAulaPage() {
   useEffect(() => {
     setIsCompleted(safeLsGet(currentLessonKey) === '1')
   }, [currentLessonKey, progressTick])
+
+  useEffect(() => {
+    setVideoEndedForCurrent(false)
+  }, [currentLessonKey])
 
   useEffect(() => {
     setOpenModules((prev) => {
@@ -1843,6 +1901,7 @@ export default function AlunoAulaPage() {
           completed,
           active,
           onClick: () => {
+            if (active) return
             if (lockedModule && cid && mid) {
               try { toast({ title: 'Módulo pago', description: 'Compre o módulo para acessar as aulas.' }) } catch (_) {}
               navigateTo(`/aluno/curso/${encodeURIComponent(cid)}?moduleId=${encodeURIComponent(mid)}`)
@@ -1855,7 +1914,7 @@ export default function AlunoAulaPage() {
             if (lid) qs.set('lessonId', String(lid))
             else qs.set('lessonIndex', String(inModule))
             if (isDemoStudent) qs.set('demo', '1')
-            navigateTo(`/aluno/aula?${qs.toString()}`)
+            requestNpsThenNavigate(moduleKey, `/aluno/aula?${qs.toString()}`)
           },
         })
         inModule += 1
@@ -1868,9 +1927,13 @@ export default function AlunoAulaPage() {
         subtitle: `${completedCount} de ${total} aulas concluídas`,
         percent,
         locked: lockedModule,
-        badgeText: paid ? (cents > 0 ? (() => {
-          try { return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(cents / 100) } catch (_) { return `R$ ${(cents / 100).toFixed(2)}` }
-        })() : 'Pago') : '',
+        badgeText: paid
+          ? (owned
+              ? 'Adquirido'
+              : (cents > 0 ? (() => {
+                try { return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(cents / 100) } catch (_) { return `R$ ${(cents / 100).toFixed(2)}` }
+              })() : 'Pago'))
+          : '',
         lessons: lessonRows,
       })
     }
@@ -1885,12 +1948,16 @@ export default function AlunoAulaPage() {
     } catch (_) {}
     try {
       const mods = Array.isArray(sidebarModules) ? sidebarModules : []
+      let added = 0
       for (const m of mods) {
         if (!m?.key) continue
-        const open = !!(openModules && m.key && openModules[m.key])
-        if (!open) continue
-        const lessons = Array.isArray(m.lessons) ? m.lessons.slice(0, 10) : []
-        for (const l of lessons) list.push(l)
+        const lessons = Array.isArray(m.lessons) ? m.lessons : []
+        for (const l of lessons) {
+          if (added >= 80) break
+          list.push(l)
+          added += 1
+        }
+        if (added >= 80) break
       }
     } catch (_) {}
     let cancelled = false
@@ -1901,7 +1968,7 @@ export default function AlunoAulaPage() {
       }
     })()
     return () => { cancelled = true }
-  }, [recommendedForCurrentLesson, sidebarModules, openModules])
+  }, [recommendedForCurrentLesson, sidebarModules])
 
   useEffect(() => {
     const syncTabFromSearch = () => {
@@ -1913,13 +1980,11 @@ export default function AlunoAulaPage() {
         const next =
           normalized === 'simulados'
             ? 'Simulados'
-            : normalized === 'anexos'
+          : normalized === 'anexos'
               ? 'Anexos'
-              : normalized === 'comentarios' || normalized === 'comentários'
-                ? 'Comentários'
-                : normalized === 'sobre' || normalized === 'sobre a aula'
-                  ? 'Sobre a aula'
-                  : null
+              : normalized === 'sobre' || normalized === 'sobre a aula'
+                ? 'Sobre a aula'
+                : null
         if (!next) return
         setActiveTab((prev) => (prev === next ? prev : next))
       } catch (_) {}
@@ -1935,9 +2000,40 @@ export default function AlunoAulaPage() {
     setStudentName(String(name))
   }, [user])
 
+  const canFinishLesson = useMemo(() => {
+    if (isCompleted) return true
+    const hasVideo = player.videoMode === 'video' && !!String(videoUrlOverride || player.videoUrl || '').trim()
+    if (!hasVideo) return true
+    return videoEndedForCurrent
+  }, [isCompleted, player.videoMode, player.videoUrl, videoUrlOverride, videoEndedForCurrent])
+
+  const markContinueWatching = () => {
+    try {
+      const cid = String(courseId || '').trim()
+      if (!cid) return
+      const payload = {
+        courseId: cid,
+        moduleId: String(current?.moduleId || '').trim() || null,
+        lessonId: String(current?.lessonId || '').trim() || null,
+        moduleIndex: Number.isFinite(Number(current?.moduleIndex)) ? Number(current.moduleIndex) : null,
+        lessonIndex: Number.isFinite(Number(current?.lessonIndex)) ? Number(current.lessonIndex) : null,
+        ts: Date.now(),
+      }
+      localStorage.setItem(`connekt_continue_course:${cid}`, JSON.stringify(payload))
+      localStorage.setItem('connekt_continue_updated_at', String(Date.now()))
+      try {
+        window.dispatchEvent(new CustomEvent('connekt_continue_updated', { detail: { courseId: cid, ts: payload.ts } }))
+      } catch (_) {}
+    } catch (_) {}
+  }
+
   const handleFinishClick = () => {
     if (isCompleted) {
       toast({ title: 'Aula já concluída', description: 'Essa aula já está marcada como concluída.' })
+      return
+    }
+    if (!canFinishLesson) {
+      toast({ title: 'Assista até o final', description: 'Você só pode concluir a aula após assistir o vídeo por inteiro.' })
       return
     }
     setIsNpsOpen(true)
@@ -1951,6 +2047,8 @@ export default function AlunoAulaPage() {
 
     try {
       const cid = String(courseId || '').trim()
+      const mk = String(currentModuleKey || '').trim()
+      if (cid && mk) safeLsSet(`connekt_aluno_nps_done:${cid}:${mk}`, '1')
       const uid = String(user?.id || '').trim()
       const r = Number(rating)
       const text = String(comment || '').trim() || null
@@ -1983,6 +2081,12 @@ export default function AlunoAulaPage() {
     setIsCompleted(true)
     setProgressTick((v) => v + 1)
     setIsNpsOpen(false)
+    const pending = String(pendingLessonNavUrl || '').trim()
+    setPendingLessonNavUrl('')
+    if (pending) {
+      navigateTo(pending)
+      return
+    }
     toast({ title: 'Aula concluída com sucesso!' })
     window.setTimeout(() => {
       toast({ title: 'Avaliação enviada com sucesso!' })
@@ -2163,7 +2267,7 @@ export default function AlunoAulaPage() {
         <Header />
 
         <main className="flex-1 overflow-y-auto">
-          <NpsModal open={isNpsOpen} onClose={() => setIsNpsOpen(false)} onSubmit={handleSubmitNps} />
+          <NpsModal open={isNpsOpen} onClose={() => { setIsNpsOpen(false); setPendingLessonNavUrl('') }} onSubmit={handleSubmitNps} />
           <div className="px-6 py-6">
             <div className="max-w-[1180px] mx-auto">
               <div className="flex items-center justify-between">
@@ -2176,7 +2280,8 @@ export default function AlunoAulaPage() {
                 </div>
                 <button
                   type="button"
-                  className={`h-9 px-4 rounded-[8px] text-[12px] font-semibold ${isCompleted ? 'bg-[#EEF2FF] text-[#0047BB] border border-[#C7D2FE]' : 'bg-[#0047BB] text-white'}`}
+                  disabled={!canFinishLesson}
+                  className={`h-9 px-4 rounded-[8px] text-[12px] font-semibold ${isCompleted ? 'bg-[#EEF2FF] text-[#0047BB] border border-[#C7D2FE]' : 'bg-[#0047BB] text-white'} ${!canFinishLesson ? 'opacity-50 cursor-not-allowed' : ''}`}
                   onClick={handleFinishClick}
                 >
                   {isCompleted ? 'Aula concluída' : 'Concluir aula'}
@@ -2196,30 +2301,23 @@ export default function AlunoAulaPage() {
                       />
                     ) : player.videoMode === 'video' ? (
                       <video
+                        ref={playbackVideoRef}
                         className="w-full h-[330px] bg-black"
                         controls
+                        playsInline
+                        preload="auto"
                         poster={currentPoster || '/Preview.png'}
-                        onError={(e) => {
-                          const v = e.currentTarget
-                          if (v?.dataset?.fallbackUsed === '1') return
-                          const src = String((videoUrlOverride || player.videoUrl) || '')
-                          if (!src.includes('/api/media?u=')) return
-                          let direct = ''
-                          try {
-                            const u = new URL(src, window.location.origin)
-                            direct = u.searchParams.get('u') || ''
-                          } catch (_) {}
-                          if (!direct) return
-                          v.dataset.fallbackUsed = '1'
-                          setVideoUrlOverride(direct)
-                          try {
-                            v.load()
-                            const p = v.play?.()
-                            if (p && typeof p.catch === 'function') p.catch(() => {})
-                          } catch (_) {}
+                        onLoadedData={(e) => updateCoversFromPlaybackFrame(e.currentTarget, true)}
+                        onTimeUpdate={(e) => updateCoversFromPlaybackFrame(e.currentTarget, false)}
+                        onPlay={() => markContinueWatching()}
+                        onPause={(e) => updateCoversFromPlaybackFrame(e.currentTarget, true)}
+                        onSeeked={(e) => updateCoversFromPlaybackFrame(e.currentTarget, true)}
+                        onEnded={(e) => {
+                          updateCoversFromPlaybackFrame(e.currentTarget, true)
+                          setVideoEndedForCurrent(true)
                         }}
                       >
-                        {(videoUrlOverride || player.videoUrl) ? <source src={videoUrlOverride || player.videoUrl} /> : null}
+                        {player.videoUrl ? <source src={player.videoUrl} /> : null}
                       </video>
                     ) : (
                       <div className="w-full h-[330px] bg-black flex items-center justify-center px-6 text-center">
@@ -2267,7 +2365,7 @@ export default function AlunoAulaPage() {
                     </div>
 
                     <div className="mt-4 flex items-center gap-6 border-b border-[#E3E4E5]">
-                      {['Sobre a aula', 'Comentários', 'Simulados', 'Anexos'].map((t) => (
+                      {['Sobre a aula', 'Simulados', 'Anexos'].map((t) => (
                         <button
                           key={t}
                           type="button"
@@ -2280,7 +2378,8 @@ export default function AlunoAulaPage() {
                       <div className="flex-1" />
                       <button
                         type="button"
-                        className={`h-8 px-4 rounded-[8px] text-[11px] font-semibold ${isCompleted ? 'bg-[#EEF2FF] text-[#0047BB] border border-[#C7D2FE]' : 'bg-[#0047BB] text-white'}`}
+                        disabled={!canFinishLesson}
+                        className={`h-8 px-4 rounded-[8px] text-[11px] font-semibold ${isCompleted ? 'bg-[#EEF2FF] text-[#0047BB] border border-[#C7D2FE]' : 'bg-[#0047BB] text-white'} ${!canFinishLesson ? 'opacity-50 cursor-not-allowed' : ''}`}
                         onClick={handleFinishClick}
                       >
                         {isCompleted ? 'Aula concluída' : 'Concluir aula'}
@@ -2297,8 +2396,6 @@ export default function AlunoAulaPage() {
                           <div className="mt-5 text-[12px] text-[#737780]">Sem descrição.</div>
                         )}
                       </>
-                    ) : activeTab === 'Comentários' ? (
-                      <AlunoInboxThread user={user} studentName={studentName} threadKey={currentLessonKey} title="Comentários" lessonTitle={resolved.lessonTitle} itemLabel="Comentários" submitLabel="Comentar" successTitle="Comentário enviado" placeholder="Digite aqui sua pergunta ou comentário" courseId={courseId} />
                     ) : activeTab === 'Simulados' ? (
                       <div className="mt-5">
                         <div className="flex items-center justify-between">
@@ -2359,7 +2456,7 @@ export default function AlunoAulaPage() {
                                       Gratuito
                                     </span>
                                   ) : null}
-                                  {(s.is_paid || Number(s.price || 0) > 0) && safeLsGet(`connekt_simulado_owned:${String(s.id)}`) === '1' ? (
+                                  {(s.is_paid || Number(s.price || 0) > 0) && (safeLsGet(`connekt_simulado_owned:${String(s.id)}`) === '1' || ownedSimuladoIdSet.has(String(s.id))) ? (
                                     <span className="inline-flex items-center justify-center w-[80px] h-[18px] px-3 text-[10px] rounded-[54px] leading-none font-medium bg-[#E9FFEF] text-[#06C270]">
                                       Adquirido
                                     </span>
@@ -2411,17 +2508,14 @@ export default function AlunoAulaPage() {
                                 })()}
                               </div>
                               <div className="mt-4 flex items-center justify-between">
-                                <div className="flex flex-col w-full">
-                                  <span className="text-[12px] text-[#1E1B39] font-inter font-bold">Aprovação (%)</span>
-                                </div>
-                                <div className="flex items-center gap-1 text-[#0047BB]">
-                                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0047BB" strokeWidth="2">
-                                    <circle cx="12" cy="12" r="10" opacity="0.3" />
-                                    <path d="M12 2 a10 10 0 0 1 0 20" />
-                                  </svg>
+                                  <div className="flex flex-col w-full">
+                                    <span className="text-[12px] text-[#1E1B39] font-inter font-bold">Aprovação (%)</span>
+                                  </div>
+                                  <div className="flex items-center gap-1 text-[#0047BB]">
+                                  <ProgressRingIcon value={Math.max(0, Math.min(100, Number(s.progress || 0)))} />
                                   <span className="text-[12px] font-bold text-[#0047BB]">{Math.max(0, Math.min(100, Number(s.progress || 0)))}%</span>
+                                  </div>
                                 </div>
-                              </div>
                             </div>
                           ))}
                         </div>
@@ -2477,6 +2571,7 @@ export default function AlunoAulaPage() {
                               active={active}
                               completed={!!l.completed}
                               onClick={(l.moduleId || l.lessonId || String(l.moduleIndex) !== 'undefined') ? (() => {
+                                if (active) return
                                 const qs = new URLSearchParams()
                                 qs.set('courseId', String(courseId || ''))
                                 if (l.moduleId) qs.set('moduleId', String(l.moduleId))
@@ -2484,7 +2579,8 @@ export default function AlunoAulaPage() {
                                 if (l.lessonId) qs.set('lessonId', String(l.lessonId))
                                 else if (Number.isFinite(Number(l.lessonIndex))) qs.set('lessonIndex', String(l.lessonIndex))
                                 if (isDemoStudent) qs.set('demo', '1')
-                                navigateTo(`/aluno/aula?${qs.toString()}`)
+                                const targetModuleKey = String(l.moduleId || '').trim() ? `id:${String(l.moduleId || '').trim()}` : `idx:${String(l.moduleIndex ?? '0')}`
+                                requestNpsThenNavigate(targetModuleKey, `/aluno/aula?${qs.toString()}`)
                               }) : null}
                             />
                           )

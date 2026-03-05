@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Camera, Bell, X, ExternalLink, Info, AlertTriangle, UploadCloud, Monitor, Smartphone, Tablet, Trash2, LogOut, Shield, Globe } from 'lucide-react';
+import { Camera, Bell, X, ExternalLink, Info, AlertTriangle, UploadCloud, Monitor, Smartphone, LogOut, Shield } from 'lucide-react';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { supabase } from '@/lib/supabaseClient.js';
 import { toast } from '@/hooks/use-toast.ts';
@@ -38,16 +38,15 @@ function normalizeSavedMemberAreaUrlForLink(value) {
 }
 
 const ConfiguracoesPage = () => {
-  const { user, signOut, session } = useAuth();
+  const { user, signOut, session, approveDeviceRequest, denyDeviceRequest } = useAuth();
   const [activeTab, setActiveTab] = useState('Perfil e conta');
   const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false);
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
   const [cancelLoading, setCancelLoading] = useState(false);
   const [testEmailLoading, setTestEmailLoading] = useState(false);
 
-  const [devices, setDevices] = useState([]);
+  const [deviceAccess, setDeviceAccess] = useState({ registered: { desktop: null, mobile: null }, pending: null })
   const [devicesLoading, setDevicesLoading] = useState(false);
-  const [devicesFeatureDisabled, setDevicesFeatureDisabled] = useState(false);
   const [currentDeviceId, setCurrentDeviceId] = useState('');
 
   // Dados do usuário para exibição
@@ -174,19 +173,88 @@ const ConfiguracoesPage = () => {
     return '#000000'
   }
 
-  const formatDateBR = (iso) => {
-    try {
-      if (!iso) return '—';
-      const d = new Date(iso);
-      if (!isFinite(d.getTime())) return '—';
-      const dd = String(d.getDate()).padStart(2, '0');
-      const mm = String(d.getMonth() + 1).padStart(2, '0');
-      const yyyy = d.getFullYear();
-      return `${dd}/${mm}/${yyyy}`;
-    } catch (_) {
-      return '—';
+  const parseDateInput = (value) => {
+    if (value == null || value === '') return null
+    if (value instanceof Date) return isFinite(value.getTime()) ? value : null
+    if (typeof value === 'number') {
+      const d = new Date(value)
+      return isFinite(d.getTime()) ? d : null
     }
-  };
+    const raw = String(value).trim()
+    if (!raw) return null
+    const mIsoDate = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+    if (mIsoDate) {
+      const y = Number(mIsoDate[1])
+      const mo = Number(mIsoDate[2])
+      const da = Number(mIsoDate[3])
+      if (Number.isFinite(y) && Number.isFinite(mo) && Number.isFinite(da)) {
+        const d = new Date(y, Math.max(0, mo - 1), da)
+        return isFinite(d.getTime()) ? d : null
+      }
+    }
+    const mBr = raw.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
+    if (mBr) {
+      const da = Number(mBr[1])
+      const mo = Number(mBr[2])
+      const y = Number(mBr[3])
+      if (Number.isFinite(y) && Number.isFinite(mo) && Number.isFinite(da)) {
+        const d = new Date(y, Math.max(0, mo - 1), da)
+        return isFinite(d.getTime()) ? d : null
+      }
+    }
+    const d = new Date(raw)
+    return isFinite(d.getTime()) ? d : null
+  }
+
+  const addMonthsClamped = (date, months) => {
+    const d = date instanceof Date ? new Date(date.getTime()) : null
+    if (!d || !isFinite(d.getTime())) return null
+    const day = d.getDate()
+    d.setDate(1)
+    d.setMonth(d.getMonth() + Number(months || 0))
+    const maxDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()
+    d.setDate(Math.min(day, maxDay))
+    return d
+  }
+
+  const addYearsClamped = (date, years) => addMonthsClamped(date, Number(years || 0) * 12)
+
+  const formatDateBR = (value) => {
+    try {
+      const d = parseDateInput(value)
+      if (!d) return '—'
+      const dd = String(d.getDate()).padStart(2, '0')
+      const mm = String(d.getMonth() + 1).padStart(2, '0')
+      const yyyy = d.getFullYear()
+      return `${dd}/${mm}/${yyyy}`
+    } catch (_) {
+      return '—'
+    }
+  }
+
+  const resolvePaymentDueDate = (payment) => {
+    const p = payment && typeof payment === 'object' ? payment : {}
+    const explicit =
+      p.due_at ||
+      p.dueAt ||
+      p.expires_at ||
+      p.expiresAt ||
+      p.valid_until ||
+      p.validUntil ||
+      p.period_end ||
+      p.periodEnd ||
+      p.current_period_end ||
+      p.currentPeriodEnd ||
+      null
+    const explicitDate = parseDateInput(explicit)
+    if (explicitDate) return explicitDate
+
+    const base = parseDateInput(p.paid_at || p.paidAt || p.created_at || p.createdAt || null)
+    if (!base) return null
+    const cycle = String(p.cycle || '').trim().toLowerCase()
+    if (cycle === 'anual' || cycle === 'annual' || cycle === 'year' || cycle === 'yearly') return addYearsClamped(base, 1)
+    return addMonthsClamped(base, 1)
+  }
   const formatDateTimeBR = (iso) => {
     try {
       if (!iso) return '—'
@@ -228,49 +296,18 @@ const ConfiguracoesPage = () => {
     const reqId = (devicesReqRef.current += 1)
     setDevicesLoading(true)
     try {
-      const r = await deviceSessionService.getActiveDevice({ userId: user.id })
+      const r = await deviceSessionService.getDeviceAccessState()
       if (reqId !== devicesReqRef.current) return
-      if (r?.disabled) {
-        setDevicesFeatureDisabled(true)
-        setDevices([])
+      if (!r?.ok) {
+        setDeviceAccess({ registered: { desktop: null, mobile: null }, pending: null })
         return
       }
-      setDevicesFeatureDisabled(false)
-      if (!r?.ok || !r?.device?.active_device_id) {
-        setDevices([])
-        return
-      }
-      const d = r.device
-      const ua = String(d.active_device_user_agent || '')
-      const isMobileUa = /iphone|ipad|ipod|android/i.test(ua)
-      const type = isMobileUa ? 'mobile' : 'desktop'
-      const tz = (() => {
-        try {
-          return Intl.DateTimeFormat().resolvedOptions().timeZone || '—'
-        } catch (_) {
-          return '—'
-        }
-      })()
-      const expiresAt = d.active_device_expires_at ? new Date(d.active_device_expires_at).getTime() : 0
-      const isExpired = expiresAt > 0 && expiresAt <= Date.now()
-      const current = currentDeviceId && String(d.active_device_id) === String(currentDeviceId)
-      setDevices([
-        {
-          id: d.active_device_id,
-          name: d.active_device_label || 'Dispositivo',
-          type,
-          location: tz,
-          lastActive: formatRelative(d.active_device_last_seen_at),
-          expiresAt: d.active_device_expires_at || null,
-          expired: isExpired,
-          current,
-        },
-      ])
+      setDeviceAccess(r.state || { registered: { desktop: null, mobile: null }, pending: null })
     } catch (e) {
       if (reqId !== devicesReqRef.current) return
       const msg = String(e?.message || '').toLowerCase()
       if (msg.includes('abort')) return
-      setDevices([])
+      setDeviceAccess({ registered: { desktop: null, mobile: null }, pending: null })
       toast({ title: 'Erro ao carregar dispositivos', description: e?.message || String(e), duration: 6000 })
     } finally {
       if (reqId !== devicesReqRef.current) return
@@ -520,13 +557,31 @@ const ConfiguracoesPage = () => {
     (async () => {
       setPaymentsLoading(true);
       try {
-        const { data, error } = await supabase
-          .from('payments')
-          .select('id,plan_slug,cycle,status,paid_at,created_at')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false })
-          .limit(10);
-        if (error) throw error;
+        const isMissingColumn = (err) => {
+          const msg = String(err?.message || err?.details || err || '').toLowerCase()
+          const code = String(err?.code || '').toUpperCase()
+          return code === 'PGRST204' || code === '42703' || (msg.includes('does not exist') && msg.includes('column')) || (msg.includes('schema cache') && msg.includes('could not find') && msg.includes('column'))
+        }
+        const selects = [
+          'id,plan_slug,cycle,status,paid_at,created_at,due_at,expires_at,valid_until,period_end,current_period_end',
+          'id,plan_slug,cycle,status,paid_at,created_at,expires_at,period_end,current_period_end',
+          'id,plan_slug,cycle,status,paid_at,created_at,due_at',
+          'id,plan_slug,cycle,status,paid_at,created_at',
+        ]
+        let data = []
+        let lastErr = null
+        for (const sel of selects) {
+          const r = await supabase
+            .from('payments')
+            .select(sel)
+            .eq('user_id', user.id)
+            .order('created_at', { ascending: false })
+            .limit(10)
+          if (!r.error) { data = Array.isArray(r.data) ? r.data : []; lastErr = null; break }
+          lastErr = r.error
+          if (!isMissingColumn(r.error)) break
+        }
+        if (lastErr) throw lastErr
         if (!cancelled) setPayments(Array.isArray(data) ? data : []);
       } catch (_) {
         if (!cancelled) setPayments([]);
@@ -615,10 +670,10 @@ const ConfiguracoesPage = () => {
     { id: 'dispositivos', label: 'Dispositivos', icon: null },
   ]
 
-  const tabs = isAlunoView ? allTabs.filter((t) => t.id === 'perfil') : allTabs
+  const tabs = isAlunoView ? allTabs.filter((t) => t.id === 'perfil' || t.id === 'dispositivos') : allTabs
 
   const tabIdToLabel = isAlunoView
-    ? { perfil: 'Perfil e conta' }
+    ? { perfil: 'Perfil e conta', dispositivos: 'Dispositivos' }
     : {
         perfil: 'Perfil e conta',
         plano: 'Meu plano',
@@ -646,7 +701,7 @@ const ConfiguracoesPage = () => {
 
   useEffect(() => {
     if (!isAlunoView) return
-    if (activeTab === 'Perfil e conta') return
+    if (activeTab === 'Perfil e conta' || activeTab === 'Dispositivos') return
     setActiveTab('Perfil e conta')
   }, [isAlunoView, activeTab])
 
@@ -1142,23 +1197,29 @@ const ConfiguracoesPage = () => {
     }
   };
 
-  const handleDisconnectDevice = async (deviceId) => {
+  const handleUnregisterDeviceType = async (deviceType) => {
     if (!user?.id) return
     try {
-      const target = devices.find((d) => String(d.id) === String(deviceId))
-      if (!target) return
-      if (target.current) {
-        toast({ title: 'Ação não permitida', description: 'Use "Sair" para encerrar este dispositivo.', duration: 5000 })
-        return
-      }
-      const r = await deviceSessionService.clearActiveDevice({ userId: user.id })
-      if (!r?.ok) throw new Error('Falha ao desconectar dispositivo')
+      const r = await deviceSessionService.unregisterDeviceType({ deviceType })
+      if (!r?.ok) throw new Error('Falha ao remover cadastro do dispositivo')
       await refreshDevices()
-      toast({ title: 'Dispositivo desconectado', description: 'O outro dispositivo será deslogado em poucos instantes.', duration: 5000 })
+      toast({ title: 'Cadastro removido', description: 'O dispositivo precisará de aprovação para entrar novamente.', duration: 5000 })
     } catch (e) {
       toast({ title: 'Erro', description: e?.message || String(e), duration: 6000 })
     }
-  };
+  }
+
+  const handleRegisterThisDevice = async () => {
+    if (!user?.id) return
+    try {
+      const r = await deviceSessionService.claimDevice({ userId: user.id })
+      if (!r?.ok) throw new Error('Falha ao cadastrar este dispositivo')
+      await refreshDevices()
+      toast({ title: 'Dispositivo cadastrado', description: 'Este dispositivo foi cadastrado com sucesso.', duration: 5000 })
+    } catch (e) {
+      toast({ title: 'Erro', description: e?.message || String(e), duration: 6000 })
+    }
+  }
 
   const handleSignOutAll = async () => {
     if (!user?.id) return
@@ -1395,30 +1456,31 @@ const ConfiguracoesPage = () => {
 
               {/* Current Plan Card */}
               {(() => {
-                const key = (planSnapshot?.planKey || activePlanKey || 'start');
-                const plan = plansCatalog[key] || { key, name: key, description: '', prices: { mensal: '—', anual: '—' }, limits: {}, features: [] };
+                const key = String(planSnapshot?.planKey || activePlanKey || '').trim().toLowerCase();
+                const hasPlan = !!key;
+                const plan = hasPlan ? (plansCatalog[key] || { key, name: key, description: '', prices: { mensal: '—', anual: '—' }, limits: {}, features: [] }) : null;
                 const cycle = planSnapshot?.billingCycle === 'anual' ? 'anual' : 'mensal';
                 const price = plan?.prices?.[cycle] || '—';
-                const isTrial = String(planSnapshot?.status || '').toLowerCase() === 'trial';
-                const activatedAt = planSnapshot?.activatedAt || null;
-                const expiresAt = planSnapshot?.expiresAt || null;
-                const statusLabel = isTrial ? 'Trial ativo' : ((planSnapshot?.status && String(planSnapshot.status).toLowerCase() === 'canceled') ? 'Cancelado' : 'Ativo');
-                const statusPill = isTrial ? 'bg-[#EFF6FF] text-[#0047BB]' : 'bg-[#FEF9C3] text-[#A16207]';
+                const isTrial = hasPlan && String(planSnapshot?.status || '').toLowerCase() === 'trial';
+                const activatedAt = hasPlan ? (planSnapshot?.activatedAt || null) : null;
+                const expiresAt = hasPlan ? (planSnapshot?.expiresAt || null) : null;
+                const statusLabel = !hasPlan ? 'Sem plano' : (isTrial ? 'Trial ativo' : ((planSnapshot?.status && String(planSnapshot.status).toLowerCase() === 'canceled') ? 'Cancelado' : 'Ativo'));
+                const statusPill = !hasPlan ? 'bg-[#F3F4F6] text-[#6B7280]' : (isTrial ? 'bg-[#EFF6FF] text-[#0047BB]' : 'bg-[#FEF9C3] text-[#A16207]');
                 return (
-                  <div className="bg-[#F8FAFC] border border-[#0047BB] rounded-[8px] p-6 mb-6 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+                  <div className={`${hasPlan ? 'bg-[#F8FAFC] border border-[#0047BB]' : 'bg-white border border-[#E3E4E5]'} rounded-[8px] p-6 mb-6 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6`}>
                     <div className="flex-1 min-w-0">
                       <div className="flex flex-wrap items-center gap-3 mb-2">
-                        <h3 className="text-[24px] font-bold text-[#0047BB] break-words">{plan.name}</h3>
+                        <h3 className={`text-[24px] font-bold break-words ${hasPlan ? 'text-[#0047BB]' : 'text-[#1E1B39]'}`}>{hasPlan ? plan.name : 'Nenhum plano ativo'}</h3>
                         <span className={`px-3 py-1 ${statusPill} text-[12px] font-medium rounded-full inline-flex items-center gap-2`}>
                           <span>🏆</span> {statusLabel}
                         </span>
                       </div>
-                      <p className="text-[14px] text-[#737780]">{plan.description || '—'}</p>
+                      <p className="text-[14px] text-[#737780]">{hasPlan ? (plan.description || '—') : 'Assine um plano para liberar recursos e limites de uso.'}</p>
                       <div className="mt-3 text-[12px] text-[#404040] flex flex-wrap gap-x-4 gap-y-1">
                         <span><span className="text-[#8F9299]">Ciclo:</span> <span className="font-medium">{cycle === 'anual' ? 'Anual' : 'Mensal'}</span></span>
                         <span><span className="text-[#8F9299]">Início:</span> <span className="font-medium">{formatDateBR(activatedAt)}</span></span>
                         <span><span className="text-[#8F9299]">Válido até:</span> <span className="font-medium">{formatDateBR(expiresAt)}</span></span>
-                        <span><span className="text-[#8F9299]">Renovação:</span> <span className="font-medium">{planSnapshot?.autoRenew ? 'Automática' : 'Manual'}</span></span>
+                        <span><span className="text-[#8F9299]">Renovação:</span> <span className="font-medium">{hasPlan ? (planSnapshot?.autoRenew ? 'Automática' : 'Manual') : '—'}</span></span>
                       </div>
                     </div>
                     <div className="flex items-center gap-8 lg:border-l border-[#E3E4E5] lg:pl-8">
@@ -1437,6 +1499,7 @@ const ConfiguracoesPage = () => {
                                 toast({ title: 'Faça login', description: 'Você precisa estar logado para testar.', duration: 6000 })
                                 return
                               }
+                              if (!hasPlan) return
                               try {
                                 setTestEmailLoading(true)
                                 const r = await supabase.functions.invoke('plan-notify', {
@@ -1468,12 +1531,27 @@ const ConfiguracoesPage = () => {
                             {testEmailLoading ? 'Enviando email de teste…' : 'Testar email de cancelamento'}
                           </button>
                         ) : null}
-                        <button
-                          onClick={() => setIsCancelModalOpen(true)}
-                          className="text-[#737780] text-[14px] hover:text-[#1E1B39] transition-colors"
-                        >
-                          Cancelar
-                        </button>
+                        {hasPlan ? (
+                          <button
+                            onClick={() => setIsCancelModalOpen(true)}
+                            className="text-[#737780] text-[14px] hover:text-[#1E1B39] transition-colors"
+                          >
+                            Cancelar
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              try {
+                                window.history.pushState({}, '', '/planos')
+                                window.dispatchEvent(new PopStateEvent('popstate'))
+                              } catch (_) {}
+                            }}
+                            className="text-[#0047BB] text-[14px] font-medium hover:text-[#003da0] transition-colors text-left"
+                          >
+                            Ver planos
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1482,8 +1560,9 @@ const ConfiguracoesPage = () => {
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
                 {(() => {
-                  const key = (planSnapshot?.planKey || activePlanKey || 'start');
-                  const plan = plansCatalog[key] || { key, name: key, description: '', prices: { mensal: '—', anual: '—' }, limits: {}, features: [] };
+                  const key = String(planSnapshot?.planKey || activePlanKey || '').trim().toLowerCase();
+                  const hasPlan = !!key;
+                  const plan = hasPlan ? (plansCatalog[key] || { key, name: key, description: '', prices: { mensal: '—', anual: '—' }, limits: {}, features: [] }) : { key: '', name: 'Sem plano', description: '', prices: { mensal: '—', anual: '—' }, limits: {}, features: [] };
                   const limits = plan?.limits || {};
                   const fmtLimit = (v, suffix = '') => {
                     if (v === 'unlimited') return 'Ilimitado';
@@ -1506,7 +1585,7 @@ const ConfiguracoesPage = () => {
                             </li>
                           ))}
                           {(Array.isArray(plan.features) ? plan.features : []).length === 0 && (
-                            <li className="text-[12px] text-[#737780]">Sem detalhes disponíveis.</li>
+                            <li className="text-[12px] text-[#737780]">{hasPlan ? 'Sem detalhes disponíveis.' : 'Nenhum plano ativo.'}</li>
                           )}
                         </ul>
                       </div>
@@ -1549,8 +1628,8 @@ const ConfiguracoesPage = () => {
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                     {(() => {
-                      const key = (planSnapshot?.planKey || activePlanKey || 'start');
-                      const plan = plansCatalog[key] || {};
+                      const key = String(planSnapshot?.planKey || activePlanKey || '').trim().toLowerCase();
+                      const plan = key ? (plansCatalog[key] || {}) : {};
                       const limitGb = plan?.limits?.storageGb;
                       const limitBytes = typeof limitGb === 'number' ? limitGb * 1024 * 1024 * 1024 : null;
                       const storageHint = (() => {
@@ -1615,7 +1694,7 @@ const ConfiguracoesPage = () => {
                                 <span className="text-[14px] text-[#1E1B39]">{planName}</span>
                               </div>
                             </td>
-                            <td className="px-6 py-4 text-[14px] text-[#1E1B39]">{formatDateBR(p.created_at)}</td>
+                            <td className="px-6 py-4 text-[14px] text-[#1E1B39]">{formatDateBR(resolvePaymentDueDate(p))}</td>
                             <td className="px-6 py-4 text-[14px] text-[#1E1B39]">{formatDateBR(p.paid_at)}</td>
                             <td className="px-6 py-4 text-right">
                               <span className={`inline-block px-3 py-1 rounded-full text-[12px] font-medium ${statusColor}`}>
@@ -2103,100 +2182,150 @@ const ConfiguracoesPage = () => {
             <>
               <div className="mb-8">
                 <h2 className="text-[18px] font-semibold text-[#1E1B39]">Meus Dispositivos</h2>
-                <p className="text-[14px] text-[#737780] mt-1">Gerencie os dispositivos conectados à sua conta.</p>
+                <p className="text-[14px] text-[#737780] mt-1">Gerencie os dispositivos cadastrados na sua conta.</p>
                 <div className="h-[1px] bg-[#E3E4E5] mt-4" />
               </div>
 
-              {/* Alert about single device policy */}
               <div className="bg-[#FEF2F2] border border-[#FECACA] rounded-[8px] p-4 mb-8 flex gap-3">
                 <Shield className="text-[#DC2626] flex-shrink-0" size={24} />
                 <div>
                   <h3 className="text-[14px] font-bold text-[#DC2626] mb-1">Limite de acesso simultâneo</h3>
                   <p className="text-[12px] text-[#B91C1C]">
-                    Sua conta permite apenas <strong>1 dispositivo conectado simultaneamente</strong>. 
-                    A sessão expira após cerca de <strong>10 minutos sem atividade</strong>. Ao conectar um novo dispositivo, o anterior pode ser deslogado automaticamente.
+                    Sua conta permite apenas <strong>1 desktop e 1 mobile cadastrados</strong>.
+                    A sessão expira após cerca de <strong>10 minutos sem atividade</strong>. Para trocar um dispositivo, envie uma solicitação e aprove em um dispositivo cadastrado.
                   </p>
                 </div>
               </div>
 
               <div className="space-y-6">
                 <div className="flex justify-between items-center">
-                  <h3 className="text-[16px] font-semibold text-[#1E1B39]">Dispositivos Ativos</h3>
-                  {!devicesFeatureDisabled && (
-                    <button
-                      onClick={handleSignOutAll}
-                      className="text-[#0047BB] text-[14px] font-medium hover:underline flex items-center gap-2"
-                    >
-                      <LogOut size={16} />
-                      Sair de todos os dispositivos
-                    </button>
-                  )}
+                  <h3 className="text-[16px] font-semibold text-[#1E1B39]">Dispositivos cadastrados</h3>
+                  <button
+                    onClick={handleSignOutAll}
+                    className="text-[#0047BB] text-[14px] font-medium hover:underline flex items-center gap-2"
+                  >
+                    <LogOut size={16} />
+                    Sair
+                  </button>
                 </div>
 
-                <div className="grid gap-4">
-                  {devicesLoading ? (
-                    <div className="text-[13px] text-[#737780]">Carregando dispositivos…</div>
-                  ) : devicesFeatureDisabled ? (
-                    <div className="text-[13px] text-[#737780]">Recurso de dispositivos não está habilitado neste ambiente.</div>
-                  ) : devices.length === 0 ? (
-                    <div className="text-[13px] text-[#737780]">Nenhum dispositivo ativo encontrado.</div>
-                  ) : devices.map((device) => (
-                    <div key={device.id} className="border border-[#E3E4E5] rounded-[8px] p-4 flex items-center justify-between bg-white hover:bg-gray-50 transition-colors">
-                      <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 bg-[#F1F5F9] rounded-full flex items-center justify-center text-[#64748B]">
-                          {device.type === 'mobile' ? <Smartphone size={24} /> : 
-                           device.type === 'tablet' ? <Tablet size={24} /> : 
-                           <Monitor size={24} />}
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <h4 className="text-[14px] font-bold text-[#1E1B39]">{device.name}</h4>
-                            {device.current && (
-                              <span className="bg-[#DCFCE7] text-[#166534] text-[10px] font-bold px-2 py-0.5 rounded-full">
-                                ESTE DISPOSITIVO
-                              </span>
-                            )}
-                            {device.expired && (
-                              <span className="bg-[#FEF3C7] text-[#92400E] text-[10px] font-bold px-2 py-0.5 rounded-full">
-                                EXPIRADO
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-4 mt-1 text-[12px] text-[#737780]">
-                            <span className="flex items-center gap-1">
-                              <Globe size={12} />
-                              {device.location}
-                            </span>
-                            <span>•</span>
-                            <span>Última atividade: {device.lastActive}</span>
-                          </div>
-                          {device.expiresAt && (
-                            <div className="text-[12px] text-[#737780] mt-1">
-                              Expira em: {formatDateTimeBR(device.expiresAt)}
+                {devicesLoading ? (
+                  <div className="text-[13px] text-[#737780]">Carregando dispositivos…</div>
+                ) : (
+                  (() => {
+                    const info = deviceSessionService.getDeviceInfo()
+                    const currentType = info?.type === 'mobile' ? 'mobile' : 'desktop'
+                    const registered = deviceAccess?.registered || {}
+                    const desktop = registered.desktop || {}
+                    const mobile = registered.mobile || {}
+                    const pending = deviceAccess?.pending || null
+                    const canRegisterDesktop = currentType === 'desktop' && !desktop?.device_id
+                    const canRegisterMobile = currentType === 'mobile' && !mobile?.device_id
+                    const renderSlot = (slotType, slot, canRegister) => {
+                      const isMobileSlot = slotType === 'mobile'
+                      const slotId = String(slot?.device_id || '').trim()
+                      const isCurrent = slotId && currentDeviceId && slotId === String(currentDeviceId)
+                      return (
+                        <div className="border border-[#E3E4E5] rounded-[8px] p-4 bg-white">
+                          <div className="flex items-center justify-between gap-4">
+                            <div className="flex items-center gap-4 min-w-0">
+                              <div className="w-12 h-12 bg-[#F1F5F9] rounded-full flex items-center justify-center text-[#64748B] flex-shrink-0">
+                                {isMobileSlot ? <Smartphone size={24} /> : <Monitor size={24} />}
+                              </div>
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <div className="text-[14px] font-bold text-[#1E1B39]">{isMobileSlot ? 'Mobile' : 'Desktop'}</div>
+                                  {isCurrent ? (
+                                    <span className="bg-[#DCFCE7] text-[#166534] text-[10px] font-bold px-2 py-0.5 rounded-full">
+                                      ESTE DISPOSITIVO
+                                    </span>
+                                  ) : null}
+                                </div>
+                                {slotId ? (
+                                  <>
+                                    <div className="text-[13px] text-[#1E1B39] mt-1 break-words">{slot?.label || 'Dispositivo'}</div>
+                                    <div className="text-[12px] text-[#737780] mt-1">
+                                      Última atividade: {formatRelative(slot?.last_seen_at)}
+                                    </div>
+                                    {slot?.expires_at ? (
+                                      <div className="text-[12px] text-[#737780] mt-1">Expira em: {formatDateTimeBR(slot.expires_at)}</div>
+                                    ) : null}
+                                  </>
+                                ) : (
+                                  <div className="text-[12px] text-[#737780] mt-1">Nenhum dispositivo cadastrado.</div>
+                                )}
+                              </div>
                             </div>
-                          )}
-                        </div>
-                      </div>
-
-                      <div>
-                        {device.current ? (
-                          <div className="text-[12px] text-[#166534] font-medium flex items-center gap-1">
-                            <span className="w-2 h-2 bg-[#166534] rounded-full animate-pulse"></span>
-                            Ativo agora
+                            <div className="flex flex-col items-end gap-2">
+                              {slotId ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleUnregisterDeviceType(slotType)}
+                                  className="text-[#DC2626] text-[12px] font-semibold hover:underline"
+                                >
+                                  Remover
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  disabled={!canRegister}
+                                  onClick={handleRegisterThisDevice}
+                                  className={`px-3 py-2 rounded-[8px] text-[12px] font-semibold transition-colors ${canRegister ? 'bg-[#0047BB] text-white hover:bg-[#003da0]' : 'bg-[#E5E7EB] text-[#6B7280] cursor-not-allowed'}`}
+                                >
+                                  Cadastrar este dispositivo
+                                </button>
+                              )}
+                            </div>
                           </div>
-                        ) : (
-                          <button 
-                            onClick={() => handleDisconnectDevice(device.id)}
-                            className="text-[#DC2626] p-2 hover:bg-red-50 rounded-full transition-colors"
-                            title="Desconectar dispositivo"
-                          >
-                            <Trash2 size={18} />
-                          </button>
-                        )}
+                        </div>
+                      )
+                    }
+                    return (
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {renderSlot('desktop', desktop, canRegisterDesktop)}
+                          {renderSlot('mobile', mobile, canRegisterMobile)}
+                        </div>
+
+                        {pending?.device_id ? (
+                          <div className="border border-[#E3E4E5] rounded-[8px] p-4 bg-white">
+                            <div className="flex items-center justify-between gap-4">
+                              <div className="min-w-0">
+                                <div className="text-[14px] font-bold text-[#1E1B39]">Solicitação pendente</div>
+                                <div className="text-[12px] text-[#737780] mt-1 break-words">{pending?.label || 'Novo dispositivo'}</div>
+                                <div className="text-[12px] text-[#737780] mt-1">
+                                  Tipo: {String(pending?.device_type || '').toLowerCase() === 'mobile' ? 'Mobile' : 'Desktop'} • Solicitado em: {formatDateTimeBR(pending?.requested_at)}
+                                </div>
+                              </div>
+                              <div className="flex flex-col sm:flex-row gap-2">
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    await approveDeviceRequest?.()
+                                    await refreshDevices()
+                                  }}
+                                  className="bg-[#0047BB] text-white px-3 py-2 rounded-[8px] text-[12px] font-semibold hover:bg-[#003da0] transition-colors"
+                                >
+                                  Aprovar
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    await denyDeviceRequest?.()
+                                    await refreshDevices()
+                                  }}
+                                  className="border border-[#E3E4E5] text-[#1E1B39] px-3 py-2 rounded-[8px] text-[12px] font-semibold hover:bg-[#F8FAFC] transition-colors"
+                                >
+                                  Recusar
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ) : null}
                       </div>
-                    </div>
-                  ))}
-                </div>
+                    )
+                  })()
+                )}
               </div>
             </>
           )}

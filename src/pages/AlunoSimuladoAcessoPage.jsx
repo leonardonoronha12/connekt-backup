@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight, Menu, MoreVertical, X } from 'lucide-react'
 import Header from '@/components/Header'
 import BrandLogo from '@/components/BrandLogo'
 import CourseFooter from '@/components/CourseFooter'
+import AlunoInboxThread from '@/components/AlunoInboxThread'
 import { supabase } from '@/lib/supabaseClient'
 import { useAuth } from '@/contexts/SupabaseAuthContext'
 import { useActiveProducerUserId } from '@/hooks/useActiveProducerUserId'
@@ -114,6 +115,9 @@ export default function AlunoSimuladoAcessoPage() {
   const activeProducerUserId = useActiveProducerUserId()
   const [loading, setLoading] = useState(true)
   const [simulado, setSimulado] = useState(null)
+  const [studentName, setStudentName] = useState('Aluno')
+  const [activeTab, setActiveTab] = useState('Simulados')
+  const [ownedSimuladoIds, setOwnedSimuladoIds] = useState([])
   const [othersLoading, setOthersLoading] = useState(false)
   const [otherSimulados, setOtherSimulados] = useState([])
   const otherScrollRef = useRef(null)
@@ -150,6 +154,80 @@ export default function AlunoSimuladoAcessoPage() {
 
   const safeLsSet = (key, value) => {
     try { localStorage.setItem(String(key || ''), String(value)) } catch (_) {}
+  }
+
+  const ownedSimuladoIdSet = useMemo(() => {
+    const set = new Set()
+    for (const id of Array.isArray(ownedSimuladoIds) ? ownedSimuladoIds : []) {
+      const v = String(id || '').trim()
+      if (v) set.add(v)
+    }
+    return set
+  }, [ownedSimuladoIds])
+
+  useEffect(() => {
+    const name = user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email || 'Aluno'
+    setStudentName(String(name))
+  }, [user])
+
+  useEffect(() => {
+    let active = true
+    const run = async () => {
+      if (params.demo) return
+      try {
+        const token = (await supabase.auth.getSession().catch(() => ({ data: null })))?.data?.session?.access_token || ''
+        if (!token) return
+        const { data, error } = await supabase
+          .from('notifications')
+          .select('type,entity_type,entity_id,entity_name,data,created_at')
+          .eq('type', 'purchase_confirmed')
+          .order('created_at', { ascending: false })
+          .limit(500)
+        if (!active) return
+        if (error) throw error
+        const set = new Set()
+        for (const row of Array.isArray(data) ? data : []) {
+          const entityType = String(row?.entity_type || '').trim().toLowerCase()
+          const dataObj = row?.data && typeof row.data === 'object' ? row.data : null
+          const dataType = String(dataObj?.type || '').trim().toLowerCase()
+          if (entityType === 'simulado' || dataType === 'simulado') {
+            const id = String(row?.entity_id || dataObj?.simId || dataObj?.simuladoId || '').trim()
+            if (id) set.add(id)
+          }
+        }
+        const list = Array.from(set)
+        setOwnedSimuladoIds(list)
+        for (const id of list) {
+          try { localStorage.setItem(`connekt_simulado_owned:${id}`, '1') } catch (_) {}
+        }
+      } catch (_) {
+        if (!active) return
+        setOwnedSimuladoIds([])
+      }
+    }
+    run()
+    return () => { active = false }
+  }, [params.demo])
+
+  useEffect(() => {
+    try {
+      const p = new URLSearchParams(locationSearch || '')
+      const raw = String(p.get('tab') || p.get('aba') || '').trim().toLowerCase()
+      if (!raw) return
+      const next = raw === 'inbox' ? 'Inbox' : raw === 'simulados' ? 'Simulados' : null
+      if (!next) return
+      setActiveTab((prev) => (prev === next ? prev : next))
+    } catch (_) {}
+  }, [locationSearch])
+
+  const setTabAndUrl = (next) => {
+    setActiveTab(next)
+    try {
+      const u = new URL(window.location.href)
+      u.searchParams.set('tab', next === 'Inbox' ? 'inbox' : 'simulados')
+      window.history.replaceState({}, '', `${u.pathname}${u.search}${u.hash}`)
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    } catch (_) {}
   }
 
   useEffect(() => {
@@ -306,8 +384,104 @@ export default function AlunoSimuladoAcessoPage() {
     return Number.isFinite(n) ? n : 0
   }, [progressKey, ownershipTick])
   const isPaidSimulado = Boolean(simulado?.is_paid) || Math.max(0, Number(simulado?.price || 0)) > 0
-  const isOwnedSimulado = !isPaidSimulado || safeLsGet(ownedKey) === '1'
+  const isOwnedSimulado = !isPaidSimulado || safeLsGet(ownedKey) === '1' || ownedSimuladoIdSet.has(currentSimId)
   const isPausedSimulado = isOwnedSimulado && progressValue > 0 && progressValue < 100
+  const finishKey = currentSimId ? `connekt_simulado_finish_${currentSimId}` : ''
+  const hasFinishedSimulado = useMemo(() => {
+    if (!finishKey) return false
+    try { return !!localStorage.getItem(finishKey) } catch (_) { return false }
+  }, [finishKey, ownershipTick])
+
+  const availabilityWindow = useMemo(() => {
+    if (params.demo) return { beforeStart: false, afterEnd: false }
+    const parseStartMs = (v) => {
+      const s = String(v || '').trim()
+      if (!s) return null
+      const t = new Date(s).getTime()
+      if (!Number.isFinite(t)) return null
+      return t
+    }
+    const parseEndMsInclusive = (v) => {
+      const s = String(v || '').trim()
+      if (!s) return null
+      const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+      if (m) {
+        const y = Number(m[1])
+        const mo = Number(m[2])
+        const d = Number(m[3])
+        if (!y || mo < 1 || mo > 12 || d < 1 || d > 31) return null
+        return Date.UTC(y, mo - 1, d, 23, 59, 59, 999)
+      }
+      const t = new Date(s).getTime()
+      if (!Number.isFinite(t)) return null
+      return t
+    }
+    const startMs = parseStartMs(simulado?.availability_date)
+    const endIso =
+      (typeof simulado?.settings?.availabilityEndDate === 'string' ? simulado.settings.availabilityEndDate : null)
+      || (typeof simulado?.settings?.availability_end_date === 'string' ? simulado.settings.availability_end_date : null)
+      || null
+    const endMs = parseEndMsInclusive(endIso)
+    const now = Date.now()
+    return {
+      beforeStart: startMs != null ? now < startMs : false,
+      afterEnd: endMs != null ? now > endMs : false,
+    }
+  }, [params.demo, simulado])
+
+  useEffect(() => {
+    let active = true
+    const run = async () => {
+      if (params.demo) return
+      if (!user?.id) return
+      if (!currentSimId) return
+      if (!simulado) return
+      if (isOwnedSimulado) return
+      if (!isPaidSimulado) return
+      const simTitle = String(simulado?.title || '').trim()
+      if (!simTitle) return
+      try {
+        const token = (await supabase.auth.getSession().catch(() => ({ data: null })))?.data?.session?.access_token || ''
+        if (!token) return
+        const { data, error } = await supabase
+          .from('notifications')
+          .select('type,entity_type,entity_id,entity_name,data,created_at')
+          .eq('type', 'purchase_confirmed')
+          .order('created_at', { ascending: false })
+          .limit(500)
+        if (!active) return
+        if (error) throw error
+        const normalize = (v) => String(v || '').trim().toLowerCase()
+        const targetTitle = normalize(simTitle)
+        for (const row of Array.isArray(data) ? data : []) {
+          const entityType = normalize(row?.entity_type)
+          const entityId = String(row?.entity_id || '').trim()
+          const entityName = normalize(row?.entity_name)
+          const dataObj = row?.data && typeof row.data === 'object' ? row.data : null
+          const dataType = normalize(dataObj?.type)
+          const dataSimId = String(dataObj?.simId || dataObj?.simuladoId || '').trim()
+          if (entityType === 'simulado' && (entityId === currentSimId || dataSimId === currentSimId)) {
+            try { localStorage.setItem(ownedKey, '1') } catch (_) {}
+            setOwnershipTick((v) => v + 1)
+            return
+          }
+          if (dataType === 'simulado' && dataSimId === currentSimId) {
+            try { localStorage.setItem(ownedKey, '1') } catch (_) {}
+            setOwnershipTick((v) => v + 1)
+            return
+          }
+          if (entityName && entityName === targetTitle) {
+            try { localStorage.setItem(ownedKey, '1') } catch (_) {}
+            setOwnershipTick((v) => v + 1)
+            return
+          }
+        }
+      } catch (_) {}
+    }
+    run()
+    return () => { active = false }
+  }, [params.demo, user?.id, currentSimId, simulado?.id, simulado?.title, isPaidSimulado, isOwnedSimulado, ownedKey])
+
   const primaryCtaLabel = (() => {
     if (loading) return 'Carregando...'
     if (checkoutLoading) return 'Abrindo checkout...'
@@ -315,10 +489,19 @@ export default function AlunoSimuladoAcessoPage() {
     if (!currentSimId) return 'Selecione um simulado'
     if (!simulado && !params.demo) return 'Simulado não encontrado'
     if (!isOwnedSimulado && isPaidSimulado) return 'Comprar simulado'
+    if (availabilityWindow.beforeStart) return 'Agendado'
+    if (availabilityWindow.afterEnd) return hasFinishedSimulado ? 'Ver resultado' : 'Encerrado'
     if (isPausedSimulado) return 'Voltar para o simulado'
     return 'Fazer simulado'
   })()
-  const primaryCtaDisabled = loading || checkoutLoading || verifyLoading || !currentSimId || (!params.demo && !simulado)
+  const primaryCtaDisabled =
+    loading
+    || checkoutLoading
+    || verifyLoading
+    || !currentSimId
+    || (!params.demo && !simulado)
+    || availabilityWindow.beforeStart
+    || (availabilityWindow.afterEnd && !hasFinishedSimulado)
   const currentPath = typeof window !== 'undefined' ? window.location.pathname : '/aluno/simulados/acesso'
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
 
@@ -604,9 +787,31 @@ export default function AlunoSimuladoAcessoPage() {
                           startSimuladoCheckout()
                           return
                         }
+                        if (availabilityWindow.afterEnd && hasFinishedSimulado) {
+                          navigateTo(`/aluno/simulados/resultado?simId=${encodeURIComponent(simId)}${demoSuffix}`)
+                          return
+                        }
+                        const allowRepeat =
+                          typeof simulado?.settings?.allowRepeat === 'boolean'
+                            ? Boolean(simulado.settings.allowRepeat)
+                            : (typeof simulado?.settings?.allow_repeat === 'boolean' ? Boolean(simulado.settings.allow_repeat) : true)
                         try {
+                          localStorage.setItem(`connekt_simulado_allowRepeat:${simId}`, allowRepeat ? '1' : '0')
+                          const startRaw = String(simulado?.availability_date || '').trim()
+                          const endRaw =
+                            (typeof simulado?.settings?.availabilityEndDate === 'string' ? simulado.settings.availabilityEndDate : null)
+                            || (typeof simulado?.settings?.availability_end_date === 'string' ? simulado.settings.availability_end_date : null)
+                            || ''
+                          localStorage.setItem(`connekt_simulado_windowStart:${simId}`, startRaw)
+                          localStorage.setItem(`connekt_simulado_windowEnd:${simId}`, String(endRaw || '').trim())
+                          const finishKey = `connekt_simulado_finish_${simId}`
+                          const hasFinish = !!localStorage.getItem(finishKey)
+                          if (hasFinish && !allowRepeat) {
+                            navigateTo(`/aluno/simulados/resultado?simId=${encodeURIComponent(simId)}${demoSuffix}`)
+                            return
+                          }
                           localStorage.removeItem(`connekt_simulado_pause_${simId}`)
-                          localStorage.removeItem(`connekt_simulado_finish_${simId}`)
+                          if (allowRepeat) localStorage.removeItem(finishKey)
                           localStorage.setItem(`connekt_simulado_progress:${simId}`, '0')
                         } catch (_) {}
                         navigateTo(`/aluno/reposta-correta-simulado?simId=${encodeURIComponent(simId)}${demoSuffix}`)
@@ -642,77 +847,118 @@ export default function AlunoSimuladoAcessoPage() {
               </div>
 
               <div className="mt-8">
-                <div className="flex items-center justify-between gap-4">
-                  <div className="flex items-center gap-2">
-                    <div className="w-5 h-5 rounded-[6px] bg-[#EEF2FF] flex items-center justify-center">
-                      <img src="/icons/union.svg" alt="" className="w-4 h-4" />
-                    </div>
-                    <div className="text-[12px] font-semibold text-[#22252B]">Simulados</div>
-                  </div>
-                  {Array.isArray(simuladosForCards) && simuladosForCards.length > 4 ? (
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        className="w-9 h-9 rounded-full border border-[#E3E4E5] bg-white flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
-                        onClick={() => scrollOtherBy(-1)}
-                        disabled={!canScrollOtherLeft}
-                        aria-label="Simulados anteriores"
-                      >
-                        <ChevronLeft className="w-4 h-4 text-[#737780]" />
-                      </button>
-                      <button
-                        type="button"
-                        className="w-9 h-9 rounded-full border border-[#E3E4E5] bg-white flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
-                        onClick={() => scrollOtherBy(1)}
-                        disabled={!canScrollOtherRight}
-                        aria-label="Próximos simulados"
-                      >
-                        <ChevronRight className="w-4 h-4 text-[#737780]" />
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
-
-                <div
-                  ref={otherScrollRef}
-                  onScroll={updateOtherScrollControls}
-                  className="mt-4 flex gap-5 overflow-x-auto pb-2 scrollbar-hide"
-                >
-                  {simuladosForCards.map((s) => (
-                    <div
-                      key={s.id}
-                      className="cursor-pointer flex-shrink-0 w-[252px]"
-                      onClick={() => {
-                        const qs = new URLSearchParams()
-                        qs.set('simId', String(s.id))
-                        if (params.demo) qs.set('demo', '1')
-                        navigateTo(`/aluno/simulados/acesso?${qs.toString()}`)
-                      }}
+                <div className="flex items-center gap-6 border-b border-[#E3E4E5]">
+                  {['Simulados', 'Inbox'].map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      className={`py-3 text-[11px] font-semibold ${activeTab === t ? 'text-[#0047BB] border-b-2 border-[#0047BB]' : 'text-[#737780]'}`}
+                      onClick={() => setTabAndUrl(t)}
                     >
-                      <SimuladoCard
-                        title={s.title}
-                        subtitle={s.subtitle || 'Simulado para testar seus conhecimentos.'}
-                        categories={s.categories}
-                        status={s.status}
-                        approval={s.approval}
-                        isPaid={s.is_paid ?? s.isPaid}
-                        price={s.price}
-                        imageUrl={s.imageUrl || '/icone img simulado.png'}
-                        isOwned={(() => {
-                          const paid = typeof (s?.is_paid ?? s?.isPaid) === 'boolean' ? (s.is_paid ?? s.isPaid) : Math.max(0, Number(s?.price || 0)) > 0
-                          if (!paid) return false
-                          return safeLsGet(`connekt_simulado_owned:${String(s?.id || '')}`) === '1'
-                        })()}
-                      />
-                    </div>
+                      {t}
+                    </button>
                   ))}
                 </div>
-                {!params.demo && othersLoading ? (
-                  <div className="mt-3 text-[12px] text-[#737780]">Carregando simulados…</div>
-                ) : null}
-                {!params.demo && !othersLoading && otherSimulados.length === 0 ? (
-                  <div className="mt-3 text-[12px] text-[#737780]">Nenhum outro simulado disponível.</div>
-                ) : null}
+
+                {activeTab === 'Inbox' ? (
+                  <div className="mt-5">
+                    <div className="rounded-[10px] border border-[#E3E4E5] bg-white p-4">
+                      <div className="text-[12px] font-semibold text-[#22252B]">Inbox do simulado</div>
+                      <div className="mt-1 text-[11px] text-[#737780] leading-[16px]">
+                        Use este espaço para tirar dúvidas sobre este simulado e conversar com o professor. Suas mensagens ficam organizadas por simulado e você pode acompanhar as respostas aqui.
+                      </div>
+                      <div className="mt-2 text-[10px] text-[#9AA0AA]">
+                        Dica: escreva sua dúvida com o máximo de detalhes possível (questão, alternativa e por que você ficou em dúvida).
+                      </div>
+                    </div>
+                    <AlunoInboxThread
+                      user={user}
+                      studentName={studentName}
+                      threadKey={`simulado:${currentSimId || 'geral'}`}
+                      title="Inbox"
+                      itemLabel="Mensagens"
+                      submitLabel="Enviar"
+                      successTitle="Mensagem enviada"
+                      placeholder="Digite sua mensagem para o professor"
+                      producerId={activeProducerUserId}
+                    />
+                  </div>
+                ) : (
+                  <div className="mt-5">
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="flex items-center gap-2">
+                        <div className="w-5 h-5 rounded-[6px] bg-[#EEF2FF] flex items-center justify-center">
+                          <img src="/icons/union.svg" alt="" className="w-4 h-4" />
+                        </div>
+                        <div className="text-[12px] font-semibold text-[#22252B]">Simulados</div>
+                      </div>
+                      {Array.isArray(simuladosForCards) && simuladosForCards.length > 4 ? (
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            className="w-9 h-9 rounded-full border border-[#E3E4E5] bg-white flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
+                            onClick={() => scrollOtherBy(-1)}
+                            disabled={!canScrollOtherLeft}
+                            aria-label="Simulados anteriores"
+                          >
+                            <ChevronLeft className="w-4 h-4 text-[#737780]" />
+                          </button>
+                          <button
+                            type="button"
+                            className="w-9 h-9 rounded-full border border-[#E3E4E5] bg-white flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed"
+                            onClick={() => scrollOtherBy(1)}
+                            disabled={!canScrollOtherRight}
+                            aria-label="Próximos simulados"
+                          >
+                            <ChevronRight className="w-4 h-4 text-[#737780]" />
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <div
+                      ref={otherScrollRef}
+                      onScroll={updateOtherScrollControls}
+                      className="mt-4 flex gap-5 overflow-x-auto pb-2 scrollbar-hide"
+                    >
+                      {simuladosForCards.map((s) => (
+                        <div
+                          key={s.id}
+                          className="cursor-pointer flex-shrink-0 w-[252px]"
+                          onClick={() => {
+                            const qs = new URLSearchParams()
+                            qs.set('simId', String(s.id))
+                            if (params.demo) qs.set('demo', '1')
+                            navigateTo(`/aluno/simulados/acesso?${qs.toString()}`)
+                          }}
+                        >
+                          <SimuladoCard
+                            title={s.title}
+                            subtitle={s.subtitle || 'Simulado para testar seus conhecimentos.'}
+                            categories={s.categories}
+                            status={s.status}
+                            approval={s.approval}
+                            isPaid={s.is_paid ?? s.isPaid}
+                            price={s.price}
+                            imageUrl={s.imageUrl || '/icone img simulado.png'}
+                            isOwned={(() => {
+                              const paid = typeof (s?.is_paid ?? s?.isPaid) === 'boolean' ? (s.is_paid ?? s.isPaid) : Math.max(0, Number(s?.price || 0)) > 0
+                              if (!paid) return false
+                              const sid = String(s?.id || '').trim()
+                              return (sid ? safeLsGet(`connekt_simulado_owned:${sid}`) === '1' : false) || (sid ? ownedSimuladoIdSet.has(sid) : false)
+                            })()}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                    {!params.demo && othersLoading ? (
+                      <div className="mt-3 text-[12px] text-[#737780]">Carregando simulados…</div>
+                    ) : null}
+                    {!params.demo && !othersLoading && otherSimulados.length === 0 ? (
+                      <div className="mt-3 text-[12px] text-[#737780]">Nenhum outro simulado disponível.</div>
+                    ) : null}
+                  </div>
+                )}
               </div>
 
             </div>

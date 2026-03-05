@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Plus, Search, Pencil, Trash, Trash2, Check, X, Tag, Upload, CheckCircle, Folder, Info, ChevronRight } from 'lucide-react';
 import { TaxonomyDropdown } from '@/components/TaxonomyDropdown';
 import { useTaxonomy } from '@/contexts/TaxonomyContext';
+import { TAXONOMY_CATEGORY_COLOR, TAXONOMY_SUBCATEGORY_COLOR, TAXONOMY_TAG_COLOR } from '@/constants/taxonomyColors'
 
 export default function CategoriasPage() {
   const [activeTab, setActiveTab] = useState('subcategorias'); // 'subcategorias' | 'categorias'
@@ -23,7 +24,7 @@ export default function CategoriasPage() {
   } = useTaxonomy();
 
   // Estados de Busca
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerms, setSearchTerms] = useState({ categorias: '', subcategorias: '', tags: '' });
 
   // Modais
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -34,7 +35,7 @@ export default function CategoriasPage() {
   const [formData, setFormData] = useState({
     name: '',
     description: '',
-    color: '#3B82F6',
+    color: TAXONOMY_CATEGORY_COLOR,
     categoryIds: [],
     tags: [], // Agora é Array
     subcategoriesList: [] // Array de strings (nomes)
@@ -53,6 +54,7 @@ export default function CategoriasPage() {
   const tagById = useMemo(() => new Map(tags.map(t => [t.id, t])), [tags]);
   const tagByNameLower = useMemo(() => new Map(tags.map(t => [String(t.name || '').toLowerCase(), t])), [tags]);
   const categoryById = useMemo(() => new Map(categories.map(c => [c.id, c])), [categories]);
+  const subcategoryById = useMemo(() => new Map(subcategories.map(s => [s.id, s])), [subcategories]);
   const subcategoryByNameLower = useMemo(() => new Map(subcategories.map(s => [String(s.name || '').toLowerCase(), s])), [subcategories]);
 
   const [draftSubcategoryMetaByName, setDraftSubcategoryMetaByName] = useState({});
@@ -69,13 +71,20 @@ export default function CategoriasPage() {
 
   const handleOpenCreateModal = () => {
     setModalMode('create');
+    const fixedColor =
+      activeTab === 'tags'
+        ? TAXONOMY_TAG_COLOR
+        : activeTab === 'subcategorias'
+          ? TAXONOMY_SUBCATEGORY_COLOR
+          : TAXONOMY_CATEGORY_COLOR
     setFormData({
       name: '',
       description: '',
-      color: '#3B82F6',
+      color: fixedColor,
       categoryIds: categories[0] ? [categories[0].id] : [],
       tags: [],
-      subcategoriesList: []
+      subcategoriesList: [],
+      tagSubcategoryIds: [],
     });
     setDraftSubcategoryMetaByName({});
     resetSelectors();
@@ -86,33 +95,39 @@ export default function CategoriasPage() {
     setModalMode('edit');
     if (type === 'tag') {
       setCurrentEditingItem({ ...item, type });
+      const selected = subcategories
+        .filter((s) => Array.isArray(s?.tagIds) && s.tagIds.includes(String(item.id)))
+        .map((s) => s.id);
       setFormData({
         name: item.name,
         description: item.description || '',
-        color: item.color || '#94A3B8',
+        color: TAXONOMY_TAG_COLOR,
         categoryIds: [],
         tags: [],
         subcategoriesList: [],
+        tagSubcategoryIds: selected,
       });
     } else if (type === 'category') {
       setCurrentEditingItem({ ...item, type });
       setFormData({
         name: item.name,
         description: item.description || '',
-        color: item.color || '#3B82F6',
+        color: TAXONOMY_CATEGORY_COLOR,
         categoryIds: [],
         tags: Array.isArray(item.tagIds) ? item.tagIds : [],
         subcategoriesList: [],
+        tagSubcategoryIds: [],
       });
     } else {
       setCurrentEditingItem({ ...item, type });
       setFormData({
         name: item.name,
         description: item.description || '',
-        color: item.color || '#3B82F6',
+        color: TAXONOMY_SUBCATEGORY_COLOR,
         categoryIds: Array.isArray(item.categoryIds) ? item.categoryIds : [],
         tags: Array.isArray(item.tagIds) ? item.tagIds : [],
         subcategoriesList: [],
+        tagSubcategoryIds: [],
       });
     }
     resetSelectors();
@@ -138,10 +153,10 @@ export default function CategoriasPage() {
 
   const createTagFromPayload = async (payload) => {
     const name = String(payload?.name || '').trim();
-    if (!name) return;
+      if (!name) return;
     const created = createTag({
       name,
-      color: String(payload?.color || '#94A3B8'),
+      color: TAXONOMY_TAG_COLOR,
       description: String(payload?.description || ''),
     });
     addTag(created.id);
@@ -153,7 +168,7 @@ export default function CategoriasPage() {
     if (!newName) return;
     updateTag(id, {
       name: newName,
-      color: String(payload?.color || '#94A3B8'),
+      color: TAXONOMY_TAG_COLOR,
       description: String(payload?.description || ''),
     });
   };
@@ -175,12 +190,30 @@ export default function CategoriasPage() {
     setFormData(prev => ({ ...prev, subcategoriesList: prev.subcategoriesList.filter(s => s !== subName) }));
   };
 
+  const addTagSubcategory = (subId) => {
+    const id = String(subId);
+    if (!id) return;
+    setFormData((prev) => {
+      const current = Array.isArray(prev.tagSubcategoryIds) ? prev.tagSubcategoryIds.map(String) : [];
+      if (current.includes(id)) return prev;
+      return { ...prev, tagSubcategoryIds: [...current, id] };
+    });
+  };
+
+  const removeTagSubcategory = (subId) => {
+    const id = String(subId);
+    setFormData((prev) => {
+      const current = Array.isArray(prev.tagSubcategoryIds) ? prev.tagSubcategoryIds.map(String) : [];
+      return { ...prev, tagSubcategoryIds: current.filter((x) => x !== id) };
+    });
+  };
+
   const createSubcategoryFromPayload = async (payload) => {
     const name = String(payload?.name || '').trim();
     if (!name) return;
     setDraftSubcategoryMetaByName(prev => ({
       ...prev,
-      [name]: { color: String(payload?.color || '#3B82F6'), desc: String(payload?.description || '') },
+      [name]: { color: TAXONOMY_SUBCATEGORY_COLOR, desc: String(payload?.description || '') },
     }));
     addSubcategoryFromSelector(name);
   };
@@ -191,7 +224,7 @@ export default function CategoriasPage() {
     const created = createCategory({
       name,
       description: String(payload?.description || ''),
-      color: String(payload?.color || '#3B82F6'),
+      color: TAXONOMY_CATEGORY_COLOR,
       tagIds: [],
     });
     addCategory(created.id);
@@ -204,7 +237,7 @@ export default function CategoriasPage() {
     updateCategory(id, {
       name,
       description: String(payload?.description || ''),
-      color: String(payload?.color || '#3B82F6'),
+      color: TAXONOMY_CATEGORY_COLOR,
     });
   };
 
@@ -233,7 +266,7 @@ export default function CategoriasPage() {
         createSubcategory({
           name: formData.name,
           description: formData.description,
-          color: formData.color,
+          color: TAXONOMY_SUBCATEGORY_COLOR,
           categoryIds: formData.categoryIds,
           tagIds: formData.tags,
           productsCount: 0,
@@ -242,7 +275,7 @@ export default function CategoriasPage() {
         updateSubcategory(String(currentEditingItem.id), {
           name: formData.name,
           description: formData.description,
-          color: formData.color,
+          color: TAXONOMY_SUBCATEGORY_COLOR,
           categoryIds: formData.categoryIds,
           tagIds: formData.tags,
         });
@@ -252,7 +285,7 @@ export default function CategoriasPage() {
         const created = createCategory({
           name: formData.name,
           description: formData.description,
-          color: formData.color,
+          color: TAXONOMY_CATEGORY_COLOR,
           tagIds: formData.tags,
         });
 
@@ -270,7 +303,7 @@ export default function CategoriasPage() {
           createSubcategory({
             name: subName,
             description: String(meta?.desc || ''),
-            color: String(meta?.color || formData.color || '#3B82F6'),
+            color: TAXONOMY_SUBCATEGORY_COLOR,
             categoryIds: [created.id],
             tagIds: [],
             productsCount: 0,
@@ -280,7 +313,7 @@ export default function CategoriasPage() {
         updateCategory(String(currentEditingItem.id), {
           name: formData.name,
           description: formData.description,
-          color: formData.color,
+          color: TAXONOMY_CATEGORY_COLOR,
           tagIds: formData.tags,
         });
       }
@@ -288,9 +321,29 @@ export default function CategoriasPage() {
       const tagName = formData.name.trim();
       
       if (modalMode === 'create') {
-        createTag({ name: tagName, color: formData.color, description: formData.description });
+        const created = createTag({ name: tagName, color: TAXONOMY_TAG_COLOR, description: formData.description });
+        const selected = Array.isArray(formData.tagSubcategoryIds) ? formData.tagSubcategoryIds.map(String) : [];
+        selected.forEach((subId) => {
+          const sub = subcategoryById.get(String(subId));
+          if (!sub) return;
+          const nextIds = Array.from(new Set([...(sub.tagIds || []).map(String), String(created.id)]));
+          updateSubcategory(String(sub.id), { tagIds: nextIds });
+        });
       } else {
-        updateTag(String(currentEditingItem.id), { name: tagName, color: formData.color, description: formData.description });
+        updateTag(String(currentEditingItem.id), { name: tagName, color: TAXONOMY_TAG_COLOR, description: formData.description });
+        const tagId = String(currentEditingItem.id);
+        const selected = new Set((Array.isArray(formData.tagSubcategoryIds) ? formData.tagSubcategoryIds : []).map(String));
+        subcategories.forEach((sub) => {
+          const subId = String(sub.id);
+          const currentIds = Array.isArray(sub.tagIds) ? sub.tagIds.map(String) : [];
+          const has = currentIds.includes(tagId);
+          const shouldHave = selected.has(subId);
+          if (shouldHave && !has) {
+            updateSubcategory(subId, { tagIds: [...currentIds, tagId] });
+          } else if (!shouldHave && has) {
+            updateSubcategory(subId, { tagIds: currentIds.filter((x) => x !== tagId) });
+          }
+        });
       }
     }
     setIsModalOpen(false);
@@ -309,13 +362,24 @@ export default function CategoriasPage() {
   };
 
   // Filtragem
+  const activeSearchTerm = String(searchTerms?.[activeTab] || '');
+  const handleSearchChange = (next) => {
+    setSearchTerms((prev) => ({ ...prev, [activeTab]: next }));
+  };
+  const searchPlaceholder =
+    activeTab === 'categorias'
+      ? 'Buscar categorias...'
+      : activeTab === 'subcategorias'
+        ? 'Buscar subcategorias...'
+        : 'Buscar tags...';
+
   const filteredSubcategories = subcategories.filter(s => 
-    s.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    s.description?.toLowerCase().includes(searchTerm.toLowerCase())
+    s.name.toLowerCase().includes(String(searchTerms.subcategorias || '').toLowerCase()) || 
+    s.description?.toLowerCase().includes(String(searchTerms.subcategorias || '').toLowerCase())
   );
   
   const filteredCategories = categories.filter(c => 
-    c.name.toLowerCase().includes(searchTerm.toLowerCase())
+    c.name.toLowerCase().includes(String(searchTerms.categorias || '').toLowerCase())
   );
 
   const categoryItemsForSelector = categories.map(c => ({ id: c.id, name: c.name, color: c.color, description: c.description }));
@@ -381,7 +445,17 @@ export default function CategoriasPage() {
         </div>
 
         {/* Actions */}
-        <div className="flex items-center gap-3 w-full md:w-auto">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full md:w-auto">
+          <div className="relative w-full sm:w-[280px]">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input
+              type="text"
+              value={activeSearchTerm}
+              onChange={(e) => handleSearchChange(e.target.value)}
+              placeholder={searchPlaceholder}
+              className="w-full h-[40px] pl-9 pr-3 bg-white border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm text-slate-700 placeholder:text-slate-400"
+            />
+          </div>
           <button className="flex items-center gap-2 px-4 py-2 text-slate-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 text-sm font-medium transition-colors">
             Exportar
             <Upload className="w-4 h-4" />
@@ -535,11 +609,11 @@ export default function CategoriasPage() {
 
       {activeTab === 'tags' && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-          {tags.filter(t => (t.name || '').toLowerCase().includes(searchTerm.toLowerCase())).map(tag => (
+          {tags.filter(t => (t.name || '').toLowerCase().includes(String(searchTerms.tags || '').toLowerCase())).map(tag => (
              <div key={tag.id} className="bg-white rounded-xl p-5 border border-gray-100 shadow-sm hover:shadow-md transition-shadow flex flex-col h-full min-w-0 overflow-hidden">
                <div className="flex justify-between items-start mb-3 gap-2 min-w-0">
                  <div className="flex items-center gap-2 min-w-0">
-                   <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white" style={{ backgroundColor: tag.color || '#94A3B8' }}>
+                   <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white" style={{ backgroundColor: tag.color || TAXONOMY_TAG_COLOR }}>
                       <Tag className="w-4 h-4" />
                    </div>
                    <h3 className="font-semibold text-slate-800 text-base truncate min-w-0">{tag.name}</h3>
@@ -596,12 +670,7 @@ export default function CategoriasPage() {
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">Cor</label>
                 <div className="flex items-center gap-3">
-                  <input
-                    type="color"
-                    value={formData.color}
-                    onChange={(e) => setFormData({...formData, color: e.target.value})}
-                    className="w-10 h-10 p-0 border-0 rounded cursor-pointer"
-                  />
+                  <div className="w-10 h-10 rounded border border-gray-200" style={{ backgroundColor: formData.color }} />
                   <span className="text-sm text-slate-500 uppercase">{formData.color}</span>
                 </div>
               </div>
@@ -643,12 +712,12 @@ export default function CategoriasPage() {
                              setShowCategorySelector(false);
                            }}
                            onCreate={createCategoryFromPayload}
-                           onUpdate={updateCategoryFromPayload}
-                           onDelete={deleteCategoryById}
-                           searchPlaceholder="Pesquisar categorias..."
-                           createLabel="Criar nova categoria"
-                           defaultColor="#3B82F6"
-                         />
+                          onUpdate={updateCategoryFromPayload}
+                          onDelete={deleteCategoryById}
+                          searchPlaceholder="Pesquisar categorias..."
+                          createLabel="Criar nova categoria"
+                          defaultColor={TAXONOMY_CATEGORY_COLOR}
+                        />
                        </div>
                     </div>
                     <span className="text-xs text-slate-500">Categorias que serão vinculadas</span>
@@ -703,7 +772,7 @@ export default function CategoriasPage() {
                           onCreate={createSubcategoryFromPayload}
                           searchPlaceholder="Buscar subcategoria"
                           createLabel="Criar nova subcategoria"
-                          defaultColor="#3B82F6"
+                          defaultColor={TAXONOMY_SUBCATEGORY_COLOR}
                         />
                       </div>
                    </div>
@@ -718,7 +787,7 @@ export default function CategoriasPage() {
                               backgroundColor:
                                 draftSubcategoryMetaByName[sub]?.color
                                 || subcategoryByNameLower.get(String(sub || '').toLowerCase())?.color
-                                || '#94A3B8'
+                                || TAXONOMY_SUBCATEGORY_COLOR
                             }}
                           ></span>
                           {sub}
@@ -728,6 +797,60 @@ export default function CategoriasPage() {
                         </span>
                       ))}
                       {formData.subcategoriesList.length === 0 && (
+                        <span className="text-xs text-slate-400 italic">Nenhuma subcategoria adicionada</span>
+                      )}
+                   </div>
+                </div>
+              )}
+
+              {/* SELETOR DE SUBCATEGORIAS (Apenas ao criar/editar Tag) */}
+              {activeTab === 'tags' && (
+                <div className="flex flex-col gap-2 pt-2 border-t border-gray-50">
+                   <div className="flex items-center gap-2">
+                      <img src="/icons/subcategoria-popup.svg" alt="" width={14} height={14} className="text-gray-600 opacity-50" />
+                      <span className="text-sm font-medium text-slate-700">Subcategorias</span>
+                      
+                      <div className="relative">
+                        <button
+                          type="button"
+                          className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-gray-100 transition-colors"
+                          onClick={() => setShowSubcategorySelector(!showSubcategorySelector)}
+                        >
+                          <Plus className="w-4 h-4 text-slate-600" />
+                        </button>
+
+                        <TaxonomyDropdown
+                          open={showSubcategorySelector}
+                          onOpenChange={setShowSubcategorySelector}
+                          items={subcategoryItemsForSelector}
+                          isSelected={(item) => (formData.tagSubcategoryIds || []).map(String).includes(String(item.id))}
+                          onSelect={(item) => {
+                            addTagSubcategory(item.id);
+                            setShowSubcategorySelector(false);
+                          }}
+                          searchPlaceholder="Buscar subcategoria"
+                          createLabel="Selecionar subcategoria"
+                          defaultColor={TAXONOMY_SUBCATEGORY_COLOR}
+                        />
+                      </div>
+                   </div>
+                   <span className="text-xs text-slate-500">Subcategorias que serão vinculadas</span>
+
+                   <div className="flex flex-wrap gap-2">
+                      {(formData.tagSubcategoryIds || []).map((subId) => {
+                        const sub = subcategoryById.get(String(subId));
+                        if (!sub) return null;
+                        return (
+                          <span key={sub.id} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-gray-200 bg-white text-xs text-slate-700">
+                            <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: sub.color || TAXONOMY_SUBCATEGORY_COLOR }}></span>
+                            {sub.name}
+                            <button onClick={() => removeTagSubcategory(sub.id)} className="text-slate-400 hover:text-red-500">
+                              <X className="w-3 h-3" />
+                            </button>
+                          </span>
+                        );
+                      })}
+                      {(formData.tagSubcategoryIds || []).length === 0 && (
                         <span className="text-xs text-slate-400 italic">Nenhuma subcategoria adicionada</span>
                       )}
                    </div>
@@ -764,7 +887,7 @@ export default function CategoriasPage() {
                         onDelete={deleteTagById}
                         searchPlaceholder="Buscar tag"
                         createLabel="Criar nova tag"
-                        defaultColor="#94A3B8"
+                        defaultColor={TAXONOMY_TAG_COLOR}
                       />
                     </div>
                  </div>
@@ -776,7 +899,7 @@ export default function CategoriasPage() {
                       if (!tag) return null
                       return (
                       <span key={tag.id} className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-gray-200 bg-white text-xs text-slate-700">
-                        <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: tag.color || '#94A3B8' }}></span>
+                        <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: tag.color || TAXONOMY_TAG_COLOR }}></span>
                         {tag.name}
                         <button onClick={() => removeTag(tag.id)} className="text-slate-400 hover:text-red-500">
                           <X className="w-3 h-3" />

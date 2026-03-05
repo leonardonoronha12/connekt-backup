@@ -145,9 +145,13 @@ const ChatArea = ({ conversation, onAddReply, onLikePost, onLikeReply, onEditRep
         ref={threadRef}
         className="flex-1 rounded-[14px] p-5 flex flex-col min-h-0 overflow-auto"
       >
-        {posts.length === 0 ? (
+        {conversation?.is_loading ? (
           <div className="flex-1 rounded-[14px] p-5 grid place-items-center text-[#6b7280]">
             Carregando detalhes da conversa...
+          </div>
+        ) : posts.length === 0 ? (
+          <div className="flex-1 rounded-[14px] p-5 grid place-items-center text-[#6b7280]">
+            Nenhuma mensagem nesta conversa.
           </div>
         ) : (
           <div className="flex flex-col gap-4">

@@ -3,6 +3,9 @@ const url = import.meta.env.VITE_SUPABASE_URL;
 const anon = import.meta.env.VITE_SUPABASE_ANON_KEY;
 if (!url || !anon) throw new Error('Env Supabase ausente: verifique VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY');
 
+export const SUPABASE_URL = url
+export const SUPABASE_ANON_KEY = anon
+
 function getAvailableStorage() {
   if (typeof window === 'undefined') return undefined
   try {

@@ -132,11 +132,11 @@ const SystemNotificationsModal = ({ open, onClose, user }) => {
   if (!open) return null
 
   return (
-    <div
-      ref={panelRef}
-      className="fixed z-[70] w-[380px] bg-white rounded-[16px] shadow-xl border border-[#E3E4E5] overflow-hidden"
-      style={{ top: '72px', right: '24px' }}
-    >
+    <div className="fixed inset-0 z-[20000] isolate flex items-start justify-center p-4 bg-black/30 sm:bg-transparent sm:justify-end sm:p-0">
+      <div
+        ref={panelRef}
+        className="w-full max-w-[420px] sm:w-[380px] bg-white rounded-[16px] shadow-xl border border-[#E3E4E5] overflow-hidden mt-16 sm:mt-[72px] sm:mr-[24px]"
+      >
         <div className="flex items-center justify-between px-5 py-4">
           <div className="text-[16px] font-bold text-[#1E1B39]">Notificações</div>
           <button
@@ -182,7 +182,7 @@ const SystemNotificationsModal = ({ open, onClose, user }) => {
           </div>
         </div>
 
-        <div className="mt-2 max-h-[520px] overflow-auto px-5">
+        <div className="mt-2 max-h-[calc(100vh-220px)] sm:max-h-[520px] overflow-auto px-5">
           {filtered.length === 0 ? (
             <div className="py-10 text-center text-[13px] text-[#8F9299]">
               Sem notificações por aqui.
@@ -207,6 +207,7 @@ const SystemNotificationsModal = ({ open, onClose, user }) => {
             ))
           )}
         </div>
+      </div>
     </div>
   )
 }

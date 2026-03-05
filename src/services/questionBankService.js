@@ -125,10 +125,10 @@ function uploadProxyHint() {
     const host = String(window?.location?.hostname || '').toLowerCase()
     const isLocal = host === 'localhost' || host === '127.0.0.1'
     if (isLocal) {
-      return 'Configure SUPABASE_SERVICE_ROLE_KEY em .env.local e reinicie o dev server (ou use vercel dev).'
+      return 'Configure SUPABASE_SERVICE_ROLE_KEY em .env.local e reinicie o dev server. Alternativa: aplique a migração de policies do bucket question-images.'
     }
   } catch (_) {}
-  return 'Configure SUPABASE_SERVICE_ROLE_KEY nas variáveis de ambiente da Vercel e faça redeploy.'
+  return 'Configure SUPABASE_SERVICE_ROLE_KEY no deploy (Vercel) e faça redeploy. Alternativa: aplique a migração 20260102232000_question_images_storage_policies.sql no Supabase.'
 }
 
 function mapDbRowToUi(row) {
@@ -476,16 +476,85 @@ class QuestionBankService {
       const proxyUpload = async () => {
         const ext = (file.type || '').split('/')[1] || 'bin';
         const safeName = (file.name || `video.${ext}`).replace(/[^a-zA-Z0-9_.-]/g, '_');
-        const u = new URL('/api/upload-question-media', window.location.origin);
-        u.searchParams.set('type', 'video');
-        if (bankId) u.searchParams.set('bankId', String(bankId));
-        if (questionId) u.searchParams.set('questionId', String(questionId));
-        u.searchParams.set('filename', safeName);
-        u.searchParams.set('contentType', file.type || 'application/octet-stream');
+        const base = new URL('/api/upload-question-media', window.location.origin);
+        base.searchParams.set('type', 'video');
+        if (bankId) base.searchParams.set('bankId', String(bankId));
+        if (questionId) base.searchParams.set('questionId', String(questionId));
+        base.searchParams.set('filename', safeName);
+        base.searchParams.set('contentType', file.type || 'application/octet-stream');
+
+        const authHeader = await getBearerAuthHeader()
+
+        const trySigned = async () => {
+          const signUrl = new URL(base.toString());
+          signUrl.searchParams.set('action', 'sign');
+          const signResp = await fetch(signUrl.toString(), { method: 'POST', headers: { ...authHeader } });
+          if (!signResp.ok) {
+            const errText = await signResp.text().catch(() => '');
+            const err = new Error(errText || `Signed upload init failed (${signResp.status})`);
+            err.status = signResp.status;
+            throw err;
+          }
+          const signed = await signResp.json().catch(() => ({}));
+          const signedUrl = signed?.signedUrl || null;
+          const objectPath = signed?.path || null;
+          const publicUrl = signed?.publicUrl || null;
+          const token = signed?.token || null;
+          const bucket = signed?.bucket || this.QUESTION_IMAGES_BUCKET;
+          if (!signedUrl || !objectPath) throw new Error('Signed upload sem URL/path');
+
+          if (typeof supabase?.storage?.from === 'function' && typeof supabase.storage.from(bucket)?.uploadToSignedUrl === 'function' && token) {
+            const up = await supabase.storage
+              .from(bucket)
+              .uploadToSignedUrl(objectPath, token, file, { contentType: file.type || 'application/octet-stream', upsert: true });
+            if (up?.error) throw up.error;
+          } else {
+            const put = await fetch(String(signedUrl), {
+              method: 'PUT',
+              headers: { 'Content-Type': file.type || 'application/octet-stream' },
+              body: file,
+            });
+            if (!put.ok) {
+              const errText = await put.text().catch(() => '');
+              const err = new Error(errText || `Signed upload failed (${put.status})`);
+              err.status = put.status;
+              throw err;
+            }
+          }
+
+          const finUrl = new URL(base.toString());
+          finUrl.searchParams.set('action', 'finalize');
+          finUrl.searchParams.set('path', objectPath);
+          const finResp = await fetch(finUrl.toString(), { method: 'POST', headers: { ...authHeader } });
+          if (!finResp.ok) {
+            const errText = await finResp.text().catch(() => '');
+            const err = new Error(errText || `Finalize failed (${finResp.status})`);
+            err.status = finResp.status;
+            throw err;
+          }
+          const fin = await finResp.json().catch(() => ({}));
+          const finalUrl = fin?.url || publicUrl || null;
+          const finalPath = fin?.path || objectPath;
+          if (!finalUrl) throw new Error('Finalize retornou sem URL');
+          this.isSupabaseAvailable = true;
+          return { url: finalUrl, path: finalPath };
+        };
+
+        const signedThresholdBytes = 3 * 1024 * 1024;
+        if (file.size >= signedThresholdBytes) {
+          try {
+            return await trySigned();
+          } catch (e) {
+            const msg = String(e?.message || e || '');
+            if (msg.includes('signed_upload_not_supported')) {
+            } else {
+              throw e;
+            }
+          }
+        }
 
         const body = await file.arrayBuffer();
-        const authHeader = await getBearerAuthHeader()
-        const resp = await fetch(u.toString(), {
+        const resp = await fetch(base.toString(), {
           method: 'POST',
           headers: { 'Content-Type': file.type || 'application/octet-stream', ...authHeader },
           body,

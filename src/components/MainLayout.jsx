@@ -37,7 +37,7 @@ const MainLayout = ({ children }) => {
   const isAproveitamento = currentPath === '/simulados-aproveitamento';
   const isSimuladoResposta = currentPath === '/reposta-correta-simulado';
   const isSimuladosNovo = currentPath === '/simulados/novo' || currentPath === '/produtos/novo';
-  const isFullWidthPage = currentPath === '/dashboard' || currentPath === '/banco-de-questoes';
+  const isFullWidthPage = currentPath === '/dashboard' || currentPath === '/banco-de-questoes' || currentPath === '/vendas';
 
   return (
     <div className="flex bg-[#F5F6FA]" style={{ height: '100dvh', minHeight: '100vh' }}>

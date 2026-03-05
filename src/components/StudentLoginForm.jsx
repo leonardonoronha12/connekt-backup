@@ -798,16 +798,6 @@ export default function StudentLoginForm({ variant = 'normal' } = {}) {
                     </svg>
                     Google
                   </button>
-                  <button
-                    type="button"
-                    className="flex-1 h-10 rounded-[6px] border border-[#E3E4E5] bg-white flex items-center justify-center gap-2 text-[12px] font-medium text-[#1E1B39]"
-                    onClick={() => handleOAuth('facebook')}
-                  >
-                    <svg width="16" height="16" viewBox="0 0 18 18">
-                      <path fill="#1877F2" d="M18 9.05C18 4.05 13.95 0 9 0S0 4.05 0 9.05c0 4.5 3.3 8.25 7.6 8.9v-6.3H5.3V9.05h2.3V7.1c0-2.3 1.35-3.55 3.4-3.55.95 0 1.95.15 1.95.15v2.2h-1.1c-1.1 0-1.45.7-1.45 1.4v1.75h2.45l-.4 2.6h-2.05v6.3c4.3-.65 7.6-4.4 7.6-8.9z" />
-                    </svg>
-                    Facebook
-                  </button>
                 </div>
 
                 <div className="mt-6 text-center text-[11px] text-[#737780]">

@@ -3,7 +3,9 @@ import { BookOpen, ChevronLeft, ChevronRight, FileText, PlayCircle, Search, Star
 import Header from '@/components/Header'
 import BrandLogo from '@/components/BrandLogo'
 import CourseFooter from '@/components/CourseFooter'
+import ProgressRingIcon from '@/components/ProgressRingIcon.jsx'
 import { supabase } from '@/lib/supabaseClient'
+import { captureVideoFrameDataUrl } from '@/lib/videoThumb'
 import { useAuth } from '@/contexts/SupabaseAuthContext'
 import { useActiveProducerUserId } from '@/hooks/useActiveProducerUserId'
 import { setActiveProducerUserId } from '@/services/producerScope'
@@ -100,7 +102,68 @@ function getModuleLessons(mod) {
   return []
 }
 
-function getFirstLessonInfo(row) {
+function isNonEmptyString(v) {
+  return typeof v === 'string' && v.trim().length > 0
+}
+
+function resolveLessonCoverCandidate(lesson, toPublicCoursesMediaUrl) {
+  const l = lesson && typeof lesson === 'object' ? lesson : {}
+  const meta = (l.metadata && typeof l.metadata === 'object') ? l.metadata : ((l.meta && typeof l.meta === 'object') ? l.meta : null)
+  const media = (l.media && typeof l.media === 'object') ? l.media : null
+  const raw = [
+    l.cover_image_url,
+    l.coverImageUrl,
+    l.thumbnail_url,
+    l.thumbnailUrl,
+    l.poster,
+    l.poster_url,
+    meta?.cover_image_url,
+    meta?.coverImageUrl,
+    meta?.thumbnail_url,
+    meta?.thumbnailUrl,
+    meta?.poster,
+    meta?.poster_url,
+    media?.cover_image_url,
+    media?.coverImageUrl,
+    media?.thumbnail_url,
+    media?.thumbnailUrl,
+    media?.poster,
+    media?.poster_url,
+  ].find((v) => isNonEmptyString(v))
+  if (!raw) return ''
+  const map = typeof toPublicCoursesMediaUrl === 'function' ? toPublicCoursesMediaUrl : ((x) => x)
+  return String(map(raw) || raw || '').trim()
+}
+
+function resolveLessonPlayableVideoUrl(lesson, toPublicCoursesMediaUrl) {
+  const l = lesson && typeof lesson === 'object' ? lesson : {}
+  const mediaObj = (l.media && typeof l.media === 'object') ? l.media : ((l.metadata && typeof l.metadata === 'object') ? l.metadata : null)
+  const raw = [
+    l.video_url,
+    l.videoUrl,
+    l.video_src,
+    l.videoSrc,
+    l.media_url,
+    l.mediaUrl,
+    l.video_path,
+    l.videoPath,
+    l.url,
+    mediaObj?.video_url,
+    mediaObj?.videoUrl,
+    mediaObj?.video_path,
+    mediaObj?.videoPath,
+  ].find((v) => isNonEmptyString(v))
+  if (!raw) return ''
+  const map = typeof toPublicCoursesMediaUrl === 'function' ? toPublicCoursesMediaUrl : ((x) => x)
+  const u = String(map(raw) || raw || '').trim()
+  if (!u) return ''
+  const isMp4Like = /\.(mp4|webm|ogg)(\?.*)?$/i.test(u)
+  const isHlsLike = /\.(m3u8)(\?.*)?$/i.test(u)
+  if (!isMp4Like && !isHlsLike) return ''
+  return u
+}
+
+function getFirstLessonInfo(row, toPublicCoursesMediaUrl) {
   const modules = getCourseModules(row)
   const list = []
   let first = null
@@ -110,7 +173,9 @@ function getFirstLessonInfo(row) {
       const title = String(lesson?.title || lesson?.name || '').trim()
       const moduleId = String(mod?.id || mod?.module_id || mod?.moduleId || '').trim()
       const lessonId = String(lesson?.id || lesson?.lesson_id || lesson?.lessonId || '').trim()
-      const item = { title, moduleId, lessonId }
+      const coverCandidate = resolveLessonCoverCandidate(lesson, toPublicCoursesMediaUrl)
+      const playableVideoUrl = resolveLessonPlayableVideoUrl(lesson, toPublicCoursesMediaUrl)
+      const item = { title, moduleId, lessonId, coverCandidate, playableVideoUrl }
       list.push(item)
       if (!first && title) first = item
     }
@@ -121,6 +186,70 @@ function getFirstLessonInfo(row) {
     lessonsTotal: list.length || null,
     moduleId: first?.moduleId || '',
     lessonId: first?.lessonId || '',
+    coverCandidate: first?.coverCandidate || '',
+    playableVideoUrl: first?.playableVideoUrl || '',
+  }
+}
+
+function safeJsonParse(value) {
+  try { return JSON.parse(String(value || '')) } catch (_) { return null }
+}
+
+function getContinueLessonInfo(courseRow, continueInfo, toPublicCoursesMediaUrl) {
+  const base = getFirstLessonInfo(courseRow, toPublicCoursesMediaUrl)
+  const modules = getCourseModules(courseRow)
+  const list = Array.isArray(modules) ? modules : []
+  const midWanted = String(continueInfo?.moduleId || '').trim()
+  const lidWanted = String(continueInfo?.lessonId || '').trim()
+  const mIdxWanted = Number.isFinite(Number(continueInfo?.moduleIndex)) ? Number(continueInfo.moduleIndex) : null
+  const lIdxWanted = Number.isFinite(Number(continueInfo?.lessonIndex)) ? Number(continueInfo.lessonIndex) : null
+  if ((!midWanted || !lidWanted) && (mIdxWanted == null || lIdxWanted == null)) return base
+
+  let chosenLesson = null
+  let chosenModuleId = ''
+  let chosenLessonId = ''
+  let lessonsTotal = null
+
+  for (let i = 0; i < list.length; i += 1) {
+    const mod = list[i]
+    const mid = String(mod?.id || mod?.module_id || mod?.moduleId || '').trim()
+    const lessons = getModuleLessons(mod)
+    const lessonsList = Array.isArray(lessons) ? lessons : []
+    if (lessonsList.length > 0) lessonsTotal = (lessonsTotal == null ? 0 : lessonsTotal) + lessonsList.length
+    if (midWanted && mid && midWanted !== mid) continue
+    if (mIdxWanted != null && i !== mIdxWanted && (!midWanted || !mid)) continue
+    if (lidWanted) {
+      const l = lessonsList.find((x) => String(x?.id || x?.lesson_id || x?.lessonId || '').trim() === lidWanted) || null
+      if (l) {
+        chosenLesson = l
+        chosenModuleId = mid
+        chosenLessonId = String(lidWanted)
+        break
+      }
+    }
+    if (!lidWanted && lIdxWanted != null && lessonsList[lIdxWanted]) {
+      const l = lessonsList[lIdxWanted]
+      const lid = String(l?.id || l?.lesson_id || l?.lessonId || '').trim()
+      if (lid) {
+        chosenLesson = l
+        chosenModuleId = mid
+        chosenLessonId = lid
+        break
+      }
+    }
+  }
+
+  if (!chosenLesson) return base
+  const title = String(chosenLesson?.title || chosenLesson?.name || '').trim() || base?.title || 'Aula'
+  const coverCandidate = resolveLessonCoverCandidate(chosenLesson, toPublicCoursesMediaUrl) || ''
+  const playableVideoUrl = resolveLessonPlayableVideoUrl(chosenLesson, toPublicCoursesMediaUrl) || ''
+  return {
+    title,
+    moduleId: chosenModuleId || base?.moduleId || '',
+    lessonId: chosenLessonId || base?.lessonId || '',
+    coverCandidate: coverCandidate || base?.coverCandidate || '',
+    playableVideoUrl: playableVideoUrl || base?.playableVideoUrl || '',
+    lessonsTotal: lessonsTotal == null ? base?.lessonsTotal : lessonsTotal,
   }
 }
 
@@ -252,12 +381,7 @@ function SimuladoCard({ title, progress, isPaid, price, onClick }) {
     typeof isPaid === 'boolean'
       ? isPaid
       : Math.max(0, Number(price || 0)) > 0
-  const renderApprovalIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0047BB" strokeWidth="2">
-      <circle cx="12" cy="12" r="10" opacity="0.3" />
-      <path d="M12 2 a10 10 0 0 1 0 20" />
-    </svg>
-  )
+  const renderApprovalIcon = () => <ProgressRingIcon value={p} />
   return (
     <button
       type="button"
@@ -743,6 +867,10 @@ export default function AlunoDashboardPage() {
   const [canScrollFeaturedLeft, setCanScrollFeaturedLeft] = useState(false)
   const [canScrollFeaturedRight, setCanScrollFeaturedRight] = useState(false)
   const courseIdCacheRef = useRef(new Map())
+  const lessonThumbTickRef = useRef(0)
+  const [lessonThumbTick, setLessonThumbTick] = useState(0)
+  const lessonThumbCacheRef = useRef(new Map())
+  const lessonThumbInFlightRef = useRef(new Set())
   const simuladosScrollRef = useRef(null)
   const [canScrollSimuladosLeft, setCanScrollSimuladosLeft] = useState(false)
   const [canScrollSimuladosRight, setCanScrollSimuladosRight] = useState(false)
@@ -764,12 +892,20 @@ export default function AlunoDashboardPage() {
     const bump = () => setOwnershipTick((v) => v + 1)
     const onStorage = (e) => {
       const key = String(e?.key || '')
-      if (key.startsWith('connekt_course_owned:') || key.startsWith('connekt_simulado_owned:')) bump()
+      if (
+        key.startsWith('connekt_course_owned:') ||
+        key.startsWith('connekt_simulado_owned:') ||
+        key.startsWith('connekt_continue_course:') ||
+        key === 'connekt_continue_updated_at'
+      ) bump()
     }
+    const onContinueUpdated = () => bump()
     window.addEventListener('storage', onStorage)
+    window.addEventListener('connekt_continue_updated', onContinueUpdated)
     window.addEventListener('focus', bump)
     return () => {
       window.removeEventListener('storage', onStorage)
+      window.removeEventListener('connekt_continue_updated', onContinueUpdated)
       window.removeEventListener('focus', bump)
     }
   }, [])
@@ -785,16 +921,31 @@ export default function AlunoDashboardPage() {
   }, [])
 
   useEffect(() => {
-    const pid = String(activeProducerUserId || '').trim()
-    if (pid) return
-    if (isDemoStudent) return
-    const uid = String(user?.id || '').trim()
-    if (!uid) return
-    const mode = String(loginMode || '').trim().toLowerCase()
-    if (mode === 'aluno') return
-    const path = String(window.location.pathname || '')
-    if (!(path === '/aluno' || path.startsWith('/aluno/'))) return
-    setActiveProducerUserId(uid)
+    let active = true
+    const run = async () => {
+      const pid = String(activeProducerUserId || '').trim()
+      if (pid) return
+      if (isDemoStudent) return
+      const uid = String(user?.id || '').trim()
+      if (!uid) return
+      const mode = String(loginMode || '').trim().toLowerCase()
+      if (mode === 'aluno') return
+      const path = String(window.location.pathname || '')
+      if (!(path === '/aluno' || path.startsWith('/aluno/'))) return
+
+      try {
+        const { data, error } = await supabase
+          .from('producers')
+          .select('id')
+          .or(`user_id.eq.${uid},id.eq.${uid},external_id.eq.${uid}`)
+          .maybeSingle()
+        if (!active) return
+        if (error || !data?.id) return
+        setActiveProducerUserId(uid)
+      } catch (_) {}
+    }
+    run()
+    return () => { active = false }
   }, [activeProducerUserId, isDemoStudent, user?.id, loginMode])
 
   const isBlockedRead = (e) => {
@@ -829,7 +980,22 @@ export default function AlunoDashboardPage() {
           .limit(200)
         if (!active) return
         if (error) throw error
-        setProducerCourses(Array.isArray(data) ? data : [])
+        const list = Array.isArray(data) ? data : []
+        if (list.length === 0) {
+          try {
+            const token = await getAccessToken()
+            const r = await fetch(`/api/producer?type=courses&producerId=${encodeURIComponent(pid)}`, {
+              headers: token ? { Authorization: `Bearer ${token}` } : {},
+            })
+            const body = await r.json().catch(() => ({}))
+            if (!active) return
+            if (r.ok && Array.isArray(body?.data) && body.data.length > 0) {
+              setProducerCourses(body.data)
+              return
+            }
+          } catch (_) {}
+        }
+        setProducerCourses(list)
       } catch (e) {
         if (!active) return
         if (!isBlockedRead(e)) {
@@ -876,7 +1042,27 @@ export default function AlunoDashboardPage() {
           .limit(200)
         if (!active) return
         if (error) throw error
-        setProducerSimulados(Array.isArray(data) ? data : [])
+        const list = Array.isArray(data) ? data : []
+        if (list.length === 0) {
+          try {
+            const token = await getAccessToken()
+            const r = await fetch(`/api/producer?type=simulados&producerId=${encodeURIComponent(pid)}`, {
+              headers: token ? { Authorization: `Bearer ${token}` } : {},
+            })
+            const body = await r.json().catch(() => ({}))
+            if (!active) return
+            if (r.ok && Array.isArray(body?.data) && body.data.length > 0) {
+              setProducerSimulados(body.data)
+            } else {
+              setProducerSimulados(list)
+            }
+          } catch (_) {
+            if (!active) return
+            setProducerSimulados(list)
+          }
+        } else {
+          setProducerSimulados(list)
+        }
       } catch (e) {
         if (!active) return
         if (!isBlockedRead(e)) {
@@ -992,6 +1178,71 @@ export default function AlunoDashboardPage() {
     }
   }, [user?.id, email, isDemoStudent])
 
+  useEffect(() => {
+    let active = true
+    const run = async () => {
+      if (isDemoStudent) return
+      if (!user?.id) return
+      try {
+        const { data, error } = await supabase
+          .from('notifications')
+          .select('type,entity_type,entity_id,data,created_at')
+          .eq('type', 'purchase_confirmed')
+          .order('created_at', { ascending: false })
+          .limit(500)
+        if (!active) return
+        if (error) throw error
+        const isExpired = (expiresAtIso) => {
+          const v = String(expiresAtIso || '').trim()
+          if (!v) return false
+          const m = v.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+          if (!m) return false
+          const endMs = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 23, 59, 59, 999)
+          return Date.now() > endMs
+        }
+        for (const row of Array.isArray(data) ? data : []) {
+          const entityType = String(row?.entity_type || '').trim().toLowerCase()
+          const entityId = String(row?.entity_id || '').trim()
+          const dataObj = row?.data && typeof row.data === 'object' ? row.data : null
+          const dataType = String(dataObj?.type || '').trim().toLowerCase()
+          const expiresAt = String(dataObj?.expires_at || dataObj?.expiresAt || '').trim()
+          const expired = expiresAt ? isExpired(expiresAt) : false
+          if (entityType === 'course' || dataType === 'course') {
+            const cid = entityId || String(dataObj?.courseId || dataObj?.course_id || '').trim()
+            if (cid) {
+              try {
+                if (expired) localStorage.removeItem(`connekt_course_owned:${cid}`)
+                else localStorage.setItem(`connekt_course_owned:${cid}`, '1')
+              } catch (_) {}
+            }
+          }
+          if (entityType === 'module' || dataType === 'module') {
+            const cid = String(dataObj?.courseId || dataObj?.course_id || '').trim()
+            const mid = entityId || String(dataObj?.moduleId || dataObj?.module_id || '').trim()
+            if (cid && mid) {
+              try {
+                if (expired) localStorage.removeItem(`connekt_module_owned:${cid}:${mid}`)
+                else localStorage.setItem(`connekt_module_owned:${cid}:${mid}`, '1')
+              } catch (_) {}
+            }
+          }
+          if (entityType === 'simulado' || dataType === 'simulado') {
+            const sid = entityId || String(dataObj?.simId || dataObj?.sim_id || '').trim()
+            if (sid) {
+              try {
+                if (expired) localStorage.removeItem(`connekt_simulado_owned:${sid}`)
+                else localStorage.setItem(`connekt_simulado_owned:${sid}`, '1')
+              } catch (_) {}
+            }
+          }
+        }
+        setOwnershipTick((v) => v + 1)
+      } catch (_) {}
+    }
+    run()
+    return () => { active = false }
+  }, [user?.id, isDemoStudent])
+
   const updateContinueScrollState = () => {
     const el = continueScrollRef.current
     if (!el) return
@@ -1056,7 +1307,19 @@ export default function AlunoDashboardPage() {
     const el = continueScrollRef.current
     if (!el) return
     const amount = 340
-    el.scrollBy({ left: dir * amount, behavior: 'smooth' })
+    const delta = dir * amount
+    const nextLeft = Math.max(0, Math.round((el.scrollLeft || 0) + delta))
+    try {
+      if (typeof el.scrollTo === 'function') {
+        el.scrollTo({ left: nextLeft, behavior: 'smooth' })
+      } else if (typeof el.scrollBy === 'function') {
+        el.scrollBy({ left: delta, behavior: 'smooth' })
+      } else {
+        el.scrollLeft = nextLeft
+      }
+    } catch (_) {
+      try { el.scrollLeft = nextLeft } catch (_) {}
+    }
     window.setTimeout(updateContinueScrollState, 150)
   }
 
@@ -1064,7 +1327,19 @@ export default function AlunoDashboardPage() {
     const el = myCoursesScrollRef.current
     if (!el) return
     const amount = 220
-    el.scrollBy({ left: dir * amount, behavior: 'smooth' })
+    const delta = dir * amount
+    const nextLeft = Math.max(0, Math.round((el.scrollLeft || 0) + delta))
+    try {
+      if (typeof el.scrollTo === 'function') {
+        el.scrollTo({ left: nextLeft, behavior: 'smooth' })
+      } else if (typeof el.scrollBy === 'function') {
+        el.scrollBy({ left: delta, behavior: 'smooth' })
+      } else {
+        el.scrollLeft = nextLeft
+      }
+    } catch (_) {
+      try { el.scrollLeft = nextLeft } catch (_) {}
+    }
     window.setTimeout(updateMyCoursesScrollState, 150)
   }
 
@@ -1072,7 +1347,19 @@ export default function AlunoDashboardPage() {
     const el = featuredScrollRef.current
     if (!el) return
     const amount = 220
-    el.scrollBy({ left: dir * amount, behavior: 'smooth' })
+    const delta = dir * amount
+    const nextLeft = Math.max(0, Math.round((el.scrollLeft || 0) + delta))
+    try {
+      if (typeof el.scrollTo === 'function') {
+        el.scrollTo({ left: nextLeft, behavior: 'smooth' })
+      } else if (typeof el.scrollBy === 'function') {
+        el.scrollBy({ left: delta, behavior: 'smooth' })
+      } else {
+        el.scrollLeft = nextLeft
+      }
+    } catch (_) {
+      try { el.scrollLeft = nextLeft } catch (_) {}
+    }
     window.setTimeout(updateFeaturedScrollState, 150)
   }
 
@@ -1080,7 +1367,19 @@ export default function AlunoDashboardPage() {
     const el = simuladosScrollRef.current
     if (!el) return
     const amount = 360
-    el.scrollBy({ left: dir * amount, behavior: 'smooth' })
+    const delta = dir * amount
+    const nextLeft = Math.max(0, Math.round((el.scrollLeft || 0) + delta))
+    try {
+      if (typeof el.scrollTo === 'function') {
+        el.scrollTo({ left: nextLeft, behavior: 'smooth' })
+      } else if (typeof el.scrollBy === 'function') {
+        el.scrollBy({ left: delta, behavior: 'smooth' })
+      } else {
+        el.scrollLeft = nextLeft
+      }
+    } catch (_) {
+      try { el.scrollLeft = nextLeft } catch (_) {}
+    }
     window.setTimeout(updateSimuladosScrollState, 150)
   }
 
@@ -1099,6 +1398,42 @@ export default function AlunoDashboardPage() {
     return raw
   }
 
+  const getLessonCoverForKey = (k) => {
+    const key = String(k || '').trim()
+    if (!key) return ''
+    return lessonThumbCacheRef.current.get(key) || ''
+  }
+
+  const ensureLessonCover = async (k, coverCandidate, playableUrl) => {
+    const key = String(k || '').trim()
+    if (!key) return
+    const normalizedCandidate = (() => {
+      const raw = String(coverCandidate || '').trim()
+      if (!raw) return ''
+      const lower = raw.toLowerCase()
+      if (lower.endsWith('/preview.png') || lower.includes('/preview.png?') || lower === 'preview.png') return ''
+      return raw
+    })()
+    if (isNonEmptyString(normalizedCandidate)) {
+      if (!lessonThumbCacheRef.current.get(key)) {
+        lessonThumbCacheRef.current.set(key, String(normalizedCandidate))
+        lessonThumbTickRef.current += 1
+        setLessonThumbTick(lessonThumbTickRef.current)
+      }
+      return
+    }
+    if (!isNonEmptyString(playableUrl)) return
+    if (lessonThumbCacheRef.current.get(key)) return
+    if (lessonThumbInFlightRef.current.has(key)) return
+    lessonThumbInFlightRef.current.add(key)
+    const dataUrl = await captureVideoFrameDataUrl(playableUrl, 0.35)
+    lessonThumbInFlightRef.current.delete(key)
+    if (!dataUrl) return
+    lessonThumbCacheRef.current.set(key, dataUrl)
+    lessonThumbTickRef.current += 1
+    setLessonThumbTick(lessonThumbTickRef.current)
+  }
+
   const mergeMeta = (row) => {
     let dataMeta = null
     try { dataMeta = typeof row?.data === 'string' ? JSON.parse(row.data) : row?.data || null } catch (_) {}
@@ -1114,9 +1449,20 @@ export default function AlunoDashboardPage() {
 
   const deriveCourseCoverUrl = (row) => {
     const meta = mergeMeta(row)
-    let cover = row?.cover_image_url || meta?.cover_image_url || row?.module_layout_image_url || meta?.module_layout_image_url || null
+    let cover =
+      row?.cover_image_url ||
+      meta?.cover_image_url ||
+      meta?.coverImageUrl ||
+      meta?.cover_url ||
+      meta?.coverUrl ||
+      null
     cover = toPublicCoursesMediaUrl(cover) || cover
-    const coverPath = meta?.cover_image_path || meta?.coverImagePath || null
+    const coverPath =
+      meta?.cover_image_path ||
+      meta?.coverImagePath ||
+      meta?.cover_path ||
+      meta?.coverPath ||
+      null
     if (!cover && coverPath) {
       const { data } = supabase.storage.from('courses-media').getPublicUrl(String(coverPath))
       return data?.publicUrl || null
@@ -1133,9 +1479,21 @@ export default function AlunoDashboardPage() {
           .select('id,title,cover_image_url,data,modules,module_layout_image_url,user_id')
           .limit(200)
         if (activeProducerUserId) q = q.eq('user_id', activeProducerUserId)
-        const { data } = await q
+        const { data, error } = await q
+        const list = !error && Array.isArray(data) ? data : []
+        let rows = list
+        if (rows.length === 0 && activeProducerUserId) {
+          try {
+            const token = await getAccessToken()
+            const r = await fetch(`/api/producer?type=courses&producerId=${encodeURIComponent(String(activeProducerUserId))}`, {
+              headers: token ? { Authorization: `Bearer ${token}` } : {},
+            })
+            const body = await r.json().catch(() => ({}))
+            if (active && r.ok && Array.isArray(body?.data) && body.data.length > 0) rows = body.data
+          } catch (_) {}
+        }
         const map = {}
-        for (const row of Array.isArray(data) ? data : []) {
+        for (const row of Array.isArray(rows) ? rows : []) {
           const t = String(row?.title || '').trim().toLowerCase()
           if (!t) continue
           const url = deriveCourseCoverUrl(row)
@@ -1193,8 +1551,15 @@ export default function AlunoDashboardPage() {
   }, [])
 
   const courses = useMemo(() => {
-    if (activeProducerUserId && Array.isArray(producerCourses) && producerCourses.length > 0) {
-      return producerCourses.map((row) => ({
+    if (activeProducerUserId) {
+      const list = Array.isArray(producerCourses) ? producerCourses : []
+      const out = []
+      const seen = new Set()
+      for (const row of list) {
+        const cid = String(row?.id || '').trim()
+        if (!cid || seen.has(cid)) continue
+        seen.add(cid)
+        out.push({
         course_id: row?.id || null,
         courseId: row?.id || null,
         course_name: row?.title || 'Curso',
@@ -1210,7 +1575,9 @@ export default function AlunoDashboardPage() {
           if (!isPaid) return true
           return safeLsGet(`connekt_course_owned:${cid}`) === '1'
         })(),
-      }))
+        })
+      }
+      return out
     }
     return (Array.isArray(student?.courses) ? student.courses : []).map((c) => ({
       ...c,
@@ -1231,8 +1598,13 @@ export default function AlunoDashboardPage() {
   }
 
   const continueItems = useMemo(() => {
-    const list = courses.slice(0, 6).map((c, idx) => {
-      const info = c?.courseRow ? getFirstLessonInfo(c.courseRow) : null
+    const allowed = courses.filter((c) => !c?.isPaid || !!c?.isOwned)
+    const list = allowed.slice(0, 6).map((c, idx) => {
+      const cid = String(c?.course_id || c?.courseId || c?.id || '').trim()
+      const continueRaw = cid ? safeLsGet(`connekt_continue_course:${cid}`) : ''
+      const continueInfo = continueRaw ? safeJsonParse(continueRaw) : null
+      const info = c?.courseRow ? getContinueLessonInfo(c.courseRow, continueInfo, toPublicCoursesMediaUrl) : null
+      const thumbKey = `continue:${cid || `idx:${idx}`}:${String(info?.moduleId || '').trim()}:${String(info?.lessonId || '').trim()}`
       return {
         id: `${c?.course_name || 'curso'}-${idx}`,
         courseId: c?.course_id || c?.courseId || c?.id || null,
@@ -1241,9 +1613,18 @@ export default function AlunoDashboardPage() {
         title: info?.title || 'Aula',
         moduleId: info?.moduleId || '',
         lessonId: info?.lessonId || '',
+        thumbKey,
+        coverCandidate: info?.coverCandidate || '',
+        playableVideoUrl: info?.playableVideoUrl || '',
         cover: (() => {
           const t = String(c?.course_name || '').trim().toLowerCase()
-          return producerCoversByTitle[t] || c?.cover_image_url || coverFallback
+          return (
+            getLessonCoverForKey(thumbKey) ||
+            (info?.coverCandidate ? String(info.coverCandidate) : '') ||
+            producerCoversByTitle[t] ||
+            c?.cover_image_url ||
+            coverFallback
+          )
         })(),
         progress: c?.progress || 0,
         lessonsDone: 0,
@@ -1251,13 +1632,63 @@ export default function AlunoDashboardPage() {
       }
     })
     if (list.length > 0) return list
+    const fromStorage = (() => {
+      try {
+        const keys = Object.keys(localStorage || {})
+        const ids = keys
+          .filter((k) => String(k || '').startsWith('connekt_continue_course:'))
+          .map((k) => String(k).slice('connekt_continue_course:'.length).trim())
+          .filter(Boolean)
+        return Array.from(new Set(ids)).slice(0, 6)
+      } catch (_) {
+        return []
+      }
+    })()
+    if (fromStorage.length > 0) {
+      return fromStorage.map((cid, idx) => {
+        const continueRaw = safeLsGet(`connekt_continue_course:${cid}`)
+        const continueInfo = continueRaw ? safeJsonParse(continueRaw) : null
+        const courseMatch = allowed.find((c) => String(c?.course_id || c?.courseId || c?.id || '').trim() === cid) || null
+        const info = courseMatch?.courseRow ? getContinueLessonInfo(courseMatch.courseRow, continueInfo, toPublicCoursesMediaUrl) : null
+        const thumbKey = `continue:${cid || `idx:${idx}`}:${String(info?.moduleId || continueInfo?.moduleId || '').trim()}:${String(info?.lessonId || continueInfo?.lessonId || '').trim()}`
+        const courseTitle = courseMatch?.course_name || courseMatch?.courseTitle || 'Curso'
+        const t = String(courseTitle || '').trim().toLowerCase()
+        return {
+          id: `continue-storage-${cid}-${idx}`,
+          courseId: cid,
+          courseTitle,
+          category: courseTitle,
+          title: info?.title || 'Aula',
+          moduleId: String(info?.moduleId || continueInfo?.moduleId || ''),
+          lessonId: String(info?.lessonId || continueInfo?.lessonId || ''),
+          thumbKey,
+          coverCandidate: info?.coverCandidate || '',
+          playableVideoUrl: info?.playableVideoUrl || '',
+          cover: getLessonCoverForKey(thumbKey) || producerCoversByTitle[t] || courseMatch?.cover_image_url || coverFallback,
+          progress: courseMatch?.progress || 0,
+          lessonsDone: 0,
+          lessonsTotal: info?.lessonsTotal || null,
+        }
+      })
+    }
     if (activeProducerUserId) return []
     return [
       { id: 'c1', courseId: null, courseTitle: 'Cardiologia', category: 'Cardiologia', title: 'Nome da aula aqui....', cover: coverFallback, progress: 67, lessonsDone: 20, lessonsTotal: 45 },
       { id: 'c2', courseId: null, courseTitle: 'Cardiologia', category: 'Cardiologia', title: 'Nome da aula aqui....', cover: coverFallback, progress: 67, lessonsDone: 20, lessonsTotal: 45 },
       { id: 'c3', courseId: null, courseTitle: 'Cardiologia', category: 'Cardiologia', title: 'Nome da aula aqui....', cover: coverFallback, progress: 67, lessonsDone: 20, lessonsTotal: 45 },
     ]
-  }, [activeProducerUserId, courses, coverFallback, producerCoversByTitle])
+  }, [activeProducerUserId, courses, coverFallback, producerCoversByTitle, lessonThumbTick, ownershipTick])
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      for (const item of Array.isArray(continueItems) ? continueItems : []) {
+        if (cancelled) return
+        await ensureLessonCover(item?.thumbKey, item?.coverCandidate, item?.playableVideoUrl)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [continueItems])
 
   const myCoursesAll = useMemo(() => {
     const list = courses
@@ -1301,13 +1732,14 @@ export default function AlunoDashboardPage() {
         progress: c?.progress || 0,
       }))
     if (base.length > 0) return base
+    if (activeProducerUserId) return []
     return [
       { id: 'f1', title: 'Nome do curso', cover: pickCoverForCourse('Nome do curso', 10), progress: 0 },
       { id: 'f2', title: 'Nome do curso', cover: pickCoverForCourse('Nome do curso', 11), progress: 0 },
       { id: 'f3', title: 'Nome do curso', cover: pickCoverForCourse('Nome do curso', 12), progress: 0 },
       { id: 'f4', title: 'Nome do curso', cover: pickCoverForCourse('Nome do curso', 13), progress: 0 },
     ]
-  }, [courses, producerCoversByTitle, coverFallback, connektCourseCoverOptions])
+  }, [activeProducerUserId, courses, producerCoversByTitle, coverFallback, connektCourseCoverOptions])
 
   const featuredCoursesAll = useMemo(() => {
     const list = courses
@@ -1323,8 +1755,9 @@ export default function AlunoDashboardPage() {
         progress: c?.progress || 0,
       }))
     if (list.length > 0) return list
+    if (activeProducerUserId) return []
     return featuredCourses
-  }, [courses, featuredCourses, producerCoversByTitle, coverFallback, connektCourseCoverOptions])
+  }, [activeProducerUserId, courses, featuredCourses, producerCoversByTitle, coverFallback, connektCourseCoverOptions])
 
   const simulados = useMemo(() => {
     if (producerSimuladosLoading) return []
@@ -1534,7 +1967,6 @@ export default function AlunoDashboardPage() {
                       <button
                         type="button"
                         className="w-9 h-9 rounded-full border border-[#22252B] bg-transparent flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
-                        disabled={!canScrollContinueLeft}
                         onClick={() => scrollContinueBy(-1)}
                         aria-label="Anterior"
                       >
@@ -1543,7 +1975,6 @@ export default function AlunoDashboardPage() {
                       <button
                         type="button"
                         className="w-9 h-9 rounded-full border border-[#22252B] bg-transparent flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
-                        disabled={!canScrollContinueRight}
                         onClick={() => scrollContinueBy(1)}
                         aria-label="Próximo"
                       >
@@ -1606,7 +2037,6 @@ export default function AlunoDashboardPage() {
                       <button
                         type="button"
                         className="w-9 h-9 rounded-full border border-[#22252B] bg-transparent flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
-                        disabled={!canScrollMyCoursesLeft}
                         onClick={() => scrollMyCoursesBy(-1)}
                         aria-label="Anterior"
                       >
@@ -1615,7 +2045,6 @@ export default function AlunoDashboardPage() {
                       <button
                         type="button"
                         className="w-9 h-9 rounded-full border border-[#22252B] bg-transparent flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
-                        disabled={!canScrollMyCoursesRight}
                         onClick={() => scrollMyCoursesBy(1)}
                         aria-label="Próximo"
                       >
@@ -1669,7 +2098,6 @@ export default function AlunoDashboardPage() {
                       <button
                         type="button"
                         className="w-9 h-9 rounded-full border border-[#22252B] bg-transparent flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
-                        disabled={!canScrollFeaturedLeft}
                         onClick={() => scrollFeaturedBy(-1)}
                         aria-label="Anterior"
                       >
@@ -1678,7 +2106,6 @@ export default function AlunoDashboardPage() {
                       <button
                         type="button"
                         className="w-9 h-9 rounded-full border border-[#22252B] bg-transparent flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
-                        disabled={!canScrollFeaturedRight}
                         onClick={() => scrollFeaturedBy(1)}
                         aria-label="Próximo"
                       >
@@ -1732,7 +2159,6 @@ export default function AlunoDashboardPage() {
                       <button
                         type="button"
                         className="w-9 h-9 rounded-full border border-[#22252B] bg-transparent flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
-                        disabled={!canScrollSimuladosLeft}
                         onClick={() => scrollSimuladosBy(-1)}
                         aria-label="Anterior"
                       >
@@ -1741,7 +2167,6 @@ export default function AlunoDashboardPage() {
                       <button
                         type="button"
                         className="w-9 h-9 rounded-full border border-[#22252B] bg-transparent flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
-                        disabled={!canScrollSimuladosRight}
                         onClick={() => scrollSimuladosBy(1)}
                         aria-label="Próximo"
                       >

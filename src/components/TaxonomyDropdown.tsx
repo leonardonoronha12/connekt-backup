@@ -52,7 +52,6 @@ export function TaxonomyDropdown({
   const [resolvedAlign, setResolvedAlign] = useState<'start' | 'end'>('start')
   const [isCreatingNew, setIsCreatingNew] = useState(false)
   const [newName, setNewName] = useState('')
-  const [newColor, setNewColor] = useState(defaultColor)
   const [newDescription, setNewDescription] = useState('')
   const [editingId, setEditingId] = useState<TaxonomyItem['id'] | null>(null)
   const [editName, setEditName] = useState('')
@@ -120,7 +119,6 @@ export function TaxonomyDropdown({
       setSearchTerm('')
       setIsCreatingNew(false)
       setNewName('')
-      setNewColor(defaultColor)
       setNewDescription('')
       setEditingId(null)
       setEditName('')
@@ -162,14 +160,13 @@ export function TaxonomyDropdown({
     if (!onCreate) return
     const payload = {
       name: newName.trim(),
-      color: newColor || defaultColor,
+      color: defaultColor,
       description: newDescription.trim(),
     }
     if (!payload.name) return
     await onCreate(payload)
     setIsCreatingNew(false)
     setNewName('')
-    setNewColor(defaultColor)
     setNewDescription('')
     setSearchTerm('')
     onOpenChange(false)
@@ -353,13 +350,6 @@ export function TaxonomyDropdown({
                   className="flex-1 rounded-[8px] border border-[#E3E4E5] bg-white px-2 py-1 text-[12px] outline-none"
                   autoFocus
                 />
-                <input
-                  type="color"
-                  value={newColor}
-                  onChange={(e) => setNewColor(e.target.value)}
-                  title="Cor"
-                  className="h-7 w-10 rounded-[8px] border border-[#E3E4E5] p-0"
-                />
               </div>
               <textarea
                 value={newDescription}
@@ -382,7 +372,6 @@ export function TaxonomyDropdown({
                   onClick={() => {
                     setIsCreatingNew(false)
                     setNewName('')
-                    setNewColor(defaultColor)
                     setNewDescription('')
                   }}
                   className="h-7 px-3 rounded-[6px] border border-[#E3E4E5] bg-white text-[12px] font-medium hover:bg-[#F8FAFC]"

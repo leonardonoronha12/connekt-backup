@@ -266,6 +266,9 @@ if (window.navigation && window.self !== window.top) {
 const addTransformIndexHtml = {
 	name: 'add-transform-index-html',
 	transformIndexHtml(html) {
+		if (!isDev) {
+			return html;
+		}
 		const tags = [
 			{
 				tag: 'script',
