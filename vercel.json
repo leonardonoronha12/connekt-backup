@@ -5,11 +5,18 @@
   "outputDirectory": "dist",
   "routes": [
     {
+      "src": "/api$",
+      "headers": {
+        "Cache-Control": "no-store"
+      },
+      "dest": "/api/index.js?__path=/api"
+    },
+    {
       "src": "/api/(.*)",
       "headers": {
         "Cache-Control": "no-store"
       },
-      "continue": true
+      "dest": "/api/index.js?__path=/api/$1"
     },
     {
       "src": "/assets/(.*)",
@@ -32,8 +39,8 @@
       "continue": true
     },
     { "handle": "filesystem" },
-    { "src": "/reset-password", "dest": "/api/reset-password" },
-    { "src": "/reset-password/(.*)", "dest": "/api/reset-password" },
+    { "src": "/reset-password", "dest": "/api/index.js?__path=/api/reset-password" },
+    { "src": "/reset-password/(.*)", "dest": "/api/index.js?__path=/api/reset-password" },
     { "src": "/(.*)", "dest": "/index.html" }
   ]
 }
