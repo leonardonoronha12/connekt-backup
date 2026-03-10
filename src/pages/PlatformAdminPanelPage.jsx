@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Helmet } from 'react-helmet-async'
-import { Plus, Search, X, Download, Upload, Copy, ShieldBan, ShieldCheck, RefreshCcw, Settings } from 'lucide-react'
+import { Plus, Search, X, Download, Upload, Copy, ShieldBan, ShieldCheck, RefreshCcw, Settings, Mail } from 'lucide-react'
 import { useAuth } from '@/contexts/SupabaseAuthContext'
 import { toast } from '@/hooks/use-toast.ts'
 
@@ -113,6 +113,7 @@ export default function PlatformAdminPanelPage() {
   const [editLoading, setEditLoading] = useState(false)
   const [editUser, setEditUser] = useState(null)
   const [editForm, setEditForm] = useState({ name: '', phone: '', accountType: 'aluno', disabled: false, courses: [] })
+  const [firstAccessBusy, setFirstAccessBusy] = useState(false)
 
   const [bulkCsvOpen, setBulkCsvOpen] = useState(false)
   const [bulkCsvText, setBulkCsvText] = useState('')
@@ -530,19 +531,27 @@ export default function PlatformAdminPanelPage() {
     }
   }
 
-  const getFirstAccessLink = async (userId) => {
+  const getFirstAccessLink = async (userId, opts) => {
     const id = String(userId || '').trim()
     if (!id) return
     try {
-      const r = await fetch(`/api/admin/users/first-access-link?user_id=${encodeURIComponent(id)}`, { headers: authHeaders })
+      setFirstAccessBusy(true)
+      const qs = new URLSearchParams({ user_id: id })
+      if (opts?.send) qs.set('send', '1')
+      const r = await fetch(`/api/admin/users/first-access-link?${qs.toString()}`, { headers: authHeaders })
       const body = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(body?.error || 'Falha ao gerar link')
       const link = String(body?.firstAccessLink || '').trim()
       if (!link) throw new Error('Link indisponível')
       try { await navigator.clipboard.writeText(link) } catch (_) {}
-      toast({ title: 'Copiado', description: 'Link de primeiro acesso copiado.' })
+      toast({
+        title: opts?.send ? 'Enviado' : 'Copiado',
+        description: opts?.send ? 'Link de primeiro acesso enviado por email e copiado.' : 'Link de primeiro acesso copiado.',
+      })
     } catch (e) {
       toast({ title: 'Erro', description: e?.message || 'Erro ao gerar link', variant: 'destructive' })
+    } finally {
+      setFirstAccessBusy(false)
     }
   }
 
@@ -841,9 +850,13 @@ export default function PlatformAdminPanelPage() {
                         <div className="text-[12px] text-[#737780]">Criado: {formatDt(editUser.createdAt)} • Último login: {formatDt(editUser.lastSignInAt)}</div>
                       </div>
                       <div className="flex items-center gap-2">
-                        <button type="button" className="h-9 px-3 rounded-[10px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#1E1B39] hover:bg-[#F8FAFC]" onClick={() => getFirstAccessLink(editUser.id)}>
+                        <button type="button" disabled={firstAccessBusy} className="h-9 px-3 rounded-[10px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#1E1B39] hover:bg-[#F8FAFC] disabled:opacity-50" onClick={() => getFirstAccessLink(editUser.id)}>
                           <Copy className="w-4 h-4 inline-block mr-2" />
                           1º acesso
+                        </button>
+                        <button type="button" disabled={firstAccessBusy} className="h-9 px-3 rounded-[10px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#1E1B39] hover:bg-[#F8FAFC] disabled:opacity-50" onClick={() => getFirstAccessLink(editUser.id, { send: true })}>
+                          <Mail className="w-4 h-4 inline-block mr-2" />
+                          Enviar
                         </button>
                         <button
                           type="button"
