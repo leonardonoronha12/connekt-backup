@@ -18,8 +18,15 @@ select
     u.raw_user_meta_data->>'platform_role',
     u.raw_user_meta_data->>'type',
     ''
-  ) as account_type
+  ) as account_type,
+  case when lower(coalesce(u.raw_user_meta_data->>'disabled','')) in ('true','1','t','yes','y') then true else false end as meta_disabled
 from auth.users u;
 
 grant select on public.platform_admin_users to service_role;
 
+do $$
+begin
+  perform pg_notify('pgrst', 'reload schema');
+exception when others then
+  null;
+end $$;

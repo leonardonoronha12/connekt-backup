@@ -91,23 +91,45 @@ function serviceKeyRoleHint() {
 async function getCourseAllowedUserIdSet(admin, courseId) {
   const cid = String(courseId || '').trim()
   if (!cid) return null
-  const { data, error } = await admin
-    .from('notifications')
-    .select('recipient_user_id,data,entity_id,entity_type,type')
-    .eq('type', 'purchase_confirmed')
-    .eq('entity_type', 'course')
-    .eq('entity_id', cid)
-    .order('created_at', { ascending: false })
-    .limit(5000)
-  if (error) return new Set()
+  const queries = [
+    admin
+      .from('notifications')
+      .select('recipient_user_id,data,entity_id,entity_type,type,created_at')
+      .eq('type', 'purchase_confirmed')
+      .eq('entity_type', 'course')
+      .eq('entity_id', cid)
+      .order('created_at', { ascending: false })
+      .limit(5000),
+    admin
+      .from('notifications')
+      .select('recipient_user_id,data,entity_id,entity_type,type,created_at')
+      .eq('type', 'purchase_confirmed')
+      .eq('entity_type', 'course')
+      .eq('data->>course_id', cid)
+      .order('created_at', { ascending: false })
+      .limit(5000),
+    admin
+      .from('notifications')
+      .select('recipient_user_id,data,entity_id,entity_type,type,created_at')
+      .eq('type', 'purchase_confirmed')
+      .eq('entity_type', 'course')
+      .eq('data->>courseId', cid)
+      .order('created_at', { ascending: false })
+      .limit(5000),
+  ]
+
   const set = new Set()
-  for (const row of Array.isArray(data) ? data : []) {
-    const uid = String(row?.recipient_user_id || '').trim()
-    if (!uid) continue
-    const expiresAt =
-      String(row?.data?.expires_at || row?.data?.expiresAt || row?.data?.expires_at_iso || '').trim()
-    if (expiresAt && isExpired(expiresAt)) continue
-    set.add(uid)
+  for (const q of queries) {
+    const { data, error } = await q
+    if (error) throw new Error(error?.message || 'course_filter_failed')
+    for (const row of Array.isArray(data) ? data : []) {
+      const uid = String(row?.recipient_user_id || '').trim()
+      if (!uid) continue
+      const expiresAt =
+        String(row?.data?.expires_at || row?.data?.expiresAt || row?.data?.expires_at_iso || '').trim()
+      if (expiresAt && isExpired(expiresAt)) continue
+      set.add(uid)
+    }
   }
   return set
 }
@@ -146,6 +168,12 @@ function normalizeFromDbRow(row) {
   const email = normalizeEmail(r?.email || r?.user_email || r?.mail || '')
   const name = String(r?.name || r?.full_name || r?.profile_full_name || r?.display_name || '').trim()
   const accountType = normalizeAccountTypeStrict(r?.account_type || r?.role || r?.platform_role || r?.type || '')
+  const metaDisabled = (() => {
+    const raw = r?.meta_disabled ?? r?.user_meta_disabled ?? r?.metadata_disabled
+    if (typeof raw === 'boolean') return raw
+    const s = String(raw || '').trim().toLowerCase()
+    return s === 'true' || s === '1' || s === 't' || s === 'yes' || s === 'y'
+  })()
   const bannedUntil = String(r?.banned_until || '').trim()
   const bannedActive = (() => {
     if (!bannedUntil) return false
@@ -153,7 +181,7 @@ function normalizeFromDbRow(row) {
     if (!Number.isFinite(t)) return false
     return t > Date.now()
   })()
-  const disabled = Boolean(r?.disabled || r?.is_disabled || r?.banned || r?.blocked || bannedActive)
+  const disabled = Boolean(r?.disabled || r?.is_disabled || r?.banned || r?.blocked || metaDisabled || bannedActive)
   const createdAt = r?.created_at || r?.createdAt || null
   const lastSignInAt = r?.last_sign_in_at || r?.last_login_at || r?.lastSignInAt || null
   return {
@@ -214,7 +242,8 @@ async function listUsersFallbackFromAuthUsersViaPg(opts) {
             last_sign_in_at,
             banned_until,
             coalesce(raw_user_meta_data->>'name', raw_user_meta_data->>'full_name', raw_user_meta_data->>'profile_full_name', raw_user_meta_data->>'display_name', '') as name,
-            coalesce(raw_user_meta_data->>'account_type', raw_user_meta_data->>'role', raw_user_meta_data->>'platform_role', raw_user_meta_data->>'type', '') as account_type
+            coalesce(raw_user_meta_data->>'account_type', raw_user_meta_data->>'role', raw_user_meta_data->>'platform_role', raw_user_meta_data->>'type', '') as account_type,
+            case when lower(coalesce(raw_user_meta_data->>'disabled','')) in ('true','1','t','yes','y') then true else false end as meta_disabled
           from auth.users
           order by created_at desc
           limit $1 offset $2
@@ -269,7 +298,7 @@ async function listUsersFromPlatformView(admin, opts) {
     const to = from + scanPerPage - 1
     const { data, error } = await admin
       .from('platform_admin_users')
-      .select('id,email,created_at,last_sign_in_at,banned_until,name,account_type')
+      .select('id,email,created_at,last_sign_in_at,banned_until,name,account_type,meta_disabled')
       .order('created_at', { ascending: false })
       .range(from, to)
     if (error) return { ok: false, error: 'view_query_failed', message: error.message || String(error) }
@@ -284,6 +313,7 @@ async function listUsersFromPlatformView(admin, opts) {
         banned_until: row?.banned_until,
         name: row?.name,
         account_type: row?.account_type,
+        meta_disabled: row?.meta_disabled,
       })
       if (!u.id) continue
       u.accountType = inferAccountType({ explicit: u.accountType, userId: u.id, producerIds, actorUserId })
