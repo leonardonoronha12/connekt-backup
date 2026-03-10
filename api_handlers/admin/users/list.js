@@ -195,6 +195,12 @@ function normalizeFromDbRow(row) {
   }
 }
 
+function isMetaDisabled(value) {
+  if (typeof value === 'boolean') return value
+  const s = String(value || '').trim().toLowerCase()
+  return s === 'true' || s === '1' || s === 't' || s === 'yes' || s === 'y'
+}
+
 function getPgClient() {
   const connectionString =
     process.env.SUPABASE_DB_URL ||
@@ -216,7 +222,7 @@ function getPgClient() {
 async function listUsersFallbackFromAuthUsersViaPg(opts) {
   const q = String(opts?.q || '').trim().toLowerCase()
   const type = String(opts?.type || 'all').trim().toLowerCase()
-  const showDisabled = !!opts?.showDisabled
+  const onlyDisabled = !!opts?.showDisabled
   const allowedByCourse = opts?.allowedByCourse || null
   const perPage = Math.max(1, Math.min(5000, Number(opts?.perPage || 50)))
   const producerIds = opts?.producerIds || new Set()
@@ -257,7 +263,7 @@ async function listUsersFallbackFromAuthUsersViaPg(opts) {
         const u = normalizeFromDbRow(row)
         if (!u.id) continue
         u.accountType = inferAccountType({ explicit: u.accountType, userId: u.id, producerIds, actorUserId })
-        if (!showDisabled && u.disabled) continue
+        if (onlyDisabled ? !u.disabled : u.disabled) continue
         if (type !== 'all' && normalizeAccountType(type) !== u.accountType) continue
         if (allowedByCourse && !allowedByCourse.has(u.id)) continue
         if (q) {
@@ -283,7 +289,7 @@ async function listUsersFallbackFromAuthUsersViaPg(opts) {
 async function listUsersFromPlatformView(admin, opts) {
   const q = String(opts?.q || '').trim().toLowerCase()
   const type = String(opts?.type || 'all').trim().toLowerCase()
-  const showDisabled = !!opts?.showDisabled
+  const onlyDisabled = !!opts?.showDisabled
   const allowedByCourse = opts?.allowedByCourse || null
   const perPage = Math.max(1, Math.min(5000, Number(opts?.perPage || 50)))
   const producerIds = opts?.producerIds || new Set()
@@ -317,7 +323,7 @@ async function listUsersFromPlatformView(admin, opts) {
       })
       if (!u.id) continue
       u.accountType = inferAccountType({ explicit: u.accountType, userId: u.id, producerIds, actorUserId })
-      if (!showDisabled && u.disabled) continue
+      if (onlyDisabled ? !u.disabled : u.disabled) continue
       if (type !== 'all' && normalizeAccountType(type) !== u.accountType) continue
       if (allowedByCourse && !allowedByCourse.has(u.id)) continue
       if (q) {
@@ -337,7 +343,7 @@ async function listUsersFromPlatformView(admin, opts) {
 async function listUsersFallbackFromDb(admin, opts) {
   const q = String(opts?.q || '').trim().toLowerCase()
   const type = String(opts?.type || 'all').trim().toLowerCase()
-  const showDisabled = !!opts?.showDisabled
+  const onlyDisabled = !!opts?.showDisabled
   const allowedByCourse = opts?.allowedByCourse || null
   const perPage = Math.max(1, Math.min(5000, Number(opts?.perPage || 50)))
   const producerIds = opts?.producerIds || new Set()
@@ -353,7 +359,7 @@ async function listUsersFallbackFromDb(admin, opts) {
       const u = normalizeFromDbRow(row)
       if (!u.id) continue
       u.accountType = inferAccountType({ explicit: u.accountType, userId: u.id, producerIds, actorUserId })
-      if (!showDisabled && u.disabled) continue
+      if (onlyDisabled ? !u.disabled : u.disabled) continue
       if (type !== 'all' && normalizeAccountType(type) !== u.accountType) continue
       if (allowedByCourse && !allowedByCourse.has(u.id)) continue
       if (q) {
@@ -378,7 +384,7 @@ export default async function handler(req, res) {
     const sp = new URL(req.url, 'http://localhost').searchParams
     const q = String(sp.get('q') || '').trim().toLowerCase()
     const type = String(sp.get('type') || 'all').trim().toLowerCase()
-    const showDisabled = sp.get('show_disabled') === '1'
+    const onlyDisabled = sp.get('show_disabled') === '1'
     const courseId = String(sp.get('course_id') || '').trim()
     const perPageRaw = String(sp.get('per_page') || '').trim().toLowerCase()
     const perPage =
@@ -402,7 +408,7 @@ export default async function handler(req, res) {
         const viewFallback = await listUsersFromPlatformView(admin, {
           q,
           type,
-          showDisabled,
+          showDisabled: onlyDisabled,
           allowedByCourse,
           perPage,
           producerIds,
@@ -418,7 +424,7 @@ export default async function handler(req, res) {
         const pgFallback = await listUsersFallbackFromAuthUsersViaPg({
           q,
           type,
-          showDisabled,
+          showDisabled: onlyDisabled,
           allowedByCourse,
           perPage,
           producerIds,
@@ -446,7 +452,7 @@ export default async function handler(req, res) {
         const fallback = await listUsersFallbackFromDb(admin, {
           q,
           type,
-          showDisabled,
+          showDisabled: onlyDisabled,
           allowedByCourse,
           perPage,
           producerIds,
@@ -474,8 +480,8 @@ export default async function handler(req, res) {
           producerIds,
           actorUserId,
         })
-        const disabled = computeDisabled(u)
-        if (!showDisabled && disabled) continue
+        const disabled = computeDisabled(u) || isMetaDisabled(meta?.disabled)
+        if (onlyDisabled ? !disabled : disabled) continue
         if (type !== 'all' && normalizeAccountType(type) !== accountType) continue
         if (allowedByCourse && !allowedByCourse.has(id)) continue
         if (q) {
