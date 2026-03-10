@@ -7,6 +7,14 @@ function normalizeNameFromMeta(meta) {
   return String(m?.name || m?.full_name || m?.profile_full_name || '').trim()
 }
 
+function normalizeAccountTypeStrict(v) {
+  const t = String(v || '').trim().toLowerCase()
+  if (t === 'administrador' || t === 'admin') return 'admin'
+  if (t === 'produtor' || t === 'producer') return 'produtor'
+  if (t === 'aluno' || t === 'student') return 'aluno'
+  return ''
+}
+
 function decodeJwtRole(token) {
   const raw = String(token || '').trim()
   const parts = raw.split('.')
@@ -104,12 +112,40 @@ async function getCourseAllowedUserIdSet(admin, courseId) {
   return set
 }
 
+async function getProducerUserIdSet(admin) {
+  try {
+    const { data, error } = await admin
+      .from('courses')
+      .select('user_id')
+      .order('created_at', { ascending: false })
+      .limit(5000)
+    if (error) return new Set()
+    const set = new Set()
+    for (const row of Array.isArray(data) ? data : []) {
+      const uid = String(row?.user_id || '').trim()
+      if (uid) set.add(uid)
+    }
+    return set
+  } catch (_) {
+    return new Set()
+  }
+}
+
+function inferAccountType({ explicit, userId, producerIds, actorUserId }) {
+  const exp = normalizeAccountTypeStrict(explicit)
+  if (exp) return exp
+  const uid = String(userId || '').trim()
+  if (uid && actorUserId && uid === actorUserId) return 'admin'
+  if (uid && producerIds && producerIds.has(uid)) return 'produtor'
+  return 'aluno'
+}
+
 function normalizeFromDbRow(row) {
   const r = row && typeof row === 'object' ? row : {}
   const id = String(r?.id || r?.user_id || r?.uid || '').trim()
   const email = normalizeEmail(r?.email || r?.user_email || r?.mail || '')
   const name = String(r?.name || r?.full_name || r?.profile_full_name || r?.display_name || '').trim()
-  const accountType = normalizeAccountType(r?.account_type || r?.role || r?.platform_role || r?.type || '')
+  const accountType = normalizeAccountTypeStrict(r?.account_type || r?.role || r?.platform_role || r?.type || '')
   const bannedUntil = String(r?.banned_until || '').trim()
   const bannedActive = (() => {
     if (!bannedUntil) return false
@@ -155,6 +191,8 @@ async function listUsersFallbackFromAuthUsersViaPg(opts) {
   const showDisabled = !!opts?.showDisabled
   const allowedByCourse = opts?.allowedByCourse || null
   const perPage = Math.max(1, Math.min(5000, Number(opts?.perPage || 50)))
+  const producerIds = opts?.producerIds || new Set()
+  const actorUserId = String(opts?.actorUserId || '').trim()
 
   const client = getPgClient()
   if (!client) return { ok: false, error: 'missing_db_env' }
@@ -189,6 +227,7 @@ async function listUsersFallbackFromAuthUsersViaPg(opts) {
       for (const row of rows) {
         const u = normalizeFromDbRow(row)
         if (!u.id) continue
+        u.accountType = inferAccountType({ explicit: u.accountType, userId: u.id, producerIds, actorUserId })
         if (!showDisabled && u.disabled) continue
         if (type !== 'all' && normalizeAccountType(type) !== u.accountType) continue
         if (allowedByCourse && !allowedByCourse.has(u.id)) continue
@@ -218,6 +257,8 @@ async function listUsersFallbackFromDb(admin, opts) {
   const showDisabled = !!opts?.showDisabled
   const allowedByCourse = opts?.allowedByCourse || null
   const perPage = Math.max(1, Math.min(5000, Number(opts?.perPage || 50)))
+  const producerIds = opts?.producerIds || new Set()
+  const actorUserId = String(opts?.actorUserId || '').trim()
 
   const tryTables = ['users', 'profiles']
   for (const table of tryTables) {
@@ -228,6 +269,7 @@ async function listUsersFallbackFromDb(admin, opts) {
     for (const row of rows) {
       const u = normalizeFromDbRow(row)
       if (!u.id) continue
+      u.accountType = inferAccountType({ explicit: u.accountType, userId: u.id, producerIds, actorUserId })
       if (!showDisabled && u.disabled) continue
       if (type !== 'all' && normalizeAccountType(type) !== u.accountType) continue
       if (allowedByCourse && !allowedByCourse.has(u.id)) continue
@@ -248,7 +290,7 @@ export default async function handler(req, res) {
     if (req.method !== 'GET') return json(res, 405, { error: 'method_not_allowed' })
     const auth = await requireAdmin(req, res)
     if (!auth.ok) return
-    const { admin } = auth
+    const { admin, user: actor } = auth
 
     const sp = new URL(req.url, 'http://localhost').searchParams
     const q = String(sp.get('q') || '').trim().toLowerCase()
@@ -262,6 +304,8 @@ export default async function handler(req, res) {
         : Math.max(1, Math.min(5000, Number(perPageRaw || 50)))
 
     const allowedByCourse = await getCourseAllowedUserIdSet(admin, courseId)
+    const producerIds = await getProducerUserIdSet(admin)
+    const actorUserId = String(actor?.id || '').trim()
 
     const matches = []
     const scanPerPage = Math.max(50, Math.min(200, perPage >= 500 ? 200 : perPage))
@@ -278,6 +322,8 @@ export default async function handler(req, res) {
           showDisabled,
           allowedByCourse,
           perPage,
+          producerIds,
+          actorUserId,
         })
         if (pgFallback.ok) {
           return json(res, 200, {
@@ -304,6 +350,8 @@ export default async function handler(req, res) {
           showDisabled,
           allowedByCourse,
           perPage,
+          producerIds,
+          actorUserId,
         })
         if (fallback.ok) {
           return json(res, 200, {
@@ -321,7 +369,12 @@ export default async function handler(req, res) {
         const email = normalizeEmail(u?.email || '')
         const meta = u?.user_metadata && typeof u.user_metadata === 'object' ? u.user_metadata : {}
         const name = normalizeNameFromMeta(meta)
-        const accountType = normalizeAccountType(meta?.account_type || meta?.role || meta?.platform_role || meta?.type || '')
+        const accountType = inferAccountType({
+          explicit: meta?.account_type || meta?.role || meta?.platform_role || meta?.type || '',
+          userId: id,
+          producerIds,
+          actorUserId,
+        })
         const disabled = computeDisabled(u)
         if (!showDisabled && disabled) continue
         if (type !== 'all' && normalizeAccountType(type) !== accountType) continue
