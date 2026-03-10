@@ -251,6 +251,59 @@ async function listUsersFallbackFromAuthUsersViaPg(opts) {
   }
 }
 
+async function listUsersFromPlatformView(admin, opts) {
+  const q = String(opts?.q || '').trim().toLowerCase()
+  const type = String(opts?.type || 'all').trim().toLowerCase()
+  const showDisabled = !!opts?.showDisabled
+  const allowedByCourse = opts?.allowedByCourse || null
+  const perPage = Math.max(1, Math.min(5000, Number(opts?.perPage || 50)))
+  const producerIds = opts?.producerIds || new Set()
+  const actorUserId = String(opts?.actorUserId || '').trim()
+
+  const out = []
+  const scanPerPage = Math.max(200, Math.min(2000, perPage >= 1000 ? 2000 : perPage))
+  const maxScanPages = Math.max(10, Math.min(200, Math.ceil(perPage / scanPerPage) + 20))
+
+  for (let page = 0; page < maxScanPages; page += 1) {
+    const from = page * scanPerPage
+    const to = from + scanPerPage - 1
+    const { data, error } = await admin
+      .from('platform_admin_users')
+      .select('id,email,created_at,last_sign_in_at,banned_until,name,account_type')
+      .order('created_at', { ascending: false })
+      .range(from, to)
+    if (error) return { ok: false, error: 'view_query_failed', message: error.message || String(error) }
+    const rows = Array.isArray(data) ? data : []
+    if (!rows.length) break
+    for (const row of rows) {
+      const u = normalizeFromDbRow({
+        id: row?.id,
+        email: row?.email,
+        created_at: row?.created_at,
+        last_sign_in_at: row?.last_sign_in_at,
+        banned_until: row?.banned_until,
+        name: row?.name,
+        account_type: row?.account_type,
+      })
+      if (!u.id) continue
+      u.accountType = inferAccountType({ explicit: u.accountType, userId: u.id, producerIds, actorUserId })
+      if (!showDisabled && u.disabled) continue
+      if (type !== 'all' && normalizeAccountType(type) !== u.accountType) continue
+      if (allowedByCourse && !allowedByCourse.has(u.id)) continue
+      if (q) {
+        const hay = `${u.name} ${u.email}`.toLowerCase()
+        if (!hay.includes(q)) continue
+      }
+      out.push(u)
+      if (out.length >= perPage) break
+    }
+    if (out.length >= perPage) break
+    if (rows.length < scanPerPage) break
+  }
+
+  return { ok: true, users: out, source: 'view:platform_admin_users' }
+}
+
 async function listUsersFallbackFromDb(admin, opts) {
   const q = String(opts?.q || '').trim().toLowerCase()
   const type = String(opts?.type || 'all').trim().toLowerCase()
@@ -316,6 +369,22 @@ export default async function handler(req, res) {
         const msg = r.error?.message || 'list_users_failed'
         const status = r.error?.status ? ` (status=${r.error.status})` : ''
         const name = r.error?.name ? ` (name=${r.error.name})` : ''
+        const viewFallback = await listUsersFromPlatformView(admin, {
+          q,
+          type,
+          showDisabled,
+          allowedByCourse,
+          perPage,
+          producerIds,
+          actorUserId,
+        })
+        if (viewFallback.ok) {
+          return json(res, 200, {
+            ok: true,
+            users: viewFallback.users,
+            meta: { count: viewFallback.users.length, limit: perPage, truncated: viewFallback.users.length >= perPage, source: viewFallback.source },
+          })
+        }
         const pgFallback = await listUsersFallbackFromAuthUsersViaPg({
           q,
           type,
