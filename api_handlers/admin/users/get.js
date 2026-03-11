@@ -6,6 +6,23 @@ function normalizeName(meta, email) {
   return String(m?.name || m?.full_name || '').trim() || String(email || '').trim()
 }
 
+async function readCourseTitles(admin, ids) {
+  const unique = Array.from(new Set((Array.isArray(ids) ? ids : []).map((v) => String(v || '').trim()).filter(Boolean)))
+  const out = new Map()
+  const chunkSize = 200
+  for (let i = 0; i < unique.length; i += chunkSize) {
+    const chunk = unique.slice(i, i + chunkSize)
+    const { data, error } = await admin.from('courses').select('id,title').in('id', chunk).limit(chunk.length)
+    if (error) continue
+    for (const row of Array.isArray(data) ? data : []) {
+      const id = String(row?.id || '').trim()
+      if (!id) continue
+      out.set(id, String(row?.title || 'Curso'))
+    }
+  }
+  return out
+}
+
 export default async function handler(req, res) {
   try {
     if (req.method !== 'GET') return json(res, 405, { error: 'method_not_allowed' })
@@ -36,6 +53,25 @@ export default async function handler(req, res) {
 
     const disabled = computeDisabled(u)
 
+    const { data: studentCoursesRows } = await admin
+      .from('student_courses')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(5000)
+
+    const { data: ownedRaw } = await admin
+      .from('courses')
+      .select('id,title,created_at')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(5000)
+    const ownedCourses = (Array.isArray(ownedRaw) ? ownedRaw : []).map((c) => ({
+      id: String(c?.id || ''),
+      title: String(c?.title || 'Curso'),
+      createdAt: c?.created_at || null,
+    })).filter((c) => c.id)
+
     const { data: notif } = await admin
       .from('notifications')
       .select('id,entity_id,entity_type,type,data,created_at')
@@ -45,13 +81,36 @@ export default async function handler(req, res) {
       .limit(3000)
 
     const coursesMap = new Map()
+
+    for (const row of Array.isArray(studentCoursesRows) ? studentCoursesRows : []) {
+      const courseId =
+        String(row?.course_id || '').trim() ||
+        String(row?.courseId || '').trim() ||
+        String(row?.course_uuid || '').trim() ||
+        String(row?.course || '').trim()
+      if (!courseId) continue
+      const expiresAt = String(row?.expires_at || row?.expiresAt || row?.expires_at_iso || '').trim()
+      const expired = expiresAt ? isExpired(expiresAt) : false
+      const prev = coursesMap.get(courseId)
+      if (!prev) {
+        coursesMap.set(courseId, { courseId, expiresAt: expiresAt || '', source: 'student_courses', expired })
+        continue
+      }
+      if (!prev.expiresAt && expiresAt) {
+        coursesMap.set(courseId, { courseId, expiresAt: expiresAt || '', source: prev.source || 'student_courses', expired })
+      }
+    }
+
     for (const row of Array.isArray(notif) ? notif : []) {
       const entityType = String(row?.entity_type || '').trim().toLowerCase()
-      if (entityType !== 'course') continue
-      const courseId = String(row?.entity_id || '').trim()
+      const dataObj = row?.data && typeof row.data === 'object' ? row.data : null
+      const dataType = String(dataObj?.type || '').trim().toLowerCase()
+      const courseId =
+        String(row?.entity_id || '').trim() ||
+        String(dataObj?.courseId || dataObj?.course_id || '').trim()
       if (!courseId) continue
-      const expiresAt = String(row?.data?.expires_at || row?.data?.expiresAt || '').trim()
-      const source = String(row?.data?.source || '').trim()
+      const expiresAt = String(dataObj?.expires_at || dataObj?.expiresAt || '').trim()
+      const source = String(dataObj?.source || '').trim()
       const expired = expiresAt ? isExpired(expiresAt) : false
       const prev = coursesMap.get(courseId)
       if (!prev) {
@@ -64,10 +123,16 @@ export default async function handler(req, res) {
       }
     }
 
-    const courses = Array.from(coursesMap.values()).filter((c) => !c.expired).map((c) => ({
+    const courseIds = Array.from(coursesMap.keys())
+    const titleById = await readCourseTitles(admin, courseIds)
+    const courseEntitlements = Array.from(coursesMap.values()).map((c) => ({
       courseId: c.courseId,
+      title: titleById.get(String(c.courseId || '').trim()) || (c.courseId ? `Curso ${String(c.courseId).slice(0, 8)}` : 'Curso'),
       expiresAt: c.expiresAt || '',
+      expired: !!c.expired,
+      source: c.source || '',
     }))
+    const courses = courseEntitlements.filter((c) => !c.expired).map((c) => ({ courseId: c.courseId, expiresAt: c.expiresAt }))
 
     return json(res, 200, {
       ok: true,
@@ -81,10 +146,11 @@ export default async function handler(req, res) {
         createdAt: u?.created_at || null,
         lastSignInAt: u?.last_sign_in_at || null,
         courses,
+        ownedCourses,
+        courseEntitlements,
       },
     })
   } catch (e) {
     return json(res, 500, { error: 'internal_error', message: e?.message || String(e) })
   }
 }
-

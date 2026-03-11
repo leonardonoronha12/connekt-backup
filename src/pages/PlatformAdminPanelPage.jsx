@@ -560,6 +560,30 @@ export default function PlatformAdminPanelPage() {
     return base.slice().sort((a, b) => String(a?.title || '').localeCompare(String(b?.title || ''), 'pt-BR'))
   }, [courses])
 
+  const editCourseOptions = useMemo(() => {
+    const map = new Map()
+    for (const c of Array.isArray(sortedCourses) ? sortedCourses : []) {
+      const id = String(c?.id || '').trim()
+      if (!id) continue
+      map.set(id, { id, title: String(c?.title || 'Curso') })
+    }
+    for (const c of Array.isArray(editUser?.courseEntitlements) ? editUser.courseEntitlements : []) {
+      const id = String(c?.courseId || '').trim()
+      if (!id) continue
+      if (map.has(id)) continue
+      map.set(id, { id, title: String(c?.title || `Curso ${id.slice(0, 8)}`) })
+    }
+    for (const c of Array.isArray(editUser?.ownedCourses) ? editUser.ownedCourses : []) {
+      const id = String(c?.id || '').trim()
+      if (!id) continue
+      if (map.has(id)) continue
+      map.set(id, { id, title: String(c?.title || `Curso ${id.slice(0, 8)}`) })
+    }
+    const list = Array.from(map.values())
+    list.sort((a, b) => String(a?.title || '').localeCompare(String(b?.title || ''), 'pt-BR'))
+    return list
+  }, [editUser?.courseEntitlements, editUser?.ownedCourses, sortedCourses])
+
   return (
     <>
       <Helmet>
@@ -886,10 +910,48 @@ export default function PlatformAdminPanelPage() {
                       </select>
                     </div>
 
+                    {normalizeType(editForm.accountType) === 'produtor' ? (
+                      <div className="md:col-span-2 rounded-[12px] border border-[#E3E4E5] bg-[#F8FAFC] p-4">
+                        <div className="text-[12px] font-semibold text-[#1E1B39]">Cursos do produtor</div>
+                        <div className="mt-3 space-y-2">
+                          {Array.isArray(editUser?.ownedCourses) && editUser.ownedCourses.length ? (
+                            <div className="rounded-[12px] border border-[#E3E4E5] bg-white p-3">
+                              {editUser.ownedCourses.slice(0, 30).map((c, idx) => (
+                                <div key={`${c?.id || ''}-${idx}`} className="flex items-center justify-between gap-3 py-1">
+                                  <div className="min-w-0 text-[12px] text-[#1E1B39] truncate">{String(c?.title || 'Curso')}</div>
+                                  <div className="text-[11px] text-[#737780] whitespace-nowrap">{formatDt(c?.createdAt)}</div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="text-[12px] text-[#737780]">Nenhum curso encontrado para este produtor.</div>
+                          )}
+                        </div>
+                      </div>
+                    ) : null}
+
                     {normalizeType(editForm.accountType) === 'aluno' ? (
                       <div className="md:col-span-2 rounded-[12px] border border-[#E3E4E5] bg-[#F8FAFC] p-4">
                         <div className="text-[12px] font-semibold text-[#1E1B39]">Cursos e expiração</div>
                         <div className="mt-3 space-y-2">
+                          {(() => {
+                            const list = (Array.isArray(editUser?.courseEntitlements) ? editUser.courseEntitlements : []).filter((c) => !c?.expired)
+                            if (!list.length) {
+                              return <div className="text-[12px] text-[#737780]">Este usuário não tem cursos.</div>
+                            }
+                            return (
+                              <div className="rounded-[12px] border border-[#E3E4E5] bg-white p-3">
+                                {list.slice(0, 30).map((c, idx) => (
+                                  <div key={`${c?.courseId || ''}-${idx}`} className="flex items-center justify-between gap-3 py-1">
+                                    <div className="min-w-0 text-[12px] text-[#1E1B39] truncate">{String(c?.title || 'Curso')}</div>
+                                    <div className="text-[11px] text-[#737780] whitespace-nowrap">
+                                      {c?.expiresAt ? `expira: ${String(c.expiresAt)}` : 'sem expiração'}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            )
+                          })()}
                           {(Array.isArray(editForm.courses) ? editForm.courses : []).map((c, idx) => (
                             <div key={`${c?.courseId || ''}-${idx}`} className="grid grid-cols-1 md:grid-cols-12 gap-2 items-center">
                               <div className="md:col-span-7">
@@ -906,7 +968,7 @@ export default function PlatformAdminPanelPage() {
                                   className="w-full h-[40px] rounded-[10px] border border-[#E3E4E5] px-3 text-[13px] bg-white outline-none focus:border-[#0047BB]"
                                 >
                                   <option value="">Selecione um curso</option>
-                                  {sortedCourses.map((cc) => (
+                                  {editCourseOptions.map((cc) => (
                                     <option key={cc.id} value={cc.id}>{cc.title}</option>
                                   ))}
                                 </select>
