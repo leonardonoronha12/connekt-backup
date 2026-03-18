@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Helmet } from 'react-helmet-async'
-import { Search, Download, SlidersHorizontal, Mail, CalendarDays, X, Wallet, Lock, ArrowRight } from 'lucide-react'
+import { Search, Download, SlidersHorizontal, Mail, CalendarDays, X, Wallet, Lock, ArrowRight, Loader2, CheckCircle2 } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useAuth } from '@/contexts/SupabaseAuthContext'
 
@@ -220,6 +220,8 @@ const VendasPage = () => {
   const [page, setPage] = useState(1)
   const [isFilterOpen, setIsFilterOpen] = useState(false)
   const [isWithdrawOpen, setIsWithdrawOpen] = useState(false)
+  const [advanceStage, setAdvanceStage] = useState('idle')
+  const advanceTimeoutRef = useRef({ t1: null, t2: null })
   const [appliedFilters, setAppliedFilters] = useState(() => cloneFilters(DEFAULT_FILTERS))
   const [draftFilters, setDraftFilters] = useState(() => cloneFilters(DEFAULT_FILTERS))
   const draftFiltersRef = useRef(draftFilters)
@@ -377,14 +379,19 @@ const VendasPage = () => {
 
   const openWithdraw = () => {
     setIsWithdrawOpen(true)
+    setAdvanceStage('idle')
   }
 
   const requestAdvanceWithdraw = () => {
-    const subject = encodeURIComponent('Antecipar saque')
-    const body = encodeURIComponent(`Olá!\n\nQuero antecipar meu saque.\n\nValor a receber: ${formatMoneyFromCents(receivableCents)}\n\nObrigado!`)
-    const url = `mailto:suporte@appconnekt.com.br?subject=${subject}&body=${body}`
+    if (advanceStage !== 'idle') return
+    setAdvanceStage('sending')
     try {
-      window.location.assign(url)
+      if (advanceTimeoutRef.current?.t1) window.clearTimeout(advanceTimeoutRef.current.t1)
+      if (advanceTimeoutRef.current?.t2) window.clearTimeout(advanceTimeoutRef.current.t2)
+    } catch (_) {}
+    try {
+      advanceTimeoutRef.current.t1 = window.setTimeout(() => setAdvanceStage('done'), 900)
+      advanceTimeoutRef.current.t2 = window.setTimeout(() => setIsWithdrawOpen(false), 3200)
     } catch (_) {}
   }
 
@@ -415,6 +422,16 @@ const VendasPage = () => {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
+  }, [isWithdrawOpen])
+
+  useEffect(() => {
+    if (isWithdrawOpen) return
+    setAdvanceStage('idle')
+    try {
+      if (advanceTimeoutRef.current?.t1) window.clearTimeout(advanceTimeoutRef.current.t1)
+      if (advanceTimeoutRef.current?.t2) window.clearTimeout(advanceTimeoutRef.current.t2)
+      advanceTimeoutRef.current = { t1: null, t2: null }
+    } catch (_) {}
   }, [isWithdrawOpen])
 
   const openFilters = () => {
@@ -673,7 +690,7 @@ const VendasPage = () => {
               </button>
             </div>
 
-            <div className="p-6 space-y-4">
+            <div className={`p-6 space-y-4 ${advanceStage === 'idle' ? '' : 'opacity-30 pointer-events-none'}`}>
               <div className="rounded-[12px] border border-[#E3E4E5] bg-[#F8FAFC] p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div>
@@ -693,16 +710,49 @@ const VendasPage = () => {
               <button
                 type="button"
                 onClick={requestAdvanceWithdraw}
-                className="h-11 w-full rounded-[10px] bg-gradient-to-r from-[#321A88] to-[#0047BB] text-white text-[13px] font-semibold hover:opacity-95 inline-flex items-center justify-center gap-2"
+                disabled={advanceStage !== 'idle'}
+                className="h-11 w-full rounded-[10px] bg-gradient-to-r from-[#321A88] to-[#0047BB] text-white text-[13px] font-semibold hover:opacity-95 inline-flex items-center justify-center gap-2 disabled:opacity-60"
               >
                 Antecipar saque
                 <ArrowRight className="w-4 h-4 text-white" />
               </button>
 
               <div className="text-[12px] text-[#737780]">
-                Ao clicar em “Antecipar saque”, você inicia a solicitação com o suporte.
+                Ao clicar em “Antecipar saque”, a área comercial vai entrar em contato com você.
               </div>
             </div>
+
+            {advanceStage !== 'idle' ? (
+              <div className="absolute inset-0 flex items-center justify-center p-6">
+                <div className="w-full max-w-[420px] rounded-[14px] border border-[#E3E4E5] bg-white shadow-xl overflow-hidden">
+                  <div className="p-6">
+                    <div className="flex items-center justify-center">
+                      <div className="relative">
+                        <div className="w-16 h-16 rounded-full bg-[#EEF2FF] flex items-center justify-center">
+                          {advanceStage === 'sending' ? (
+                            <Loader2 className="w-7 h-7 text-[#0047BB] animate-spin" />
+                          ) : (
+                            <CheckCircle2 className="w-7 h-7 text-[#16A34A]" />
+                          )}
+                        </div>
+                        <div className="absolute inset-0 rounded-full border border-[#C7D2FE] animate-ping opacity-30" />
+                      </div>
+                    </div>
+                    <div className="mt-4 text-center">
+                      <div className="text-[14px] font-semibold text-[#1E1B39]">
+                        {advanceStage === 'sending' ? 'Enviando solicitação…' : 'Solicitação enviada'}
+                      </div>
+                      <div className="mt-2 text-[12px] text-[#737780]">
+                        A área comercial vai entrar em contato com você para seguir com a antecipação do saque.
+                      </div>
+                      <div className="mt-3 text-[12px] text-[#737780]">
+                        Valor a receber: <span className="font-semibold text-[#1E1B39]">{formatMoneyFromCents(receivableCents)}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
       ) : null}
