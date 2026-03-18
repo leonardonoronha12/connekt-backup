@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Helmet } from 'react-helmet-async'
-import { Search, Download, SlidersHorizontal, Mail, CalendarDays, X } from 'lucide-react'
+import { Search, Download, SlidersHorizontal, Mail, CalendarDays, X, Wallet, Lock, ArrowRight } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useAuth } from '@/contexts/SupabaseAuthContext'
 
@@ -219,6 +219,7 @@ const VendasPage = () => {
   const [q, setQ] = useState('')
   const [page, setPage] = useState(1)
   const [isFilterOpen, setIsFilterOpen] = useState(false)
+  const [isWithdrawOpen, setIsWithdrawOpen] = useState(false)
   const [appliedFilters, setAppliedFilters] = useState(() => cloneFilters(DEFAULT_FILTERS))
   const [draftFilters, setDraftFilters] = useState(() => cloneFilters(DEFAULT_FILTERS))
   const draftFiltersRef = useRef(draftFilters)
@@ -363,6 +364,30 @@ const VendasPage = () => {
     ]
   }, [rows, salesLoaded])
 
+  const receivableCents = useMemo(() => {
+    const list = salesLoaded ? (Array.isArray(rows) ? rows : []) : (Array.isArray(baseRows) ? baseRows : [])
+    let sum = 0
+    for (const r of list) {
+      if (resolveStatusKey(r) !== 'approved') continue
+      const v = Number(r?.amount_cents || r?.amountCents || 0)
+      if (Number.isFinite(v)) sum += v
+    }
+    return sum
+  }, [baseRows, rows, salesLoaded])
+
+  const openWithdraw = () => {
+    setIsWithdrawOpen(true)
+  }
+
+  const requestAdvanceWithdraw = () => {
+    const subject = encodeURIComponent('Antecipar saque')
+    const body = encodeURIComponent(`Olá!\n\nQuero antecipar meu saque.\n\nValor a receber: ${formatMoneyFromCents(receivableCents)}\n\nObrigado!`)
+    const url = `mailto:suporte@appconnekt.com.br?subject=${subject}&body=${body}`
+    try {
+      window.location.assign(url)
+    } catch (_) {}
+  }
+
   const appliedFilterCount = useMemo(() => countActiveFilters(appliedFilters), [appliedFilters])
 
   const goTo = (path) => {
@@ -382,6 +407,15 @@ const VendasPage = () => {
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [isFilterOpen])
+
+  useEffect(() => {
+    if (!isWithdrawOpen) return
+    const onKeyDown = (e) => {
+      if (e?.key === 'Escape') setIsWithdrawOpen(false)
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [isWithdrawOpen])
 
   const openFilters = () => {
     setDraftFilters(cloneFilters(appliedFilters || DEFAULT_FILTERS))
@@ -473,6 +507,14 @@ const VendasPage = () => {
               />
             </div>
             <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={openWithdraw}
+                className="h-10 px-4 rounded-[6px] bg-[#0047BB] text-white text-[13px] font-semibold hover:bg-[#003a99] inline-flex items-center gap-2"
+              >
+                <Wallet className="w-4 h-4 text-white" />
+                Saque
+              </button>
               <button
                 type="button"
                 onClick={() => exportCsv(filteredRows)}
@@ -606,6 +648,64 @@ const VendasPage = () => {
           </div>
         ) : null}
       </div>
+
+      {isWithdrawOpen ? (
+        <div className="fixed inset-0 z-[90] bg-black/40 flex items-center justify-center p-6">
+          <button type="button" className="absolute inset-0" aria-label="Fechar" onClick={() => setIsWithdrawOpen(false)} />
+          <div role="dialog" aria-modal="true" className="relative w-full max-w-[520px] rounded-[14px] border border-[#E3E4E5] bg-white overflow-hidden">
+            <div className="px-6 py-5 border-b border-[#E3E4E5] flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-[12px] bg-[#EEF2FF] flex items-center justify-center">
+                  <Wallet className="w-5 h-5 text-[#0047BB]" />
+                </div>
+                <div>
+                  <div className="text-[14px] font-semibold text-[#1E1B39]">Saque</div>
+                  <div className="text-[12px] text-[#737780]">Solicite o recebimento das suas vendas</div>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="w-9 h-9 rounded-[10px] hover:bg-[#F3F4F6] flex items-center justify-center"
+                onClick={() => setIsWithdrawOpen(false)}
+                aria-label="Fechar"
+              >
+                <X className="w-4 h-4 text-[#737780]" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="rounded-[12px] border border-[#E3E4E5] bg-[#F8FAFC] p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[12px] text-[#737780]">Valor a receber</div>
+                    <div className="mt-1 text-[22px] font-semibold text-[#1E1B39]">{formatMoneyFromCents(receivableCents)}</div>
+                  </div>
+                  <div className="inline-flex items-center gap-2 px-3 py-2 rounded-[10px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#6B7280] opacity-70 select-none">
+                    <Lock className="w-4 h-4" />
+                    Bloqueado
+                  </div>
+                </div>
+                <div className="mt-3 text-[12px] text-[#737780]">
+                  Bloqueado por negociação de recebimento no fluxo padrão.
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={requestAdvanceWithdraw}
+                className="h-11 w-full rounded-[10px] bg-gradient-to-r from-[#321A88] to-[#0047BB] text-white text-[13px] font-semibold hover:opacity-95 inline-flex items-center justify-center gap-2"
+              >
+                Antecipar saque
+                <ArrowRight className="w-4 h-4 text-white" />
+              </button>
+
+              <div className="text-[12px] text-[#737780]">
+                Ao clicar em “Antecipar saque”, você inicia a solicitação com o suporte.
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
         <div className={`fixed inset-0 z-[80] ${isFilterOpen ? '' : 'pointer-events-none'}`}>
         <div
