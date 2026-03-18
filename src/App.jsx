@@ -854,10 +854,103 @@ function AppContent() {
     }
   }, [currentView, locationKey])
 
+  const metaRole = useMemo(() => {
+    const meta = user?.user_metadata && typeof user.user_metadata === 'object' ? user.user_metadata : {}
+    const raw = String(meta?.account_type || meta?.role || meta?.platform_role || '').trim().toLowerCase()
+    if (raw === 'admin' || raw === 'administrador') return 'admin'
+    if (raw === 'produtor' || raw === 'producer') return 'produtor'
+    if (raw === 'aluno' || raw === 'student') return 'aluno'
+    return ''
+  }, [user?.id, user?.user_metadata])
+
+  const [resolvedRole, setResolvedRole] = useState('')
+  useEffect(() => {
+    let active = true
+    const uid = String(user?.id || '').trim()
+    if (!uid) {
+      setResolvedRole('')
+      return () => { active = false }
+    }
+    if (metaRole) {
+      setResolvedRole(metaRole)
+      return () => { active = false }
+    }
+    setResolvedRole('checking')
+    const run = async () => {
+      try {
+        const { data } = await supabase.from('courses').select('id').eq('user_id', uid).limit(1)
+        if (!active) return
+        if (Array.isArray(data) && data.length > 0) {
+          setResolvedRole('produtor')
+          return
+        }
+      } catch (_) {}
+      try {
+        const { data } = await supabase
+          .from('producers')
+          .select('id')
+          .or(`user_id.eq.${uid},id.eq.${uid},external_id.eq.${uid}`)
+          .maybeSingle()
+        if (!active) return
+        if (data?.id) {
+          setResolvedRole('produtor')
+          return
+        }
+      } catch (_) {}
+      if (!active) return
+      setResolvedRole('aluno')
+    }
+    run()
+    return () => { active = false }
+  }, [user?.id, metaRole])
+
   const isAlunoFlow = useMemo(() => {
     const path = String(window.location.pathname || '')
     return loginMode === 'aluno' || path === '/aluno' || path.startsWith('/aluno/') || path === '/login-aluno' || path === '/login-aluno-wl' || path === '/aluno/login'
   }, [loginMode, currentView, locationKey])
+
+  useEffect(() => {
+    if (loading) return
+    if (!user) return
+    if (deviceLock) return
+    if (isPublicView) return
+    if (resolvedRole === '' || resolvedRole === 'checking') return
+
+    const view = String(currentView || '')
+    const path = String(window.location.pathname || '')
+    const isPlatformAdminView = view === 'platformAdminPanel' || view === 'platformAdminDeploy' || view === 'platformAdminLogin' || path === '/admin' || path.startsWith('/admin/')
+    const isAlunoView = view.startsWith('aluno') || path === '/aluno' || path.startsWith('/aluno/')
+    const isProducerView =
+      !isPlatformAdminView &&
+      !isAlunoView &&
+      view !== 'cursoPreviewAluno' &&
+      view !== 'termos' &&
+      view !== 'resetPassword' &&
+      view !== 'verifyEmail' &&
+      view !== 'hero'
+
+    const go = (target) => {
+      const t = String(target || '').trim()
+      if (!t) return
+      if (path === t) return
+      window.history.replaceState({}, '', t)
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    }
+
+    if (resolvedRole === 'admin') return
+
+    if (isPlatformAdminView) {
+      go(resolvedRole === 'aluno' ? '/aluno' : '/dashboard')
+      return
+    }
+    if (isAlunoView && resolvedRole === 'produtor') {
+      go('/dashboard')
+      return
+    }
+    if (isProducerView && resolvedRole === 'aluno') {
+      go('/aluno')
+    }
+  }, [loading, user, deviceLock, isPublicView, resolvedRole, currentView])
 
   useEffect(() => {
     if (loading) return;
