@@ -885,7 +885,7 @@ const SimuladosAproveitamentoPage = () => {
             <div className="border border-[#E3E4E5] rounded-lg bg-[#FFFFFF] w-full h-[532px] overflow-auto">
               <div className="flex items-center justify-between px-5 py-3 border-b border-[#E3E4E5]">
                 <div className="flex items-center gap-2">
-                  <img src="/icons/alunos.svg" alt="Participantes" className="w-4 h-4" />
+                  <img src="/icons/alunos.svg?v=2" alt="Participantes" className="w-4 h-4" />
                   <span className="text-[12px] font-medium text-[#22252B]">Participantes</span>
                 </div>
                 <div className="flex items-center gap-3 text-[12px] text-[#737780]">
