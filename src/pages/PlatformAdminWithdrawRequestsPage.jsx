@@ -1,13 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { Helmet } from 'react-helmet-async'
-import { Loader2, RefreshCcw, Search, X } from 'lucide-react'
+import { Search, X } from 'lucide-react'
 import { useAuth } from '@/contexts/SupabaseAuthContext'
 import { toast } from '@/hooks/use-toast.ts'
-
-function navigateTo(path) {
-  window.history.pushState({}, '', path)
-  window.dispatchEvent(new PopStateEvent('popstate'))
-}
 
 function formatMoneyFromCents(cents) {
   const n = Number(cents || 0)
@@ -62,7 +57,6 @@ export default function PlatformAdminWithdrawRequestsPage() {
 
   const [q, setQ] = useState('')
   const [status, setStatus] = useState('')
-  const [refreshTick, setRefreshTick] = useState(0)
 
   const runFetch = useCallback(async () => {
     setLoading(true)
@@ -91,7 +85,7 @@ export default function PlatformAdminWithdrawRequestsPage() {
 
   useEffect(() => {
     runFetch()
-  }, [runFetch, refreshTick])
+  }, [runFetch])
 
   const filteredStandardProducers = useMemo(() => {
     const list = Array.isArray(standardProducers) ? standardProducers : []
@@ -124,24 +118,6 @@ export default function PlatformAdminWithdrawRequestsPage() {
               <div>
                 <div className="text-[14px] font-semibold text-[#1E1B39]">Saques</div>
                 <div className="text-[12px] text-[#737780]">Solicitações e fluxo padrão</div>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  className="h-9 px-3 rounded-[10px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#1E1B39] hover:bg-[#F8FAFC]"
-                  onClick={() => navigateTo('/admin/deploy')}
-                >
-                  Publicar
-                </button>
-                <button
-                  type="button"
-                  className="h-9 px-3 rounded-[10px] bg-[#0047BB] text-white text-[12px] font-semibold hover:bg-[#003da0] disabled:opacity-50"
-                  disabled={loading}
-                  onClick={() => setRefreshTick((v) => v + 1)}
-                >
-                  {loading ? <Loader2 className="w-4 h-4 inline-block mr-2 animate-spin" /> : <RefreshCcw className="w-4 h-4 inline-block mr-2" />}
-                  Atualizar
-                </button>
               </div>
             </div>
 
