@@ -2058,12 +2058,32 @@ export default async function handler(req, res) {
       }
 
       const buyerIds = new Set()
+      const productsByBuyerId = new Map()
+
+      const normalizeProductName = (value) => {
+        const v = String(value || '').trim()
+        return v
+      }
+
+      const addBuyerProduct = (buyerId, productName, createdAt) => {
+        const bid = String(buyerId || '').trim()
+        const name = normalizeProductName(productName)
+        if (!bid || !name) return
+        const time = createdAt ? new Date(createdAt).getTime() : 0
+        const prev = productsByBuyerId.get(bid) || { names: new Set(), latestAt: 0, latestName: '' }
+        prev.names.add(name)
+        if (time && time >= (prev.latestAt || 0)) {
+          prev.latestAt = time
+          prev.latestName = name
+        }
+        productsByBuyerId.set(bid, prev)
+      }
 
       const fetchBuyerIdsFromNotifications = async () => {
         try {
           const { data, error } = await admin
             .from('notifications')
-            .select('id,type,data,created_at')
+            .select('id,type,data,created_at,entity_name,entity_type,entity_id')
             .eq('recipient_user_id', producerUserId)
             .in('type', ['purchase_received', 'purchase_confirmed'])
             .order('created_at', { ascending: false })
@@ -2134,6 +2154,17 @@ export default async function handler(req, res) {
               '',
           ).trim()
           if (buyerId) buyerIds.add(buyerId)
+          if (buyerId) {
+            const courseIdFromData = String(data?.courseId || data?.course_id || '').trim()
+            const entityName = String(n?.entity_name || '').trim()
+            const courseTitle = courseIdFromData ? (courses.find((c) => String(c?.id || '').trim() === courseIdFromData)?.title || '') : ''
+            const fallbackName =
+              entityName ||
+              (courseTitle ? String(courseTitle) : '') ||
+              String(n?.entity_type || '').trim() ||
+              ''
+            addBuyerProduct(buyerId, fallbackName, n?.created_at || null)
+          }
         }
 
         const salesRows = await fetchBuyerIdsFromSales()
@@ -2149,6 +2180,13 @@ export default async function handler(req, res) {
               '',
           ).trim()
           if (buyerId) buyerIds.add(buyerId)
+          if (buyerId) {
+            const entityId = String(s?.entity_id || s?.entityId || '').trim()
+            const entityType = String(s?.entity_type || s?.entityType || s?.type || '').trim()
+            const courseTitle = entityId ? (courses.find((c) => String(c?.id || '').trim() === entityId)?.title || '') : ''
+            const name = String(courseTitle || '').trim() || String(entityType || '').trim()
+            addBuyerProduct(buyerId, name, s?.created_at || null)
+          }
         }
       }
 
@@ -2262,9 +2300,31 @@ export default async function handler(req, res) {
           seenCourses.add(k)
           coursesUnique.push(c)
         }
-        const row = { id: userId, name, email, phone, courses: coursesUnique }
+        const productNames = new Set()
+        for (const c of coursesUnique) {
+          const n = String(c?.course_name || '').trim()
+          if (n) productNames.add(n)
+        }
+        const buyerMeta = productsByBuyerId.get(userId) || null
+        if (buyerMeta?.names && typeof buyerMeta.names?.forEach === 'function') {
+          buyerMeta.names.forEach((n) => {
+            const v = String(n || '').trim()
+            if (v) productNames.add(v)
+          })
+        }
+        const products = Array.from(productNames)
+        products.sort((a, b) => String(a || '').localeCompare(String(b || ''), 'pt-BR'))
+        const row = {
+          id: userId,
+          name,
+          email,
+          phone,
+          product: String(buyerMeta?.latestName || '').trim() || (products[0] ? String(products[0]) : ''),
+          products,
+          courses: coursesUnique,
+        }
         if (q) {
-          const hay = `${String(row?.name || '').toLowerCase()} ${String(row?.email || '').toLowerCase()} ${String(row?.phone || '').toLowerCase()}`
+          const hay = `${String(row?.name || '').toLowerCase()} ${String(row?.email || '').toLowerCase()} ${String(row?.phone || '').toLowerCase()} ${String(row?.product || '').toLowerCase()}`
           if (!hay.includes(q)) continue
         }
         out.push(row)
