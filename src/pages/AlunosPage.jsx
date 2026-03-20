@@ -12,6 +12,14 @@ function formatPhone(raw) {
   return String(raw || '').trim()
 }
 
+function formatProductCell(row) {
+  const products = Array.isArray(row?.products) ? row.products.map((p) => String(p || '').trim()).filter(Boolean) : []
+  const primary = String(row?.product || '').trim() || (products[0] ? String(products[0]) : '')
+  if (!primary) return '—'
+  const extra = products.filter((p) => p && p !== primary)
+  return extra.length ? `${primary} (+${extra.length})` : primary
+}
+
 export default function AlunosPage() {
   const { session, user } = useAuth()
   const tokenRef = useRef('')
@@ -89,6 +97,7 @@ export default function AlunosPage() {
         nome: String(s?.name || ''),
         email: String(s?.email || ''),
         telefone: String(s?.phone || ''),
+        produto: formatProductCell(s) === '—' ? '' : formatProductCell(s),
         cursos: Array.isArray(s?.courses) ? s.courses.map((c) => String(c?.course_name || '')).filter(Boolean).join(', ') : '',
       }))
       const ws = XLSX.utils.json_to_sheet(sheetRows)
@@ -181,24 +190,25 @@ export default function AlunosPage() {
                   <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#737780]">Aluno</th>
                   <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#737780]">Email</th>
                   <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#737780]">Telefone</th>
+                  <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#737780]">Produto</th>
                   <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#737780]">Cursos</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#EDEEF0]">
                 {loading ? (
                   <tr>
-                    <td colSpan={4} className="px-6 py-8 text-center text-[14px] text-[#737780]">
+                    <td colSpan={5} className="px-6 py-8 text-center text-[14px] text-[#737780]">
                       <Loader2 className="w-4 h-4 inline-block mr-2 animate-spin" />
                       Carregando…
                     </td>
                   </tr>
                 ) : error ? (
                   <tr>
-                    <td colSpan={4} className="px-6 py-8 text-center text-[14px] text-[#737780]">{error}</td>
+                    <td colSpan={5} className="px-6 py-8 text-center text-[14px] text-[#737780]">{error}</td>
                   </tr>
                 ) : rows.length === 0 ? (
                   <tr>
-                    <td colSpan={4} className="px-6 py-8 text-center text-[14px] text-[#737780]">Nenhum aluno encontrado.</td>
+                    <td colSpan={5} className="px-6 py-8 text-center text-[14px] text-[#737780]">Nenhum aluno encontrado.</td>
                   </tr>
                 ) : (
                   rows.slice(0, 500).map((s) => (
@@ -206,6 +216,7 @@ export default function AlunosPage() {
                       <td className="px-6 py-4 text-[13px] text-[#1E1B39]">{String(s?.name || '').trim() || 'Aluno'}</td>
                       <td className="px-6 py-4 text-[13px] text-[#1E1B39]">{String(s?.email || '').trim() || '—'}</td>
                       <td className="px-6 py-4 text-[13px] text-[#1E1B39]">{formatPhone(s?.phone || '') || '—'}</td>
+                      <td className="px-6 py-4 text-[13px] text-[#1E1B39]">{formatProductCell(s)}</td>
                       <td className="px-6 py-4 text-[13px] text-[#1E1B39]">{Array.isArray(s?.courses) ? s.courses.length : 0}</td>
                     </tr>
                   ))
