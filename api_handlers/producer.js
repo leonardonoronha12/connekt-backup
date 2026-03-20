@@ -2050,6 +2050,113 @@ export default async function handler(req, res) {
         courseRowsByStudentUserId.set(uid, list)
       }
 
+      const parseJsonMaybe = (value) => {
+        if (!value) return null
+        if (typeof value === 'object') return value
+        if (typeof value !== 'string') return null
+        try { return JSON.parse(value) } catch (_) { return null }
+      }
+
+      const buyerIds = new Set()
+
+      const fetchBuyerIdsFromNotifications = async () => {
+        try {
+          const { data, error } = await admin
+            .from('notifications')
+            .select('id,type,data,created_at')
+            .eq('recipient_user_id', producerUserId)
+            .in('type', ['purchase_received', 'purchase_confirmed'])
+            .order('created_at', { ascending: false })
+            .limit(5000)
+          if (error) {
+            const msg = String(error?.message || error?.details || error || '').toLowerCase()
+            const missing = msg.includes('does not exist') || msg.includes('schema cache') || msg.includes('could not find')
+            if (missing) return []
+            return []
+          }
+          return Array.isArray(data) ? data : []
+        } catch (e) {
+          const msg = String(e?.message || e || '').toLowerCase()
+          const missing = msg.includes('does not exist') || msg.includes('schema cache') || msg.includes('could not find')
+          if (missing) return []
+          return []
+        }
+      }
+
+      const fetchBuyerIdsFromSales = async () => {
+        const out = []
+        const selectAttempts = [
+          'buyer_id,buyerId,buyer_user_id,buyerUserId,user_id,created_at,status,producer_id,producer_user_id,producer_external_id',
+          'buyer_id,created_at,status,producer_id',
+          '*',
+        ]
+        const producerCols = ['producer_id', 'producerId', 'producer_user_id', 'producer_external_id']
+        for (const sel of selectAttempts) {
+          for (const col of producerCols) {
+            try {
+              const { data, error } = await admin
+                .from('sales')
+                .select(sel)
+                .in(col, producerKeys)
+                .order('created_at', { ascending: false })
+                .limit(5000)
+              if (error) {
+                if (isMissingColumn(error, col)) continue
+                const msg = String(error?.message || error?.details || error || '').toLowerCase()
+                const missing = msg.includes('does not exist') || msg.includes('schema cache') || msg.includes('could not find')
+                if (missing) return []
+                continue
+              }
+              const rows = Array.isArray(data) ? data : []
+              if (rows.length === 0) continue
+              out.push(...rows)
+              return out
+            } catch (e) {
+              if (isMissingColumn(e, col)) continue
+              const msg = String(e?.message || e || '').toLowerCase()
+              const missing = msg.includes('does not exist') || msg.includes('schema cache') || msg.includes('could not find')
+              if (missing) return []
+            }
+          }
+        }
+        return out
+      }
+
+      if (!courseFilterId) {
+        const notifRows = await fetchBuyerIdsFromNotifications()
+        for (const n of Array.isArray(notifRows) ? notifRows : []) {
+          const data = parseJsonMaybe(n?.data) || (n?.data && typeof n.data === 'object' ? n.data : null) || {}
+          const buyerId = String(
+            data?.buyer_id ||
+              data?.buyerId ||
+              data?.student_id ||
+              data?.studentId ||
+              '',
+          ).trim()
+          if (buyerId) buyerIds.add(buyerId)
+        }
+
+        const salesRows = await fetchBuyerIdsFromSales()
+        for (const s of Array.isArray(salesRows) ? salesRows : []) {
+          const status = String(s?.status || '').trim().toLowerCase()
+          if (status && status !== 'paid' && status !== 'aprovado' && status !== 'approved' && status !== 'succeeded') continue
+          const buyerId = String(
+            s?.buyer_id ||
+              s?.buyerId ||
+              s?.buyer_user_id ||
+              s?.buyerUserId ||
+              s?.user_id ||
+              '',
+          ).trim()
+          if (buyerId) buyerIds.add(buyerId)
+        }
+      }
+
+      for (const id of Array.from(buyerIds)) {
+        const uid = String(id || '').trim()
+        if (uid) studentUserIds.add(uid)
+      }
+
       const missingUsersFallback = async (ids) => {
         const map = new Map()
         for (const id of ids) {
