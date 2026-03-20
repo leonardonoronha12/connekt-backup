@@ -2335,6 +2335,204 @@ export default async function handler(req, res) {
       return json(res, 200, { ok: true, students: out, courses: courses.map((c) => ({ id: String(c?.id || '').trim(), title: String(c?.title || '').trim() })).filter((c) => c.id), meta: { count: out.length, limit: perPage } })
     }
 
+    if (type === 'student_update_profile') {
+      res.setHeader('Cache-Control', 'no-store')
+      if (req.method !== 'POST') return json(res, 405, { error: 'method_not_allowed' })
+      const producerUserId = String(auth.user?.id || '').trim()
+      if (!producerUserId || producerId !== producerUserId) return json(res, 403, { error: 'forbidden' })
+
+      const raw = await readRawBody(req).catch(() => null)
+      let body = null
+      try { body = raw ? JSON.parse(raw.toString('utf-8') || '{}') : {} } catch (_) { body = {} }
+
+      const targetUserId = String(body?.userId || body?.user_id || '').trim()
+      const nextName = String(body?.name || '').trim()
+      const nextPhone = String(body?.phone || '').trim()
+      if (!targetUserId || !isUuid(targetUserId)) return json(res, 400, { error: 'invalid_user_id' })
+      if (!nextName && !nextPhone) return json(res, 400, { error: 'missing_fields' })
+
+      const producerRowId = await resolveProducerRowIdFromUserId(producerUserId)
+      const producerKeys = Array.from(new Set([producerUserId, producerRowId].map((v) => String(v || '').trim()).filter(Boolean)))
+
+      const isMissingColumn = (err, col) => {
+        const msg = String(err?.message || err?.details || err || '').toLowerCase()
+        const code = String(err?.code || '').toUpperCase()
+        const c = String(col || '').toLowerCase()
+        return (
+          code === 'PGRST204' ||
+          code === '42703' ||
+          msg.includes(`could not find the '${c}' column`) ||
+          (msg.includes('schema cache') && msg.includes(c)) ||
+          (msg.includes('does not exist') && msg.includes(c))
+        )
+      }
+
+      const fetchCoursesByOwner = async () => {
+        const select = 'id,title,user_id,created_at,status'
+        const cols = ['user_id', 'producer_id', 'producer_user_id', 'producer_external_id', 'produtor_id', 'created_by']
+        for (const col of cols) {
+          try {
+            const { data, error } = await admin
+              .from('courses')
+              .select(select)
+              .in(col, producerKeys)
+              .order('created_at', { ascending: false })
+              .limit(1000)
+            if (error) {
+              if (isMissingColumn(error, col)) continue
+              continue
+            }
+            return Array.isArray(data) ? data : []
+          } catch (e) {
+            if (isMissingColumn(e, col)) continue
+          }
+        }
+        return []
+      }
+
+      const courses = await fetchCoursesByOwner()
+      const allowedCourseIds = courses.map((c) => String(c?.id || '').trim()).filter(Boolean)
+      const allowedCourseTitles = courses.map((c) => String(c?.title || '').trim()).filter(Boolean)
+
+      const allowedBuyerIds = new Set()
+
+      const collectFromStudentCourses = async () => {
+        if (allowedCourseIds.length === 0 && allowedCourseTitles.length === 0) return
+        const selectAttempts = [
+          'user_id,student_user_id,course_id,course_name,created_at',
+          'user_id,course_id,course_name',
+          '*',
+        ]
+        const courseIdCols = ['course_id', 'courseId', 'course_uuid', 'courseUuid', 'course']
+        for (const sel of selectAttempts) {
+          for (const col of courseIdCols) {
+            try {
+              const { data, error } = await admin.from('student_courses').select(sel).in(col, allowedCourseIds).limit(10000)
+              if (error) {
+                if (isMissingColumn(error, col)) continue
+                continue
+              }
+              for (const row of Array.isArray(data) ? data : []) {
+                const uid = String(row?.user_id || row?.student_user_id || row?.userId || row?.studentUserId || '').trim()
+                if (uid) allowedBuyerIds.add(uid)
+              }
+              if (allowedBuyerIds.size > 0) return
+            } catch (e) {
+              if (isMissingColumn(e, col)) continue
+            }
+          }
+        }
+
+        const courseTitleCols = ['course_name', 'courseName', 'title', 'name']
+        for (const sel of selectAttempts) {
+          for (const col of courseTitleCols) {
+            try {
+              const { data, error } = await admin.from('student_courses').select(sel).in(col, allowedCourseTitles).limit(10000)
+              if (error) {
+                if (isMissingColumn(error, col)) continue
+                continue
+              }
+              for (const row of Array.isArray(data) ? data : []) {
+                const uid = String(row?.user_id || row?.student_user_id || row?.userId || row?.studentUserId || '').trim()
+                if (uid) allowedBuyerIds.add(uid)
+              }
+              if (allowedBuyerIds.size > 0) return
+            } catch (e) {
+              if (isMissingColumn(e, col)) continue
+            }
+          }
+        }
+      }
+
+      const parseJsonMaybe = (value) => {
+        if (!value) return null
+        if (typeof value === 'object') return value
+        if (typeof value !== 'string') return null
+        try { return JSON.parse(value) } catch (_) { return null }
+      }
+
+      const collectFromNotifications = async () => {
+        try {
+          const { data, error } = await admin
+            .from('notifications')
+            .select('id,type,data,created_at')
+            .eq('recipient_user_id', producerUserId)
+            .in('type', ['purchase_received', 'purchase_confirmed'])
+            .order('created_at', { ascending: false })
+            .limit(5000)
+          if (error) return
+          for (const n of Array.isArray(data) ? data : []) {
+            const d = parseJsonMaybe(n?.data) || (n?.data && typeof n.data === 'object' ? n.data : null) || {}
+            const buyerId = String(d?.buyer_id || d?.buyerId || d?.student_id || d?.studentId || '').trim()
+            if (buyerId) allowedBuyerIds.add(buyerId)
+          }
+        } catch (_) {}
+      }
+
+      const collectFromSales = async () => {
+        const selectAttempts = [
+          'buyer_id,buyerId,buyer_user_id,buyerUserId,user_id,created_at,status,producer_id,producer_user_id,producer_external_id',
+          'buyer_id,created_at,status,producer_id',
+          '*',
+        ]
+        const producerCols = ['producer_id', 'producerId', 'producer_user_id', 'producer_external_id']
+        for (const sel of selectAttempts) {
+          for (const col of producerCols) {
+            try {
+              const { data, error } = await admin
+                .from('sales')
+                .select(sel)
+                .in(col, producerKeys)
+                .order('created_at', { ascending: false })
+                .limit(5000)
+              if (error) {
+                if (isMissingColumn(error, col)) continue
+                return
+              }
+              for (const row of Array.isArray(data) ? data : []) {
+                const status = String(row?.status || '').trim().toLowerCase()
+                if (status && status !== 'paid' && status !== 'aprovado' && status !== 'approved' && status !== 'succeeded') continue
+                const buyerId = String(row?.buyer_id || row?.buyerId || row?.buyer_user_id || row?.buyerUserId || row?.user_id || '').trim()
+                if (buyerId) allowedBuyerIds.add(buyerId)
+              }
+              return
+            } catch (e) {
+              if (isMissingColumn(e, col)) continue
+              return
+            }
+          }
+        }
+      }
+
+      await collectFromStudentCourses()
+      await collectFromNotifications()
+      await collectFromSales()
+
+      if (!allowedBuyerIds.has(targetUserId)) return json(res, 403, { error: 'forbidden' })
+
+      const payload = {}
+      if (nextName) payload.profile_full_name = nextName
+      if (nextPhone) payload.profile_phone = nextPhone
+
+      let saved = null
+      const r1 = await updateWithColumnPrune('profiles', { eqColumn: 'user_id', eqValue: targetUserId, payload }, 10)
+      if (!r1.error) {
+        saved = r1.data || null
+      } else {
+        const msg = String(r1.error?.message || r1.error || '').toLowerCase()
+        const missingRow = msg.includes('0 rows') || msg.includes('json object requested') || msg.includes('results contain 0 rows')
+        if (missingRow) {
+          const r2 = await insertWithColumnPrune('profiles', { user_id: targetUserId, ...payload }, 10)
+          if (r2.error) return json(res, 500, { error: r2.error?.message || String(r2.error) })
+          saved = r2.data || null
+        } else {
+          return json(res, 500, { error: r1.error?.message || String(r1.error) })
+        }
+      }
+
+      return json(res, 200, { ok: true, user_id: targetUserId, profile: saved })
+    }
+
     if (type === 'courses') {
       const isMissingColumn = (err, col) => {
         const msg = String(err?.message || err?.details || err || '').toLowerCase()
