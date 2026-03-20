@@ -2015,7 +2015,7 @@ export default async function handler(req, res) {
         return []
       }
 
-      const courseIdCols = ['course_id', 'courseId', 'course_uuid', 'courseUuid']
+      const courseIdCols = ['course_id', 'courseId', 'course_uuid', 'courseUuid', 'course']
       let studentCourseRows = []
       for (const col of courseIdCols) {
         studentCourseRows = await fetchStudentCoursesByCourseColumn(col, filteredCourseIds)
@@ -2029,76 +2029,103 @@ export default async function handler(req, res) {
         }
       }
 
-      const studentKeyCandidates = (row) => {
+      const resolveStudentUserId = (row) => {
         const r = row && typeof row === 'object' ? row : {}
-        return [
-          r.student_id,
-          r.studentId,
-          r.student_external_id,
-          r.studentExternalId,
-          r.user_id,
-          r.userId,
-          r.student_user_id,
-          r.studentUserId,
-        ]
+        const candidates = [r.user_id, r.userId, r.student_user_id, r.studentUserId]
+        for (const c of candidates) {
+          const v = String(c || '').trim()
+          if (v) return v
+        }
+        return ''
       }
 
-      const studentKeys = new Set()
-      const courseRowsByStudentKey = new Map()
+      const studentUserIds = new Set()
+      const courseRowsByStudentUserId = new Map()
       for (const row of Array.isArray(studentCourseRows) ? studentCourseRows : []) {
-        const key = studentKeyCandidates(row).map((v) => String(v || '').trim()).find((v) => v)
-        if (!key) continue
-        studentKeys.add(key)
-        const list = courseRowsByStudentKey.get(key) || []
+        const uid = resolveStudentUserId(row)
+        if (!uid) continue
+        studentUserIds.add(uid)
+        const list = courseRowsByStudentUserId.get(uid) || []
         list.push(row)
-        courseRowsByStudentKey.set(key, list)
+        courseRowsByStudentUserId.set(uid, list)
       }
 
-      const resolveStudentsByKeys = async (keys) => {
-        const ids = Array.from(new Set((keys || []).map((v) => String(v || '').trim()).filter(Boolean)))
-        if (ids.length === 0) return new Map()
+      const missingUsersFallback = async (ids) => {
         const map = new Map()
-        const cols = ['id', 'user_id', 'external_id', 'student_external_id', 'student_id']
-        const selects = [
-          'id,name,email,avatar_url,whatsapp,user_id,external_id,created_at',
-          'id,name,email,user_id,external_id',
-          'id,name,email',
-          '*',
-        ]
-        for (const col of cols) {
-          for (const sel of selects) {
-            try {
-              const { data, error } = await admin.from('students').select(sel).in(col, ids).limit(5000)
-              if (error) {
-                if (isMissingColumn(error, col)) break
-                continue
-              }
-              for (const row of Array.isArray(data) ? data : []) {
-                const key = String(row?.[col] || '').trim()
-                const id = String(row?.id || '').trim()
-                if (!key) continue
-                map.set(key, { ...(row || {}), id: id || String(row?.id || '') })
-              }
-              break
-            } catch (e) {
-              if (isMissingColumn(e, col)) break
-            }
-          }
+        for (const id of ids) {
+          const uid = String(id || '').trim()
+          if (!uid) continue
+          try {
+            const { data, error } = await admin.auth.admin.getUserById(uid)
+            if (error) continue
+            const u = data?.user || null
+            if (!u) continue
+            const meta = u?.user_metadata && typeof u.user_metadata === 'object' ? u.user_metadata : {}
+            const name = String(meta?.name || meta?.full_name || '').trim()
+            map.set(uid, { id: uid, email: String(u?.email || '').trim(), name })
+          } catch (_) {}
         }
         return map
       }
 
-      const studentsByAnyKey = await resolveStudentsByKeys(Array.from(studentKeys))
+      const fetchUsersByIds = async (ids) => {
+        const unique = Array.from(new Set((ids || []).map((v) => String(v || '').trim()).filter(Boolean)))
+        const out = new Map()
+        if (unique.length === 0) return out
+        const chunks = []
+        for (let i = 0; i < unique.length; i += 200) chunks.push(unique.slice(i, i + 200))
+        for (const part of chunks) {
+          try {
+            const { data, error } = await admin
+              .from('platform_admin_users')
+              .select('id,email,name,account_type')
+              .in('id', part)
+              .limit(5000)
+            if (error) {
+              const msg = String(error?.message || error?.details || error || '').toLowerCase()
+              const missing = msg.includes('does not exist') || msg.includes('schema cache') || msg.includes('could not find')
+              if (missing) {
+                const fallback = await missingUsersFallback(part)
+                for (const [k, v] of fallback.entries()) out.set(k, v)
+              }
+              continue
+            }
+            for (const row of Array.isArray(data) ? data : []) {
+              const id = String(row?.id || '').trim()
+              if (!id) continue
+              out.set(id, {
+                id,
+                email: String(row?.email || '').trim(),
+                name: String(row?.name || '').trim(),
+                accountType: String(row?.account_type || '').trim(),
+              })
+            }
+          } catch (e) {
+            const msg = String(e?.message || e || '').toLowerCase()
+            const missing = msg.includes('does not exist') || msg.includes('schema cache') || msg.includes('could not find')
+            if (missing) {
+              const fallback = await missingUsersFallback(part)
+              for (const [k, v] of fallback.entries()) out.set(k, v)
+            }
+          }
+        }
+        return out
+      }
 
-      const studentUserIds = Array.from(new Set(Array.from(studentsByAnyKey.values()).map((s) => String(s?.user_id || '').trim()).filter(Boolean)))
-      const phoneByUserId = {}
-      if (studentUserIds.length > 0) {
+      const userMap = await fetchUsersByIds(Array.from(studentUserIds))
+
+      const profileMap = new Map()
+      if (studentUserIds.size > 0) {
         try {
-          const { data } = await admin.from('profiles').select('user_id,profile_phone').in('user_id', studentUserIds).limit(5000)
+          const { data } = await admin
+            .from('profiles')
+            .select('user_id,profile_phone,profile_full_name')
+            .in('user_id', Array.from(studentUserIds))
+            .limit(5000)
           for (const row of Array.isArray(data) ? data : []) {
             const id = String(row?.user_id || '').trim()
-            const phone = String(row?.profile_phone || '').trim()
-            if (id && phone) phoneByUserId[id] = phone
+            if (!id) continue
+            profileMap.set(id, { phone: String(row?.profile_phone || '').trim(), name: String(row?.profile_full_name || '').trim() })
           }
         } catch (_) {}
       }
@@ -2112,14 +2139,13 @@ export default async function handler(req, res) {
       }
 
       const out = []
-      for (const key of Array.from(studentKeys)) {
-        const rawStudent = studentsByAnyKey.get(key) || null
-        const studentId = String(rawStudent?.id || key).trim()
-        const name = String(rawStudent?.name || '').trim()
-        const email = String(rawStudent?.email || '').trim()
-        const userId = String(rawStudent?.user_id || '').trim()
-        const phone = String(phoneByUserId?.[userId] || rawStudent?.profile_phone || rawStudent?.phone || rawStudent?.whatsapp || '').trim()
-        const coursesRaw = courseRowsByStudentKey.get(key) || []
+      for (const userId of Array.from(studentUserIds)) {
+        const u = userMap.get(userId) || null
+        const p = profileMap.get(userId) || null
+        const email = String(u?.email || '').trim()
+        const name = String(p?.name || u?.name || '').trim() || email || 'Aluno'
+        const phone = String(p?.phone || '').trim()
+        const coursesRaw = courseRowsByStudentUserId.get(userId) || []
         const coursesMapped = coursesRaw.map(normalizeCourseFromRow).filter((c) => c.course_name)
         const seenCourses = new Set()
         const coursesUnique = []
@@ -2129,7 +2155,7 @@ export default async function handler(req, res) {
           seenCourses.add(k)
           coursesUnique.push(c)
         }
-        const row = { id: studentId, name, email, phone, courses: coursesUnique }
+        const row = { id: userId, name, email, phone, courses: coursesUnique }
         if (q) {
           const hay = `${String(row?.name || '').toLowerCase()} ${String(row?.email || '').toLowerCase()} ${String(row?.phone || '').toLowerCase()}`
           if (!hay.includes(q)) continue
