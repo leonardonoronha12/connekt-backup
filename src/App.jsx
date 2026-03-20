@@ -57,7 +57,7 @@ const QUESTION_BANK_PATH = '/banco-de-questoes';
   questionBank: 'Banco de Questões',
   questoes: 'Questões',
   cursos: 'Meus Cursos',
-  alunos: 'Gerenciar alunos',
+  gerenciarAlunos: 'Gerenciar alunos',
   simulados: 'Simulados',
   dimulados: 'Produtos',
   simuladosAproveitamento: 'Simulados - Aproveitamento',
@@ -133,7 +133,7 @@ const getViewFromLocation = () => {
   } else if (path === '/cursos') {
     return 'cursos';
   } else if (path === '/alunos' || path.startsWith('/alunos/')) {
-    return 'alunos';
+    return 'gerenciarAlunos';
   } else if (path === '/simulados') {
     return 'simulados';
   } else if (path === '/simulados/acesso') {
@@ -733,7 +733,7 @@ function AppContent() {
         return <QuestoesPage key={locationKey} />;
       case 'cursos':
         return <CursosPage />;
-      case 'alunos':
+      case 'gerenciarAlunos':
         return <AlunosPage />;
       case 'simulados':
         return <SimuladosPage />;
