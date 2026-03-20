@@ -25,6 +25,31 @@ function isMissingTableOrColumn(error) {
   )
 }
 
+async function fetchReceivableByProducerId(admin, producerIds) {
+  const ids = Array.from(new Set((producerIds || []).map((v) => String(v || '').trim()).filter(Boolean)))
+  if (!ids.length) return {}
+  const approvedStatuses = ['paid', 'aprovado', 'approved', 'succeeded', 'captured']
+  const out = {}
+  for (const part of chunk(ids, 200)) {
+    try {
+      const { data, error } = await admin
+        .from('sales')
+        .select('producer_id, total:amount_cents.sum()')
+        .in('producer_id', part)
+        .in('status', approvedStatuses)
+        .limit(5000)
+      if (error) continue
+      for (const row of Array.isArray(data) ? data : []) {
+        const pid = String(row?.producer_id || '').trim()
+        if (!pid) continue
+        const total = Number(row?.total || 0)
+        out[pid] = Number.isFinite(total) ? total : 0
+      }
+    } catch (_) {}
+  }
+  return out
+}
+
 export default async function handler(req, res) {
   try {
     if (req.method !== 'GET') return json(res, 405, { error: 'method_not_allowed' })
@@ -83,29 +108,6 @@ export default async function handler(req, res) {
       }
     }
 
-    const normalizedRequests = requests
-      .map((r) => {
-        const pid = String(r?.producer_id || '').trim()
-        const u = pid ? usersById[pid] : null
-        return {
-          id: r?.id || null,
-          producerId: pid,
-          producerEmail: u?.email || '',
-          producerName: u?.name || '',
-          kind: String(r?.kind || '').trim(),
-          amountCents: Number(r?.amount_cents || 0),
-          status: String(r?.status || '').trim(),
-          createdAt: r?.created_at || null,
-          updatedAt: r?.updated_at || null,
-          standardPayoutDate,
-        }
-      })
-      .filter((r) => {
-        if (!q) return true
-        const hay = `${String(r?.producerName || '').toLowerCase()} ${String(r?.producerEmail || '').toLowerCase()} ${String(r?.producerId || '').toLowerCase()}`
-        return hay.includes(q)
-      })
-
     let standardProducers = []
     try {
       const { data: producerCourses, error: prodErr } = await auth.admin
@@ -158,9 +160,42 @@ export default async function handler(req, res) {
       standardProducers = []
     }
 
-    return json(res, 200, { requests: normalizedRequests, standardPayoutDate, standardProducers, missing: false })
+    const receivableByProducerId = await fetchReceivableByProducerId(
+      auth.admin,
+      [...producerIds, ...standardProducers.map((p) => String(p?.producerId || '').trim()).filter(Boolean)],
+    )
+
+    const normalizedRequests = requests
+      .map((r) => {
+        const pid = String(r?.producer_id || '').trim()
+        const u = pid ? usersById[pid] : null
+        return {
+          id: r?.id || null,
+          producerId: pid,
+          producerEmail: u?.email || '',
+          producerName: u?.name || '',
+          kind: String(r?.kind || '').trim(),
+          amountCents: Number(r?.amount_cents || 0),
+          receivableCents: Number(receivableByProducerId?.[pid] || 0),
+          status: String(r?.status || '').trim(),
+          createdAt: r?.created_at || null,
+          updatedAt: r?.updated_at || null,
+          standardPayoutDate,
+        }
+      })
+      .filter((r) => {
+        if (!q) return true
+        const hay = `${String(r?.producerName || '').toLowerCase()} ${String(r?.producerEmail || '').toLowerCase()} ${String(r?.producerId || '').toLowerCase()}`
+        return hay.includes(q)
+      })
+
+    const standardProducersWithReceivable = standardProducers.map((p) => {
+      const pid = String(p?.producerId || '').trim()
+      return { ...p, receivableCents: Number(receivableByProducerId?.[pid] || 0) }
+    })
+
+    return json(res, 200, { requests: normalizedRequests, standardPayoutDate, standardProducers: standardProducersWithReceivable, missing: false })
   } catch (e) {
     return json(res, 500, { error: e?.message || String(e) })
   }
 }
-

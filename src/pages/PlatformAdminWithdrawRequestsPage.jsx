@@ -39,6 +39,14 @@ function formatIsoDateBr(value) {
   return `${iso[3]}/${iso[2]}/${iso[1]}`
 }
 
+function withdrawStatusUi(raw) {
+  const s = String(raw || '').trim().toLowerCase()
+  if (s === 'paid' || s === 'completed' || s === 'done') return { label: 'Concluído', className: 'bg-[#E9F9EF] text-[#1F8A42]' }
+  if (s === 'processing' || s === 'in_progress' || s === 'in progress') return { label: 'Em análise', className: 'bg-[#FFF4E5] text-[#C7780A]' }
+  if (s === 'canceled' || s === 'cancelled' || s === 'rejected') return { label: 'Cancelado', className: 'bg-[#FDECEC] text-[#E53935]' }
+  return { label: 'Solicitado', className: 'bg-[#EAF2FF] text-[#0047BB]' }
+}
+
 export default function PlatformAdminWithdrawRequestsPage() {
   const { session } = useAuth()
   const authHeaders = useMemo(() => {
@@ -94,6 +102,15 @@ export default function PlatformAdminWithdrawRequestsPage() {
       return hay.includes(query)
     })
   }, [standardProducers, q])
+
+  const standardFlowStatusUi = useCallback((row) => {
+    const cents = Number(row?.receivableCents || 0)
+    if (!(Number.isFinite(cents) && cents > 0)) return { label: 'Sem saldo', className: 'bg-[#F3F3F3] text-[#414244]' }
+    const dateIso = String(row?.standardPayoutDate || standardDate || '').trim()
+    const todayIso = new Date().toISOString().slice(0, 10)
+    if (dateIso && dateIso > todayIso) return { label: 'Agendado', className: 'bg-[#EAF2FF] text-[#0047BB]' }
+    return { label: 'Disponível', className: 'bg-[#E9F9EF] text-[#1F8A42]' }
+  }, [standardDate])
 
   return (
     <>
@@ -192,25 +209,38 @@ export default function PlatformAdminWithdrawRequestsPage() {
                     <tr className="bg-white">
                       <th className="px-5 py-4 text-left text-[12px] font-semibold text-[#737780]">Produtor</th>
                       <th className="px-5 py-4 text-left text-[12px] font-semibold text-[#737780]">Email</th>
+                      <th className="px-5 py-4 text-left text-[12px] font-semibold text-[#737780]">Valor a receber</th>
+                      <th className="px-5 py-4 text-left text-[12px] font-semibold text-[#737780]">Status</th>
                       <th className="px-5 py-4 text-left text-[12px] font-semibold text-[#737780]">Data</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#EDEEF0]">
                     {loading ? (
                       <tr>
-                        <td colSpan={3} className="px-5 py-8 text-center text-[13px] text-[#737780]">Carregando…</td>
+                        <td colSpan={5} className="px-5 py-8 text-center text-[13px] text-[#737780]">Carregando…</td>
                       </tr>
                     ) : filteredStandardProducers.length === 0 ? (
                       <tr>
-                        <td colSpan={3} className="px-5 py-8 text-center text-[13px] text-[#737780]">Nenhum produtor encontrado.</td>
+                        <td colSpan={5} className="px-5 py-8 text-center text-[13px] text-[#737780]">Nenhum produtor encontrado.</td>
                       </tr>
                     ) : (
                       filteredStandardProducers.slice(0, 100).map((p) => (
+                        (() => {
+                          const statusUi = standardFlowStatusUi(p)
+                          return (
                         <tr key={String(p?.producerId || Math.random())}>
                           <td className="px-5 py-4 text-[13px] text-[#1E1B39]">{String(p?.producerName || '').trim() || `Produtor ${String(p?.producerId || '').slice(0, 8)}`}</td>
                           <td className="px-5 py-4 text-[13px] text-[#1E1B39]">{String(p?.producerEmail || '').trim() || '—'}</td>
+                          <td className="px-5 py-4 text-[13px] text-[#1E1B39]">{formatMoneyFromCents(p?.receivableCents || 0)}</td>
+                          <td className="px-5 py-4">
+                            <span className={`inline-flex items-center px-3 py-1 rounded-full text-[12px] font-medium ${statusUi.className}`}>
+                              {statusUi.label}
+                            </span>
+                          </td>
                           <td className="px-5 py-4 text-[13px] text-[#1E1B39]">{formatIsoDateBr(p?.standardPayoutDate || standardDate || '')}</td>
                         </tr>
+                          )
+                        })()
                       ))
                     )}
                   </tbody>
@@ -239,7 +269,7 @@ export default function PlatformAdminWithdrawRequestsPage() {
                     <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#737780]">Data</th>
                     <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#737780]">Produtor</th>
                     <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#737780]">Email</th>
-                    <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#737780]">Valor</th>
+                    <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#737780]">Valor a receber</th>
                     <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#737780]">Tipo</th>
                     <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#737780]">Status</th>
                     <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#737780]">Saque padrão</th>
@@ -256,15 +286,24 @@ export default function PlatformAdminWithdrawRequestsPage() {
                     </tr>
                   ) : (
                     requests.slice(0, 200).map((r) => (
+                      (() => {
+                        const statusUi = withdrawStatusUi(r?.status)
+                        return (
                       <tr key={String(r?.id || Math.random())}>
                         <td className="px-6 py-4 text-[13px] text-[#1E1B39]">{formatDateTimeBr(r?.createdAt)}</td>
                         <td className="px-6 py-4 text-[13px] text-[#1E1B39]">{String(r?.producerName || '').trim() || `Produtor ${String(r?.producerId || '').slice(0, 8)}`}</td>
                         <td className="px-6 py-4 text-[13px] text-[#1E1B39]">{String(r?.producerEmail || '').trim() || '—'}</td>
                         <td className="px-6 py-4 text-[13px] text-[#1E1B39]">{formatMoneyFromCents(r?.amountCents || 0)}</td>
                         <td className="px-6 py-4 text-[13px] text-[#1E1B39]">{String(r?.kind || '').trim().toLowerCase() === 'advance' ? 'Antecipação' : 'Saque'}</td>
-                        <td className="px-6 py-4 text-[13px] text-[#1E1B39]">{String(r?.status || '').trim() || 'requested'}</td>
+                        <td className="px-6 py-4">
+                          <span className={`inline-flex items-center px-3 py-1 rounded-full text-[12px] font-medium ${statusUi.className}`}>
+                            {statusUi.label}
+                          </span>
+                        </td>
                         <td className="px-6 py-4 text-[13px] text-[#1E1B39]">{formatIsoDateBr(r?.standardPayoutDate || standardDate || '')}</td>
                       </tr>
+                        )
+                      })()
                     ))
                   )}
                 </tbody>
@@ -276,4 +315,3 @@ export default function PlatformAdminWithdrawRequestsPage() {
     </>
   )
 }
-
