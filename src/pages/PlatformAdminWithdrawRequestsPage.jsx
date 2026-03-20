@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Helmet } from 'react-helmet-async'
-import { Search, X } from 'lucide-react'
+import { MessageCircle, Search, X } from 'lucide-react'
 import { useAuth } from '@/contexts/SupabaseAuthContext'
 import { toast } from '@/hooks/use-toast.ts'
 
@@ -55,6 +55,24 @@ function formatIsoDateInput(value) {
   const v = String(value || '').trim()
   const m = v.match(/^(\d{4})-(\d{2})-(\d{2})$/)
   return m ? v : ''
+}
+
+function normalizeWhatsappPhone(raw) {
+  const digits = String(raw || '').replace(/\D/g, '')
+  if (!digits) return ''
+  let d = digits.replace(/^0+/, '')
+  if (!d) return ''
+  if (d.startsWith('55')) return d
+  if (d.length === 10 || d.length === 11) return `55${d}`
+  if (d.length >= 12 && d.length <= 15) return d
+  return ''
+}
+
+function buildWhatsappUrl({ phone, text }) {
+  const p = normalizeWhatsappPhone(phone)
+  if (!p) return ''
+  const q = text ? `?text=${encodeURIComponent(String(text || ''))}` : ''
+  return `https://wa.me/${p}${q}`
 }
 
 export default function PlatformAdminWithdrawRequestsPage() {
@@ -473,6 +491,7 @@ export default function PlatformAdminWithdrawRequestsPage() {
                     <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#737780]">Data</th>
                     <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#737780]">Produtor</th>
                     <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#737780]">Email</th>
+                    <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#737780]">Conversa</th>
                     <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#737780]">Valor a receber</th>
                     <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#737780]">Tipo</th>
                     <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#737780]">Status</th>
@@ -482,21 +501,39 @@ export default function PlatformAdminWithdrawRequestsPage() {
                 <tbody className="divide-y divide-[#EDEEF0]">
                   {loading ? (
                     <tr>
-                      <td colSpan={7} className="px-6 py-8 text-center text-[14px] text-[#737780]">Carregando…</td>
+                      <td colSpan={8} className="px-6 py-8 text-center text-[14px] text-[#737780]">Carregando…</td>
                     </tr>
                   ) : filteredRequests.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="px-6 py-8 text-center text-[14px] text-[#737780]">Nenhuma solicitação encontrada.</td>
+                      <td colSpan={8} className="px-6 py-8 text-center text-[14px] text-[#737780]">Nenhuma solicitação encontrada.</td>
                     </tr>
                   ) : (
                     filteredRequests.slice(0, 200).map((r) => (
                       (() => {
                         const statusUi = withdrawStatusUi(r?.status)
+                        const producerName = String(r?.producerName || '').trim() || `Produtor ${String(r?.producerId || '').slice(0, 8)}`
+                        const msg = `Olá ${producerName}, estou entrando em contato sobre sua solicitação de saque (${formatMoneyFromCents(r?.amountCents || 0)}).`
+                        const waUrl = buildWhatsappUrl({ phone: r?.producerPhone || '', text: msg })
                         return (
                       <tr key={String(r?.id || Math.random())}>
                         <td className="px-6 py-4 text-[13px] text-[#1E1B39]">{formatDateTimeBr(r?.createdAt)}</td>
-                        <td className="px-6 py-4 text-[13px] text-[#1E1B39]">{String(r?.producerName || '').trim() || `Produtor ${String(r?.producerId || '').slice(0, 8)}`}</td>
+                        <td className="px-6 py-4 text-[13px] text-[#1E1B39]">{producerName}</td>
                         <td className="px-6 py-4 text-[13px] text-[#1E1B39]">{String(r?.producerEmail || '').trim() || '—'}</td>
+                        <td className="px-6 py-4">
+                          {waUrl ? (
+                            <a
+                              href={waUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-2 h-9 px-3 rounded-[10px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#1E1B39] hover:bg-[#F8FAFC]"
+                            >
+                              <MessageCircle className="w-4 h-4 text-[#1E1B39]" />
+                              Iniciar conversa
+                            </a>
+                          ) : (
+                            <span className="text-[12px] text-[#737780]">Sem telefone</span>
+                          )}
+                        </td>
                         <td className="px-6 py-4 text-[13px] text-[#1E1B39]">{formatMoneyFromCents(r?.amountCents || 0)}</td>
                         <td className="px-6 py-4 text-[13px] text-[#1E1B39]">{String(r?.kind || '').trim().toLowerCase() === 'advance' ? 'Antecipação' : 'Saque'}</td>
                         <td className="px-6 py-4">
