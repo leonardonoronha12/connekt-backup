@@ -239,6 +239,15 @@ export default function PlatformAdminWithdrawRequestsPage() {
     return () => { window.clearInterval(id) }
   }, [monitorWithdrawRequests])
 
+  const standardFlowStatusUi = useCallback((row) => {
+    const cents = Number(row?.receivableCents || 0)
+    if (!(Number.isFinite(cents) && cents > 0)) return { label: 'Sem saldo', className: 'bg-[#F3F3F3] text-[#414244]' }
+    const dateIso = String(row?.standardPayoutDate || standardDate || '').trim()
+    const todayIso = new Date().toISOString().slice(0, 10)
+    if (dateIso && dateIso > todayIso) return { label: 'Agendado', className: 'bg-[#EAF2FF] text-[#0047BB]' }
+    return { label: 'Disponível', className: 'bg-[#E9F9EF] text-[#1F8A42]' }
+  }, [standardDate])
+
   const filteredStandardProducers = useMemo(() => {
     const list = Array.isArray(standardProducers) ? standardProducers : []
     const query = String(q || '').trim().toLowerCase()
@@ -277,15 +286,6 @@ export default function PlatformAdminWithdrawRequestsPage() {
       return true
     })
   }, [minAmount, onlyWithBalance, requests])
-
-  const standardFlowStatusUi = useCallback((row) => {
-    const cents = Number(row?.receivableCents || 0)
-    if (!(Number.isFinite(cents) && cents > 0)) return { label: 'Sem saldo', className: 'bg-[#F3F3F3] text-[#414244]' }
-    const dateIso = String(row?.standardPayoutDate || standardDate || '').trim()
-    const todayIso = new Date().toISOString().slice(0, 10)
-    if (dateIso && dateIso > todayIso) return { label: 'Agendado', className: 'bg-[#EAF2FF] text-[#0047BB]' }
-    return { label: 'Disponível', className: 'bg-[#E9F9EF] text-[#1F8A42]' }
-  }, [standardDate])
 
   return (
     <>
