@@ -962,7 +962,7 @@ function AppContent() {
     if (loading) return;
     if (user) return;
     if (isPublicView) return;
-    if (currentView === 'platformAdminPanel' || currentView === 'platformAdminDeploy') {
+    if (currentView === 'platformAdminPanel' || currentView === 'platformAdminDeploy' || currentView === 'platformAdminWithdraws') {
       const target = '/admin/login'
       if (window.location.pathname !== target) {
         window.history.replaceState({}, '', target);
@@ -998,7 +998,7 @@ function AppContent() {
   }
 
   if (!user && !isPublicView && !(isDemoStudent && (currentView === 'alunoDashboard' || currentView === 'alunoAula' || currentView === 'alunoCurso' || currentView === 'alunoSimulados' || currentView === 'alunoSimuladoAcesso' || currentView === 'alunoSimuladoResultado' || currentView === 'alunoConfiguracoes' || currentView === 'alunoRepostaCorretaSimulado' || currentView === 'cursoPreviewAluno'))) {
-    if (currentView === 'platformAdminPanel' || currentView === 'platformAdminDeploy') {
+    if (currentView === 'platformAdminPanel' || currentView === 'platformAdminDeploy' || currentView === 'platformAdminWithdraws') {
       return <PlatformAdminLoginPage />
     }
     const host = String(window.location.hostname || '').toLowerCase()
@@ -1027,7 +1027,7 @@ function AppContent() {
         <ResetPasswordPage />
       ) : currentView === 'termos' ? (
         <TermosPrivacidadePage />
-      ) : (currentView === 'platformAdminPanel' || currentView === 'platformAdminDeploy' || currentView === 'produtosNovo' || currentView === 'cursoPreviewAluno' || currentView === 'questoes' || currentView === 'alunoDashboard' || currentView === 'alunoAula' || currentView === 'alunoCurso' || currentView === 'alunoSimulados' || currentView === 'alunoSimuladoAcesso' || currentView === 'alunoSimuladoResultado' || currentView === 'alunoConfiguracoes' || currentView === 'alunoRepostaCorretaSimulado' || currentView === 'alunoBancoQuestoes' || currentView === 'alunoBancoQuestoesResultado' || currentView === 'alunoQuestoes') ? (
+      ) : (currentView === 'platformAdminPanel' || currentView === 'platformAdminDeploy' || currentView === 'platformAdminWithdraws' || currentView === 'produtosNovo' || currentView === 'cursoPreviewAluno' || currentView === 'questoes' || currentView === 'alunoDashboard' || currentView === 'alunoAula' || currentView === 'alunoCurso' || currentView === 'alunoSimulados' || currentView === 'alunoSimuladoAcesso' || currentView === 'alunoSimuladoResultado' || currentView === 'alunoConfiguracoes' || currentView === 'alunoRepostaCorretaSimulado' || currentView === 'alunoBancoQuestoes' || currentView === 'alunoBancoQuestoesResultado' || currentView === 'alunoQuestoes') ? (
         renderContent()
       ) : (
         <MainLayout>
