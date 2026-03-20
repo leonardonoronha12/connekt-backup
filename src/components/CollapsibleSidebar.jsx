@@ -118,7 +118,7 @@ const CollapsibleSidebar = () => {
           label: 'Gerenciar alunos',
           icon: '/icons/alunos.svg?v=2',
           path: '/alunos',
-          isActive: currentPath === '/alunos'
+          isActive: currentPath === '/alunos' || currentPath.startsWith('/alunos/')
         },
         {
           id: 'kplay',
