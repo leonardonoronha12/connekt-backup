@@ -97,7 +97,7 @@ const SystemSidebar = () => {
         },
         { 
           id: 'alunos', 
-          label: 'Alunos', 
+          label: 'Gerenciar alunos', 
           icon: Users, 
           path: '/alunos',
           isActive: currentPath === '/alunos'
