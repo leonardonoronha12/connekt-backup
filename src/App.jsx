@@ -37,6 +37,7 @@ import AlunoQuestoesPage from '@/pages/AlunoQuestoesPage.jsx';
 import PlatformAdminLoginPage from '@/pages/PlatformAdminLoginPage.jsx';
 import PlatformAdminPanelPage from '@/pages/PlatformAdminPanelPage.jsx';
 import PlatformAdminDeployPage from '@/pages/PlatformAdminDeployPage.jsx';
+import PlatformAdminWithdrawRequestsPage from '@/pages/PlatformAdminWithdrawRequestsPage.jsx';
 import QuestoesPage from '@/pages/QuestoesPage';
 import RepostaCorretaSimuladoPage from '@/pages/RepostaCorretaSimuladoPage';
 import ConfiguracoesPage from '@/pages/ConfiguracoesPage';
@@ -90,6 +91,7 @@ const QUESTION_BANK_PATH = '/banco-de-questoes';
   platformAdminLogin: 'Admin - Login',
   platformAdminPanel: 'Admin - Painel',
   platformAdminDeploy: 'Admin - Publicar',
+  platformAdminWithdraws: 'Admin - Saques',
 };
 
 try {
@@ -110,6 +112,8 @@ const getViewFromLocation = () => {
 
   if (path === '/admin/login') {
     return 'platformAdminLogin'
+  } else if (path === '/admin/saques') {
+    return 'platformAdminWithdraws'
   } else if (path === '/admin/deploy') {
     return 'platformAdminDeploy'
   } else if (path === '/admin' || path.startsWith('/admin/')) {
@@ -712,6 +716,8 @@ function AppContent() {
         return <PlatformAdminPanelPage />;
       case 'platformAdminDeploy':
         return <PlatformAdminDeployPage />;
+      case 'platformAdminWithdraws':
+        return <PlatformAdminWithdrawRequestsPage />;
       case 'admin':
         const AdminPage = React.lazy(() => import('@/pages/AdminPage'));
         return (
