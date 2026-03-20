@@ -57,7 +57,7 @@ const QUESTION_BANK_PATH = '/banco-de-questoes';
   questionBank: 'Banco de Questões',
   questoes: 'Questões',
   cursos: 'Meus Cursos',
-  alunos: 'Alunos',
+  alunos: 'Gerenciar alunos',
   simulados: 'Simulados',
   dimulados: 'Produtos',
   simuladosAproveitamento: 'Simulados - Aproveitamento',

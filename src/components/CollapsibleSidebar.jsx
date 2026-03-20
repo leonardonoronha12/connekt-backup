@@ -115,7 +115,7 @@ const CollapsibleSidebar = () => {
         },
         {
           id: 'alunos',
-          label: 'Alunos',
+          label: 'Gerenciar alunos',
           icon: '/icons/alunos.svg',
           path: '/alunos',
           isActive: currentPath === '/alunos'
@@ -172,7 +172,7 @@ const CollapsibleSidebar = () => {
   ];
 
   // Ocultar temporariamente algumas abas
-  const hiddenLabels = new Set(['KPlay', 'KHub', 'Alunos']);
+  const hiddenLabels = new Set(['KPlay', 'KHub']);
 
   const sidebarWidth = isExpanded ? '260px' : '92px';
 

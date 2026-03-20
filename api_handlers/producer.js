@@ -1923,6 +1923,225 @@ export default async function handler(req, res) {
       return json(res, 200, { producerId, brand: pickWhitelabel(user) })
     }
 
+    if (type === 'students_manage_list') {
+      res.setHeader('Cache-Control', 'no-store')
+      const producerUserId = String(auth.user?.id || '').trim()
+      if (!producerUserId || producerId !== producerUserId) return json(res, 403, { error: 'forbidden' })
+
+      const q = String(u.searchParams.get('q') || '').trim().toLowerCase()
+      const courseId = String(u.searchParams.get('course_id') || u.searchParams.get('courseId') || '').trim()
+      const perPage = Math.max(1, Math.min(5000, Number(u.searchParams.get('per_page') || 500)))
+
+      const producerRowId = await resolveProducerRowIdFromUserId(producerUserId)
+      const producerKeys = Array.from(new Set([producerUserId, producerRowId].map((v) => String(v || '').trim()).filter(Boolean)))
+
+      const isMissingColumn = (err, col) => {
+        const msg = String(err?.message || err?.details || err || '').toLowerCase()
+        const code = String(err?.code || '').toUpperCase()
+        const c = String(col || '').toLowerCase()
+        return (
+          code === 'PGRST204' ||
+          code === '42703' ||
+          msg.includes(`could not find the '${c}' column`) ||
+          (msg.includes('schema cache') && msg.includes(c)) ||
+          (msg.includes('does not exist') && msg.includes(c))
+        )
+      }
+
+      const fetchCoursesByOwner = async () => {
+        const select = 'id,title,user_id,created_at,status'
+        const cols = ['user_id', 'producer_id', 'producer_user_id', 'producer_external_id', 'produtor_id', 'created_by']
+        for (const col of cols) {
+          try {
+            const { data, error } = await admin
+              .from('courses')
+              .select(select)
+              .in(col, producerKeys)
+              .order('created_at', { ascending: false })
+              .limit(1000)
+            if (error) {
+              if (isMissingColumn(error, col)) continue
+              continue
+            }
+            return Array.isArray(data) ? data : []
+          } catch (e) {
+            if (isMissingColumn(e, col)) continue
+          }
+        }
+        return []
+      }
+
+      const courses = await fetchCoursesByOwner()
+      const allowedCourseIds = courses.map((c) => String(c?.id || '').trim()).filter(Boolean)
+      const allowedCourseTitles = courses.map((c) => String(c?.title || '').trim()).filter(Boolean)
+      const courseFilterId = courseId && isUuid(courseId) ? courseId : ''
+      const filteredCourseIds = courseFilterId ? allowedCourseIds.filter((id) => id === courseFilterId) : allowedCourseIds
+      const filteredCourseTitles = courseFilterId
+        ? allowedCourseTitles.filter((t) => {
+          const match = courses.find((c) => String(c?.id || '').trim() === courseFilterId)
+          return match ? String(match?.title || '').trim() === t : false
+        })
+        : allowedCourseTitles
+
+      if (filteredCourseIds.length === 0 && filteredCourseTitles.length === 0) {
+        return json(res, 200, { ok: true, students: [], meta: { count: 0, limit: perPage } })
+      }
+
+      const fetchStudentCoursesByCourseColumn = async (col, values) => {
+        const val = Array.from(new Set((values || []).map((v) => String(v || '').trim()).filter(Boolean)))
+        if (val.length === 0) return []
+        const selectAttempts = [
+          `student_id,student_external_id,user_id,student_user_id,student_email,course_id,course_name,progress,tag,cover_image_url,created_at`,
+          `student_id,student_external_id,user_id,course_id,course_name,progress,tag,cover_image_url`,
+          `student_id,user_id,course_id,course_name,progress,tag`,
+          `student_id,course_id,course_name,progress`,
+          '*',
+        ]
+        for (const sel of selectAttempts) {
+          try {
+            const { data, error } = await admin.from('student_courses').select(sel).in(col, val).limit(10000)
+            if (error) {
+              if (isMissingColumn(error, col)) return []
+              continue
+            }
+            const rows = Array.isArray(data) ? data : []
+            if (rows.length === 0) continue
+            return rows
+          } catch (e) {
+            if (isMissingColumn(e, col)) return []
+            continue
+          }
+        }
+        return []
+      }
+
+      const courseIdCols = ['course_id', 'courseId', 'course_uuid', 'courseUuid']
+      let studentCourseRows = []
+      for (const col of courseIdCols) {
+        studentCourseRows = await fetchStudentCoursesByCourseColumn(col, filteredCourseIds)
+        if (studentCourseRows.length > 0) break
+      }
+      if (studentCourseRows.length === 0) {
+        const courseTitleCols = ['course_name', 'courseName', 'title', 'name']
+        for (const col of courseTitleCols) {
+          studentCourseRows = await fetchStudentCoursesByCourseColumn(col, filteredCourseTitles)
+          if (studentCourseRows.length > 0) break
+        }
+      }
+
+      const studentKeyCandidates = (row) => {
+        const r = row && typeof row === 'object' ? row : {}
+        return [
+          r.student_id,
+          r.studentId,
+          r.student_external_id,
+          r.studentExternalId,
+          r.user_id,
+          r.userId,
+          r.student_user_id,
+          r.studentUserId,
+        ]
+      }
+
+      const studentKeys = new Set()
+      const courseRowsByStudentKey = new Map()
+      for (const row of Array.isArray(studentCourseRows) ? studentCourseRows : []) {
+        const key = studentKeyCandidates(row).map((v) => String(v || '').trim()).find((v) => v)
+        if (!key) continue
+        studentKeys.add(key)
+        const list = courseRowsByStudentKey.get(key) || []
+        list.push(row)
+        courseRowsByStudentKey.set(key, list)
+      }
+
+      const resolveStudentsByKeys = async (keys) => {
+        const ids = Array.from(new Set((keys || []).map((v) => String(v || '').trim()).filter(Boolean)))
+        if (ids.length === 0) return new Map()
+        const map = new Map()
+        const cols = ['id', 'user_id', 'external_id', 'student_external_id', 'student_id']
+        const selects = [
+          'id,name,email,avatar_url,whatsapp,user_id,external_id,created_at',
+          'id,name,email,user_id,external_id',
+          'id,name,email',
+          '*',
+        ]
+        for (const col of cols) {
+          for (const sel of selects) {
+            try {
+              const { data, error } = await admin.from('students').select(sel).in(col, ids).limit(5000)
+              if (error) {
+                if (isMissingColumn(error, col)) break
+                continue
+              }
+              for (const row of Array.isArray(data) ? data : []) {
+                const key = String(row?.[col] || '').trim()
+                const id = String(row?.id || '').trim()
+                if (!key) continue
+                map.set(key, { ...(row || {}), id: id || String(row?.id || '') })
+              }
+              break
+            } catch (e) {
+              if (isMissingColumn(e, col)) break
+            }
+          }
+        }
+        return map
+      }
+
+      const studentsByAnyKey = await resolveStudentsByKeys(Array.from(studentKeys))
+
+      const studentUserIds = Array.from(new Set(Array.from(studentsByAnyKey.values()).map((s) => String(s?.user_id || '').trim()).filter(Boolean)))
+      const phoneByUserId = {}
+      if (studentUserIds.length > 0) {
+        try {
+          const { data } = await admin.from('profiles').select('user_id,profile_phone').in('user_id', studentUserIds).limit(5000)
+          for (const row of Array.isArray(data) ? data : []) {
+            const id = String(row?.user_id || '').trim()
+            const phone = String(row?.profile_phone || '').trim()
+            if (id && phone) phoneByUserId[id] = phone
+          }
+        } catch (_) {}
+      }
+
+      const normalizeCourseFromRow = (row) => {
+        const name = String(row?.course_name || row?.courseName || row?.title || row?.name || '').trim()
+        const progress = Number(row?.progress || row?.course_progress || row?.completion || 0)
+        const tag = String(row?.tag || row?.course_tag || '').trim() || 'Curso'
+        const cover = row?.cover_image_url || row?.coverImageUrl || row?.cover || null
+        return { course_name: name, progress: Number.isFinite(progress) ? progress : 0, tag, cover_image_url: cover || null }
+      }
+
+      const out = []
+      for (const key of Array.from(studentKeys)) {
+        const rawStudent = studentsByAnyKey.get(key) || null
+        const studentId = String(rawStudent?.id || key).trim()
+        const name = String(rawStudent?.name || '').trim()
+        const email = String(rawStudent?.email || '').trim()
+        const userId = String(rawStudent?.user_id || '').trim()
+        const phone = String(phoneByUserId?.[userId] || rawStudent?.profile_phone || rawStudent?.phone || rawStudent?.whatsapp || '').trim()
+        const coursesRaw = courseRowsByStudentKey.get(key) || []
+        const coursesMapped = coursesRaw.map(normalizeCourseFromRow).filter((c) => c.course_name)
+        const seenCourses = new Set()
+        const coursesUnique = []
+        for (const c of coursesMapped) {
+          const k = `${String(c.course_name || '').toLowerCase()}|${String(c.tag || '').toLowerCase()}`
+          if (!k || seenCourses.has(k)) continue
+          seenCourses.add(k)
+          coursesUnique.push(c)
+        }
+        const row = { id: studentId, name, email, phone, courses: coursesUnique }
+        if (q) {
+          const hay = `${String(row?.name || '').toLowerCase()} ${String(row?.email || '').toLowerCase()} ${String(row?.phone || '').toLowerCase()}`
+          if (!hay.includes(q)) continue
+        }
+        out.push(row)
+        if (out.length >= perPage) break
+      }
+
+      out.sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || ''), 'pt-BR'))
+      return json(res, 200, { ok: true, students: out, courses: courses.map((c) => ({ id: String(c?.id || '').trim(), title: String(c?.title || '').trim() })).filter((c) => c.id), meta: { count: out.length, limit: perPage } })
+    }
+
     if (type === 'courses') {
       const isMissingColumn = (err, col) => {
         const msg = String(err?.message || err?.details || err || '').toLowerCase()
