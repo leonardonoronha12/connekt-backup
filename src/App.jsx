@@ -108,7 +108,8 @@ try {
 // desnecessariamente e prevenir logs de requisições abortadas ao trocar de rota.
 const getViewFromLocation = () => {
   const searchParams = new URLSearchParams(window.location.search);
-  const path = window.location.pathname;
+  const rawPath = window.location.pathname;
+  const path = rawPath !== '/' && rawPath.endsWith('/') ? rawPath.slice(0, -1) : rawPath;
 
   if (path === '/admin/login') {
     return 'platformAdminLogin'
@@ -131,7 +132,7 @@ const getViewFromLocation = () => {
     return 'questoes';
   } else if (path === '/cursos') {
     return 'cursos';
-  } else if (path === '/alunos') {
+  } else if (path === '/alunos' || path.startsWith('/alunos/')) {
     return 'alunos';
   } else if (path === '/simulados') {
     return 'simulados';
