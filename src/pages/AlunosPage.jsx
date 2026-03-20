@@ -40,6 +40,11 @@ export default function AlunosPage() {
   const [rows, setRows] = useState([])
   const [error, setError] = useState('')
 
+  const [editOpen, setEditOpen] = useState(false)
+  const [editLoading, setEditLoading] = useState(false)
+  const [editRow, setEditRow] = useState(null)
+  const [editForm, setEditForm] = useState({ name: '', phone: '' })
+
   const fetchStudents = useCallback(async () => {
     const producerId = String(user?.id || '').trim()
     if (!producerId) return { ok: true, students: [], courses: [] }
@@ -54,6 +59,41 @@ export default function AlunosPage() {
     if (!r.ok) throw new Error(body?.error || 'Falha ao carregar alunos')
     return body || {}
   }, [authHeaders, courseFilter, query, user?.id])
+
+  const openEdit = useCallback((row) => {
+    const r = row && typeof row === 'object' ? row : null
+    if (!r?.id) return
+    setEditRow(r)
+    setEditForm({ name: String(r?.name || '').trim(), phone: String(r?.phone || '').trim() })
+    setEditOpen(true)
+  }, [])
+
+  const saveEdit = useCallback(async () => {
+    const producerId = String(user?.id || '').trim()
+    const userId = String(editRow?.id || '').trim()
+    if (!producerId || !userId) return
+    setEditLoading(true)
+    try {
+      const payload = { userId, name: String(editForm.name || '').trim(), phone: String(editForm.phone || '').trim() }
+      const qs = new URLSearchParams()
+      qs.set('type', 'student_update_profile')
+      qs.set('producerId', producerId)
+      const r = await fetch(`/api/producer?${qs.toString()}`, {
+        method: 'POST',
+        headers: { ...authHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const body = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(body?.error || 'Falha ao salvar')
+      setRows((prev) => (Array.isArray(prev) ? prev.map((it) => (String(it?.id || '') === userId ? { ...it, name: payload.name || it?.name, phone: payload.phone || it?.phone } : it)) : prev))
+      toast({ title: 'Salvo', description: 'Usuário atualizado.' })
+      setEditOpen(false)
+    } catch (e) {
+      toast({ title: 'Erro', description: e?.message || 'Erro ao salvar', variant: 'destructive' })
+    } finally {
+      setEditLoading(false)
+    }
+  }, [authHeaders, editForm.name, editForm.phone, editRow?.id, user?.id])
 
   useEffect(() => {
     let active = true
@@ -192,23 +232,24 @@ export default function AlunosPage() {
                   <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#737780]">Telefone</th>
                   <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#737780]">Produto</th>
                   <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#737780]">Cursos</th>
+                  <th className="px-6 py-4 text-right text-[12px] font-semibold text-[#737780]">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#EDEEF0]">
                 {loading ? (
                   <tr>
-                    <td colSpan={5} className="px-6 py-8 text-center text-[14px] text-[#737780]">
+                    <td colSpan={6} className="px-6 py-8 text-center text-[14px] text-[#737780]">
                       <Loader2 className="w-4 h-4 inline-block mr-2 animate-spin" />
                       Carregando…
                     </td>
                   </tr>
                 ) : error ? (
                   <tr>
-                    <td colSpan={5} className="px-6 py-8 text-center text-[14px] text-[#737780]">{error}</td>
+                    <td colSpan={6} className="px-6 py-8 text-center text-[14px] text-[#737780]">{error}</td>
                   </tr>
                 ) : rows.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-6 py-8 text-center text-[14px] text-[#737780]">Nenhum aluno encontrado.</td>
+                    <td colSpan={6} className="px-6 py-8 text-center text-[14px] text-[#737780]">Nenhum aluno encontrado.</td>
                   </tr>
                 ) : (
                   rows.slice(0, 500).map((s) => (
@@ -218,6 +259,15 @@ export default function AlunosPage() {
                       <td className="px-6 py-4 text-[13px] text-[#1E1B39]">{formatPhone(s?.phone || '') || '—'}</td>
                       <td className="px-6 py-4 text-[13px] text-[#1E1B39]">{formatProductCell(s)}</td>
                       <td className="px-6 py-4 text-[13px] text-[#1E1B39]">{Array.isArray(s?.courses) ? s.courses.length : 0}</td>
+                      <td className="px-6 py-4 text-right">
+                        <button
+                          type="button"
+                          className="h-8 px-2 rounded-[10px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#1E1B39] hover:bg-[#F8FAFC]"
+                          onClick={() => openEdit(s)}
+                        >
+                          Editar
+                        </button>
+                      </td>
                     </tr>
                   ))
                 )}
@@ -226,6 +276,40 @@ export default function AlunosPage() {
           </div>
         </div>
       </div>
+
+      {editOpen ? (
+        <div className="fixed inset-0 z-[90] bg-black/40 flex items-center justify-center p-6" onMouseDown={() => { if (!editLoading) setEditOpen(false) }}>
+          <div className="w-full max-w-[520px] rounded-[14px] bg-white border border-[#E3E4E5] shadow-xl" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="px-5 py-4 border-b border-[#E3E4E5] flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-[14px] font-semibold text-[#1E1B39]">Editar usuário</div>
+                <div className="text-[12px] text-[#737780] truncate">{String(editRow?.email || '').trim()}</div>
+              </div>
+              <button type="button" className="h-9 px-3 rounded-[10px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#1E1B39] hover:bg-[#F8FAFC]" disabled={editLoading} onClick={() => setEditOpen(false)}>
+                Fechar
+              </button>
+            </div>
+            <div className="p-5 grid grid-cols-1 gap-4">
+              <div>
+                <label className="text-[12px] text-[#737780]">Nome</label>
+                <input value={editForm.name} onChange={(e) => setEditForm((p) => ({ ...p, name: e.target.value }))} className="mt-2 w-full h-[40px] rounded-[10px] border border-[#E3E4E5] px-3 text-[13px] outline-none focus:border-[#0047BB]" />
+              </div>
+              <div>
+                <label className="text-[12px] text-[#737780]">Telefone</label>
+                <input value={editForm.phone} onChange={(e) => setEditForm((p) => ({ ...p, phone: e.target.value }))} className="mt-2 w-full h-[40px] rounded-[10px] border border-[#E3E4E5] px-3 text-[13px] outline-none focus:border-[#0047BB]" />
+              </div>
+            </div>
+            <div className="px-5 py-4 border-t border-[#E3E4E5] flex items-center justify-end gap-2">
+              <button type="button" className="h-9 px-3 rounded-[10px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#1E1B39] hover:bg-[#F8FAFC]" disabled={editLoading} onClick={() => setEditOpen(false)}>
+                Cancelar
+              </button>
+              <button type="button" className="h-9 px-3 rounded-[10px] bg-[#0047BB] text-white text-[12px] font-semibold hover:bg-[#003da0] disabled:opacity-50" disabled={editLoading} onClick={saveEdit}>
+                {editLoading ? 'Salvando...' : 'Salvar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </>
   )
 }
