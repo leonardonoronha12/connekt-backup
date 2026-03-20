@@ -16,7 +16,8 @@
     "migrate:question-images": "node scripts/apply-question-images-storage-policies.js",
     "migrate:simulados-owner": "node scripts/apply-simulados-owner-strict-migration.js",
     "migrate:simulados-public-select": "node scripts/apply-simulados-public-select-migration.js",
-    "migrate:admin-users-view": "node scripts/apply-platform-admin-users-view.js"
+    "migrate:admin-users-view": "node scripts/apply-platform-admin-users-view.js",
+    "migrate:withdraw-requests": "node scripts/apply-withdraw-requests-migration.js"
   },
   "dependencies": {
     "@editorjs/checklist": "^1.6.0",

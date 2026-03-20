@@ -2627,6 +2627,62 @@ export default async function handler(req, res) {
     return json(res, 200, { data: merged })
   }
 
+  if (type === 'withdraw_requests') {
+    const producerRowId = await resolveProducerRowId()
+    const producerKeys = Array.from(new Set([String(producerId || '').trim(), String(producerRowId || '').trim()].filter(Boolean)))
+    if (producerKeys.length === 0) return json(res, 200, { data: [] })
+
+    try {
+      const { data, error } = await admin
+        .from('withdraw_requests')
+        .select('id,producer_id,kind,amount_cents,status,created_at,updated_at')
+        .in('producer_id', producerKeys)
+        .order('created_at', { ascending: false })
+        .limit(200)
+      if (error) {
+        const msg = String(error?.message || error || '').toLowerCase()
+        const missing = msg.includes('does not exist') || msg.includes('schema cache') || msg.includes('could not find the') || msg.includes('column')
+        if (missing) return json(res, 200, { data: [] })
+        return json(res, 500, { error: error?.message || String(error) })
+      }
+      return json(res, 200, { data: Array.isArray(data) ? data : [] })
+    } catch (e) {
+      const msg = String(e?.message || e || '')
+      const lower = msg.toLowerCase()
+      const missing = lower.includes('does not exist') || lower.includes('schema cache') || lower.includes('could not find the') || lower.includes('column')
+      if (missing) return json(res, 200, { data: [] })
+      return json(res, 500, { error: msg || 'fetch_failed' })
+    }
+  }
+
+  if (type === 'withdraw_request_create') {
+    if (req.method !== 'POST') return json(res, 405, { error: 'method_not_allowed' })
+    const actorId = String(auth.user?.id || '').trim()
+    if (!actorId || actorId !== String(producerId || '').trim()) return json(res, 403, { error: 'forbidden' })
+    const raw = await readRawBody(req).catch(() => null)
+    let body = null
+    try { body = raw ? JSON.parse(raw.toString('utf-8') || '{}') : {} } catch (_) { body = {} }
+    const cents = Math.max(0, Math.round(Number(body?.amount_cents ?? body?.amountCents ?? 0)))
+    const kind = String(body?.kind || 'advance').trim().toLowerCase() || 'advance'
+    const row = { producer_id: actorId, kind, amount_cents: cents, status: 'requested' }
+    try {
+      const { data, error } = await admin.from('withdraw_requests').insert(row).select('*').maybeSingle()
+      if (error) {
+        const msg = String(error?.message || error || '').toLowerCase()
+        const missing = msg.includes('does not exist') || msg.includes('schema cache')
+        if (missing) return json(res, 501, { error: 'withdraw_requests_table_missing' })
+        return json(res, 500, { error: error?.message || String(error) })
+      }
+      return json(res, 200, { ok: true, data: data || row })
+    } catch (e) {
+      const msg = String(e?.message || e || '')
+      const lower = msg.toLowerCase()
+      const missing = lower.includes('does not exist') || lower.includes('schema cache')
+      if (missing) return json(res, 501, { error: 'withdraw_requests_table_missing' })
+      return json(res, 500, { error: msg || 'create_failed' })
+    }
+  }
+
   if (type === 'conversations') {
     const producerUserId = String(auth.user?.id || '').trim()
     const producerRowId = await resolveProducerRowIdFromUserId(producerUserId)

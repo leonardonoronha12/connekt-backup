@@ -26,6 +26,7 @@ import adminUsersBulkCreate from '../api_handlers/admin/users/bulk-create.js'
 import adminUsersFirstAccessLink from '../api_handlers/admin/users/first-access-link.js'
 import adminVercelStatus from '../api_handlers/admin/vercel/status.js'
 import adminVercelDeploy from '../api_handlers/admin/vercel/deploy.js'
+import adminWithdrawRequestsList from '../api_handlers/admin/withdraw_requests/list.js'
 
 function getPathFromRequest(req) {
   try {
@@ -67,6 +68,7 @@ export default async function handler(req, res) {
       ['/api/admin/users/first-access-link', adminUsersFirstAccessLink],
       ['/api/admin/vercel/status', adminVercelStatus],
       ['/api/admin/vercel/deploy', adminVercelDeploy],
+      ['/api/admin/withdraw-requests/list', adminWithdrawRequestsList],
     ])
 
     const direct = routes.get(pathname)
@@ -81,4 +83,3 @@ export default async function handler(req, res) {
     return json(res, 500, { error: 'internal_error', message: e?.message || String(e) })
   }
 }
-

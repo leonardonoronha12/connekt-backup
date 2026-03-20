@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Helmet } from 'react-helmet-async'
-import { Search, Download, SlidersHorizontal, Mail, CalendarDays, X, Wallet, Lock, ArrowRight, Loader2, CheckCircle2 } from 'lucide-react'
+import { Search, Download, SlidersHorizontal, Mail, CalendarDays, X, Wallet, Lock, ArrowRight, Loader2, CheckCircle2, AlertCircle } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useAuth } from '@/contexts/SupabaseAuthContext'
 
@@ -222,6 +222,9 @@ const VendasPage = () => {
   const [isWithdrawOpen, setIsWithdrawOpen] = useState(false)
   const [advanceStage, setAdvanceStage] = useState('idle')
   const advanceTimeoutRef = useRef({ t1: null, t2: null })
+  const [withdrawLoading, setWithdrawLoading] = useState(false)
+  const [withdrawLoaded, setWithdrawLoaded] = useState(false)
+  const [withdrawRows, setWithdrawRows] = useState([])
   const [appliedFilters, setAppliedFilters] = useState(() => cloneFilters(DEFAULT_FILTERS))
   const [draftFilters, setDraftFilters] = useState(() => cloneFilters(DEFAULT_FILTERS))
   const draftFiltersRef = useRef(draftFilters)
@@ -251,6 +254,34 @@ const VendasPage = () => {
       } finally {
         if (!cancelled) setSalesLoaded(true)
         if (!cancelled) setLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [user?.id])
+
+  useEffect(() => {
+    if (!user?.id) return
+    let cancelled = false
+    ;(async () => {
+      setWithdrawLoaded(false)
+      setWithdrawLoading(true)
+      try {
+        const token = (await supabase.auth.getSession().catch(() => ({ data: null })))?.data?.session?.access_token || ''
+        if (!token) throw new Error('missing_token')
+        const r = await fetch(`/api/producer?type=withdraw_requests&producerId=${encodeURIComponent(String(user.id))}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        const body = await r.json().catch(() => ({}))
+        if (!r.ok) throw new Error(String(body?.error || 'fetch_failed'))
+        const data = Array.isArray(body?.data) ? body.data : []
+        if (!cancelled) setWithdrawRows(data)
+      } catch (_) {
+        if (!cancelled) setWithdrawRows([])
+      } finally {
+        if (!cancelled) setWithdrawLoaded(true)
+        if (!cancelled) setWithdrawLoading(false)
       }
     })()
     return () => {
@@ -382,7 +413,7 @@ const VendasPage = () => {
     setAdvanceStage('idle')
   }
 
-  const requestAdvanceWithdraw = () => {
+  const requestAdvanceWithdraw = async () => {
     if (advanceStage !== 'idle') return
     setAdvanceStage('sending')
     try {
@@ -390,9 +421,23 @@ const VendasPage = () => {
       if (advanceTimeoutRef.current?.t2) window.clearTimeout(advanceTimeoutRef.current.t2)
     } catch (_) {}
     try {
-      advanceTimeoutRef.current.t1 = window.setTimeout(() => setAdvanceStage('done'), 900)
+      const token = (await supabase.auth.getSession().catch(() => ({ data: null })))?.data?.session?.access_token || ''
+      if (!token) throw new Error('missing_token')
+      const r = await fetch(`/api/producer?type=withdraw_request_create&producerId=${encodeURIComponent(String(user?.id || ''))}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount_cents: receivableCents, kind: 'advance' }),
+      })
+      const body = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(String(body?.error || 'create_failed'))
+      const created = body?.data || null
+      if (created) setWithdrawRows((prev) => [created, ...(Array.isArray(prev) ? prev : [])])
+      setAdvanceStage('done')
       advanceTimeoutRef.current.t2 = window.setTimeout(() => setIsWithdrawOpen(false), 3200)
-    } catch (_) {}
+    } catch (_) {
+      setAdvanceStage('error')
+      advanceTimeoutRef.current.t2 = window.setTimeout(() => setAdvanceStage('idle'), 2500)
+    }
   }
 
   const appliedFilterCount = useMemo(() => countActiveFilters(appliedFilters), [appliedFilters])
@@ -433,6 +478,25 @@ const VendasPage = () => {
       advanceTimeoutRef.current = { t1: null, t2: null }
     } catch (_) {}
   }, [isWithdrawOpen])
+
+  const withdrawList = useMemo(() => {
+    const list = Array.isArray(withdrawRows) ? withdrawRows : []
+    return list.slice().sort((a, b) => {
+      const ad = a?.created_at || a?.createdAt || null
+      const bd = b?.created_at || b?.createdAt || null
+      const at = ad ? new Date(ad).getTime() : 0
+      const bt = bd ? new Date(bd).getTime() : 0
+      return bt - at
+    })
+  }, [withdrawRows])
+
+  const withdrawStatusUi = (raw) => {
+    const s = String(raw || '').trim().toLowerCase()
+    if (s === 'paid' || s === 'completed' || s === 'done') return { label: 'Concluído', className: 'bg-[#E9F9EF] text-[#1F8A42]' }
+    if (s === 'processing' || s === 'in_progress' || s === 'in progress') return { label: 'Em análise', className: 'bg-[#FFF4E5] text-[#C7780A]' }
+    if (s === 'canceled' || s === 'cancelled' || s === 'rejected') return { label: 'Cancelado', className: 'bg-[#FDECEC] text-[#E53935]' }
+    return { label: 'Solicitado', className: 'bg-[#EAF2FF] text-[#0047BB]' }
+  }
 
   const openFilters = () => {
     setDraftFilters(cloneFilters(appliedFilters || DEFAULT_FILTERS))
@@ -573,6 +637,65 @@ const VendasPage = () => {
               </div>
             </div>
           ))}
+        </div>
+
+        <div className="bg-white rounded-[10px] shadow-[0_1px_4px_rgba(13,10,44,0.08)] border border-[#E3E4E5] overflow-hidden">
+          <div className="px-6 py-5 border-b border-[#EDEEF0] flex items-center justify-between gap-3">
+            <div>
+              <div className="text-[14px] font-semibold text-[#1E1B39]">Saques solicitados</div>
+              <div className="text-[12px] text-[#737780] mt-1">Acompanhe suas solicitações de saque</div>
+            </div>
+            <button
+              type="button"
+              onClick={openWithdraw}
+              className="h-9 px-4 rounded-[8px] bg-[#0047BB] text-white text-[12px] font-semibold hover:bg-[#003a99] inline-flex items-center gap-2"
+            >
+              <Wallet className="w-4 h-4 text-white" />
+              Solicitar saque
+            </button>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full">
+              <thead>
+                <tr className="bg-white">
+                  <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#737780]">Data</th>
+                  <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#737780]">Tipo</th>
+                  <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#737780]">Valor</th>
+                  <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#737780]">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#EDEEF0]">
+                {withdrawLoading && !withdrawLoaded ? (
+                  <tr>
+                    <td colSpan={4} className="px-6 py-8 text-center text-[14px] text-[#737780]">Carregando…</td>
+                  </tr>
+                ) : withdrawList.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} className="px-6 py-8 text-center text-[14px] text-[#737780]">Nenhum saque solicitado.</td>
+                  </tr>
+                ) : (
+                  withdrawList.slice(0, 20).map((w) => {
+                    const dt = formatDateDot(w?.created_at || w?.createdAt || '')
+                    const kind = String(w?.kind || '').trim().toLowerCase() === 'advance' ? 'Antecipação' : 'Saque'
+                    const value = formatMoneyFromCents(w?.amount_cents || w?.amountCents || 0)
+                    const statusUi = withdrawStatusUi(w?.status)
+                    return (
+                      <tr key={String(w?.id || Math.random())}>
+                        <td className="px-6 py-4 text-[14px] text-[#1E1B39]">{dt}</td>
+                        <td className="px-6 py-4 text-[14px] text-[#1E1B39]">{kind}</td>
+                        <td className="px-6 py-4 text-[14px] text-[#1E1B39]">{value}</td>
+                        <td className="px-6 py-4">
+                          <span className={`inline-flex items-center px-3 py-1 rounded-full text-[12px] font-medium ${statusUi.className}`}>
+                            {statusUi.label}
+                          </span>
+                        </td>
+                      </tr>
+                    )
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
 
         <div className="bg-white rounded-[10px] shadow-[0_1px_4px_rgba(13,10,44,0.08)] border border-[#E3E4E5] overflow-hidden">
@@ -731,6 +854,8 @@ const VendasPage = () => {
                         <div className="w-16 h-16 rounded-full bg-[#EEF2FF] flex items-center justify-center">
                           {advanceStage === 'sending' ? (
                             <Loader2 className="w-7 h-7 text-[#0047BB] animate-spin" />
+                          ) : advanceStage === 'error' ? (
+                            <AlertCircle className="w-7 h-7 text-[#DC2626]" />
                           ) : (
                             <CheckCircle2 className="w-7 h-7 text-[#16A34A]" />
                           )}
@@ -740,10 +865,12 @@ const VendasPage = () => {
                     </div>
                     <div className="mt-4 text-center">
                       <div className="text-[14px] font-semibold text-[#1E1B39]">
-                        {advanceStage === 'sending' ? 'Enviando solicitação…' : 'Solicitação enviada'}
+                        {advanceStage === 'sending' ? 'Enviando solicitação…' : advanceStage === 'error' ? 'Não foi possível enviar' : 'Solicitação enviada'}
                       </div>
                       <div className="mt-2 text-[12px] text-[#737780]">
-                        A área comercial vai entrar em contato com você para seguir com a antecipação do saque.
+                        {advanceStage === 'error'
+                          ? 'Tente novamente em instantes.'
+                          : 'A área comercial vai entrar em contato com você para seguir com a antecipação do saque.'}
                       </div>
                       <div className="mt-3 text-[12px] text-[#737780]">
                         Valor a receber: <span className="font-semibold text-[#1E1B39]">{formatMoneyFromCents(receivableCents)}</span>
