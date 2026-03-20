@@ -14,6 +14,14 @@ function addDaysIsoDate(days) {
   return d.toISOString().slice(0, 10)
 }
 
+function parseIsoDate(value) {
+  const v = String(value || '').trim()
+  if (!v) return ''
+  const m = v.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (!m) return ''
+  return v
+}
+
 function isMissingTableOrColumn(error) {
   const msg = String(error?.message || error || '').toLowerCase()
   return (
@@ -59,6 +67,11 @@ export default async function handler(req, res) {
     const u = new URL(req.url, `http://${req.headers.host}`)
     const q = String(u.searchParams.get('q') || '').trim().toLowerCase()
     const status = String(u.searchParams.get('status') || '').trim().toLowerCase()
+    const kind = String(u.searchParams.get('kind') || '').trim().toLowerCase()
+    const fromDate = parseIsoDate(u.searchParams.get('from') || '')
+    const toDate = parseIsoDate(u.searchParams.get('to') || '')
+    const minAmountCents = Number(u.searchParams.get('min_amount_cents') || 0)
+    const maxAmountCents = Number(u.searchParams.get('max_amount_cents') || 0)
     const perPage = Math.max(1, Math.min(500, Number(u.searchParams.get('per_page') || 200)))
 
     const standardPayoutDate = addDaysIsoDate(30)
@@ -71,6 +84,11 @@ export default async function handler(req, res) {
         .order('created_at', { ascending: false })
         .limit(perPage)
       if (status) query = query.eq('status', status)
+      if (kind) query = query.eq('kind', kind)
+      if (fromDate) query = query.gte('created_at', `${fromDate}T00:00:00.000Z`)
+      if (toDate) query = query.lte('created_at', `${toDate}T23:59:59.999Z`)
+      if (Number.isFinite(minAmountCents) && minAmountCents > 0) query = query.gte('amount_cents', Math.floor(minAmountCents))
+      if (Number.isFinite(maxAmountCents) && maxAmountCents > 0) query = query.lte('amount_cents', Math.floor(maxAmountCents))
       const { data, error } = await query
       if (error) {
         if (isMissingTableOrColumn(error)) return json(res, 200, { requests: [], users: {}, standardPayoutDate, standardProducers: [], missing: true })

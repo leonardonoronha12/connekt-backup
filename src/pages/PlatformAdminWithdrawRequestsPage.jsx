@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Helmet } from 'react-helmet-async'
 import { Search, X } from 'lucide-react'
 import { useAuth } from '@/contexts/SupabaseAuthContext'
@@ -42,8 +42,23 @@ function withdrawStatusUi(raw) {
   return { label: 'Solicitado', className: 'bg-[#EAF2FF] text-[#0047BB]' }
 }
 
+function parseMoneyToCents(value) {
+  const raw = String(value || '').trim()
+  if (!raw) return 0
+  const norm = raw.replace(/\./g, '').replace(',', '.').replace(/[^\d.]/g, '')
+  const n = Number(norm || 0)
+  if (!Number.isFinite(n)) return 0
+  return Math.max(0, Math.round(n * 100))
+}
+
+function formatIsoDateInput(value) {
+  const v = String(value || '').trim()
+  const m = v.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  return m ? v : ''
+}
+
 export default function PlatformAdminWithdrawRequestsPage() {
-  const { session } = useAuth()
+  const { session, user } = useAuth()
   const authHeaders = useMemo(() => {
     const t = String(session?.access_token || '')
     return t ? { Authorization: `Bearer ${t}` } : {}
@@ -57,6 +72,21 @@ export default function PlatformAdminWithdrawRequestsPage() {
 
   const [q, setQ] = useState('')
   const [status, setStatus] = useState('')
+  const [kind, setKind] = useState('')
+  const [fromDate, setFromDate] = useState('')
+  const [toDate, setToDate] = useState('')
+  const [minAmount, setMinAmount] = useState('')
+  const [onlyWithBalance, setOnlyWithBalance] = useState(false)
+  const [standardStatus, setStandardStatus] = useState('all')
+
+  const monitorStateRef = useRef({
+    statusById: new Map(),
+    emailCooldownUntil: 0,
+    permissionAsked: false,
+    isRunning: false,
+    notifiedKeys: new Set(),
+    emailWarned: false,
+  })
 
   const runFetch = useCallback(async () => {
     setLoading(true)
@@ -64,6 +94,13 @@ export default function PlatformAdminWithdrawRequestsPage() {
       const qs = new URLSearchParams()
       if (q) qs.set('q', q)
       if (status) qs.set('status', status)
+      if (kind) qs.set('kind', kind)
+      const fromIso = formatIsoDateInput(fromDate)
+      const toIso = formatIsoDateInput(toDate)
+      if (fromIso) qs.set('from', fromIso)
+      if (toIso) qs.set('to', toIso)
+      const minCents = parseMoneyToCents(minAmount)
+      if (minCents > 0) qs.set('min_amount_cents', String(minCents))
       qs.set('per_page', '200')
       const r = await fetch(`/api/admin/withdraw-requests/list?${qs.toString()}`, { headers: authHeaders })
       const body = await r.json().catch(() => ({}))
@@ -81,21 +118,165 @@ export default function PlatformAdminWithdrawRequestsPage() {
     } finally {
       setLoading(false)
     }
-  }, [authHeaders, q, status])
+  }, [authHeaders, fromDate, kind, minAmount, q, status, toDate])
 
   useEffect(() => {
     runFetch()
   }, [runFetch])
 
+  const sendSelfEmail = useCallback(async ({ subject, text }) => {
+    const token = String(session?.access_token || '').trim()
+    const to = String(user?.email || '').trim()
+    if (!token || !to) return { ok: false, error: 'missing_auth' }
+    try {
+      const r = await fetch('/api/send-email', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to, subject, text }),
+      })
+      const body = await r.json().catch(() => ({}))
+      if (!r.ok) return { ok: false, error: body?.error || 'send_failed', details: body?.details || null }
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, error: e?.message || String(e) }
+    }
+  }, [session?.access_token, user?.email])
+
+  const maybeDesktopNotify = useCallback(async ({ title, body }) => {
+    try {
+      if (typeof window === 'undefined') return
+      if (!('Notification' in window)) return
+      const state = monitorStateRef.current
+      if (!state.permissionAsked) {
+        state.permissionAsked = true
+        try { await Notification.requestPermission() } catch (_) {}
+      }
+      if (Notification.permission !== 'granted') return
+      const n = new Notification(String(title || 'Connekt'), { body: String(body || '') })
+      try { n.onclick = () => { try { window.focus() } catch (_) {} } } catch (_) {}
+    } catch (_) {}
+  }, [])
+
+  const monitorWithdrawRequests = useCallback(async () => {
+    const state = monitorStateRef.current
+    if (state.isRunning) return
+    state.isRunning = true
+    try {
+      const t = String(session?.access_token || '').trim()
+      if (!t) return
+      const r = await fetch('/api/admin/withdraw-requests/list?per_page=200', { headers: { Authorization: `Bearer ${t}` } })
+      const body = await r.json().catch(() => ({}))
+      if (!r.ok) return
+      const list = Array.isArray(body?.requests) ? body.requests : []
+      const changes = []
+      for (const row of list) {
+        const id = String(row?.id || '').trim()
+        if (!id) continue
+        const prev = state.statusById.get(id) || null
+        const nextStatus = String(row?.status || '').trim() || 'requested'
+        const nextUpdated = String(row?.updatedAt || row?.updated_at || row?.createdAt || row?.created_at || '').trim()
+        const nextKey = `${id}:${nextStatus}:${nextUpdated}`
+
+        if (!prev) {
+          state.statusById.set(id, { status: nextStatus, updated: nextUpdated })
+          if (state.notifiedKeys.has(nextKey)) continue
+          state.notifiedKeys.add(nextKey)
+          changes.push({ type: 'new', row, nextStatus })
+          continue
+        }
+        if (prev.status !== nextStatus) {
+          state.statusById.set(id, { status: nextStatus, updated: nextUpdated })
+          if (state.notifiedKeys.has(nextKey)) continue
+          state.notifiedKeys.add(nextKey)
+          changes.push({ type: 'status', row, prevStatus: prev.status, nextStatus })
+          continue
+        }
+        state.statusById.set(id, { status: nextStatus, updated: nextUpdated })
+      }
+
+      if (!changes.length) return
+
+      for (const c of changes.slice(0, 5)) {
+        const producer = String(c?.row?.producerName || '').trim() || `Produtor ${String(c?.row?.producerId || '').slice(0, 8)}`
+        const amount = formatMoneyFromCents(c?.row?.amountCents || 0)
+        if (c.type === 'new') {
+          toast({ title: 'Novo saque solicitado', description: `${producer} • ${amount}` })
+          await maybeDesktopNotify({ title: 'Novo saque solicitado', body: `${producer} • ${amount}` })
+        } else {
+          const ui = withdrawStatusUi(c.nextStatus)
+          toast({ title: 'Saque atualizado', description: `${producer} • ${amount} • ${ui.label}` })
+          await maybeDesktopNotify({ title: 'Saque atualizado', body: `${producer} • ${amount} • ${ui.label}` })
+        }
+      }
+
+      const now = Date.now()
+      if (now < state.emailCooldownUntil) return
+      state.emailCooldownUntil = now + 60_000
+
+      const subject = `Atualização de saques (${changes.length})`
+      const lines = changes.slice(0, 20).map((c) => {
+        const producer = String(c?.row?.producerName || '').trim() || `Produtor ${String(c?.row?.producerId || '').slice(0, 8)}`
+        const email = String(c?.row?.producerEmail || '').trim()
+        const amount = formatMoneyFromCents(c?.row?.amountCents || 0)
+        if (c.type === 'new') return `Novo: ${producer}${email ? ` <${email}>` : ''} • ${amount} • status=Solicitado`
+        return `Status: ${producer}${email ? ` <${email}>` : ''} • ${amount} • ${String(c?.prevStatus || '')} → ${String(c?.nextStatus || '')}`
+      })
+      const sent = await sendSelfEmail({ subject, text: lines.join('\n') })
+      if (!sent.ok && !state.emailWarned) {
+        state.emailWarned = true
+        toast({ title: 'Aviso', description: 'Não consegui enviar o email de notificação.', variant: 'destructive' })
+      }
+    } finally {
+      state.isRunning = false
+    }
+  }, [maybeDesktopNotify, sendSelfEmail, session?.access_token])
+
+  useEffect(() => {
+    monitorWithdrawRequests()
+    const id = window.setInterval(() => {
+      monitorWithdrawRequests()
+    }, 15000)
+    return () => { window.clearInterval(id) }
+  }, [monitorWithdrawRequests])
+
   const filteredStandardProducers = useMemo(() => {
     const list = Array.isArray(standardProducers) ? standardProducers : []
     const query = String(q || '').trim().toLowerCase()
-    if (!query) return list
-    return list.filter((p) => {
-      const hay = `${String(p?.producerName || '').toLowerCase()} ${String(p?.producerEmail || '').toLowerCase()} ${String(p?.producerId || '').toLowerCase()}`
-      return hay.includes(query)
+    const filtered = list.filter((p) => {
+      if (query) {
+        const hay = `${String(p?.producerName || '').toLowerCase()} ${String(p?.producerEmail || '').toLowerCase()} ${String(p?.producerId || '').toLowerCase()}`
+        if (!hay.includes(query)) return false
+      }
+      if (onlyWithBalance) {
+        const cents = Number(p?.receivableCents || 0)
+        if (!(Number.isFinite(cents) && cents > 0)) return false
+      }
+      if (standardStatus && standardStatus !== 'all') {
+        const ui = standardFlowStatusUi(p)
+        if (standardStatus === 'no_balance' && ui.label !== 'Sem saldo') return false
+        if (standardStatus === 'scheduled' && ui.label !== 'Agendado') return false
+        if (standardStatus === 'available' && ui.label !== 'Disponível') return false
+      }
+      return true
     })
-  }, [standardProducers, q])
+    return filtered
+  }, [onlyWithBalance, q, standardFlowStatusUi, standardProducers, standardStatus])
+
+  const filteredRequests = useMemo(() => {
+    const list = Array.isArray(requests) ? requests : []
+    const minCents = parseMoneyToCents(minAmount)
+    return list.filter((r) => {
+      if (onlyWithBalance) {
+        const cents = Number(r?.receivableCents || 0)
+        if (!(Number.isFinite(cents) && cents > 0)) return false
+      }
+      if (minCents > 0) {
+        const cents = Number(r?.amountCents || 0)
+        if (!(Number.isFinite(cents) && cents >= minCents)) return false
+      }
+      return true
+    })
+  }, [minAmount, onlyWithBalance, requests])
 
   const standardFlowStatusUi = useCallback((row) => {
     const cents = Number(row?.receivableCents || 0)
@@ -143,6 +324,15 @@ export default function PlatformAdminWithdrawRequestsPage() {
 
               <div className="flex items-center gap-2">
                 <select
+                  value={kind}
+                  onChange={(e) => setKind(e.target.value)}
+                  className="h-[40px] rounded-[10px] border border-[#E3E4E5] px-3 text-[13px] bg-white outline-none focus:border-[#0047BB]"
+                >
+                  <option value="">Tipo (todos)</option>
+                  <option value="advance">Antecipação</option>
+                  <option value="withdraw">Saque</option>
+                </select>
+                <select
                   value={status}
                   onChange={(e) => setStatus(e.target.value)}
                   className="h-[40px] rounded-[10px] border border-[#E3E4E5] px-3 text-[13px] bg-white outline-none focus:border-[#0047BB]"
@@ -155,10 +345,63 @@ export default function PlatformAdminWithdrawRequestsPage() {
                 </select>
               </div>
             </div>
+
+            <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-4">
+              <div>
+                <label className="text-[12px] text-[#737780]">De</label>
+                <input
+                  value={fromDate}
+                  onChange={(e) => setFromDate(e.target.value)}
+                  type="date"
+                  className="mt-2 w-full h-[40px] rounded-[10px] border border-[#E3E4E5] px-3 text-[13px] bg-white outline-none focus:border-[#0047BB]"
+                />
+              </div>
+              <div>
+                <label className="text-[12px] text-[#737780]">Até</label>
+                <input
+                  value={toDate}
+                  onChange={(e) => setToDate(e.target.value)}
+                  type="date"
+                  className="mt-2 w-full h-[40px] rounded-[10px] border border-[#E3E4E5] px-3 text-[13px] bg-white outline-none focus:border-[#0047BB]"
+                />
+              </div>
+              <div>
+                <label className="text-[12px] text-[#737780]">Valor mínimo</label>
+                <input
+                  value={minAmount}
+                  onChange={(e) => setMinAmount(e.target.value)}
+                  inputMode="decimal"
+                  placeholder="0,00"
+                  className="mt-2 w-full h-[40px] rounded-[10px] border border-[#E3E4E5] px-3 text-[13px] bg-white outline-none focus:border-[#0047BB]"
+                />
+              </div>
+              <div className="flex items-end">
+                <label className="h-[40px] w-full rounded-[10px] border border-[#E3E4E5] px-3 text-[13px] bg-white outline-none focus:border-[#0047BB] flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={onlyWithBalance}
+                    onChange={(e) => setOnlyWithBalance(e.target.checked)}
+                  />
+                  <span>Somente com saldo</span>
+                </label>
+              </div>
+            </div>
           </div>
 
           <div className="rounded-[12px] border border-[#E3E4E5] bg-white p-5">
-            <div className="text-[13px] font-semibold text-[#1E1B39]">Fluxo padrão (sem adiantamento)</div>
+            <div className="flex items-center justify-between gap-3">
+              <div className="text-[13px] font-semibold text-[#1E1B39]">Fluxo padrão (sem adiantamento)</div>
+              <select
+                value={standardStatus}
+                onChange={(e) => setStandardStatus(e.target.value)}
+                className="h-[36px] rounded-[10px] border border-[#E3E4E5] px-3 text-[12px] bg-white outline-none focus:border-[#0047BB]"
+              >
+                <option value="all">Status (todos)</option>
+                <option value="available">Disponível</option>
+                <option value="scheduled">Agendado</option>
+                <option value="no_balance">Sem saldo</option>
+              </select>
+            </div>
             <div className="mt-2 text-[12px] text-[#737780]">
               Data automática do saque padrão: <span className="font-semibold text-[#1E1B39]">{standardDate ? formatIsoDateBr(standardDate) : '—'}</span>
             </div>
@@ -241,12 +484,12 @@ export default function PlatformAdminWithdrawRequestsPage() {
                     <tr>
                       <td colSpan={7} className="px-6 py-8 text-center text-[14px] text-[#737780]">Carregando…</td>
                     </tr>
-                  ) : requests.length === 0 ? (
+                  ) : filteredRequests.length === 0 ? (
                     <tr>
                       <td colSpan={7} className="px-6 py-8 text-center text-[14px] text-[#737780]">Nenhuma solicitação encontrada.</td>
                     </tr>
                   ) : (
-                    requests.slice(0, 200).map((r) => (
+                    filteredRequests.slice(0, 200).map((r) => (
                       (() => {
                         const statusUi = withdrawStatusUi(r?.status)
                         return (
