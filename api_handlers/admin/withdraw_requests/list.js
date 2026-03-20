@@ -58,6 +58,29 @@ async function fetchReceivableByProducerId(admin, producerIds) {
   return out
 }
 
+async function fetchPhonesByUserId(admin, userIds) {
+  const ids = Array.from(new Set((userIds || []).map((v) => String(v || '').trim()).filter(Boolean)))
+  if (!ids.length) return {}
+  const out = {}
+  for (const part of chunk(ids, 200)) {
+    try {
+      const { data, error } = await admin
+        .from('profiles')
+        .select('user_id,profile_phone')
+        .in('user_id', part)
+        .limit(5000)
+      if (error) continue
+      for (const row of Array.isArray(data) ? data : []) {
+        const id = String(row?.user_id || '').trim()
+        if (!id) continue
+        const phone = String(row?.profile_phone || '').trim()
+        if (phone) out[id] = phone
+      }
+    } catch (_) {}
+  }
+  return out
+}
+
 export default async function handler(req, res) {
   try {
     if (req.method !== 'GET') return json(res, 405, { error: 'method_not_allowed' })
@@ -183,6 +206,11 @@ export default async function handler(req, res) {
       [...producerIds, ...standardProducers.map((p) => String(p?.producerId || '').trim()).filter(Boolean)],
     )
 
+    const phoneByProducerId = await fetchPhonesByUserId(
+      auth.admin,
+      [...producerIds, ...standardProducers.map((p) => String(p?.producerId || '').trim()).filter(Boolean)],
+    )
+
     const normalizedRequests = requests
       .map((r) => {
         const pid = String(r?.producer_id || '').trim()
@@ -192,6 +220,7 @@ export default async function handler(req, res) {
           producerId: pid,
           producerEmail: u?.email || '',
           producerName: u?.name || '',
+          producerPhone: String(phoneByProducerId?.[pid] || ''),
           kind: String(r?.kind || '').trim(),
           amountCents: Number(r?.amount_cents || 0),
           receivableCents: Number(receivableByProducerId?.[pid] || 0),
@@ -209,7 +238,7 @@ export default async function handler(req, res) {
 
     const standardProducersWithReceivable = standardProducers.map((p) => {
       const pid = String(p?.producerId || '').trim()
-      return { ...p, receivableCents: Number(receivableByProducerId?.[pid] || 0) }
+      return { ...p, receivableCents: Number(receivableByProducerId?.[pid] || 0), producerPhone: String(phoneByProducerId?.[pid] || '') }
     })
 
     return json(res, 200, { requests: normalizedRequests, standardPayoutDate, standardProducers: standardProducersWithReceivable, missing: false })
