@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { Helmet } from 'react-helmet-async'
-import { ArrowLeft, Loader2, RefreshCcw, Search, X, Wallet } from 'lucide-react'
+import { Loader2, RefreshCcw, Search, X } from 'lucide-react'
 import { useAuth } from '@/contexts/SupabaseAuthContext'
 import { toast } from '@/hooks/use-toast.ts'
 
@@ -118,49 +118,34 @@ export default function PlatformAdminWithdrawRequestsPage() {
         <title>Connekt - Admin - Saques</title>
       </Helmet>
       <div className="min-h-screen bg-[#F5F6FA]">
-        <div className="border-b border-[#E3E4E5] bg-white">
-          <div className="max-w-[1200px] mx-auto px-6 py-5 flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                className="w-10 h-10 rounded-[12px] border border-[#E3E4E5] bg-white flex items-center justify-center hover:bg-[#F8FAFC]"
-                onClick={() => navigateTo('/admin')}
-              >
-                <ArrowLeft className="w-5 h-5 text-[#1E1B39]" />
-              </button>
-              <div className="w-10 h-10 rounded-[12px] bg-[#EEF2FF] flex items-center justify-center">
-                <Wallet className="w-5 h-5 text-[#0047BB]" />
-              </div>
+        <div className="max-w-[1200px] mx-auto px-6 py-7 space-y-4">
+          <div className="rounded-[12px] border border-[#E3E4E5] bg-white p-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div>
                 <div className="text-[14px] font-semibold text-[#1E1B39]">Saques</div>
                 <div className="text-[12px] text-[#737780]">Solicitações e fluxo padrão</div>
               </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className="h-9 px-3 rounded-[10px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#1E1B39] hover:bg-[#F8FAFC]"
+                  onClick={() => navigateTo('/admin/deploy')}
+                >
+                  Publicar
+                </button>
+                <button
+                  type="button"
+                  className="h-9 px-3 rounded-[10px] bg-[#0047BB] text-white text-[12px] font-semibold hover:bg-[#003da0] disabled:opacity-50"
+                  disabled={loading}
+                  onClick={() => setRefreshTick((v) => v + 1)}
+                >
+                  {loading ? <Loader2 className="w-4 h-4 inline-block mr-2 animate-spin" /> : <RefreshCcw className="w-4 h-4 inline-block mr-2" />}
+                  Atualizar
+                </button>
+              </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                className="h-9 px-3 rounded-[10px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#1E1B39] hover:bg-[#F8FAFC]"
-                onClick={() => navigateTo('/admin/deploy')}
-              >
-                Publicar
-              </button>
-              <button
-                type="button"
-                className="h-9 px-3 rounded-[10px] bg-[#0047BB] text-white text-[12px] font-semibold hover:bg-[#003da0] disabled:opacity-50"
-                disabled={loading}
-                onClick={() => setRefreshTick((v) => v + 1)}
-              >
-                {loading ? <Loader2 className="w-4 h-4 inline-block mr-2 animate-spin" /> : <RefreshCcw className="w-4 h-4 inline-block mr-2" />}
-                Atualizar
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div className="max-w-[1200px] mx-auto px-6 py-7 space-y-4">
-          <div className="rounded-[12px] border border-[#E3E4E5] bg-white p-4">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
               <div className="relative w-full sm:w-[380px]">
                 <Search className="w-4 h-4 text-[#9291A5] absolute left-3 top-1/2 -translate-y-1/2" />
                 <input
