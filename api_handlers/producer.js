@@ -2628,7 +2628,7 @@ export default async function handler(req, res) {
             .eq('recipient_user_id', producerUserId)
             .in('type', ['purchase_received', 'purchase_confirmed'])
             .order('created_at', { ascending: false })
-            .limit(3000)
+            .limit(1200)
           if (error) return []
           return Array.isArray(data) ? data : []
         } catch (_) {
@@ -2700,7 +2700,7 @@ export default async function handler(req, res) {
 
       consumeNotificationRows(await pullStudentNotifications(), 'student_notifications')
       consumeSalesRows(await pullSales())
-      if (latestByKey.size === 0) consumeNotificationRows(await pullProducerNotifications(), 'producer_notifications')
+      consumeNotificationRows(await pullProducerNotifications(), 'producer_notifications')
 
       const entCourses = []
       const entSims = []

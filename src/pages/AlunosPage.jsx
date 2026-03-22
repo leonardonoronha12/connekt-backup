@@ -70,6 +70,7 @@ export default function AlunosPage() {
     setEditSimulados([])
     setEditPurchasedProducts([])
     setEditOpen(true)
+    const startedAt = Date.now()
     setEditFetching(true)
     try {
       const producerId = String(user?.id || '').trim()
@@ -99,6 +100,8 @@ export default function AlunosPage() {
     } catch (e) {
       toast({ title: 'Erro', description: e?.message || 'Erro ao carregar acessos', variant: 'destructive' })
     } finally {
+      const elapsed = Date.now() - startedAt
+      if (elapsed < 250) await new Promise((resolve) => setTimeout(resolve, 250 - elapsed))
       setEditFetching(false)
     }
   }, [authHeaders, user?.id])
@@ -266,6 +269,13 @@ export default function AlunosPage() {
                 </button>
               </div>
               <div className="mt-3 space-y-2">
+                {editFetching ? (
+                  <div className="text-[12px] text-[#737780]">
+                    <Loader2 className="w-4 h-4 inline-block mr-2 animate-spin" />
+                    Carregando…
+                  </div>
+                ) : null}
+
                 {(Array.isArray(editPurchasedProducts) ? editPurchasedProducts : []).length > 0 ? (
                   <div className="rounded-[12px] border border-[#E3E4E5] bg-white p-3">
                     {(Array.isArray(editPurchasedProducts) ? editPurchasedProducts : []).slice(0, 30).map((p, idx) => (
@@ -279,7 +289,7 @@ export default function AlunosPage() {
                   </div>
                 ) : null}
 
-                {(Array.isArray(editSimulados) ? editSimulados : []).length === 0 ? (
+                {!editFetching && (Array.isArray(editSimulados) ? editSimulados : []).length === 0 ? (
                   <div className="text-[12px] text-[#737780]">Nenhum produto liberado.</div>
                 ) : (
                   (Array.isArray(editSimulados) ? editSimulados : []).map((s, idx) => (
@@ -339,7 +349,7 @@ export default function AlunosPage() {
               Cancelar
             </button>
             <button type="button" className="h-9 px-3 rounded-[10px] bg-[#0047BB] text-white text-[12px] font-semibold hover:bg-[#003da0] disabled:opacity-50" disabled={editSaving || editFetching} onClick={saveEdit}>
-              {editSaving ? 'Carregando...' : 'Salvar'}
+              {editSaving || editFetching ? 'Carregando...' : 'Salvar'}
             </button>
           </div>
         </div>
