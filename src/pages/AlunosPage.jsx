@@ -33,8 +33,6 @@ export default function AlunosPage() {
   }, [session?.access_token])
 
   const [query, setQuery] = useState('')
-  const [courseFilter, setCourseFilter] = useState('')
-  const [courses, setCourses] = useState([])
 
   const [loading, setLoading] = useState(true)
   const [rows, setRows] = useState([])
@@ -55,13 +53,12 @@ export default function AlunosPage() {
     qs.set('type', 'students_manage_list')
     qs.set('producerId', producerId)
     if (query.trim()) qs.set('q', query.trim())
-    if (courseFilter) qs.set('course_id', courseFilter)
     qs.set('per_page', '5000')
     const r = await fetch(`/api/producer?${qs.toString()}`, { headers: authHeaders })
     const body = await r.json().catch(() => ({}))
     if (!r.ok) throw new Error(body?.error || 'Falha ao carregar alunos')
     return body || {}
-  }, [authHeaders, courseFilter, query, user?.id])
+  }, [authHeaders, query, user?.id])
 
   const openEdit = useCallback(async (row) => {
     const r = row && typeof row === 'object' ? row : null
@@ -158,7 +155,6 @@ export default function AlunosPage() {
         const body = await fetchStudents()
         if (!active) return
         setRows(Array.isArray(body?.students) ? body.students : [])
-        setCourses(Array.isArray(body?.courses) ? body.courses : [])
         if (!active) return
         try {
           const producerId = String(user?.id || '').trim()
@@ -182,7 +178,6 @@ export default function AlunosPage() {
         if (!active) return
         const msg = String(e?.message || 'Erro ao carregar alunos')
         setRows([])
-        setCourses([])
         setError(msg)
         toast({ title: 'Erro', description: msg, variant: 'destructive' })
       } finally {
@@ -193,15 +188,6 @@ export default function AlunosPage() {
     return () => { active = false }
   }, [fetchStudents])
 
-  const sortedCourses = useMemo(() => {
-    const list = Array.isArray(courses) ? courses : []
-    const out = list
-      .map((c) => ({ id: String(c?.id || '').trim(), title: String(c?.title || '').trim() }))
-      .filter((c) => c.id && c.title)
-    out.sort((a, b) => a.title.localeCompare(b.title, 'pt-BR'))
-    return out
-  }, [courses])
-
   const exportXlsx = useCallback(async () => {
     try {
       const students = Array.isArray(rows) ? rows : []
@@ -211,7 +197,6 @@ export default function AlunosPage() {
         email: String(s?.email || ''),
         telefone: String(s?.phone || ''),
         produto: formatProductCell(s) === '—' ? '' : formatProductCell(s),
-        cursos: Array.isArray(s?.courses) ? s.courses.map((c) => String(c?.course_name || '')).filter(Boolean).join(', ') : '',
       }))
       const ws = XLSX.utils.json_to_sheet(sheetRows)
       const wb = XLSX.utils.book_new()
@@ -279,19 +264,6 @@ export default function AlunosPage() {
                 </button>
               ) : null}
             </div>
-
-            <div className="flex items-center gap-2">
-              <select
-                value={courseFilter}
-                onChange={(e) => setCourseFilter(e.target.value)}
-                className="h-[40px] rounded-[10px] border border-[#E3E4E5] px-3 text-[13px] bg-white outline-none focus:border-[#0047BB]"
-              >
-                <option value="">Curso (todos)</option>
-                {sortedCourses.map((c) => (
-                  <option key={c.id} value={c.id}>{c.title}</option>
-                ))}
-              </select>
-            </div>
           </div>
         </div>
 
@@ -304,25 +276,24 @@ export default function AlunosPage() {
                   <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#737780]">Email</th>
                   <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#737780]">Telefone</th>
                   <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#737780]">Produto</th>
-                  <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#737780]">Cursos</th>
                   <th className="px-6 py-4 text-right text-[12px] font-semibold text-[#737780]">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#EDEEF0]">
                 {loading ? (
                   <tr>
-                    <td colSpan={6} className="px-6 py-8 text-center text-[14px] text-[#737780]">
+                    <td colSpan={5} className="px-6 py-8 text-center text-[14px] text-[#737780]">
                       <Loader2 className="w-4 h-4 inline-block mr-2 animate-spin" />
                       Carregando…
                     </td>
                   </tr>
                 ) : error ? (
                   <tr>
-                    <td colSpan={6} className="px-6 py-8 text-center text-[14px] text-[#737780]">{error}</td>
+                    <td colSpan={5} className="px-6 py-8 text-center text-[14px] text-[#737780]">{error}</td>
                   </tr>
                 ) : rows.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-6 py-8 text-center text-[14px] text-[#737780]">Nenhum aluno encontrado.</td>
+                    <td colSpan={5} className="px-6 py-8 text-center text-[14px] text-[#737780]">Nenhum aluno encontrado.</td>
                   </tr>
                 ) : (
                   rows.slice(0, 500).map((s) => (
@@ -331,7 +302,6 @@ export default function AlunosPage() {
                       <td className="px-6 py-4 text-[13px] text-[#1E1B39]">{String(s?.email || '').trim() || '—'}</td>
                       <td className="px-6 py-4 text-[13px] text-[#1E1B39]">{formatPhone(s?.phone || '') || '—'}</td>
                       <td className="px-6 py-4 text-[13px] text-[#1E1B39]">{formatProductCell(s)}</td>
-                      <td className="px-6 py-4 text-[13px] text-[#1E1B39]">{Array.isArray(s?.courses) ? s.courses.length : 0}</td>
                       <td className="px-6 py-4 text-right">
                         <button
                           type="button"
