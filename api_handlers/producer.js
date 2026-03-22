@@ -2700,6 +2700,16 @@ export default async function handler(req, res) {
         if (!cur || nextAt >= curAt) latestByKey.set(k, value)
       }
 
+      const purchasedByKey = new Map()
+      const setPurchased = (key, value) => {
+        const k = String(key || '').trim()
+        if (!k) return
+        const cur = purchasedByKey.get(k) || null
+        const curAt = cur?.createdAt ? new Date(cur.createdAt).getTime() : 0
+        const nextAt = value?.createdAt ? new Date(value.createdAt).getTime() : 0
+        if (!cur || nextAt >= curAt) purchasedByKey.set(k, value)
+      }
+
       const studentCourseRows = await fetchStudentCourseRows()
       for (const row of Array.isArray(studentCourseRows) ? studentCourseRows : []) {
         const courseId =
@@ -2719,7 +2729,7 @@ export default async function handler(req, res) {
         try {
           const { data, error } = await admin
             .from('notifications')
-            .select('id,entity_type,entity_id,data,created_at,type')
+            .select('id,entity_type,entity_id,entity_name,data,created_at,type')
             .eq('recipient_user_id', targetUserId)
             .in('type', ['purchase_confirmed'])
             .order('created_at', { ascending: false })
@@ -2773,7 +2783,7 @@ export default async function handler(req, res) {
         try {
           const { data, error } = await admin
             .from('notifications')
-            .select('id,entity_type,entity_id,data,created_at,type')
+            .select('id,entity_type,entity_id,entity_name,data,created_at,type')
             .eq('recipient_user_id', producerUserId)
             .in('type', ['purchase_received', 'purchase_confirmed'])
             .order('created_at', { ascending: false })
@@ -2795,14 +2805,26 @@ export default async function handler(req, res) {
             String(n?.entity_id || '').trim() ||
             String(data?.courseId || data?.course_id || '').trim() ||
             String(data?.simId || data?.sim_id || '').trim()
+          const entityNameRaw = String(n?.entity_name || '').trim() || String(data?.entity_name || data?.entityName || '').trim()
+          const title =
+            entityNameRaw ||
+            (entityTypeRaw === 'course' ? String(courses.find((c) => String(c?.id || '').trim() === entityIdRaw)?.title || '') : '') ||
+            (entityTypeRaw === 'simulado' ? String(simulados.find((s) => String(s?.id || '').trim() === entityIdRaw)?.title || '') : '') ||
+            ''
+
+          const action = String(data?.action || '').trim().toLowerCase() || 'grant'
+          const expiresAt = parseExpiresYmd(data?.expires_at || data?.expiresAt || '')
+          const expired = isExpiredYmd(expiresAt) || action === 'revoke'
+          if (title) {
+            setPurchased(`${title}`, { title, expiresAt: expiresAt || '', createdAt: n?.created_at || null, source: sourceOverride || String(data?.source || '').trim() })
+          }
+
           if (!entityTypeRaw || !entityIdRaw) continue
           if (entityTypeRaw !== 'course' && entityTypeRaw !== 'simulado') continue
           if (entityTypeRaw === 'course' && !allowedCourseIds.has(entityIdRaw)) continue
           if (entityTypeRaw === 'simulado' && !allowedSimuladoIds.has(entityIdRaw)) continue
           const key = `${entityTypeRaw}:${entityIdRaw}`
-          const action = String(data?.action || '').trim().toLowerCase() || 'grant'
-          const expiresAt = parseExpiresYmd(data?.expires_at || data?.expiresAt || '')
-          const expired = isExpiredYmd(expiresAt) || action === 'revoke'
+
           setLatest(key, {
             entityType: entityTypeRaw,
             entityId: entityIdRaw,
@@ -2852,11 +2874,17 @@ export default async function handler(req, res) {
       entCourses.sort((a, b) => String(a?.entityId || '').localeCompare(String(b?.entityId || '')))
       entSims.sort((a, b) => String(a?.entityId || '').localeCompare(String(b?.entityId || '')))
 
+      const products = Array.from(purchasedByKey.values())
+        .map((p) => ({ title: String(p?.title || '').trim(), expiresAt: String(p?.expiresAt || '').trim() }))
+        .filter((p) => p.title)
+      products.sort((a, b) => a.title.localeCompare(b.title, 'pt-BR'))
+
       return json(res, 200, {
         ok: true,
         user_id: targetUserId,
         courses: courses.map((c) => ({ id: String(c?.id || '').trim(), title: String(c?.title || '').trim() })).filter((c) => c.id),
         simulados: simulados.map((s) => ({ id: String(s?.id || '').trim(), title: String(s?.title || '').trim() })).filter((s) => s.id),
+        products,
         entitlements: {
           courses: entCourses.map((e) => ({ courseId: e.entityId, expiresAt: e.expiresAt || '', expired: !!e.expired })),
           simulados: entSims.map((e) => ({ simId: e.entityId, expiresAt: e.expiresAt || '', expired: !!e.expired })),
