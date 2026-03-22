@@ -90,13 +90,11 @@ export default function AlunosPage() {
       const sims = Array.isArray(ent?.simulados) ? ent.simulados : []
       setEditCourses(
         courses
-          .filter((c) => !c?.expired)
           .map((c) => ({ courseId: String(c?.courseId || '').trim(), expiresAt: String(c?.expiresAt || '').trim() }))
           .filter((c) => c.courseId),
       )
       setEditSimulados(
         sims
-          .filter((s) => !s?.expired)
           .map((s) => ({ simId: String(s?.simId || '').trim(), expiresAt: String(s?.expiresAt || '').trim() }))
           .filter((s) => s.simId),
       )

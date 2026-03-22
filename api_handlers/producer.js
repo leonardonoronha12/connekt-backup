@@ -2661,6 +2661,43 @@ export default async function handler(req, res) {
         try { return JSON.parse(value) } catch (_) { return null }
       }
 
+      const fetchStudentCourseRows = async () => {
+        if (allowedCourseIds.size === 0) return []
+        const courseIds = Array.from(allowedCourseIds)
+        const userCols = ['user_id', 'userId', 'student_user_id', 'studentUserId']
+        const courseCols = ['course_id', 'courseId', 'course_uuid', 'courseUuid', 'course']
+        const selectAttempts = [
+          'id,course_id,courseId,course_uuid,course,course_name,courseName,expires_at,expiresAt,created_at,user_id,student_user_id',
+          'id,course_id,course_name,expires_at,created_at,user_id',
+          '*',
+        ]
+        for (const sel of selectAttempts) {
+          for (const ucol of userCols) {
+            for (const ccol of courseCols) {
+              try {
+                const { data, error } = await admin
+                  .from('student_courses')
+                  .select(sel)
+                  .eq(ucol, targetUserId)
+                  .in(ccol, courseIds)
+                  .order('created_at', { ascending: false })
+                  .limit(10000)
+                if (error) {
+                  if (isMissingColumn(error, ucol) || isMissingColumn(error, ccol)) continue
+                  continue
+                }
+                const rows = Array.isArray(data) ? data : []
+                if (rows.length === 0) continue
+                return rows
+              } catch (e) {
+                if (isMissingColumn(e, ucol) || isMissingColumn(e, ccol)) continue
+              }
+            }
+          }
+        }
+        return []
+      }
+
       const { data: notif } = await admin
         .from('notifications')
         .select('id,entity_type,entity_id,data,created_at,type')
@@ -2670,21 +2707,41 @@ export default async function handler(req, res) {
         .limit(5000)
 
       const latestByKey = new Map()
-      for (const n of Array.isArray(notif) ? notif : []) {
-        const entityType = String(n?.entity_type || '').trim().toLowerCase()
-        const entityId = String(n?.entity_id || '').trim()
-        if (!entityType || !entityId) continue
-        if (entityType !== 'course' && entityType !== 'simulado') continue
-        if (entityType === 'course' && !allowedCourseIds.has(entityId)) continue
-        if (entityType === 'simulado' && !allowedSimuladoIds.has(entityId)) continue
-        const key = `${entityType}:${entityId}`
+
+      const studentCourseRows = await fetchStudentCourseRows()
+      for (const row of Array.isArray(studentCourseRows) ? studentCourseRows : []) {
+        const courseId =
+          String(row?.course_id || '').trim() ||
+          String(row?.courseId || '').trim() ||
+          String(row?.course_uuid || '').trim() ||
+          String(row?.courseUuid || '').trim() ||
+          String(row?.course || '').trim()
+        if (!courseId || !allowedCourseIds.has(courseId)) continue
+        const key = `course:${courseId}`
         if (latestByKey.has(key)) continue
+        const expiresAt = parseExpiresYmd(row?.expires_at || row?.expiresAt || row?.expires_at_iso || '') || ''
+        const expired = expiresAt ? isExpiredYmd(expiresAt) : false
+        latestByKey.set(key, { entityType: 'course', entityId: courseId, expiresAt, source: 'student_courses', action: 'grant', expired, createdAt: row?.created_at || null })
+      }
+
+      for (const n of Array.isArray(notif) ? notif : []) {
         const data = parseJsonMaybe(n?.data) || (n?.data && typeof n.data === 'object' ? n.data : null) || {}
+        const entityTypeRaw = String(n?.entity_type || data?.type || '').trim().toLowerCase()
+        const entityIdRaw =
+          String(n?.entity_id || '').trim() ||
+          String(data?.courseId || data?.course_id || '').trim() ||
+          String(data?.simId || data?.sim_id || '').trim()
+        if (!entityTypeRaw || !entityIdRaw) continue
+        if (entityTypeRaw !== 'course' && entityTypeRaw !== 'simulado') continue
+        if (entityTypeRaw === 'course' && !allowedCourseIds.has(entityIdRaw)) continue
+        if (entityTypeRaw === 'simulado' && !allowedSimuladoIds.has(entityIdRaw)) continue
+        const key = `${entityTypeRaw}:${entityIdRaw}`
+        if (latestByKey.has(key)) continue
         const source = String(data?.source || '').trim()
         const action = String(data?.action || '').trim().toLowerCase() || 'grant'
         const expiresAt = parseExpiresYmd(data?.expires_at || data?.expiresAt || '')
         const expired = isExpiredYmd(expiresAt) || action === 'revoke'
-        latestByKey.set(key, { entityType, entityId, expiresAt: expiresAt || '', source, action, expired, createdAt: n?.created_at || null })
+        latestByKey.set(key, { entityType: entityTypeRaw, entityId: entityIdRaw, expiresAt: expiresAt || '', source, action, expired, createdAt: n?.created_at || null })
       }
 
       const entCourses = []
