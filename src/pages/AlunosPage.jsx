@@ -223,7 +223,7 @@ export default function AlunosPage() {
   const editModal = editOpen ? (
     <div className="fixed inset-0 z-[99999] bg-black/40 overflow-y-auto" onMouseDown={() => { if (!editSaving) setEditOpen(false) }}>
       <div className="min-h-[100dvh] flex items-start justify-center p-6 py-10" onMouseDown={(e) => e.stopPropagation()}>
-        <div className="w-full max-w-[520px] rounded-[14px] bg-white border border-[#E3E4E5] shadow-xl flex flex-col max-h-[calc(100dvh-80px)]">
+        <div className="w-full max-w-[520px] rounded-[14px] bg-white border border-[#E3E4E5] shadow-xl flex flex-col max-h-[calc(100dvh-80px)] relative">
           <div className="px-5 py-4 border-b border-[#E3E4E5] flex items-center justify-between gap-3">
             <div className="min-w-0">
               <div className="text-[14px] font-semibold text-[#1E1B39]">Editar usuário</div>
@@ -233,6 +233,15 @@ export default function AlunosPage() {
               Fechar
             </button>
           </div>
+
+          {editFetching ? (
+            <div className="absolute inset-0 bg-white/80 flex items-center justify-center">
+              <div className="text-[13px] text-[#1E1B39] font-semibold">
+                <Loader2 className="w-4 h-4 inline-block mr-2 animate-spin" />
+                Carregando…
+              </div>
+            </div>
+          ) : null}
 
           <div className="p-5 grid grid-cols-1 gap-4 overflow-y-auto">
             <div>
