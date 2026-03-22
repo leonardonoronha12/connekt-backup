@@ -47,6 +47,7 @@ export default function AlunosPage() {
   const [editCourses, setEditCourses] = useState([])
   const [editSimulados, setEditSimulados] = useState([])
   const [editSimuladosOptions, setEditSimuladosOptions] = useState([])
+  const [editPurchasedProducts, setEditPurchasedProducts] = useState([])
 
   const fetchStudents = useCallback(async () => {
     const producerId = String(user?.id || '').trim()
@@ -70,6 +71,7 @@ export default function AlunosPage() {
     setEditForm({ name: String(r?.name || '').trim(), phone: String(r?.phone || '').trim() })
     setEditCourses([])
     setEditSimulados([])
+    setEditPurchasedProducts([])
     setEditOpen(true)
     setEditLoading(true)
     try {
@@ -87,6 +89,7 @@ export default function AlunosPage() {
       const ent = body?.entitlements || {}
       const courses = Array.isArray(ent?.courses) ? ent.courses : []
       const sims = Array.isArray(ent?.simulados) ? ent.simulados : []
+      const purchased = Array.isArray(body?.products) ? body.products : []
       setEditCourses(
         courses
           .map((c) => ({ courseId: String(c?.courseId || '').trim(), expiresAt: String(c?.expiresAt || '').trim() }))
@@ -96,6 +99,11 @@ export default function AlunosPage() {
         sims
           .map((s) => ({ simId: String(s?.simId || '').trim(), expiresAt: String(s?.expiresAt || '').trim() }))
           .filter((s) => s.simId),
+      )
+      setEditPurchasedProducts(
+        purchased
+          .map((p) => ({ title: String(p?.title || '').trim(), expiresAt: String(p?.expiresAt || '').trim() }))
+          .filter((p) => p.title),
       )
     } catch (e) {
       toast({ title: 'Erro', description: e?.message || 'Erro ao carregar acessos', variant: 'destructive' })
@@ -456,6 +464,19 @@ export default function AlunosPage() {
                   </button>
                 </div>
                 <div className="mt-3 space-y-2">
+                  {(Array.isArray(editPurchasedProducts) ? editPurchasedProducts : []).length > 0 ? (
+                    <div className="rounded-[12px] border border-[#E3E4E5] bg-white p-3">
+                      {(Array.isArray(editPurchasedProducts) ? editPurchasedProducts : []).slice(0, 30).map((p, idx) => (
+                        <div key={`${p?.title || ''}-${idx}`} className="flex items-center justify-between gap-3 py-1">
+                          <div className="min-w-0 text-[12px] text-[#1E1B39] truncate">{String(p?.title || '').trim()}</div>
+                          <div className="text-[11px] text-[#737780] whitespace-nowrap">
+                            {p?.expiresAt ? `expira: ${String(p.expiresAt)}` : 'sem expiração'}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+
                   {(Array.isArray(editSimulados) ? editSimulados : []).length === 0 ? (
                     <div className="text-[12px] text-[#737780]">Nenhum produto liberado.</div>
                   ) : (
