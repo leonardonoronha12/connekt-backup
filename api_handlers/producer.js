@@ -1,4 +1,5 @@
 import { getSupabaseAdmin, getAuthedUser, isUuid, json, readRawBody } from '../src/server/supabaseAdmin.js'
+import crypto from 'node:crypto'
 import * as dns from 'node:dns/promises'
 
 function asArray(v) {
@@ -39,6 +40,39 @@ function getChoiceMedia(meta, idx) {
     imageUrl: node.imageUrl || node.image_url || node.image || null,
     videoUrl: node.videoUrl || node.video_url || node.video || null,
   }
+}
+
+function deterministicUuid(seed) {
+  const hex = crypto.createHash('sha1').update(String(seed || '')).digest('hex').slice(0, 32)
+  const a = hex.slice(0, 8)
+  const b = hex.slice(8, 12)
+  const c = `4${hex.slice(13, 16)}`
+  const variantNibble = (parseInt(hex.slice(16, 17), 16) & 0x3) | 0x8
+  const d = `${variantNibble.toString(16)}${hex.slice(17, 20)}`
+  const e = hex.slice(20, 32)
+  return `${a}-${b}-${c}-${d}-${e}`
+}
+
+function parseExpiresYmd(v) {
+  const s = String(v || '').trim()
+  if (!s) return ''
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (m) return s
+  const d = new Date(s)
+  if (!Number.isFinite(d.getTime())) return ''
+  const yyyy = d.getUTCFullYear()
+  const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
+  const dd = String(d.getUTCDate()).padStart(2, '0')
+  return `${yyyy}-${mm}-${dd}`
+}
+
+function isExpiredYmd(expiresAtYmd) {
+  const v = String(expiresAtYmd || '').trim()
+  if (!v) return false
+  const m = v.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (!m) return false
+  const endMs = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 23, 59, 59, 999)
+  return Date.now() > endMs
 }
 
 function mapQuestionRow(row) {
@@ -2531,6 +2565,439 @@ export default async function handler(req, res) {
       }
 
       return json(res, 200, { ok: true, user_id: targetUserId, profile: saved })
+    }
+
+    if (type === 'student_entitlements_get') {
+      res.setHeader('Cache-Control', 'no-store')
+      const producerUserId = String(auth.user?.id || '').trim()
+      if (!producerUserId || producerId !== producerUserId) return json(res, 403, { error: 'forbidden' })
+
+      const targetUserId = String(u.searchParams.get('user_id') || u.searchParams.get('userId') || '').trim()
+      if (!targetUserId || !isUuid(targetUserId)) return json(res, 400, { error: 'invalid_user_id' })
+
+      const producerRowId = await resolveProducerRowIdFromUserId(producerUserId)
+      const producerKeys = Array.from(new Set([producerUserId, producerRowId].map((v) => String(v || '').trim()).filter(Boolean)))
+
+      const isMissingColumn = (err, col) => {
+        const msg = String(err?.message || err?.details || err || '').toLowerCase()
+        const code = String(err?.code || '').toUpperCase()
+        const c = String(col || '').toLowerCase()
+        return (
+          code === 'PGRST204' ||
+          code === '42703' ||
+          msg.includes(`could not find the '${c}' column`) ||
+          (msg.includes('schema cache') && msg.includes(c)) ||
+          (msg.includes('does not exist') && msg.includes(c))
+        )
+      }
+
+      const fetchCoursesByOwner = async () => {
+        const select = 'id,title,user_id,created_at,status'
+        const cols = ['user_id', 'producer_id', 'producer_user_id', 'producer_external_id', 'produtor_id', 'created_by']
+        for (const col of cols) {
+          try {
+            const { data, error } = await admin
+              .from('courses')
+              .select(select)
+              .in(col, producerKeys)
+              .order('created_at', { ascending: false })
+              .limit(1000)
+            if (error) {
+              if (isMissingColumn(error, col)) continue
+              continue
+            }
+            return Array.isArray(data) ? data : []
+          } catch (e) {
+            if (isMissingColumn(e, col)) continue
+          }
+        }
+        return []
+      }
+
+      const fetchSimuladosByOwner = async () => {
+        const selectAttempts = [
+          'id,title,created_at,produtor_id,user_id,created_by',
+          'id,title,created_at,user_id,created_by',
+          'id,title,created_at,user_id',
+          'id,title,created_at',
+          '*',
+        ]
+        const cols = ['produtor_id', 'user_id', 'created_by']
+        for (const col of cols) {
+          for (const sel of selectAttempts) {
+            try {
+              const { data, error } = await admin
+                .from('simulados')
+                .select(sel)
+                .in(col, producerKeys)
+                .order('created_at', { ascending: false })
+                .limit(500)
+              if (error) {
+                if (isMissingColumn(error, col) || (sel.includes('produtor_id') && isMissingColumn(error, 'produtor_id')) || (sel.includes('created_by') && isMissingColumn(error, 'created_by'))) {
+                  continue
+                }
+                return []
+              }
+              return Array.isArray(data) ? data : []
+            } catch (e) {
+              if (isMissingColumn(e, col)) continue
+              return []
+            }
+          }
+        }
+        return []
+      }
+
+      const courses = await fetchCoursesByOwner()
+      const simulados = await fetchSimuladosByOwner()
+
+      const allowedCourseIds = new Set(courses.map((c) => String(c?.id || '').trim()).filter(Boolean))
+      const allowedSimuladoIds = new Set(simulados.map((s) => String(s?.id || '').trim()).filter(Boolean))
+
+      const parseJsonMaybe = (value) => {
+        if (!value) return null
+        if (typeof value === 'object') return value
+        if (typeof value !== 'string') return null
+        try { return JSON.parse(value) } catch (_) { return null }
+      }
+
+      const { data: notif } = await admin
+        .from('notifications')
+        .select('id,entity_type,entity_id,data,created_at,type')
+        .eq('recipient_user_id', targetUserId)
+        .in('type', ['purchase_confirmed'])
+        .order('created_at', { ascending: false })
+        .limit(5000)
+
+      const latestByKey = new Map()
+      for (const n of Array.isArray(notif) ? notif : []) {
+        const entityType = String(n?.entity_type || '').trim().toLowerCase()
+        const entityId = String(n?.entity_id || '').trim()
+        if (!entityType || !entityId) continue
+        if (entityType !== 'course' && entityType !== 'simulado') continue
+        if (entityType === 'course' && !allowedCourseIds.has(entityId)) continue
+        if (entityType === 'simulado' && !allowedSimuladoIds.has(entityId)) continue
+        const key = `${entityType}:${entityId}`
+        if (latestByKey.has(key)) continue
+        const data = parseJsonMaybe(n?.data) || (n?.data && typeof n.data === 'object' ? n.data : null) || {}
+        const source = String(data?.source || '').trim()
+        const action = String(data?.action || '').trim().toLowerCase() || 'grant'
+        const expiresAt = parseExpiresYmd(data?.expires_at || data?.expiresAt || '')
+        const expired = isExpiredYmd(expiresAt) || action === 'revoke'
+        latestByKey.set(key, { entityType, entityId, expiresAt: expiresAt || '', source, action, expired, createdAt: n?.created_at || null })
+      }
+
+      const entCourses = []
+      const entSims = []
+      for (const v of latestByKey.values()) {
+        if (v.entityType === 'course') entCourses.push(v)
+        if (v.entityType === 'simulado') entSims.push(v)
+      }
+
+      entCourses.sort((a, b) => String(a?.entityId || '').localeCompare(String(b?.entityId || '')))
+      entSims.sort((a, b) => String(a?.entityId || '').localeCompare(String(b?.entityId || '')))
+
+      return json(res, 200, {
+        ok: true,
+        user_id: targetUserId,
+        courses: courses.map((c) => ({ id: String(c?.id || '').trim(), title: String(c?.title || '').trim() })).filter((c) => c.id),
+        simulados: simulados.map((s) => ({ id: String(s?.id || '').trim(), title: String(s?.title || '').trim() })).filter((s) => s.id),
+        entitlements: {
+          courses: entCourses.map((e) => ({ courseId: e.entityId, expiresAt: e.expiresAt || '', expired: !!e.expired })),
+          simulados: entSims.map((e) => ({ simId: e.entityId, expiresAt: e.expiresAt || '', expired: !!e.expired })),
+        },
+      })
+    }
+
+    if (type === 'student_entitlements_update') {
+      res.setHeader('Cache-Control', 'no-store')
+      if (req.method !== 'POST') return json(res, 405, { error: 'method_not_allowed' })
+      const producerUserId = String(auth.user?.id || '').trim()
+      if (!producerUserId || producerId !== producerUserId) return json(res, 403, { error: 'forbidden' })
+
+      const raw = await readRawBody(req).catch(() => null)
+      let body = null
+      try { body = raw ? JSON.parse(raw.toString('utf-8') || '{}') : {} } catch (_) { body = {} }
+
+      const targetUserId = String(body?.userId || body?.user_id || '').trim()
+      if (!targetUserId || !isUuid(targetUserId)) return json(res, 400, { error: 'invalid_user_id' })
+
+      const producerRowId = await resolveProducerRowIdFromUserId(producerUserId)
+      const producerKeys = Array.from(new Set([producerUserId, producerRowId].map((v) => String(v || '').trim()).filter(Boolean)))
+
+      const isMissingColumn = (err, col) => {
+        const msg = String(err?.message || err?.details || err || '').toLowerCase()
+        const code = String(err?.code || '').toUpperCase()
+        const c = String(col || '').toLowerCase()
+        return (
+          code === 'PGRST204' ||
+          code === '42703' ||
+          msg.includes(`could not find the '${c}' column`) ||
+          (msg.includes('schema cache') && msg.includes(c)) ||
+          (msg.includes('does not exist') && msg.includes(c))
+        )
+      }
+
+      const fetchCoursesByOwner = async () => {
+        const select = 'id,title,user_id,created_at,status'
+        const cols = ['user_id', 'producer_id', 'producer_user_id', 'producer_external_id', 'produtor_id', 'created_by']
+        for (const col of cols) {
+          try {
+            const { data, error } = await admin
+              .from('courses')
+              .select(select)
+              .in(col, producerKeys)
+              .order('created_at', { ascending: false })
+              .limit(1000)
+            if (error) {
+              if (isMissingColumn(error, col)) continue
+              continue
+            }
+            return Array.isArray(data) ? data : []
+          } catch (e) {
+            if (isMissingColumn(e, col)) continue
+          }
+        }
+        return []
+      }
+
+      const fetchSimuladosByOwner = async () => {
+        const selectAttempts = [
+          'id,title,created_at,produtor_id,user_id,created_by',
+          'id,title,created_at,user_id,created_by',
+          'id,title,created_at,user_id',
+          'id,title,created_at',
+          '*',
+        ]
+        const cols = ['produtor_id', 'user_id', 'created_by']
+        for (const col of cols) {
+          for (const sel of selectAttempts) {
+            try {
+              const { data, error } = await admin
+                .from('simulados')
+                .select(sel)
+                .in(col, producerKeys)
+                .order('created_at', { ascending: false })
+                .limit(500)
+              if (error) {
+                if (isMissingColumn(error, col) || (sel.includes('produtor_id') && isMissingColumn(error, 'produtor_id')) || (sel.includes('created_by') && isMissingColumn(error, 'created_by'))) {
+                  continue
+                }
+                return []
+              }
+              return Array.isArray(data) ? data : []
+            } catch (e) {
+              if (isMissingColumn(e, col)) continue
+              return []
+            }
+          }
+        }
+        return []
+      }
+
+      const courses = await fetchCoursesByOwner()
+      const simulados = await fetchSimuladosByOwner()
+      const allowedCourseIds = new Set(courses.map((c) => String(c?.id || '').trim()).filter(Boolean))
+      const allowedSimuladoIds = new Set(simulados.map((s) => String(s?.id || '').trim()).filter(Boolean))
+
+      const desiredCourses = Array.isArray(body?.courses) ? body.courses : []
+      const desiredCourseMap = new Map()
+      for (const c of desiredCourses) {
+        const cid = String(c?.courseId || c?.course_id || '').trim()
+        if (!cid || !allowedCourseIds.has(cid)) continue
+        desiredCourseMap.set(cid, parseExpiresYmd(c?.expiresAt || c?.expires_at || '') || '')
+      }
+
+      const desiredSims = Array.isArray(body?.simulados) ? body.simulados : []
+      const desiredSimMap = new Map()
+      for (const s of desiredSims) {
+        const sid = String(s?.simId || s?.sim_id || '').trim()
+        if (!sid || !allowedSimuladoIds.has(sid)) continue
+        desiredSimMap.set(sid, parseExpiresYmd(s?.expiresAt || s?.expires_at || '') || '')
+      }
+
+      const parseJsonMaybe = (value) => {
+        if (!value) return null
+        if (typeof value === 'object') return value
+        if (typeof value !== 'string') return null
+        try { return JSON.parse(value) } catch (_) { return null }
+      }
+
+      const { data: notif } = await admin
+        .from('notifications')
+        .select('id,entity_type,entity_id,data,created_at,type')
+        .eq('recipient_user_id', targetUserId)
+        .in('type', ['purchase_confirmed'])
+        .order('created_at', { ascending: false })
+        .limit(5000)
+
+      const latestByKey = new Map()
+      for (const n of Array.isArray(notif) ? notif : []) {
+        const entityType = String(n?.entity_type || '').trim().toLowerCase()
+        const entityId = String(n?.entity_id || '').trim()
+        if (!entityType || !entityId) continue
+        if (entityType !== 'course' && entityType !== 'simulado') continue
+        if (entityType === 'course' && !allowedCourseIds.has(entityId)) continue
+        if (entityType === 'simulado' && !allowedSimuladoIds.has(entityId)) continue
+        const key = `${entityType}:${entityId}`
+        if (latestByKey.has(key)) continue
+        const data = parseJsonMaybe(n?.data) || (n?.data && typeof n.data === 'object' ? n.data : null) || {}
+        const action = String(data?.action || '').trim().toLowerCase() || 'grant'
+        const expiresAt = parseExpiresYmd(data?.expires_at || data?.expiresAt || '')
+        const expired = isExpiredYmd(expiresAt) || action === 'revoke'
+        latestByKey.set(key, { entityType, entityId, expiresAt: expiresAt || '', expired })
+      }
+
+      const nowIso = new Date().toISOString()
+      const yesterday = (() => {
+        const d = new Date()
+        d.setUTCDate(d.getUTCDate() - 1)
+        const yyyy = d.getUTCFullYear()
+        const mm = String(d.getUTCMonth() + 1).padStart(2, '0')
+        const dd = String(d.getUTCDate()).padStart(2, '0')
+        return `${yyyy}-${mm}-${dd}`
+      })()
+
+      const inserts = []
+      const courseTitleById = new Map(courses.map((c) => [String(c?.id || '').trim(), String(c?.title || 'Curso')]))
+      const simTitleById = new Map(simulados.map((s) => [String(s?.id || '').trim(), String(s?.title || 'Simulado')]))
+
+      for (const [cid, exp] of desiredCourseMap.entries()) {
+        const key = `course:${cid}`
+        const current = latestByKey.get(key) || null
+        const shouldBeExpired = exp ? isExpiredYmd(exp) : false
+        if (current && !current.expired && current.expiresAt === exp) continue
+        const title = String(courseTitleById.get(cid) || 'Curso')
+        inserts.push({
+          id: deterministicUuid(`notif:producer_panel:grant:course:${cid}:student:${targetUserId}:at:${nowIso}`),
+          recipient_user_id: targetUserId,
+          type: 'purchase_confirmed',
+          title: 'Acesso liberado',
+          message: `Acesso liberado: ${title}`,
+          actor_user_id: producerUserId,
+          actor_name: producerUserId,
+          entity_name: title,
+          entity_type: 'course',
+          entity_id: cid,
+          created_at: nowIso,
+          data: { type: 'course', source: 'producer_panel', action: 'grant', producer_id: producerUserId, buyer_id: targetUserId, courseId: cid, expires_at: exp || null },
+          href: '/aluno',
+          read_at: null,
+        })
+        if (shouldBeExpired) {
+          inserts.push({
+            id: deterministicUuid(`notif:producer_panel:revoke:course:${cid}:student:${targetUserId}:at:${nowIso}`),
+            recipient_user_id: targetUserId,
+            type: 'purchase_confirmed',
+            title: 'Acesso removido',
+            message: `Acesso removido: ${title}`,
+            actor_user_id: producerUserId,
+            actor_name: producerUserId,
+            entity_name: title,
+            entity_type: 'course',
+            entity_id: cid,
+            created_at: nowIso,
+            data: { type: 'course', source: 'producer_panel', action: 'revoke', producer_id: producerUserId, buyer_id: targetUserId, courseId: cid, expires_at: yesterday },
+            href: '/aluno',
+            read_at: null,
+          })
+        }
+      }
+
+      for (const [sid, exp] of desiredSimMap.entries()) {
+        const key = `simulado:${sid}`
+        const current = latestByKey.get(key) || null
+        const shouldBeExpired = exp ? isExpiredYmd(exp) : false
+        if (current && !current.expired && current.expiresAt === exp) continue
+        const title = String(simTitleById.get(sid) || 'Simulado')
+        inserts.push({
+          id: deterministicUuid(`notif:producer_panel:grant:simulado:${sid}:student:${targetUserId}:at:${nowIso}`),
+          recipient_user_id: targetUserId,
+          type: 'purchase_confirmed',
+          title: 'Acesso liberado',
+          message: `Acesso liberado: ${title}`,
+          actor_user_id: producerUserId,
+          actor_name: producerUserId,
+          entity_name: title,
+          entity_type: 'simulado',
+          entity_id: sid,
+          created_at: nowIso,
+          data: { type: 'simulado', source: 'producer_panel', action: 'grant', producer_id: producerUserId, buyer_id: targetUserId, simId: sid, expires_at: exp || null },
+          href: '/aluno',
+          read_at: null,
+        })
+        if (shouldBeExpired) {
+          inserts.push({
+            id: deterministicUuid(`notif:producer_panel:revoke:simulado:${sid}:student:${targetUserId}:at:${nowIso}`),
+            recipient_user_id: targetUserId,
+            type: 'purchase_confirmed',
+            title: 'Acesso removido',
+            message: `Acesso removido: ${title}`,
+            actor_user_id: producerUserId,
+            actor_name: producerUserId,
+            entity_name: title,
+            entity_type: 'simulado',
+            entity_id: sid,
+            created_at: nowIso,
+            data: { type: 'simulado', source: 'producer_panel', action: 'revoke', producer_id: producerUserId, buyer_id: targetUserId, simId: sid, expires_at: yesterday },
+            href: '/aluno',
+            read_at: null,
+          })
+        }
+      }
+
+      const toRevokeCourseIds = []
+      const toRevokeSimIds = []
+      for (const v of latestByKey.values()) {
+        if (v.entityType === 'course' && !v.expired && !desiredCourseMap.has(v.entityId)) toRevokeCourseIds.push(v.entityId)
+        if (v.entityType === 'simulado' && !v.expired && !desiredSimMap.has(v.entityId)) toRevokeSimIds.push(v.entityId)
+      }
+
+      for (const cid of toRevokeCourseIds) {
+        const title = String(courseTitleById.get(cid) || 'Curso')
+        inserts.push({
+          id: deterministicUuid(`notif:producer_panel:revoke:course:${cid}:student:${targetUserId}:at:${nowIso}`),
+          recipient_user_id: targetUserId,
+          type: 'purchase_confirmed',
+          title: 'Acesso removido',
+          message: `Acesso removido: ${title}`,
+          actor_user_id: producerUserId,
+          actor_name: producerUserId,
+          entity_name: title,
+          entity_type: 'course',
+          entity_id: cid,
+          created_at: nowIso,
+          data: { type: 'course', source: 'producer_panel', action: 'revoke', producer_id: producerUserId, buyer_id: targetUserId, courseId: cid, expires_at: yesterday },
+          href: '/aluno',
+          read_at: null,
+        })
+      }
+      for (const sid of toRevokeSimIds) {
+        const title = String(simTitleById.get(sid) || 'Simulado')
+        inserts.push({
+          id: deterministicUuid(`notif:producer_panel:revoke:simulado:${sid}:student:${targetUserId}:at:${nowIso}`),
+          recipient_user_id: targetUserId,
+          type: 'purchase_confirmed',
+          title: 'Acesso removido',
+          message: `Acesso removido: ${title}`,
+          actor_user_id: producerUserId,
+          actor_name: producerUserId,
+          entity_name: title,
+          entity_type: 'simulado',
+          entity_id: sid,
+          created_at: nowIso,
+          data: { type: 'simulado', source: 'producer_panel', action: 'revoke', producer_id: producerUserId, buyer_id: targetUserId, simId: sid, expires_at: yesterday },
+          href: '/aluno',
+          read_at: null,
+        })
+      }
+
+      if (inserts.length > 0) {
+        const { error } = await admin.from('notifications').insert(inserts)
+        if (error) return json(res, 500, { error: error?.message || String(error) })
+      }
+
+      return json(res, 200, { ok: true, user_id: targetUserId })
     }
 
     if (type === 'courses') {

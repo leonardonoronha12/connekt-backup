@@ -44,6 +44,9 @@ export default function AlunosPage() {
   const [editLoading, setEditLoading] = useState(false)
   const [editRow, setEditRow] = useState(null)
   const [editForm, setEditForm] = useState({ name: '', phone: '' })
+  const [editCourses, setEditCourses] = useState([])
+  const [editSimulados, setEditSimulados] = useState([])
+  const [editSimuladosOptions, setEditSimuladosOptions] = useState([])
 
   const fetchStudents = useCallback(async () => {
     const producerId = String(user?.id || '').trim()
@@ -60,13 +63,55 @@ export default function AlunosPage() {
     return body || {}
   }, [authHeaders, courseFilter, query, user?.id])
 
-  const openEdit = useCallback((row) => {
+  const openEdit = useCallback(async (row) => {
     const r = row && typeof row === 'object' ? row : null
     if (!r?.id) return
     setEditRow(r)
     setEditForm({ name: String(r?.name || '').trim(), phone: String(r?.phone || '').trim() })
+    setEditCourses([])
+    setEditSimulados([])
+    setEditSimuladosOptions([])
     setEditOpen(true)
-  }, [])
+    setEditLoading(true)
+    try {
+      const producerId = String(user?.id || '').trim()
+      const userId = String(r?.id || '').trim()
+      if (!producerId || !userId) return
+      const qs = new URLSearchParams()
+      qs.set('type', 'student_entitlements_get')
+      qs.set('producerId', producerId)
+      qs.set('user_id', userId)
+      const resp = await fetch(`/api/producer?${qs.toString()}`, { headers: authHeaders })
+      const body = await resp.json().catch(() => ({}))
+      if (!resp.ok) throw new Error(body?.error || 'Falha ao carregar acessos')
+
+      const ent = body?.entitlements || {}
+      const courses = Array.isArray(ent?.courses) ? ent.courses : []
+      const sims = Array.isArray(ent?.simulados) ? ent.simulados : []
+      setEditCourses(
+        courses
+          .filter((c) => !c?.expired)
+          .map((c) => ({ courseId: String(c?.courseId || '').trim(), expiresAt: String(c?.expiresAt || '').trim() }))
+          .filter((c) => c.courseId),
+      )
+      setEditSimulados(
+        sims
+          .filter((s) => !s?.expired)
+          .map((s) => ({ simId: String(s?.simId || '').trim(), expiresAt: String(s?.expiresAt || '').trim() }))
+          .filter((s) => s.simId),
+      )
+      setEditSimuladosOptions(
+        (Array.isArray(body?.simulados) ? body.simulados : [])
+          .map((s) => ({ id: String(s?.id || '').trim(), title: String(s?.title || '').trim() }))
+          .filter((s) => s.id && s.title)
+          .sort((a, b) => a.title.localeCompare(b.title, 'pt-BR')),
+      )
+    } catch (e) {
+      toast({ title: 'Erro', description: e?.message || 'Erro ao carregar acessos', variant: 'destructive' })
+    } finally {
+      setEditLoading(false)
+    }
+  }, [authHeaders, user?.id])
 
   const saveEdit = useCallback(async () => {
     const producerId = String(user?.id || '').trim()
@@ -85,6 +130,28 @@ export default function AlunosPage() {
       })
       const body = await r.json().catch(() => ({}))
       if (!r.ok) throw new Error(body?.error || 'Falha ao salvar')
+
+      const qs2 = new URLSearchParams()
+      qs2.set('type', 'student_entitlements_update')
+      qs2.set('producerId', producerId)
+      const r2 = await fetch(`/api/producer?${qs2.toString()}`, {
+        method: 'POST',
+        headers: { ...authHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId,
+          courses: (Array.isArray(editCourses) ? editCourses : []).map((c) => ({
+            courseId: String(c?.courseId || '').trim(),
+            expiresAt: String(c?.expiresAt || '').trim() || null,
+          })).filter((c) => c.courseId),
+          simulados: (Array.isArray(editSimulados) ? editSimulados : []).map((s) => ({
+            simId: String(s?.simId || '').trim(),
+            expiresAt: String(s?.expiresAt || '').trim() || null,
+          })).filter((s) => s.simId),
+        }),
+      })
+      const b2 = await r2.json().catch(() => ({}))
+      if (!r2.ok) throw new Error(b2?.error || 'Falha ao salvar acessos')
+
       setRows((prev) => (Array.isArray(prev) ? prev.map((it) => (String(it?.id || '') === userId ? { ...it, name: payload.name || it?.name, phone: payload.phone || it?.phone } : it)) : prev))
       toast({ title: 'Salvo', description: 'Usuário atualizado.' })
       setEditOpen(false)
@@ -93,7 +160,7 @@ export default function AlunosPage() {
     } finally {
       setEditLoading(false)
     }
-  }, [authHeaders, editForm.name, editForm.phone, editRow?.id, user?.id])
+  }, [authHeaders, editCourses, editForm.name, editForm.phone, editRow?.id, editSimulados, user?.id])
 
   useEffect(() => {
     let active = true
@@ -297,6 +364,140 @@ export default function AlunosPage() {
               <div>
                 <label className="text-[12px] text-[#737780]">Telefone</label>
                 <input value={editForm.phone} onChange={(e) => setEditForm((p) => ({ ...p, phone: e.target.value }))} className="mt-2 w-full h-[40px] rounded-[10px] border border-[#E3E4E5] px-3 text-[13px] outline-none focus:border-[#0047BB]" />
+              </div>
+
+              <div className="rounded-[12px] border border-[#E3E4E5] bg-[#F8FAFC] p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-[12px] font-semibold text-[#1E1B39]">Cursos e expiração</div>
+                  <button
+                    type="button"
+                    className="h-8 px-2 rounded-[10px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#1E1B39] hover:bg-[#F8FAFC] disabled:opacity-50"
+                    disabled={editLoading}
+                    onClick={() => setEditCourses((prev) => ([...(Array.isArray(prev) ? prev : []), { courseId: '', expiresAt: '' }]))}
+                  >
+                    + Curso
+                  </button>
+                </div>
+                <div className="mt-3 space-y-2">
+                  {(Array.isArray(editCourses) ? editCourses : []).length === 0 ? (
+                    <div className="text-[12px] text-[#737780]">Nenhum curso liberado.</div>
+                  ) : (
+                    (Array.isArray(editCourses) ? editCourses : []).map((c, idx) => (
+                      <div key={`${c?.courseId || 'new'}-${idx}`} className="grid grid-cols-1 md:grid-cols-12 gap-2 items-center">
+                        <div className="md:col-span-7">
+                          <select
+                            value={String(c?.courseId || '')}
+                            onChange={(e) => {
+                              const v = e.target.value
+                              setEditCourses((p) => {
+                                const next = Array.isArray(p) ? p.slice() : []
+                                next[idx] = { ...next[idx], courseId: v }
+                                return next
+                              })
+                            }}
+                            className="w-full h-[40px] rounded-[10px] border border-[#E3E4E5] px-3 text-[13px] bg-white outline-none focus:border-[#0047BB]"
+                          >
+                            <option value="">Selecione um curso</option>
+                            {sortedCourses.map((opt) => (
+                              <option key={opt.id} value={opt.id}>{opt.title}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="md:col-span-4">
+                          <input
+                            type="date"
+                            value={String(c?.expiresAt || '')}
+                            onChange={(e) => {
+                              const v = e.target.value
+                              setEditCourses((p) => {
+                                const next = Array.isArray(p) ? p.slice() : []
+                                next[idx] = { ...next[idx], expiresAt: v }
+                                return next
+                              })
+                            }}
+                            className="w-full h-[40px] rounded-[10px] border border-[#E3E4E5] px-3 text-[13px] outline-none focus:border-[#0047BB]"
+                          />
+                        </div>
+                        <div className="md:col-span-1 flex justify-end">
+                          <button
+                            type="button"
+                            className="h-8 px-2 rounded-[10px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#1E1B39] hover:bg-[#F8FAFC]"
+                            onClick={() => setEditCourses((p) => (Array.isArray(p) ? p.filter((_, i) => i !== idx) : p))}
+                          >
+                            X
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-[12px] border border-[#E3E4E5] bg-[#F8FAFC] p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-[12px] font-semibold text-[#1E1B39]">Produtos (simulados) e expiração</div>
+                  <button
+                    type="button"
+                    className="h-8 px-2 rounded-[10px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#1E1B39] hover:bg-[#F8FAFC] disabled:opacity-50"
+                    disabled={editLoading}
+                    onClick={() => setEditSimulados((prev) => ([...(Array.isArray(prev) ? prev : []), { simId: '', expiresAt: '' }]))}
+                  >
+                    + Produto
+                  </button>
+                </div>
+                <div className="mt-3 space-y-2">
+                  {(Array.isArray(editSimulados) ? editSimulados : []).length === 0 ? (
+                    <div className="text-[12px] text-[#737780]">Nenhum produto liberado.</div>
+                  ) : (
+                    (Array.isArray(editSimulados) ? editSimulados : []).map((s, idx) => (
+                      <div key={`${s?.simId || 'new'}-${idx}`} className="grid grid-cols-1 md:grid-cols-12 gap-2 items-center">
+                        <div className="md:col-span-7">
+                          <select
+                            value={String(s?.simId || '')}
+                            onChange={(e) => {
+                              const v = e.target.value
+                              setEditSimulados((p) => {
+                                const next = Array.isArray(p) ? p.slice() : []
+                                next[idx] = { ...next[idx], simId: v }
+                                return next
+                              })
+                            }}
+                            className="w-full h-[40px] rounded-[10px] border border-[#E3E4E5] px-3 text-[13px] bg-white outline-none focus:border-[#0047BB]"
+                          >
+                            <option value="">Selecione um produto</option>
+                            {editSimuladosOptions.map((opt) => (
+                              <option key={opt.id} value={opt.id}>{opt.title}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="md:col-span-4">
+                          <input
+                            type="date"
+                            value={String(s?.expiresAt || '')}
+                            onChange={(e) => {
+                              const v = e.target.value
+                              setEditSimulados((p) => {
+                                const next = Array.isArray(p) ? p.slice() : []
+                                next[idx] = { ...next[idx], expiresAt: v }
+                                return next
+                              })
+                            }}
+                            className="w-full h-[40px] rounded-[10px] border border-[#E3E4E5] px-3 text-[13px] outline-none focus:border-[#0047BB]"
+                          />
+                        </div>
+                        <div className="md:col-span-1 flex justify-end">
+                          <button
+                            type="button"
+                            className="h-8 px-2 rounded-[10px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#1E1B39] hover:bg-[#F8FAFC]"
+                            onClick={() => setEditSimulados((p) => (Array.isArray(p) ? p.filter((_, i) => i !== idx) : p))}
+                          >
+                            X
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
             </div>
             <div className="px-5 py-4 border-t border-[#E3E4E5] flex items-center justify-end gap-2">
