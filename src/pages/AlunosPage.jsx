@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Helmet } from 'react-helmet-async'
 import { Download, Loader2, Search, Users, X } from 'lucide-react'
 import { useAuth } from '@/contexts/SupabaseAuthContext'
@@ -39,7 +40,8 @@ export default function AlunosPage() {
   const [error, setError] = useState('')
 
   const [editOpen, setEditOpen] = useState(false)
-  const [editLoading, setEditLoading] = useState(false)
+  const [editFetching, setEditFetching] = useState(false)
+  const [editSaving, setEditSaving] = useState(false)
   const [editRow, setEditRow] = useState(null)
   const [editForm, setEditForm] = useState({ name: '', phone: '' })
   const [editSimulados, setEditSimulados] = useState([])
@@ -68,7 +70,7 @@ export default function AlunosPage() {
     setEditSimulados([])
     setEditPurchasedProducts([])
     setEditOpen(true)
-    setEditLoading(true)
+    setEditFetching(true)
     try {
       const producerId = String(user?.id || '').trim()
       const userId = String(r?.id || '').trim()
@@ -97,7 +99,7 @@ export default function AlunosPage() {
     } catch (e) {
       toast({ title: 'Erro', description: e?.message || 'Erro ao carregar acessos', variant: 'destructive' })
     } finally {
-      setEditLoading(false)
+      setEditFetching(false)
     }
   }, [authHeaders, user?.id])
 
@@ -105,34 +107,36 @@ export default function AlunosPage() {
     const producerId = String(user?.id || '').trim()
     const userId = String(editRow?.id || '').trim()
     if (!producerId || !userId) return
-    setEditLoading(true)
+    setEditSaving(true)
     try {
       const payload = { userId, name: String(editForm.name || '').trim(), phone: String(editForm.phone || '').trim() }
       const qs = new URLSearchParams()
       qs.set('type', 'student_update_profile')
       qs.set('producerId', producerId)
-      const r = await fetch(`/api/producer?${qs.toString()}`, {
-        method: 'POST',
-        headers: { ...authHeaders, 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-      const body = await r.json().catch(() => ({}))
-      if (!r.ok) throw new Error(body?.error || 'Falha ao salvar')
-
       const qs2 = new URLSearchParams()
       qs2.set('type', 'student_entitlements_update')
       qs2.set('producerId', producerId)
-      const r2 = await fetch(`/api/producer?${qs2.toString()}`, {
-        method: 'POST',
-        headers: { ...authHeaders, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          userId,
-          simulados: (Array.isArray(editSimulados) ? editSimulados : []).map((s) => ({
-            simId: String(s?.simId || '').trim(),
-            expiresAt: String(s?.expiresAt || '').trim() || null,
-          })).filter((s) => s.simId),
+      const [r, r2] = await Promise.all([
+        fetch(`/api/producer?${qs.toString()}`, {
+          method: 'POST',
+          headers: { ...authHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
         }),
-      })
+        fetch(`/api/producer?${qs2.toString()}`, {
+          method: 'POST',
+          headers: { ...authHeaders, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId,
+            simulados: (Array.isArray(editSimulados) ? editSimulados : []).map((s) => ({
+              simId: String(s?.simId || '').trim(),
+              expiresAt: String(s?.expiresAt || '').trim() || null,
+            })).filter((s) => s.simId),
+          }),
+        }),
+      ])
+
+      const body = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(body?.error || 'Falha ao salvar')
       const b2 = await r2.json().catch(() => ({}))
       if (!r2.ok) throw new Error(b2?.error || 'Falha ao salvar acessos')
 
@@ -142,7 +146,7 @@ export default function AlunosPage() {
     } catch (e) {
       toast({ title: 'Erro', description: e?.message || 'Erro ao salvar', variant: 'destructive' })
     } finally {
-      setEditLoading(false)
+      setEditSaving(false)
     }
   }, [authHeaders, editForm.name, editForm.phone, editRow?.id, editSimulados, user?.id])
 
@@ -215,6 +219,124 @@ export default function AlunosPage() {
       toast({ title: 'Erro', description: e?.message || 'Erro ao exportar', variant: 'destructive' })
     }
   }, [rows])
+
+  const editModal = editOpen ? (
+    <div className="fixed inset-0 z-[99999] bg-black/40 overflow-y-auto" onMouseDown={() => { if (!editSaving) setEditOpen(false) }}>
+      <div className="min-h-[100dvh] flex items-start justify-center p-6 py-10" onMouseDown={(e) => e.stopPropagation()}>
+        <div className="w-full max-w-[520px] rounded-[14px] bg-white border border-[#E3E4E5] shadow-xl flex flex-col max-h-[calc(100dvh-80px)]">
+          <div className="px-5 py-4 border-b border-[#E3E4E5] flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-[14px] font-semibold text-[#1E1B39]">Editar usuário</div>
+              <div className="text-[12px] text-[#737780] truncate">{String(editRow?.email || '').trim()}</div>
+            </div>
+            <button type="button" className="h-9 px-3 rounded-[10px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#1E1B39] hover:bg-[#F8FAFC]" disabled={editSaving} onClick={() => setEditOpen(false)}>
+              Fechar
+            </button>
+          </div>
+
+          <div className="p-5 grid grid-cols-1 gap-4 overflow-y-auto">
+            <div>
+              <label className="text-[12px] text-[#737780]">Nome</label>
+              <input value={editForm.name} onChange={(e) => setEditForm((p) => ({ ...p, name: e.target.value }))} className="mt-2 w-full h-[40px] rounded-[10px] border border-[#E3E4E5] px-3 text-[13px] outline-none focus:border-[#0047BB]" />
+            </div>
+            <div>
+              <label className="text-[12px] text-[#737780]">Telefone</label>
+              <input value={editForm.phone} onChange={(e) => setEditForm((p) => ({ ...p, phone: e.target.value }))} className="mt-2 w-full h-[40px] rounded-[10px] border border-[#E3E4E5] px-3 text-[13px] outline-none focus:border-[#0047BB]" />
+            </div>
+
+            <div className="rounded-[12px] border border-[#E3E4E5] bg-[#F8FAFC] p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-[12px] font-semibold text-[#1E1B39]">Produtos (simulados) e expiração</div>
+                <button
+                  type="button"
+                  className="h-8 px-2 rounded-[10px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#1E1B39] hover:bg-[#F8FAFC] disabled:opacity-50"
+                  disabled={editFetching || editSaving}
+                  onClick={() => setEditSimulados((prev) => ([...(Array.isArray(prev) ? prev : []), { simId: '', expiresAt: '' }]))}
+                >
+                  + Produto
+                </button>
+              </div>
+              <div className="mt-3 space-y-2">
+                {(Array.isArray(editPurchasedProducts) ? editPurchasedProducts : []).length > 0 ? (
+                  <div className="rounded-[12px] border border-[#E3E4E5] bg-white p-3">
+                    {(Array.isArray(editPurchasedProducts) ? editPurchasedProducts : []).slice(0, 30).map((p, idx) => (
+                      <div key={`${p?.title || ''}-${idx}`} className="flex items-center justify-between gap-3 py-1">
+                        <div className="min-w-0 text-[12px] text-[#1E1B39] truncate">{String(p?.title || '').trim()}</div>
+                        <div className="text-[11px] text-[#737780] whitespace-nowrap">
+                          {p?.expiresAt ? `expira: ${String(p.expiresAt)}` : 'sem expiração'}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+
+                {(Array.isArray(editSimulados) ? editSimulados : []).length === 0 ? (
+                  <div className="text-[12px] text-[#737780]">Nenhum produto liberado.</div>
+                ) : (
+                  (Array.isArray(editSimulados) ? editSimulados : []).map((s, idx) => (
+                    <div key={`${s?.simId || 'new'}-${idx}`} className="grid grid-cols-1 md:grid-cols-12 gap-2 items-center">
+                      <div className="md:col-span-7">
+                        <select
+                          value={String(s?.simId || '')}
+                          onChange={(e) => {
+                            const v = e.target.value
+                            setEditSimulados((p) => {
+                              const next = Array.isArray(p) ? p.slice() : []
+                              next[idx] = { ...next[idx], simId: v }
+                              return next
+                            })
+                          }}
+                          className="w-full h-[40px] rounded-[10px] border border-[#E3E4E5] px-3 text-[13px] bg-white outline-none focus:border-[#0047BB]"
+                        >
+                          <option value="">Selecione um produto</option>
+                          {editSimuladosOptions.map((opt) => (
+                            <option key={opt.id} value={opt.id}>{opt.title}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="md:col-span-4">
+                        <input
+                          type="date"
+                          value={String(s?.expiresAt || '')}
+                          onChange={(e) => {
+                            const v = e.target.value
+                            setEditSimulados((p) => {
+                              const next = Array.isArray(p) ? p.slice() : []
+                              next[idx] = { ...next[idx], expiresAt: v }
+                              return next
+                            })
+                          }}
+                          className="w-full h-[40px] rounded-[10px] border border-[#E3E4E5] px-3 text-[13px] outline-none focus:border-[#0047BB]"
+                        />
+                      </div>
+                      <div className="md:col-span-1 flex justify-end">
+                        <button
+                          type="button"
+                          className="h-8 px-2 rounded-[10px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#1E1B39] hover:bg-[#F8FAFC]"
+                          onClick={() => setEditSimulados((p) => (Array.isArray(p) ? p.filter((_, i) => i !== idx) : p))}
+                        >
+                          X
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="px-5 py-4 border-t border-[#E3E4E5] flex items-center justify-end gap-2">
+            <button type="button" className="h-9 px-3 rounded-[10px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#1E1B39] hover:bg-[#F8FAFC]" disabled={editSaving} onClick={() => setEditOpen(false)}>
+              Cancelar
+            </button>
+            <button type="button" className="h-9 px-3 rounded-[10px] bg-[#0047BB] text-white text-[12px] font-semibold hover:bg-[#003da0] disabled:opacity-50" disabled={editSaving || editFetching} onClick={saveEdit}>
+              {editSaving ? 'Carregando...' : 'Salvar'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  ) : null
 
   return (
     <>
@@ -320,119 +442,7 @@ export default function AlunosPage() {
         </div>
       </div>
 
-      {editOpen ? (
-        <div className="fixed inset-0 z-[90] bg-black/40 flex items-center justify-center p-6" onMouseDown={() => { if (!editLoading) setEditOpen(false) }}>
-          <div className="w-full max-w-[520px] rounded-[14px] bg-white border border-[#E3E4E5] shadow-xl" onMouseDown={(e) => e.stopPropagation()}>
-            <div className="px-5 py-4 border-b border-[#E3E4E5] flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <div className="text-[14px] font-semibold text-[#1E1B39]">Editar usuário</div>
-                <div className="text-[12px] text-[#737780] truncate">{String(editRow?.email || '').trim()}</div>
-              </div>
-              <button type="button" className="h-9 px-3 rounded-[10px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#1E1B39] hover:bg-[#F8FAFC]" disabled={editLoading} onClick={() => setEditOpen(false)}>
-                Fechar
-              </button>
-            </div>
-            <div className="p-5 grid grid-cols-1 gap-4">
-              <div>
-                <label className="text-[12px] text-[#737780]">Nome</label>
-                <input value={editForm.name} onChange={(e) => setEditForm((p) => ({ ...p, name: e.target.value }))} className="mt-2 w-full h-[40px] rounded-[10px] border border-[#E3E4E5] px-3 text-[13px] outline-none focus:border-[#0047BB]" />
-              </div>
-              <div>
-                <label className="text-[12px] text-[#737780]">Telefone</label>
-                <input value={editForm.phone} onChange={(e) => setEditForm((p) => ({ ...p, phone: e.target.value }))} className="mt-2 w-full h-[40px] rounded-[10px] border border-[#E3E4E5] px-3 text-[13px] outline-none focus:border-[#0047BB]" />
-              </div>
-
-              <div className="rounded-[12px] border border-[#E3E4E5] bg-[#F8FAFC] p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="text-[12px] font-semibold text-[#1E1B39]">Produtos (simulados) e expiração</div>
-                  <button
-                    type="button"
-                    className="h-8 px-2 rounded-[10px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#1E1B39] hover:bg-[#F8FAFC] disabled:opacity-50"
-                    disabled={editLoading}
-                    onClick={() => setEditSimulados((prev) => ([...(Array.isArray(prev) ? prev : []), { simId: '', expiresAt: '' }]))}
-                  >
-                    + Produto
-                  </button>
-                </div>
-                <div className="mt-3 space-y-2">
-                  {(Array.isArray(editPurchasedProducts) ? editPurchasedProducts : []).length > 0 ? (
-                    <div className="rounded-[12px] border border-[#E3E4E5] bg-white p-3">
-                      {(Array.isArray(editPurchasedProducts) ? editPurchasedProducts : []).slice(0, 30).map((p, idx) => (
-                        <div key={`${p?.title || ''}-${idx}`} className="flex items-center justify-between gap-3 py-1">
-                          <div className="min-w-0 text-[12px] text-[#1E1B39] truncate">{String(p?.title || '').trim()}</div>
-                          <div className="text-[11px] text-[#737780] whitespace-nowrap">
-                            {p?.expiresAt ? `expira: ${String(p.expiresAt)}` : 'sem expiração'}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
-
-                  {(Array.isArray(editSimulados) ? editSimulados : []).length === 0 ? (
-                    <div className="text-[12px] text-[#737780]">Nenhum produto liberado.</div>
-                  ) : (
-                    (Array.isArray(editSimulados) ? editSimulados : []).map((s, idx) => (
-                      <div key={`${s?.simId || 'new'}-${idx}`} className="grid grid-cols-1 md:grid-cols-12 gap-2 items-center">
-                        <div className="md:col-span-7">
-                          <select
-                            value={String(s?.simId || '')}
-                            onChange={(e) => {
-                              const v = e.target.value
-                              setEditSimulados((p) => {
-                                const next = Array.isArray(p) ? p.slice() : []
-                                next[idx] = { ...next[idx], simId: v }
-                                return next
-                              })
-                            }}
-                            className="w-full h-[40px] rounded-[10px] border border-[#E3E4E5] px-3 text-[13px] bg-white outline-none focus:border-[#0047BB]"
-                          >
-                            <option value="">Selecione um produto</option>
-                            {editSimuladosOptions.map((opt) => (
-                              <option key={opt.id} value={opt.id}>{opt.title}</option>
-                            ))}
-                          </select>
-                        </div>
-                        <div className="md:col-span-4">
-                          <input
-                            type="date"
-                            value={String(s?.expiresAt || '')}
-                            onChange={(e) => {
-                              const v = e.target.value
-                              setEditSimulados((p) => {
-                                const next = Array.isArray(p) ? p.slice() : []
-                                next[idx] = { ...next[idx], expiresAt: v }
-                                return next
-                              })
-                            }}
-                            className="w-full h-[40px] rounded-[10px] border border-[#E3E4E5] px-3 text-[13px] outline-none focus:border-[#0047BB]"
-                          />
-                        </div>
-                        <div className="md:col-span-1 flex justify-end">
-                          <button
-                            type="button"
-                            className="h-8 px-2 rounded-[10px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#1E1B39] hover:bg-[#F8FAFC]"
-                            onClick={() => setEditSimulados((p) => (Array.isArray(p) ? p.filter((_, i) => i !== idx) : p))}
-                          >
-                            X
-                          </button>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            </div>
-            <div className="px-5 py-4 border-t border-[#E3E4E5] flex items-center justify-end gap-2">
-              <button type="button" className="h-9 px-3 rounded-[10px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#1E1B39] hover:bg-[#F8FAFC]" disabled={editLoading} onClick={() => setEditOpen(false)}>
-                Cancelar
-              </button>
-              <button type="button" className="h-9 px-3 rounded-[10px] bg-[#0047BB] text-white text-[12px] font-semibold hover:bg-[#003da0] disabled:opacity-50" disabled={editLoading} onClick={saveEdit}>
-                {editLoading ? 'Salvando...' : 'Salvar'}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
+      {typeof document !== 'undefined' && editModal ? createPortal(editModal, document.body) : null}
     </>
   )
 }
