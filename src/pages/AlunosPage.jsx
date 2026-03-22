@@ -70,7 +70,6 @@ export default function AlunosPage() {
     setEditForm({ name: String(r?.name || '').trim(), phone: String(r?.phone || '').trim() })
     setEditCourses([])
     setEditSimulados([])
-    setEditSimuladosOptions([])
     setEditOpen(true)
     setEditLoading(true)
     try {
@@ -97,12 +96,6 @@ export default function AlunosPage() {
         sims
           .map((s) => ({ simId: String(s?.simId || '').trim(), expiresAt: String(s?.expiresAt || '').trim() }))
           .filter((s) => s.simId),
-      )
-      setEditSimuladosOptions(
-        (Array.isArray(body?.simulados) ? body.simulados : [])
-          .map((s) => ({ id: String(s?.id || '').trim(), title: String(s?.title || '').trim() }))
-          .filter((s) => s.id && s.title)
-          .sort((a, b) => a.title.localeCompare(b.title, 'pt-BR')),
       )
     } catch (e) {
       toast({ title: 'Erro', description: e?.message || 'Erro ao carregar acessos', variant: 'destructive' })
@@ -170,6 +163,25 @@ export default function AlunosPage() {
         if (!active) return
         setRows(Array.isArray(body?.students) ? body.students : [])
         setCourses(Array.isArray(body?.courses) ? body.courses : [])
+        if (!active) return
+        try {
+          const producerId = String(user?.id || '').trim()
+          if (producerId) {
+            const qs = new URLSearchParams()
+            qs.set('type', 'simulados')
+            qs.set('producerId', producerId)
+            const r = await fetch(`/api/producer?${qs.toString()}`, { headers: authHeaders })
+            const b = await r.json().catch(() => ({}))
+            if (active && r.ok) {
+              const list = Array.isArray(b?.data) ? b.data : []
+              const opts = list
+                .map((s) => ({ id: String(s?.id || '').trim(), title: String(s?.title || '').trim() }))
+                .filter((s) => s.id && s.title)
+              opts.sort((a, b) => a.title.localeCompare(b.title, 'pt-BR'))
+              setEditSimuladosOptions(opts)
+            }
+          }
+        } catch (_) {}
       } catch (e) {
         if (!active) return
         const msg = String(e?.message || 'Erro ao carregar alunos')

@@ -2592,7 +2592,7 @@ export default async function handler(req, res) {
       }
 
       const fetchCoursesByOwner = async () => {
-        const select = 'id,title,user_id,created_at,status'
+        const select = 'id,title'
         const cols = ['user_id', 'producer_id', 'producer_user_id', 'producer_external_id', 'produtor_id', 'created_by']
         for (const col of cols) {
           try {
@@ -2600,7 +2600,6 @@ export default async function handler(req, res) {
               .from('courses')
               .select(select)
               .in(col, producerKeys)
-              .order('created_at', { ascending: false })
               .limit(1000)
             if (error) {
               if (isMissingColumn(error, col)) continue
@@ -2615,13 +2614,7 @@ export default async function handler(req, res) {
       }
 
       const fetchSimuladosByOwner = async () => {
-        const selectAttempts = [
-          'id,title,created_at,produtor_id,user_id,created_by',
-          'id,title,created_at,user_id,created_by',
-          'id,title,created_at,user_id',
-          'id,title,created_at',
-          '*',
-        ]
+        const selectAttempts = ['id,title', 'id,title,created_at', '*']
         const cols = ['produtor_id', 'user_id', 'created_by']
         for (const col of cols) {
           for (const sel of selectAttempts) {
@@ -2630,7 +2623,6 @@ export default async function handler(req, res) {
                 .from('simulados')
                 .select(sel)
                 .in(col, producerKeys)
-                .order('created_at', { ascending: false })
                 .limit(500)
               if (error) {
                 if (isMissingColumn(error, col) || (sel.includes('produtor_id') && isMissingColumn(error, 'produtor_id')) || (sel.includes('created_by') && isMissingColumn(error, 'created_by'))) {
@@ -2698,15 +2690,15 @@ export default async function handler(req, res) {
         return []
       }
 
-      const { data: notif } = await admin
-        .from('notifications')
-        .select('id,entity_type,entity_id,data,created_at,type')
-        .eq('recipient_user_id', targetUserId)
-        .in('type', ['purchase_confirmed'])
-        .order('created_at', { ascending: false })
-        .limit(5000)
-
       const latestByKey = new Map()
+      const setLatest = (key, value) => {
+        const k = String(key || '').trim()
+        if (!k) return
+        const cur = latestByKey.get(k) || null
+        const curAt = cur?.createdAt ? new Date(cur.createdAt).getTime() : 0
+        const nextAt = value?.createdAt ? new Date(value.createdAt).getTime() : 0
+        if (!cur || nextAt >= curAt) latestByKey.set(k, value)
+      }
 
       const studentCourseRows = await fetchStudentCourseRows()
       for (const row of Array.isArray(studentCourseRows) ? studentCourseRows : []) {
@@ -2718,31 +2710,137 @@ export default async function handler(req, res) {
           String(row?.course || '').trim()
         if (!courseId || !allowedCourseIds.has(courseId)) continue
         const key = `course:${courseId}`
-        if (latestByKey.has(key)) continue
         const expiresAt = parseExpiresYmd(row?.expires_at || row?.expiresAt || row?.expires_at_iso || '') || ''
         const expired = expiresAt ? isExpiredYmd(expiresAt) : false
-        latestByKey.set(key, { entityType: 'course', entityId: courseId, expiresAt, source: 'student_courses', action: 'grant', expired, createdAt: row?.created_at || null })
+        setLatest(key, { entityType: 'course', entityId: courseId, expiresAt, source: 'student_courses', action: 'grant', expired, createdAt: row?.created_at || null })
       }
 
-      for (const n of Array.isArray(notif) ? notif : []) {
-        const data = parseJsonMaybe(n?.data) || (n?.data && typeof n.data === 'object' ? n.data : null) || {}
-        const entityTypeRaw = String(n?.entity_type || data?.type || '').trim().toLowerCase()
-        const entityIdRaw =
-          String(n?.entity_id || '').trim() ||
-          String(data?.courseId || data?.course_id || '').trim() ||
-          String(data?.simId || data?.sim_id || '').trim()
-        if (!entityTypeRaw || !entityIdRaw) continue
-        if (entityTypeRaw !== 'course' && entityTypeRaw !== 'simulado') continue
-        if (entityTypeRaw === 'course' && !allowedCourseIds.has(entityIdRaw)) continue
-        if (entityTypeRaw === 'simulado' && !allowedSimuladoIds.has(entityIdRaw)) continue
-        const key = `${entityTypeRaw}:${entityIdRaw}`
-        if (latestByKey.has(key)) continue
-        const source = String(data?.source || '').trim()
-        const action = String(data?.action || '').trim().toLowerCase() || 'grant'
-        const expiresAt = parseExpiresYmd(data?.expires_at || data?.expiresAt || '')
-        const expired = isExpiredYmd(expiresAt) || action === 'revoke'
-        latestByKey.set(key, { entityType: entityTypeRaw, entityId: entityIdRaw, expiresAt: expiresAt || '', source, action, expired, createdAt: n?.created_at || null })
+      const pullStudentNotifications = async () => {
+        try {
+          const { data, error } = await admin
+            .from('notifications')
+            .select('id,entity_type,entity_id,data,created_at,type')
+            .eq('recipient_user_id', targetUserId)
+            .in('type', ['purchase_confirmed'])
+            .order('created_at', { ascending: false })
+            .limit(3000)
+          if (error) return []
+          return Array.isArray(data) ? data : []
+        } catch (_) {
+          return []
+        }
       }
+
+      const pullSales = async () => {
+        const selectAttempts = [
+          'buyer_id,buyerId,buyer_user_id,buyerUserId,user_id,created_at,status,producer_id,producer_user_id,producer_external_id,entity_type,entityType,entity_id,entityId,type',
+          'buyer_id,created_at,status,producer_id,entity_type,entity_id',
+          '*',
+        ]
+        const producerCols = ['producer_id', 'producerId', 'producer_user_id', 'producer_external_id']
+        for (const sel of selectAttempts) {
+          for (const col of producerCols) {
+            try {
+              const { data, error } = await admin
+                .from('sales')
+                .select(sel)
+                .in(col, producerKeys)
+                .eq('buyer_id', targetUserId)
+                .order('created_at', { ascending: false })
+                .limit(5000)
+              if (error) {
+                if (isMissingColumn(error, col)) continue
+                const msg = String(error?.message || error?.details || error || '').toLowerCase()
+                const missing = msg.includes('does not exist') || msg.includes('schema cache') || msg.includes('could not find')
+                if (missing) return []
+                continue
+              }
+              const rows = Array.isArray(data) ? data : []
+              if (rows.length === 0) continue
+              return rows
+            } catch (e) {
+              if (isMissingColumn(e, col)) continue
+              const msg = String(e?.message || e || '').toLowerCase()
+              const missing = msg.includes('does not exist') || msg.includes('schema cache') || msg.includes('could not find')
+              if (missing) return []
+            }
+          }
+        }
+        return []
+      }
+
+      const pullProducerNotifications = async () => {
+        try {
+          const { data, error } = await admin
+            .from('notifications')
+            .select('id,entity_type,entity_id,data,created_at,type')
+            .eq('recipient_user_id', producerUserId)
+            .in('type', ['purchase_received', 'purchase_confirmed'])
+            .order('created_at', { ascending: false })
+            .limit(3000)
+          if (error) return []
+          return Array.isArray(data) ? data : []
+        } catch (_) {
+          return []
+        }
+      }
+
+      const consumeNotificationRows = (rows, sourceOverride) => {
+        for (const n of Array.isArray(rows) ? rows : []) {
+          const data = parseJsonMaybe(n?.data) || (n?.data && typeof n.data === 'object' ? n.data : null) || {}
+          const buyerId = String(data?.buyer_id || data?.buyerId || data?.student_id || data?.studentId || '').trim()
+          if (buyerId && buyerId !== targetUserId) continue
+          const entityTypeRaw = String(n?.entity_type || data?.type || '').trim().toLowerCase()
+          const entityIdRaw =
+            String(n?.entity_id || '').trim() ||
+            String(data?.courseId || data?.course_id || '').trim() ||
+            String(data?.simId || data?.sim_id || '').trim()
+          if (!entityTypeRaw || !entityIdRaw) continue
+          if (entityTypeRaw !== 'course' && entityTypeRaw !== 'simulado') continue
+          if (entityTypeRaw === 'course' && !allowedCourseIds.has(entityIdRaw)) continue
+          if (entityTypeRaw === 'simulado' && !allowedSimuladoIds.has(entityIdRaw)) continue
+          const key = `${entityTypeRaw}:${entityIdRaw}`
+          const action = String(data?.action || '').trim().toLowerCase() || 'grant'
+          const expiresAt = parseExpiresYmd(data?.expires_at || data?.expiresAt || '')
+          const expired = isExpiredYmd(expiresAt) || action === 'revoke'
+          setLatest(key, {
+            entityType: entityTypeRaw,
+            entityId: entityIdRaw,
+            expiresAt: expiresAt || '',
+            source: sourceOverride || String(data?.source || '').trim(),
+            action,
+            expired,
+            createdAt: n?.created_at || null,
+          })
+        }
+      }
+
+      const consumeSalesRows = (rows) => {
+        for (const s of Array.isArray(rows) ? rows : []) {
+          const status = String(s?.status || '').trim().toLowerCase()
+          if (status && status !== 'paid' && status !== 'aprovado' && status !== 'approved' && status !== 'succeeded') continue
+          const entityTypeRaw = String(s?.entity_type || s?.entityType || s?.type || '').trim().toLowerCase()
+          const entityIdRaw = String(s?.entity_id || s?.entityId || '').trim()
+          if (!entityTypeRaw || !entityIdRaw) continue
+          if (entityTypeRaw !== 'course' && entityTypeRaw !== 'simulado') continue
+          if (entityTypeRaw === 'course' && !allowedCourseIds.has(entityIdRaw)) continue
+          if (entityTypeRaw === 'simulado' && !allowedSimuladoIds.has(entityIdRaw)) continue
+          const key = `${entityTypeRaw}:${entityIdRaw}`
+          setLatest(key, {
+            entityType: entityTypeRaw,
+            entityId: entityIdRaw,
+            expiresAt: '',
+            source: 'sales',
+            action: 'grant',
+            expired: false,
+            createdAt: s?.created_at || null,
+          })
+        }
+      }
+
+      consumeNotificationRows(await pullStudentNotifications(), 'student_notifications')
+      consumeSalesRows(await pullSales())
+      if (latestByKey.size === 0) consumeNotificationRows(await pullProducerNotifications(), 'producer_notifications')
 
       const entCourses = []
       const entSims = []
