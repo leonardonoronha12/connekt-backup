@@ -2983,20 +2983,27 @@ export default async function handler(req, res) {
       const allowedCourseIds = new Set(courses.map((c) => String(c?.id || '').trim()).filter(Boolean))
       const allowedSimuladoIds = new Set(simulados.map((s) => String(s?.id || '').trim()).filter(Boolean))
 
-      const desiredCourses = Array.isArray(body?.courses) ? body.courses : []
+      const updatingCourses = body && typeof body === 'object' && Object.prototype.hasOwnProperty.call(body, 'courses')
+      const updatingSimulados = body && typeof body === 'object' && Object.prototype.hasOwnProperty.call(body, 'simulados')
+
       const desiredCourseMap = new Map()
-      for (const c of desiredCourses) {
-        const cid = String(c?.courseId || c?.course_id || '').trim()
-        if (!cid || !allowedCourseIds.has(cid)) continue
-        desiredCourseMap.set(cid, parseExpiresYmd(c?.expiresAt || c?.expires_at || '') || '')
+      if (updatingCourses) {
+        const desiredCourses = Array.isArray(body?.courses) ? body.courses : []
+        for (const c of desiredCourses) {
+          const cid = String(c?.courseId || c?.course_id || '').trim()
+          if (!cid || !allowedCourseIds.has(cid)) continue
+          desiredCourseMap.set(cid, parseExpiresYmd(c?.expiresAt || c?.expires_at || '') || '')
+        }
       }
 
-      const desiredSims = Array.isArray(body?.simulados) ? body.simulados : []
       const desiredSimMap = new Map()
-      for (const s of desiredSims) {
-        const sid = String(s?.simId || s?.sim_id || '').trim()
-        if (!sid || !allowedSimuladoIds.has(sid)) continue
-        desiredSimMap.set(sid, parseExpiresYmd(s?.expiresAt || s?.expires_at || '') || '')
+      if (updatingSimulados) {
+        const desiredSims = Array.isArray(body?.simulados) ? body.simulados : []
+        for (const s of desiredSims) {
+          const sid = String(s?.simId || s?.sim_id || '').trim()
+          if (!sid || !allowedSimuladoIds.has(sid)) continue
+          desiredSimMap.set(sid, parseExpiresYmd(s?.expiresAt || s?.expires_at || '') || '')
+        }
       }
 
       const parseJsonMaybe = (value) => {
@@ -3045,29 +3052,104 @@ export default async function handler(req, res) {
       const courseTitleById = new Map(courses.map((c) => [String(c?.id || '').trim(), String(c?.title || 'Curso')]))
       const simTitleById = new Map(simulados.map((s) => [String(s?.id || '').trim(), String(s?.title || 'Simulado')]))
 
-      for (const [cid, exp] of desiredCourseMap.entries()) {
-        const key = `course:${cid}`
-        const current = latestByKey.get(key) || null
-        const shouldBeExpired = exp ? isExpiredYmd(exp) : false
-        if (current && !current.expired && current.expiresAt === exp) continue
-        const title = String(courseTitleById.get(cid) || 'Curso')
-        inserts.push({
-          id: deterministicUuid(`notif:producer_panel:grant:course:${cid}:student:${targetUserId}:at:${nowIso}`),
-          recipient_user_id: targetUserId,
-          type: 'purchase_confirmed',
-          title: 'Acesso liberado',
-          message: `Acesso liberado: ${title}`,
-          actor_user_id: producerUserId,
-          actor_name: producerUserId,
-          entity_name: title,
-          entity_type: 'course',
-          entity_id: cid,
-          created_at: nowIso,
-          data: { type: 'course', source: 'producer_panel', action: 'grant', producer_id: producerUserId, buyer_id: targetUserId, courseId: cid, expires_at: exp || null },
-          href: '/aluno',
-          read_at: null,
-        })
-        if (shouldBeExpired) {
+      if (updatingCourses) {
+        for (const [cid, exp] of desiredCourseMap.entries()) {
+          const key = `course:${cid}`
+          const current = latestByKey.get(key) || null
+          const shouldBeExpired = exp ? isExpiredYmd(exp) : false
+          if (current && !current.expired && current.expiresAt === exp) continue
+          const title = String(courseTitleById.get(cid) || 'Curso')
+          inserts.push({
+            id: deterministicUuid(`notif:producer_panel:grant:course:${cid}:student:${targetUserId}:at:${nowIso}`),
+            recipient_user_id: targetUserId,
+            type: 'purchase_confirmed',
+            title: 'Acesso liberado',
+            message: `Acesso liberado: ${title}`,
+            actor_user_id: producerUserId,
+            actor_name: producerUserId,
+            entity_name: title,
+            entity_type: 'course',
+            entity_id: cid,
+            created_at: nowIso,
+            data: { type: 'course', source: 'producer_panel', action: 'grant', producer_id: producerUserId, buyer_id: targetUserId, courseId: cid, expires_at: exp || null },
+            href: '/aluno',
+            read_at: null,
+          })
+          if (shouldBeExpired) {
+            inserts.push({
+              id: deterministicUuid(`notif:producer_panel:revoke:course:${cid}:student:${targetUserId}:at:${nowIso}`),
+              recipient_user_id: targetUserId,
+              type: 'purchase_confirmed',
+              title: 'Acesso removido',
+              message: `Acesso removido: ${title}`,
+              actor_user_id: producerUserId,
+              actor_name: producerUserId,
+              entity_name: title,
+              entity_type: 'course',
+              entity_id: cid,
+              created_at: nowIso,
+              data: { type: 'course', source: 'producer_panel', action: 'revoke', producer_id: producerUserId, buyer_id: targetUserId, courseId: cid, expires_at: yesterday },
+              href: '/aluno',
+              read_at: null,
+            })
+          }
+        }
+      }
+
+      if (updatingSimulados) {
+        for (const [sid, exp] of desiredSimMap.entries()) {
+          const key = `simulado:${sid}`
+          const current = latestByKey.get(key) || null
+          const shouldBeExpired = exp ? isExpiredYmd(exp) : false
+          if (current && !current.expired && current.expiresAt === exp) continue
+          const title = String(simTitleById.get(sid) || 'Simulado')
+          inserts.push({
+            id: deterministicUuid(`notif:producer_panel:grant:simulado:${sid}:student:${targetUserId}:at:${nowIso}`),
+            recipient_user_id: targetUserId,
+            type: 'purchase_confirmed',
+            title: 'Acesso liberado',
+            message: `Acesso liberado: ${title}`,
+            actor_user_id: producerUserId,
+            actor_name: producerUserId,
+            entity_name: title,
+            entity_type: 'simulado',
+            entity_id: sid,
+            created_at: nowIso,
+            data: { type: 'simulado', source: 'producer_panel', action: 'grant', producer_id: producerUserId, buyer_id: targetUserId, simId: sid, expires_at: exp || null },
+            href: '/aluno',
+            read_at: null,
+          })
+          if (shouldBeExpired) {
+            inserts.push({
+              id: deterministicUuid(`notif:producer_panel:revoke:simulado:${sid}:student:${targetUserId}:at:${nowIso}`),
+              recipient_user_id: targetUserId,
+              type: 'purchase_confirmed',
+              title: 'Acesso removido',
+              message: `Acesso removido: ${title}`,
+              actor_user_id: producerUserId,
+              actor_name: producerUserId,
+              entity_name: title,
+              entity_type: 'simulado',
+              entity_id: sid,
+              created_at: nowIso,
+              data: { type: 'simulado', source: 'producer_panel', action: 'revoke', producer_id: producerUserId, buyer_id: targetUserId, simId: sid, expires_at: yesterday },
+              href: '/aluno',
+              read_at: null,
+            })
+          }
+        }
+      }
+
+      const toRevokeCourseIds = []
+      const toRevokeSimIds = []
+      for (const v of latestByKey.values()) {
+        if (updatingCourses && v.entityType === 'course' && !v.expired && !desiredCourseMap.has(v.entityId)) toRevokeCourseIds.push(v.entityId)
+        if (updatingSimulados && v.entityType === 'simulado' && !v.expired && !desiredSimMap.has(v.entityId)) toRevokeSimIds.push(v.entityId)
+      }
+
+      if (updatingCourses) {
+        for (const cid of toRevokeCourseIds) {
+          const title = String(courseTitleById.get(cid) || 'Curso')
           inserts.push({
             id: deterministicUuid(`notif:producer_panel:revoke:course:${cid}:student:${targetUserId}:at:${nowIso}`),
             recipient_user_id: targetUserId,
@@ -3085,75 +3167,6 @@ export default async function handler(req, res) {
             read_at: null,
           })
         }
-      }
-
-      for (const [sid, exp] of desiredSimMap.entries()) {
-        const key = `simulado:${sid}`
-        const current = latestByKey.get(key) || null
-        const shouldBeExpired = exp ? isExpiredYmd(exp) : false
-        if (current && !current.expired && current.expiresAt === exp) continue
-        const title = String(simTitleById.get(sid) || 'Simulado')
-        inserts.push({
-          id: deterministicUuid(`notif:producer_panel:grant:simulado:${sid}:student:${targetUserId}:at:${nowIso}`),
-          recipient_user_id: targetUserId,
-          type: 'purchase_confirmed',
-          title: 'Acesso liberado',
-          message: `Acesso liberado: ${title}`,
-          actor_user_id: producerUserId,
-          actor_name: producerUserId,
-          entity_name: title,
-          entity_type: 'simulado',
-          entity_id: sid,
-          created_at: nowIso,
-          data: { type: 'simulado', source: 'producer_panel', action: 'grant', producer_id: producerUserId, buyer_id: targetUserId, simId: sid, expires_at: exp || null },
-          href: '/aluno',
-          read_at: null,
-        })
-        if (shouldBeExpired) {
-          inserts.push({
-            id: deterministicUuid(`notif:producer_panel:revoke:simulado:${sid}:student:${targetUserId}:at:${nowIso}`),
-            recipient_user_id: targetUserId,
-            type: 'purchase_confirmed',
-            title: 'Acesso removido',
-            message: `Acesso removido: ${title}`,
-            actor_user_id: producerUserId,
-            actor_name: producerUserId,
-            entity_name: title,
-            entity_type: 'simulado',
-            entity_id: sid,
-            created_at: nowIso,
-            data: { type: 'simulado', source: 'producer_panel', action: 'revoke', producer_id: producerUserId, buyer_id: targetUserId, simId: sid, expires_at: yesterday },
-            href: '/aluno',
-            read_at: null,
-          })
-        }
-      }
-
-      const toRevokeCourseIds = []
-      const toRevokeSimIds = []
-      for (const v of latestByKey.values()) {
-        if (v.entityType === 'course' && !v.expired && !desiredCourseMap.has(v.entityId)) toRevokeCourseIds.push(v.entityId)
-        if (v.entityType === 'simulado' && !v.expired && !desiredSimMap.has(v.entityId)) toRevokeSimIds.push(v.entityId)
-      }
-
-      for (const cid of toRevokeCourseIds) {
-        const title = String(courseTitleById.get(cid) || 'Curso')
-        inserts.push({
-          id: deterministicUuid(`notif:producer_panel:revoke:course:${cid}:student:${targetUserId}:at:${nowIso}`),
-          recipient_user_id: targetUserId,
-          type: 'purchase_confirmed',
-          title: 'Acesso removido',
-          message: `Acesso removido: ${title}`,
-          actor_user_id: producerUserId,
-          actor_name: producerUserId,
-          entity_name: title,
-          entity_type: 'course',
-          entity_id: cid,
-          created_at: nowIso,
-          data: { type: 'course', source: 'producer_panel', action: 'revoke', producer_id: producerUserId, buyer_id: targetUserId, courseId: cid, expires_at: yesterday },
-          href: '/aluno',
-          read_at: null,
-        })
       }
       for (const sid of toRevokeSimIds) {
         const title = String(simTitleById.get(sid) || 'Simulado')
