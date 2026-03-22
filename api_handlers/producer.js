@@ -2508,6 +2508,28 @@ export default async function handler(req, res) {
         )
       }
 
+      const fetchCoursesByOwner = async () => {
+        const cols = ['user_id', 'producer_id', 'producer_user_id', 'producer_external_id', 'produtor_id', 'created_by']
+        for (const col of cols) {
+          try {
+            const { data, error } = await admin
+              .from('courses')
+              .select('id,title,modules,data')
+              .in(col, producerKeys)
+              .order('created_at', { ascending: false })
+              .limit(1000)
+            if (error) {
+              if (isMissingColumn(error, col)) continue
+              continue
+            }
+            return Array.isArray(data) ? data : []
+          } catch (e) {
+            if (isMissingColumn(e, col)) continue
+          }
+        }
+        return []
+      }
+
       const fetchSimuladosByOwner = async () => {
         const selectAttempts = ['id,title', 'id,title,created_at', '*']
         const cols = ['produtor_id', 'user_id', 'created_by']
@@ -2535,9 +2557,12 @@ export default async function handler(req, res) {
         return []
       }
 
+      const courses = await fetchCoursesByOwner()
       const simulados = await fetchSimuladosByOwner()
 
+      const courseTitleById = new Map((Array.isArray(courses) ? courses : []).map((c) => [String(c?.id || '').trim(), String(c?.title || 'Curso').trim()]))
       const allowedSimuladoIds = new Set(simulados.map((s) => String(s?.id || '').trim()).filter(Boolean))
+      const allowedCourseIds = new Set((Array.isArray(courses) ? courses : []).map((c) => String(c?.id || '').trim()).filter(Boolean))
 
       const parseJsonMaybe = (value) => {
         if (!value) return null
@@ -2649,6 +2674,7 @@ export default async function handler(req, res) {
           const entityNameRaw = String(n?.entity_name || '').trim() || String(data?.entity_name || data?.entityName || '').trim()
           const title =
             entityNameRaw ||
+            (entityTypeRaw === 'course' ? String(courseTitleById.get(entityIdRaw) || '') : '') ||
             (entityTypeRaw === 'simulado' ? String(simulados.find((s) => String(s?.id || '').trim() === entityIdRaw)?.title || '') : '') ||
             ''
 
@@ -2660,8 +2686,9 @@ export default async function handler(req, res) {
           }
 
           if (!entityTypeRaw || !entityIdRaw) continue
-          if (entityTypeRaw !== 'simulado') continue
-          if (!allowedSimuladoIds.has(entityIdRaw)) continue
+          if (entityTypeRaw !== 'course' && entityTypeRaw !== 'simulado') continue
+          if (entityTypeRaw === 'simulado' && !allowedSimuladoIds.has(entityIdRaw)) continue
+          if (entityTypeRaw === 'course' && !allowedCourseIds.has(entityIdRaw)) continue
           const key = `${entityTypeRaw}:${entityIdRaw}`
 
           setLatest(key, {
@@ -2683,8 +2710,9 @@ export default async function handler(req, res) {
           const entityTypeRaw = String(s?.entity_type || s?.entityType || s?.type || '').trim().toLowerCase()
           const entityIdRaw = String(s?.entity_id || s?.entityId || '').trim()
           if (!entityTypeRaw || !entityIdRaw) continue
-          if (entityTypeRaw !== 'simulado') continue
-          if (!allowedSimuladoIds.has(entityIdRaw)) continue
+          if (entityTypeRaw !== 'course' && entityTypeRaw !== 'simulado') continue
+          if (entityTypeRaw === 'simulado' && !allowedSimuladoIds.has(entityIdRaw)) continue
+          if (entityTypeRaw === 'course' && !allowedCourseIds.has(entityIdRaw)) continue
           const key = `${entityTypeRaw}:${entityIdRaw}`
           setLatest(key, {
             entityType: entityTypeRaw,
@@ -2705,9 +2733,11 @@ export default async function handler(req, res) {
       const entCourses = []
       const entSims = []
       for (const v of latestByKey.values()) {
+        if (v.entityType === 'course') entCourses.push(v)
         if (v.entityType === 'simulado') entSims.push(v)
       }
 
+      entCourses.sort((a, b) => String(a?.entityId || '').localeCompare(String(b?.entityId || '')))
       entSims.sort((a, b) => String(a?.entityId || '').localeCompare(String(b?.entityId || '')))
 
       const products = Array.from(purchasedByKey.values())
@@ -2718,9 +2748,11 @@ export default async function handler(req, res) {
       return json(res, 200, {
         ok: true,
         user_id: targetUserId,
+        courses: (Array.isArray(courses) ? courses : []).map((c) => ({ id: String(c?.id || '').trim(), title: String(c?.title || '').trim() })).filter((c) => c.id),
         simulados: simulados.map((s) => ({ id: String(s?.id || '').trim(), title: String(s?.title || '').trim() })).filter((s) => s.id),
         products,
         entitlements: {
+          courses: entCourses.map((e) => ({ courseId: e.entityId, expiresAt: e.expiresAt || '', expired: !!e.expired })),
           simulados: entSims.map((e) => ({ simId: e.entityId, expiresAt: e.expiresAt || '', expired: !!e.expired })),
         },
       })
@@ -2753,6 +2785,28 @@ export default async function handler(req, res) {
           (msg.includes('schema cache') && msg.includes(c)) ||
           (msg.includes('does not exist') && msg.includes(c))
         )
+      }
+
+      const fetchCoursesByOwner = async () => {
+        const cols = ['user_id', 'producer_id', 'producer_user_id', 'producer_external_id', 'produtor_id', 'created_by']
+        for (const col of cols) {
+          try {
+            const { data, error } = await admin
+              .from('courses')
+              .select('id,title')
+              .in(col, producerKeys)
+              .order('created_at', { ascending: false })
+              .limit(1000)
+            if (error) {
+              if (isMissingColumn(error, col)) continue
+              continue
+            }
+            return Array.isArray(data) ? data : []
+          } catch (e) {
+            if (isMissingColumn(e, col)) continue
+          }
+        }
+        return []
       }
 
       const fetchSimuladosByOwner = async () => {
@@ -2789,10 +2843,23 @@ export default async function handler(req, res) {
         return []
       }
 
+      const courses = await fetchCoursesByOwner()
       const simulados = await fetchSimuladosByOwner()
+      const allowedCourseIds = new Set((Array.isArray(courses) ? courses : []).map((c) => String(c?.id || '').trim()).filter(Boolean))
       const allowedSimuladoIds = new Set(simulados.map((s) => String(s?.id || '').trim()).filter(Boolean))
 
+      const updatingCourses = body && typeof body === 'object' && Object.prototype.hasOwnProperty.call(body, 'courses')
       const updatingSimulados = body && typeof body === 'object' && Object.prototype.hasOwnProperty.call(body, 'simulados')
+
+      const desiredCourseMap = new Map()
+      if (updatingCourses) {
+        const desiredCourses = Array.isArray(body?.courses) ? body.courses : []
+        for (const c of desiredCourses) {
+          const cid = String(c?.courseId || c?.course_id || '').trim()
+          if (!cid || !allowedCourseIds.has(cid)) continue
+          desiredCourseMap.set(cid, parseExpiresYmd(c?.expiresAt || c?.expires_at || '') || '')
+        }
+      }
 
       const desiredSimMap = new Map()
       if (updatingSimulados) {
@@ -2824,8 +2891,9 @@ export default async function handler(req, res) {
         const entityType = String(n?.entity_type || '').trim().toLowerCase()
         const entityId = String(n?.entity_id || '').trim()
         if (!entityType || !entityId) continue
-        if (entityType !== 'simulado') continue
-        if (!allowedSimuladoIds.has(entityId)) continue
+        if (entityType !== 'course' && entityType !== 'simulado') continue
+        if (entityType === 'course' && !allowedCourseIds.has(entityId)) continue
+        if (entityType === 'simulado' && !allowedSimuladoIds.has(entityId)) continue
         const key = `${entityType}:${entityId}`
         if (latestByKey.has(key)) continue
         const data = parseJsonMaybe(n?.data) || (n?.data && typeof n.data === 'object' ? n.data : null) || {}
@@ -2846,7 +2914,52 @@ export default async function handler(req, res) {
       })()
 
       const inserts = []
+      const courseTitleById = new Map((Array.isArray(courses) ? courses : []).map((c) => [String(c?.id || '').trim(), String(c?.title || 'Curso')]))
       const simTitleById = new Map(simulados.map((s) => [String(s?.id || '').trim(), String(s?.title || 'Simulado')]))
+
+      if (updatingCourses) {
+        for (const [cid, exp] of desiredCourseMap.entries()) {
+          const key = `course:${cid}`
+          const current = latestByKey.get(key) || null
+          const shouldBeExpired = exp ? isExpiredYmd(exp) : false
+          if (current && !current.expired && current.expiresAt === exp) continue
+          const title = String(courseTitleById.get(cid) || 'Curso')
+          inserts.push({
+            id: deterministicUuid(`notif:producer_panel:grant:course:${cid}:student:${targetUserId}:at:${nowIso}`),
+            recipient_user_id: targetUserId,
+            type: 'purchase_confirmed',
+            title: 'Acesso liberado',
+            message: `Acesso liberado: ${title}`,
+            actor_user_id: producerUserId,
+            actor_name: producerUserId,
+            entity_name: title,
+            entity_type: 'course',
+            entity_id: cid,
+            created_at: nowIso,
+            data: { type: 'course', source: 'producer_panel', action: 'grant', producer_id: producerUserId, buyer_id: targetUserId, courseId: cid, expires_at: exp || null },
+            href: '/aluno',
+            read_at: null,
+          })
+          if (shouldBeExpired) {
+            inserts.push({
+              id: deterministicUuid(`notif:producer_panel:revoke:course:${cid}:student:${targetUserId}:at:${nowIso}`),
+              recipient_user_id: targetUserId,
+              type: 'purchase_confirmed',
+              title: 'Acesso removido',
+              message: `Acesso removido: ${title}`,
+              actor_user_id: producerUserId,
+              actor_name: producerUserId,
+              entity_name: title,
+              entity_type: 'course',
+              entity_id: cid,
+              created_at: nowIso,
+              data: { type: 'course', source: 'producer_panel', action: 'revoke', producer_id: producerUserId, buyer_id: targetUserId, courseId: cid, expires_at: yesterday },
+              href: '/aluno',
+              read_at: null,
+            })
+          }
+        }
+      }
 
       if (updatingSimulados) {
         for (const [sid, exp] of desiredSimMap.entries()) {
@@ -2895,7 +3008,28 @@ export default async function handler(req, res) {
       const toRevokeCourseIds = []
       const toRevokeSimIds = []
       for (const v of latestByKey.values()) {
+        if (updatingCourses && v.entityType === 'course' && !v.expired && !desiredCourseMap.has(v.entityId)) toRevokeCourseIds.push(v.entityId)
         if (updatingSimulados && v.entityType === 'simulado' && !v.expired && !desiredSimMap.has(v.entityId)) toRevokeSimIds.push(v.entityId)
+      }
+
+      for (const cid of toRevokeCourseIds) {
+        const title = String(courseTitleById.get(cid) || 'Curso')
+        inserts.push({
+          id: deterministicUuid(`notif:producer_panel:revoke:course:${cid}:student:${targetUserId}:at:${nowIso}`),
+          recipient_user_id: targetUserId,
+          type: 'purchase_confirmed',
+          title: 'Acesso removido',
+          message: `Acesso removido: ${title}`,
+          actor_user_id: producerUserId,
+          actor_name: producerUserId,
+          entity_name: title,
+          entity_type: 'course',
+          entity_id: cid,
+          created_at: nowIso,
+          data: { type: 'course', source: 'producer_panel', action: 'revoke', producer_id: producerUserId, buyer_id: targetUserId, courseId: cid, expires_at: yesterday },
+          href: '/aluno',
+          read_at: null,
+        })
       }
 
       for (const sid of toRevokeSimIds) {

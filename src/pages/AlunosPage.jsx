@@ -5,6 +5,34 @@ import { Download, Loader2, Search, Users, X } from 'lucide-react'
 import { useAuth } from '@/contexts/SupabaseAuthContext'
 import { toast } from '@/hooks/use-toast.ts'
 
+function parseJsonMaybe(v) {
+  if (!v) return null
+  if (typeof v === 'object') return v
+  if (typeof v !== 'string') return null
+  try { return JSON.parse(v) } catch (_) { return null }
+}
+
+function getCourseModules(row) {
+  const parsed = parseJsonMaybe(row?.modules)
+  if (Array.isArray(parsed)) return parsed
+  if (parsed && typeof parsed === 'object') {
+    if (Array.isArray(parsed.modules)) return parsed.modules
+    if (Array.isArray(parsed.items)) return parsed.items
+  }
+  const fromData = parseJsonMaybe(row?.data)
+  if (fromData && typeof fromData === 'object' && Array.isArray(fromData.modules)) return fromData.modules
+  return []
+}
+
+function getModuleLessons(mod) {
+  if (!mod) return []
+  if (Array.isArray(mod.lessons)) return mod.lessons
+  if (Array.isArray(mod.aulas)) return mod.aulas
+  if (Array.isArray(mod.items)) return mod.items
+  if (mod && typeof mod === 'object' && Array.isArray(mod.module_lessons)) return mod.module_lessons
+  return []
+}
+
 function formatPhone(raw) {
   const digits = String(raw || '').replace(/\D/g, '')
   if (!digits) return ''
@@ -39,14 +67,16 @@ export default function AlunosPage() {
   const [rows, setRows] = useState([])
   const [error, setError] = useState('')
 
+  const [producerCourses, setProducerCourses] = useState([])
+
   const [editOpen, setEditOpen] = useState(false)
   const [editFetching, setEditFetching] = useState(false)
   const [editSaving, setEditSaving] = useState(false)
   const [editRow, setEditRow] = useState(null)
   const [editForm, setEditForm] = useState({ name: '', phone: '' })
-  const [editSimulados, setEditSimulados] = useState([])
   const [editSimuladosOptions, setEditSimuladosOptions] = useState([])
   const [editPurchasedProducts, setEditPurchasedProducts] = useState([])
+  const [editEntitlements, setEditEntitlements] = useState([])
 
   const fetchStudents = useCallback(async () => {
     const producerId = String(user?.id || '').trim()
@@ -67,8 +97,8 @@ export default function AlunosPage() {
     if (!r?.id) return
     setEditRow(r)
     setEditForm({ name: String(r?.name || '').trim(), phone: String(r?.phone || '').trim() })
-    setEditSimulados([])
     setEditPurchasedProducts([])
+    setEditEntitlements([])
     setEditOpen(true)
     const startedAt = Date.now()
     setEditFetching(true)
@@ -85,13 +115,21 @@ export default function AlunosPage() {
       if (!resp.ok) throw new Error(body?.error || 'Falha ao carregar acessos')
 
       const ent = body?.entitlements || {}
+      const courses = Array.isArray(ent?.courses) ? ent.courses : []
       const sims = Array.isArray(ent?.simulados) ? ent.simulados : []
       const purchased = Array.isArray(body?.products) ? body.products : []
-      setEditSimulados(
-        sims
-          .map((s) => ({ simId: String(s?.simId || '').trim(), expiresAt: String(s?.expiresAt || '').trim() }))
-          .filter((s) => s.simId),
-      )
+      const nextEnt = []
+      for (const c of courses) {
+        const courseId = String(c?.courseId || c?.course_id || '').trim()
+        if (!courseId) continue
+        nextEnt.push({ kind: 'course', id: courseId, selectValue: `course:${courseId}`, expiresAt: String(c?.expiresAt || '').trim() })
+      }
+      for (const s of sims) {
+        const simId = String(s?.simId || s?.sim_id || '').trim()
+        if (!simId) continue
+        nextEnt.push({ kind: 'simulado', id: simId, selectValue: `simulado:${simId}`, expiresAt: String(s?.expiresAt || '').trim() })
+      }
+      setEditEntitlements(nextEnt)
       setEditPurchasedProducts(
         purchased
           .map((p) => ({ title: String(p?.title || '').trim(), expiresAt: String(p?.expiresAt || '').trim() }))
@@ -119,6 +157,20 @@ export default function AlunosPage() {
       const qs2 = new URLSearchParams()
       qs2.set('type', 'student_entitlements_update')
       qs2.set('producerId', producerId)
+      const dedup = new Map()
+      for (const it of Array.isArray(editEntitlements) ? editEntitlements : []) {
+        const kind = String(it?.kind || '').trim()
+        const id = String(it?.id || '').trim()
+        if (!kind || !id) continue
+        const key = `${kind}:${id}`
+        dedup.set(key, { kind, id, expiresAt: String(it?.expiresAt || '').trim() })
+      }
+      const courses = []
+      const simulados = []
+      for (const it of dedup.values()) {
+        if (it.kind === 'course') courses.push({ courseId: it.id, expiresAt: it.expiresAt || null })
+        if (it.kind === 'simulado') simulados.push({ simId: it.id, expiresAt: it.expiresAt || null })
+      }
       const [r, r2] = await Promise.all([
         fetch(`/api/producer?${qs.toString()}`, {
           method: 'POST',
@@ -130,10 +182,8 @@ export default function AlunosPage() {
           headers: { ...authHeaders, 'Content-Type': 'application/json' },
           body: JSON.stringify({
             userId,
-            simulados: (Array.isArray(editSimulados) ? editSimulados : []).map((s) => ({
-              simId: String(s?.simId || '').trim(),
-              expiresAt: String(s?.expiresAt || '').trim() || null,
-            })).filter((s) => s.simId),
+            courses,
+            simulados,
           }),
         }),
       ])
@@ -151,7 +201,7 @@ export default function AlunosPage() {
     } finally {
       setEditSaving(false)
     }
-  }, [authHeaders, editForm.name, editForm.phone, editRow?.id, editSimulados, user?.id])
+  }, [authHeaders, editEntitlements, editForm.name, editForm.phone, editRow?.id, user?.id])
 
   useEffect(() => {
     let active = true
@@ -166,19 +216,27 @@ export default function AlunosPage() {
         try {
           const producerId = String(user?.id || '').trim()
           if (producerId) {
-            const qs = new URLSearchParams()
-            qs.set('type', 'simulados')
-            qs.set('producerId', producerId)
-            const r = await fetch(`/api/producer?${qs.toString()}`, { headers: authHeaders })
-            const b = await r.json().catch(() => ({}))
-            if (active && r.ok) {
-              const list = Array.isArray(b?.data) ? b.data : []
+            const qsS = new URLSearchParams()
+            qsS.set('type', 'simulados')
+            qsS.set('producerId', producerId)
+            const qsC = new URLSearchParams()
+            qsC.set('type', 'courses')
+            qsC.set('producerId', producerId)
+            const [rS, rC] = await Promise.all([
+              fetch(`/api/producer?${qsS.toString()}`, { headers: authHeaders }),
+              fetch(`/api/producer?${qsC.toString()}`, { headers: authHeaders }),
+            ])
+            const bS = await rS.json().catch(() => ({}))
+            const bC = await rC.json().catch(() => ({}))
+            if (active && rS.ok) {
+              const list = Array.isArray(bS?.data) ? bS.data : []
               const opts = list
                 .map((s) => ({ id: String(s?.id || '').trim(), title: String(s?.title || '').trim() }))
                 .filter((s) => s.id && s.title)
               opts.sort((a, b) => a.title.localeCompare(b.title, 'pt-BR'))
               setEditSimuladosOptions(opts)
             }
+            if (active && rC.ok) setProducerCourses(Array.isArray(bC?.data) ? bC.data : [])
           }
         } catch (_) {}
       } catch (e) {
@@ -194,6 +252,47 @@ export default function AlunosPage() {
     run()
     return () => { active = false }
   }, [fetchStudents])
+
+  const dropdownOptions = useMemo(() => {
+    const out = []
+    for (const row of Array.isArray(producerCourses) ? producerCourses : []) {
+      const courseId = String(row?.id || '').trim()
+      if (!courseId) continue
+      const courseTitle = String(row?.title || 'Curso').trim()
+      out.push({ value: `course:${courseId}`, kind: 'course', id: courseId, label: `Curso • ${courseTitle}` })
+      const modules = getCourseModules(row)
+      const list = Array.isArray(modules) ? modules : []
+      for (let i = 0; i < list.length; i += 1) {
+        const mod = list[i]
+        const moduleTitle = String(mod?.title || mod?.name || mod?.module_title || '').trim() || `Módulo ${i + 1}`
+        const mid = String(mod?.id || mod?.module_id || mod?.moduleId || '').trim()
+        const mk = mid ? `id:${mid}` : `idx:${i}`
+        out.push({ value: `module:${courseId}:${mk}`, kind: 'course', id: courseId, label: `Módulo • ${courseTitle} • ${moduleTitle}` })
+        const lessons = getModuleLessons(mod)
+        const lessonsList = Array.isArray(lessons) ? lessons : []
+        for (let j = 0; j < lessonsList.length; j += 1) {
+          const lesson = lessonsList[j]
+          const lessonTitle = String(lesson?.title || lesson?.name || '').trim() || `Aula ${j + 1}`
+          const lid = String(lesson?.id || lesson?.lesson_id || lesson?.lessonId || '').trim()
+          const lk = lid ? `id:${lid}` : `idx:${j}`
+          out.push({ value: `lesson:${courseId}:${mk}:${lk}`, kind: 'course', id: courseId, label: `Aula • ${courseTitle} • ${moduleTitle} • ${lessonTitle}` })
+        }
+      }
+    }
+    for (const s of Array.isArray(editSimuladosOptions) ? editSimuladosOptions : []) {
+      const simId = String(s?.id || '').trim()
+      if (!simId) continue
+      out.push({ value: `simulado:${simId}`, kind: 'simulado', id: simId, label: `Simulado • ${String(s?.title || 'Simulado').trim()}` })
+    }
+    out.sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'))
+    return out
+  }, [editSimuladosOptions, producerCourses])
+
+  const dropdownByValue = useMemo(() => {
+    const map = new Map()
+    for (const o of Array.isArray(dropdownOptions) ? dropdownOptions : []) map.set(o.value, o)
+    return map
+  }, [dropdownOptions])
 
   const exportXlsx = useCallback(async () => {
     try {
@@ -263,7 +362,7 @@ export default function AlunosPage() {
                   type="button"
                   className="h-8 px-2 rounded-[10px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#1E1B39] hover:bg-[#F8FAFC] disabled:opacity-50"
                   disabled={editFetching || editSaving}
-                  onClick={() => setEditSimulados((prev) => ([...(Array.isArray(prev) ? prev : []), { simId: '', expiresAt: '' }]))}
+                  onClick={() => setEditEntitlements((prev) => ([...(Array.isArray(prev) ? prev : []), { kind: '', id: '', selectValue: '', expiresAt: '' }]))}
                 >
                   + Produto
                 </button>
@@ -289,27 +388,28 @@ export default function AlunosPage() {
                   </div>
                 ) : null}
 
-                {!editFetching && (Array.isArray(editSimulados) ? editSimulados : []).length === 0 ? (
+                {!editFetching && (Array.isArray(editEntitlements) ? editEntitlements : []).length === 0 ? (
                   <div className="text-[12px] text-[#737780]">Nenhum produto liberado.</div>
                 ) : (
-                  (Array.isArray(editSimulados) ? editSimulados : []).map((s, idx) => (
-                    <div key={`${s?.simId || 'new'}-${idx}`} className="grid grid-cols-1 md:grid-cols-12 gap-2 items-center">
+                  (Array.isArray(editEntitlements) ? editEntitlements : []).map((s, idx) => (
+                    <div key={`${s?.selectValue || s?.id || 'new'}-${idx}`} className="grid grid-cols-1 md:grid-cols-12 gap-2 items-center">
                       <div className="md:col-span-7">
                         <select
-                          value={String(s?.simId || '')}
+                          value={String(s?.selectValue || '')}
                           onChange={(e) => {
                             const v = e.target.value
-                            setEditSimulados((p) => {
+                            const picked = dropdownByValue.get(v) || null
+                            setEditEntitlements((p) => {
                               const next = Array.isArray(p) ? p.slice() : []
-                              next[idx] = { ...next[idx], simId: v }
+                              next[idx] = { ...next[idx], selectValue: v, kind: picked?.kind || '', id: picked?.id || '' }
                               return next
                             })
                           }}
                           className="w-full h-[40px] rounded-[10px] border border-[#E3E4E5] px-3 text-[13px] bg-white outline-none focus:border-[#0047BB]"
                         >
                           <option value="">Selecione um produto</option>
-                          {editSimuladosOptions.map((opt) => (
-                            <option key={opt.id} value={opt.id}>{opt.title}</option>
+                          {dropdownOptions.map((opt) => (
+                            <option key={opt.value} value={opt.value}>{opt.label}</option>
                           ))}
                         </select>
                       </div>
@@ -319,7 +419,7 @@ export default function AlunosPage() {
                           value={String(s?.expiresAt || '')}
                           onChange={(e) => {
                             const v = e.target.value
-                            setEditSimulados((p) => {
+                            setEditEntitlements((p) => {
                               const next = Array.isArray(p) ? p.slice() : []
                               next[idx] = { ...next[idx], expiresAt: v }
                               return next
@@ -332,7 +432,7 @@ export default function AlunosPage() {
                         <button
                           type="button"
                           className="h-8 px-2 rounded-[10px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#1E1B39] hover:bg-[#F8FAFC]"
-                          onClick={() => setEditSimulados((p) => (Array.isArray(p) ? p.filter((_, i) => i !== idx) : p))}
+                          onClick={() => setEditEntitlements((p) => (Array.isArray(p) ? p.filter((_, i) => i !== idx) : p))}
                         >
                           X
                         </button>
