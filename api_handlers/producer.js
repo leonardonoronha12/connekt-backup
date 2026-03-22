@@ -2401,88 +2401,41 @@ export default async function handler(req, res) {
         )
       }
 
-      const fetchCoursesByOwner = async () => {
-        const select = 'id,title,user_id,created_at,status'
-        const cols = ['user_id', 'producer_id', 'producer_user_id', 'producer_external_id', 'produtor_id', 'created_by']
-        for (const col of cols) {
-          try {
-            const { data, error } = await admin
-              .from('courses')
-              .select(select)
-              .in(col, producerKeys)
-              .order('created_at', { ascending: false })
-              .limit(1000)
-            if (error) {
-              if (isMissingColumn(error, col)) continue
-              continue
-            }
-            return Array.isArray(data) ? data : []
-          } catch (e) {
-            if (isMissingColumn(e, col)) continue
-          }
-        }
-        return []
-      }
-
-      const courses = await fetchCoursesByOwner()
-      const allowedCourseIds = courses.map((c) => String(c?.id || '').trim()).filter(Boolean)
-      const allowedCourseTitles = courses.map((c) => String(c?.title || '').trim()).filter(Boolean)
-
       const allowedBuyerIds = new Set()
-
-      const collectFromStudentCourses = async () => {
-        if (allowedCourseIds.length === 0 && allowedCourseTitles.length === 0) return
-        const selectAttempts = [
-          'user_id,student_user_id,course_id,course_name,created_at',
-          'user_id,course_id,course_name',
-          '*',
-        ]
-        const courseIdCols = ['course_id', 'courseId', 'course_uuid', 'courseUuid', 'course']
-        for (const sel of selectAttempts) {
-          for (const col of courseIdCols) {
-            try {
-              const { data, error } = await admin.from('student_courses').select(sel).in(col, allowedCourseIds).limit(10000)
-              if (error) {
-                if (isMissingColumn(error, col)) continue
-                continue
-              }
-              for (const row of Array.isArray(data) ? data : []) {
-                const uid = String(row?.user_id || row?.student_user_id || row?.userId || row?.studentUserId || '').trim()
-                if (uid) allowedBuyerIds.add(uid)
-              }
-              if (allowedBuyerIds.size > 0) return
-            } catch (e) {
-              if (isMissingColumn(e, col)) continue
-            }
-          }
-        }
-
-        const courseTitleCols = ['course_name', 'courseName', 'title', 'name']
-        for (const sel of selectAttempts) {
-          for (const col of courseTitleCols) {
-            try {
-              const { data, error } = await admin.from('student_courses').select(sel).in(col, allowedCourseTitles).limit(10000)
-              if (error) {
-                if (isMissingColumn(error, col)) continue
-                continue
-              }
-              for (const row of Array.isArray(data) ? data : []) {
-                const uid = String(row?.user_id || row?.student_user_id || row?.userId || row?.studentUserId || '').trim()
-                if (uid) allowedBuyerIds.add(uid)
-              }
-              if (allowedBuyerIds.size > 0) return
-            } catch (e) {
-              if (isMissingColumn(e, col)) continue
-            }
-          }
-        }
-      }
 
       const parseJsonMaybe = (value) => {
         if (!value) return null
         if (typeof value === 'object') return value
         if (typeof value !== 'string') return null
         try { return JSON.parse(value) } catch (_) { return null }
+      }
+
+      const collectFromSalesFast = async () => {
+        const producerCols = ['producer_id', 'producerId', 'producer_user_id', 'producer_external_id']
+        const buyerCols = ['buyer_id', 'buyerId', 'buyer_user_id', 'buyerUserId', 'user_id', 'userId']
+        for (const pcol of producerCols) {
+          for (const bcol of buyerCols) {
+            try {
+              const { data, error } = await admin
+                .from('sales')
+                .select('id,status,created_at')
+                .in(pcol, producerKeys)
+                .eq(bcol, targetUserId)
+                .order('created_at', { ascending: false })
+                .limit(1)
+              if (error) {
+                if (isMissingColumn(error, pcol) || isMissingColumn(error, bcol)) continue
+                continue
+              }
+              if (Array.isArray(data) && data.length > 0) {
+                allowedBuyerIds.add(targetUserId)
+                return
+              }
+            } catch (e) {
+              if (isMissingColumn(e, pcol) || isMissingColumn(e, bcol)) continue
+            }
+          }
+        }
       }
 
       const collectFromNotifications = async () => {
@@ -2503,44 +2456,8 @@ export default async function handler(req, res) {
         } catch (_) {}
       }
 
-      const collectFromSales = async () => {
-        const selectAttempts = [
-          'buyer_id,buyerId,buyer_user_id,buyerUserId,user_id,created_at,status,producer_id,producer_user_id,producer_external_id',
-          'buyer_id,created_at,status,producer_id',
-          '*',
-        ]
-        const producerCols = ['producer_id', 'producerId', 'producer_user_id', 'producer_external_id']
-        for (const sel of selectAttempts) {
-          for (const col of producerCols) {
-            try {
-              const { data, error } = await admin
-                .from('sales')
-                .select(sel)
-                .in(col, producerKeys)
-                .order('created_at', { ascending: false })
-                .limit(5000)
-              if (error) {
-                if (isMissingColumn(error, col)) continue
-                return
-              }
-              for (const row of Array.isArray(data) ? data : []) {
-                const status = String(row?.status || '').trim().toLowerCase()
-                if (status && status !== 'paid' && status !== 'aprovado' && status !== 'approved' && status !== 'succeeded') continue
-                const buyerId = String(row?.buyer_id || row?.buyerId || row?.buyer_user_id || row?.buyerUserId || row?.user_id || '').trim()
-                if (buyerId) allowedBuyerIds.add(buyerId)
-              }
-              return
-            } catch (e) {
-              if (isMissingColumn(e, col)) continue
-              return
-            }
-          }
-        }
-      }
-
-      await collectFromStudentCourses()
+      await collectFromSalesFast()
       await collectFromNotifications()
-      await collectFromSales()
 
       if (!allowedBuyerIds.has(targetUserId)) return json(res, 403, { error: 'forbidden' })
 
@@ -2591,28 +2508,6 @@ export default async function handler(req, res) {
         )
       }
 
-      const fetchCoursesByOwner = async () => {
-        const select = 'id,title'
-        const cols = ['user_id', 'producer_id', 'producer_user_id', 'producer_external_id', 'produtor_id', 'created_by']
-        for (const col of cols) {
-          try {
-            const { data, error } = await admin
-              .from('courses')
-              .select(select)
-              .in(col, producerKeys)
-              .limit(1000)
-            if (error) {
-              if (isMissingColumn(error, col)) continue
-              continue
-            }
-            return Array.isArray(data) ? data : []
-          } catch (e) {
-            if (isMissingColumn(e, col)) continue
-          }
-        }
-        return []
-      }
-
       const fetchSimuladosByOwner = async () => {
         const selectAttempts = ['id,title', 'id,title,created_at', '*']
         const cols = ['produtor_id', 'user_id', 'created_by']
@@ -2640,10 +2535,8 @@ export default async function handler(req, res) {
         return []
       }
 
-      const courses = await fetchCoursesByOwner()
       const simulados = await fetchSimuladosByOwner()
 
-      const allowedCourseIds = new Set(courses.map((c) => String(c?.id || '').trim()).filter(Boolean))
       const allowedSimuladoIds = new Set(simulados.map((s) => String(s?.id || '').trim()).filter(Boolean))
 
       const parseJsonMaybe = (value) => {
@@ -2651,43 +2544,6 @@ export default async function handler(req, res) {
         if (typeof value === 'object') return value
         if (typeof value !== 'string') return null
         try { return JSON.parse(value) } catch (_) { return null }
-      }
-
-      const fetchStudentCourseRows = async () => {
-        if (allowedCourseIds.size === 0) return []
-        const courseIds = Array.from(allowedCourseIds)
-        const userCols = ['user_id', 'userId', 'student_user_id', 'studentUserId']
-        const courseCols = ['course_id', 'courseId', 'course_uuid', 'courseUuid', 'course']
-        const selectAttempts = [
-          'id,course_id,courseId,course_uuid,course,course_name,courseName,expires_at,expiresAt,created_at,user_id,student_user_id',
-          'id,course_id,course_name,expires_at,created_at,user_id',
-          '*',
-        ]
-        for (const sel of selectAttempts) {
-          for (const ucol of userCols) {
-            for (const ccol of courseCols) {
-              try {
-                const { data, error } = await admin
-                  .from('student_courses')
-                  .select(sel)
-                  .eq(ucol, targetUserId)
-                  .in(ccol, courseIds)
-                  .order('created_at', { ascending: false })
-                  .limit(10000)
-                if (error) {
-                  if (isMissingColumn(error, ucol) || isMissingColumn(error, ccol)) continue
-                  continue
-                }
-                const rows = Array.isArray(data) ? data : []
-                if (rows.length === 0) continue
-                return rows
-              } catch (e) {
-                if (isMissingColumn(e, ucol) || isMissingColumn(e, ccol)) continue
-              }
-            }
-          }
-        }
-        return []
       }
 
       const latestByKey = new Map()
@@ -2708,21 +2564,6 @@ export default async function handler(req, res) {
         const curAt = cur?.createdAt ? new Date(cur.createdAt).getTime() : 0
         const nextAt = value?.createdAt ? new Date(value.createdAt).getTime() : 0
         if (!cur || nextAt >= curAt) purchasedByKey.set(k, value)
-      }
-
-      const studentCourseRows = await fetchStudentCourseRows()
-      for (const row of Array.isArray(studentCourseRows) ? studentCourseRows : []) {
-        const courseId =
-          String(row?.course_id || '').trim() ||
-          String(row?.courseId || '').trim() ||
-          String(row?.course_uuid || '').trim() ||
-          String(row?.courseUuid || '').trim() ||
-          String(row?.course || '').trim()
-        if (!courseId || !allowedCourseIds.has(courseId)) continue
-        const key = `course:${courseId}`
-        const expiresAt = parseExpiresYmd(row?.expires_at || row?.expiresAt || row?.expires_at_iso || '') || ''
-        const expired = expiresAt ? isExpiredYmd(expiresAt) : false
-        setLatest(key, { entityType: 'course', entityId: courseId, expiresAt, source: 'student_courses', action: 'grant', expired, createdAt: row?.created_at || null })
       }
 
       const pullStudentNotifications = async () => {
@@ -2808,7 +2649,6 @@ export default async function handler(req, res) {
           const entityNameRaw = String(n?.entity_name || '').trim() || String(data?.entity_name || data?.entityName || '').trim()
           const title =
             entityNameRaw ||
-            (entityTypeRaw === 'course' ? String(courses.find((c) => String(c?.id || '').trim() === entityIdRaw)?.title || '') : '') ||
             (entityTypeRaw === 'simulado' ? String(simulados.find((s) => String(s?.id || '').trim() === entityIdRaw)?.title || '') : '') ||
             ''
 
@@ -2820,9 +2660,8 @@ export default async function handler(req, res) {
           }
 
           if (!entityTypeRaw || !entityIdRaw) continue
-          if (entityTypeRaw !== 'course' && entityTypeRaw !== 'simulado') continue
-          if (entityTypeRaw === 'course' && !allowedCourseIds.has(entityIdRaw)) continue
-          if (entityTypeRaw === 'simulado' && !allowedSimuladoIds.has(entityIdRaw)) continue
+          if (entityTypeRaw !== 'simulado') continue
+          if (!allowedSimuladoIds.has(entityIdRaw)) continue
           const key = `${entityTypeRaw}:${entityIdRaw}`
 
           setLatest(key, {
@@ -2844,9 +2683,8 @@ export default async function handler(req, res) {
           const entityTypeRaw = String(s?.entity_type || s?.entityType || s?.type || '').trim().toLowerCase()
           const entityIdRaw = String(s?.entity_id || s?.entityId || '').trim()
           if (!entityTypeRaw || !entityIdRaw) continue
-          if (entityTypeRaw !== 'course' && entityTypeRaw !== 'simulado') continue
-          if (entityTypeRaw === 'course' && !allowedCourseIds.has(entityIdRaw)) continue
-          if (entityTypeRaw === 'simulado' && !allowedSimuladoIds.has(entityIdRaw)) continue
+          if (entityTypeRaw !== 'simulado') continue
+          if (!allowedSimuladoIds.has(entityIdRaw)) continue
           const key = `${entityTypeRaw}:${entityIdRaw}`
           setLatest(key, {
             entityType: entityTypeRaw,
@@ -2867,11 +2705,9 @@ export default async function handler(req, res) {
       const entCourses = []
       const entSims = []
       for (const v of latestByKey.values()) {
-        if (v.entityType === 'course') entCourses.push(v)
         if (v.entityType === 'simulado') entSims.push(v)
       }
 
-      entCourses.sort((a, b) => String(a?.entityId || '').localeCompare(String(b?.entityId || '')))
       entSims.sort((a, b) => String(a?.entityId || '').localeCompare(String(b?.entityId || '')))
 
       const products = Array.from(purchasedByKey.values())
@@ -2882,11 +2718,9 @@ export default async function handler(req, res) {
       return json(res, 200, {
         ok: true,
         user_id: targetUserId,
-        courses: courses.map((c) => ({ id: String(c?.id || '').trim(), title: String(c?.title || '').trim() })).filter((c) => c.id),
         simulados: simulados.map((s) => ({ id: String(s?.id || '').trim(), title: String(s?.title || '').trim() })).filter((s) => s.id),
         products,
         entitlements: {
-          courses: entCourses.map((e) => ({ courseId: e.entityId, expiresAt: e.expiresAt || '', expired: !!e.expired })),
           simulados: entSims.map((e) => ({ simId: e.entityId, expiresAt: e.expiresAt || '', expired: !!e.expired })),
         },
       })
@@ -2919,29 +2753,6 @@ export default async function handler(req, res) {
           (msg.includes('schema cache') && msg.includes(c)) ||
           (msg.includes('does not exist') && msg.includes(c))
         )
-      }
-
-      const fetchCoursesByOwner = async () => {
-        const select = 'id,title,user_id,created_at,status'
-        const cols = ['user_id', 'producer_id', 'producer_user_id', 'producer_external_id', 'produtor_id', 'created_by']
-        for (const col of cols) {
-          try {
-            const { data, error } = await admin
-              .from('courses')
-              .select(select)
-              .in(col, producerKeys)
-              .order('created_at', { ascending: false })
-              .limit(1000)
-            if (error) {
-              if (isMissingColumn(error, col)) continue
-              continue
-            }
-            return Array.isArray(data) ? data : []
-          } catch (e) {
-            if (isMissingColumn(e, col)) continue
-          }
-        }
-        return []
       }
 
       const fetchSimuladosByOwner = async () => {
@@ -2978,23 +2789,10 @@ export default async function handler(req, res) {
         return []
       }
 
-      const courses = await fetchCoursesByOwner()
       const simulados = await fetchSimuladosByOwner()
-      const allowedCourseIds = new Set(courses.map((c) => String(c?.id || '').trim()).filter(Boolean))
       const allowedSimuladoIds = new Set(simulados.map((s) => String(s?.id || '').trim()).filter(Boolean))
 
-      const updatingCourses = body && typeof body === 'object' && Object.prototype.hasOwnProperty.call(body, 'courses')
       const updatingSimulados = body && typeof body === 'object' && Object.prototype.hasOwnProperty.call(body, 'simulados')
-
-      const desiredCourseMap = new Map()
-      if (updatingCourses) {
-        const desiredCourses = Array.isArray(body?.courses) ? body.courses : []
-        for (const c of desiredCourses) {
-          const cid = String(c?.courseId || c?.course_id || '').trim()
-          if (!cid || !allowedCourseIds.has(cid)) continue
-          desiredCourseMap.set(cid, parseExpiresYmd(c?.expiresAt || c?.expires_at || '') || '')
-        }
-      }
 
       const desiredSimMap = new Map()
       if (updatingSimulados) {
@@ -3026,9 +2824,8 @@ export default async function handler(req, res) {
         const entityType = String(n?.entity_type || '').trim().toLowerCase()
         const entityId = String(n?.entity_id || '').trim()
         if (!entityType || !entityId) continue
-        if (entityType !== 'course' && entityType !== 'simulado') continue
-        if (entityType === 'course' && !allowedCourseIds.has(entityId)) continue
-        if (entityType === 'simulado' && !allowedSimuladoIds.has(entityId)) continue
+        if (entityType !== 'simulado') continue
+        if (!allowedSimuladoIds.has(entityId)) continue
         const key = `${entityType}:${entityId}`
         if (latestByKey.has(key)) continue
         const data = parseJsonMaybe(n?.data) || (n?.data && typeof n.data === 'object' ? n.data : null) || {}
@@ -3049,52 +2846,7 @@ export default async function handler(req, res) {
       })()
 
       const inserts = []
-      const courseTitleById = new Map(courses.map((c) => [String(c?.id || '').trim(), String(c?.title || 'Curso')]))
       const simTitleById = new Map(simulados.map((s) => [String(s?.id || '').trim(), String(s?.title || 'Simulado')]))
-
-      if (updatingCourses) {
-        for (const [cid, exp] of desiredCourseMap.entries()) {
-          const key = `course:${cid}`
-          const current = latestByKey.get(key) || null
-          const shouldBeExpired = exp ? isExpiredYmd(exp) : false
-          if (current && !current.expired && current.expiresAt === exp) continue
-          const title = String(courseTitleById.get(cid) || 'Curso')
-          inserts.push({
-            id: deterministicUuid(`notif:producer_panel:grant:course:${cid}:student:${targetUserId}:at:${nowIso}`),
-            recipient_user_id: targetUserId,
-            type: 'purchase_confirmed',
-            title: 'Acesso liberado',
-            message: `Acesso liberado: ${title}`,
-            actor_user_id: producerUserId,
-            actor_name: producerUserId,
-            entity_name: title,
-            entity_type: 'course',
-            entity_id: cid,
-            created_at: nowIso,
-            data: { type: 'course', source: 'producer_panel', action: 'grant', producer_id: producerUserId, buyer_id: targetUserId, courseId: cid, expires_at: exp || null },
-            href: '/aluno',
-            read_at: null,
-          })
-          if (shouldBeExpired) {
-            inserts.push({
-              id: deterministicUuid(`notif:producer_panel:revoke:course:${cid}:student:${targetUserId}:at:${nowIso}`),
-              recipient_user_id: targetUserId,
-              type: 'purchase_confirmed',
-              title: 'Acesso removido',
-              message: `Acesso removido: ${title}`,
-              actor_user_id: producerUserId,
-              actor_name: producerUserId,
-              entity_name: title,
-              entity_type: 'course',
-              entity_id: cid,
-              created_at: nowIso,
-              data: { type: 'course', source: 'producer_panel', action: 'revoke', producer_id: producerUserId, buyer_id: targetUserId, courseId: cid, expires_at: yesterday },
-              href: '/aluno',
-              read_at: null,
-            })
-          }
-        }
-      }
 
       if (updatingSimulados) {
         for (const [sid, exp] of desiredSimMap.entries()) {
@@ -3143,31 +2895,9 @@ export default async function handler(req, res) {
       const toRevokeCourseIds = []
       const toRevokeSimIds = []
       for (const v of latestByKey.values()) {
-        if (updatingCourses && v.entityType === 'course' && !v.expired && !desiredCourseMap.has(v.entityId)) toRevokeCourseIds.push(v.entityId)
         if (updatingSimulados && v.entityType === 'simulado' && !v.expired && !desiredSimMap.has(v.entityId)) toRevokeSimIds.push(v.entityId)
       }
 
-      if (updatingCourses) {
-        for (const cid of toRevokeCourseIds) {
-          const title = String(courseTitleById.get(cid) || 'Curso')
-          inserts.push({
-            id: deterministicUuid(`notif:producer_panel:revoke:course:${cid}:student:${targetUserId}:at:${nowIso}`),
-            recipient_user_id: targetUserId,
-            type: 'purchase_confirmed',
-            title: 'Acesso removido',
-            message: `Acesso removido: ${title}`,
-            actor_user_id: producerUserId,
-            actor_name: producerUserId,
-            entity_name: title,
-            entity_type: 'course',
-            entity_id: cid,
-            created_at: nowIso,
-            data: { type: 'course', source: 'producer_panel', action: 'revoke', producer_id: producerUserId, buyer_id: targetUserId, courseId: cid, expires_at: yesterday },
-            href: '/aluno',
-            read_at: null,
-          })
-        }
-      }
       for (const sid of toRevokeSimIds) {
         const title = String(simTitleById.get(sid) || 'Simulado')
         inserts.push({
