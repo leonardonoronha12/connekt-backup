@@ -170,6 +170,166 @@ function escapeHtml(s) {
     .replaceAll("'", '&#39;')
 }
 
+function isMissingColumnLoose(err, col) {
+  const msg = String(err?.message || err?.details || err || '').toLowerCase()
+  const code = String(err?.code || '').toUpperCase()
+  const c = String(col || '').toLowerCase()
+  return (
+    code === 'PGRST204' ||
+    code === '42703' ||
+    msg.includes(`could not find the '${c}' column`) ||
+    (msg.includes('schema cache') && msg.includes(c)) ||
+    (msg.includes('does not exist') && msg.includes(c))
+  )
+}
+
+async function producerCanManageStudent({ admin, producerUserId, producerKeys, targetUserId }) {
+  const pid = String(producerUserId || '').trim()
+  const uid = String(targetUserId || '').trim()
+  if (!pid || !uid || !isUuid(uid)) return false
+  const pkeys = Array.from(new Set((Array.isArray(producerKeys) ? producerKeys : []).map((v) => String(v || '').trim()).filter(Boolean)))
+  if (pkeys.length === 0) return false
+
+  const producerCols = ['producer_id', 'producerId', 'producer_user_id', 'producer_external_id']
+  const buyerCols = ['buyer_id', 'buyerId', 'buyer_user_id', 'buyerUserId', 'user_id', 'userId']
+  for (const pcol of producerCols) {
+    for (const bcol of buyerCols) {
+      try {
+        const { data, error } = await admin
+          .from('sales')
+          .select('id,created_at')
+          .in(pcol, pkeys)
+          .eq(bcol, uid)
+          .order('created_at', { ascending: false })
+          .limit(1)
+        if (error) {
+          if (isMissingColumnLoose(error, pcol) || isMissingColumnLoose(error, bcol)) continue
+          continue
+        }
+        if (Array.isArray(data) && data.length > 0) return true
+      } catch (e) {
+        if (isMissingColumnLoose(e, pcol) || isMissingColumnLoose(e, bcol)) continue
+      }
+    }
+  }
+
+  try {
+    const { data, error } = await admin
+      .from('notifications')
+      .select('id,data,created_at,type')
+      .eq('recipient_user_id', pid)
+      .in('type', ['purchase_received', 'purchase_confirmed'])
+      .order('created_at', { ascending: false })
+      .limit(5000)
+    if (error) return false
+    for (const n of Array.isArray(data) ? data : []) {
+      const d = (() => {
+        if (!n?.data) return null
+        if (typeof n.data === 'object') return n.data
+        if (typeof n.data !== 'string') return null
+        try { return JSON.parse(n.data) } catch (_) { return null }
+      })() || {}
+      const buyerId = String(d?.buyer_id || d?.buyerId || d?.student_id || d?.studentId || '').trim()
+      if (buyerId && buyerId === uid) return true
+    }
+  } catch (_) {}
+
+  return false
+}
+
+async function generateRecoveryLink(email) {
+  const baseUrl = readEnv('SUPABASE_URL', readEnv('VITE_SUPABASE_URL', ''))
+  const serviceKey = readEnv('SUPABASE_SERVICE_ROLE_KEY', readEnv('SUPABASE_SERVICE_ROLE', ''))
+  if (!baseUrl || !serviceKey) return ''
+  const redirectTo = String(readEnv('PUBLIC_APP_URL', 'https://app.connektco.com')).replace(/\/+$/, '') + '/reset-password'
+  const url = `${baseUrl.replace(/\/+$/, '')}/auth/v1/admin/generate_link`
+  const r = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: serviceKey,
+      Authorization: `Bearer ${serviceKey}`,
+    },
+    body: JSON.stringify({
+      type: 'recovery',
+      email: String(email || '').trim(),
+      options: { redirect_to: redirectTo },
+    }),
+  })
+  const text = await r.text().catch(() => '')
+  let data = null
+  try { data = JSON.parse(text || '{}') } catch (_) { data = null }
+  if (!r.ok) return ''
+  const actionLink =
+    data?.action_link ||
+    data?.properties?.action_link ||
+    data?.data?.properties?.action_link ||
+    ''
+  return String(actionLink || '').trim()
+}
+
+function buildFirstAccessEmail({ toEmail, link }) {
+  const safeLink = escapeHtml(link)
+  const safeEmail = escapeHtml(toEmail)
+  const subject = 'Connekt • Defina sua senha de acesso'
+  const text =
+    `Olá!\n\n` +
+    `Seu acesso à Connekt foi liberado.\n\n` +
+    `Para definir sua senha e entrar, use o link abaixo:\n\n` +
+    `${link}\n\n` +
+    `Se você não solicitou esse acesso, ignore este email.\n\n` +
+    `Connekt`
+
+  const html = `
+  <div style="margin:0;padding:0;background:#F8FAFC;">
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="background:#F8FAFC;">
+      <tr>
+        <td align="center" style="padding:24px 12px;">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="560" style="width:560px;max-width:560px;background:#FFFFFF;border:1px solid #E3E4E5;border-radius:12px;overflow:hidden;">
+            <tr>
+              <td style="background:linear-gradient(135deg,#0047BB 0%,#321A88 100%);padding:22px 20px;">
+                <div style="font-family:Arial,Helvetica,sans-serif;font-size:18px;font-weight:800;color:#FFFFFF;letter-spacing:.2px;">Connekt</div>
+                <div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#E7EDFC;margin-top:6px;">Acesso liberado • Definir senha</div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:22px 20px;">
+                <div style="font-family:Arial,Helvetica,sans-serif;font-size:18px;font-weight:800;color:#1E1B39;margin-bottom:10px;">Olá!</div>
+                <div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#404040;line-height:1.7;">
+                  Seu acesso à <strong>Connekt</strong> foi liberado. Para definir sua senha e entrar na plataforma, clique no botão abaixo.
+                </div>
+                <div style="text-align:center;margin:18px 0 10px 0;">
+                  <a href="${safeLink}" style="display:inline-block;background:#0047BB;color:#FFFFFF !important;text-decoration:none;border-radius:10px;padding:12px 18px;font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:700;">
+                    Definir senha
+                  </a>
+                </div>
+                <div style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#737780;line-height:1.6;margin-top:12px;">
+                  Se o botão não funcionar, copie e cole este link no navegador:
+                  <div style="word-break:break-all;margin-top:6px;color:#0047BB;">${safeLink}</div>
+                </div>
+                <div style="margin-top:16px;padding:12px 14px;border:1px solid #FCA5A5;background:#FEF2F2;border-radius:10px;font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#991B1B;line-height:1.6;">
+                  Se você não solicitou esse acesso, ignore este email.
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:14px 20px;border-top:1px solid #E3E4E5;background:#F8FAFC;">
+                <div style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#8F9299;line-height:1.6;">
+                  Este email foi enviado para ${safeEmail}.<br />
+                  Precisa de ajuda? Fale com a gente em <a href="mailto:suporte@appconnekt.com.br" style="color:#0047BB;text-decoration:none;">suporte@appconnekt.com.br</a>.
+                </div>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </div>
+  `.trim()
+
+  return { subject, text, html }
+}
+
 async function sendSendgridEmail({ to, subject, text, html }) {
   const apiKey = readEnv('SENDGRID_API_KEY')
   const fromEmail = readEnv('SENDGRID_FROM_EMAIL', 'no-reply@connektco.com')
@@ -2484,6 +2644,71 @@ export default async function handler(req, res) {
       return json(res, 200, { ok: true, user_id: targetUserId, profile: saved })
     }
 
+    if (type === 'student_set_disabled') {
+      res.setHeader('Cache-Control', 'no-store')
+      if (req.method !== 'POST') return json(res, 405, { error: 'method_not_allowed' })
+      const producerUserId = String(auth.user?.id || '').trim()
+      if (!producerUserId || producerId !== producerUserId) return json(res, 403, { error: 'forbidden' })
+
+      const raw = await readRawBody(req).catch(() => null)
+      let body = null
+      try { body = raw ? JSON.parse(raw.toString('utf-8') || '{}') : {} } catch (_) { body = {} }
+
+      const targetUserId = String(body?.userId || body?.user_id || '').trim()
+      const nextDisabled = body?.disabled === true || body?.disabled === 1 || body?.disabled === '1' || String(body?.disabled || '').trim().toLowerCase() === 'true'
+      if (!targetUserId || !isUuid(targetUserId)) return json(res, 400, { error: 'invalid_user_id' })
+
+      const producerRowId = await resolveProducerRowIdFromUserId(producerUserId)
+      const producerKeys = Array.from(new Set([producerUserId, producerRowId].map((v) => String(v || '').trim()).filter(Boolean)))
+      const allowed = await producerCanManageStudent({ admin, producerUserId, producerKeys, targetUserId })
+      if (!allowed) return json(res, 403, { error: 'forbidden' })
+
+      const bannedUntil = (() => {
+        if (!nextDisabled) return null
+        const d = new Date()
+        d.setUTCFullYear(d.getUTCFullYear() + 100)
+        return d.toISOString()
+      })()
+
+      const rUser = await admin.auth.admin.updateUserById(targetUserId, { banned_until: bannedUntil })
+      if (rUser?.error) return json(res, 500, { error: rUser.error?.message || 'update_failed' })
+
+      return json(res, 200, { ok: true, user_id: targetUserId, disabled: !!nextDisabled, banned_until: bannedUntil || '' })
+    }
+
+    if (type === 'student_first_access_link') {
+      res.setHeader('Cache-Control', 'no-store')
+      if (req.method !== 'GET') return json(res, 405, { error: 'method_not_allowed' })
+      const producerUserId = String(auth.user?.id || '').trim()
+      if (!producerUserId || producerId !== producerUserId) return json(res, 403, { error: 'forbidden' })
+
+      const targetUserId = String(u.searchParams.get('user_id') || u.searchParams.get('userId') || '').trim()
+      const send = u.searchParams.get('send') === '1'
+      if (!targetUserId || !isUuid(targetUserId)) return json(res, 400, { error: 'invalid_user_id' })
+
+      const producerRowId = await resolveProducerRowIdFromUserId(producerUserId)
+      const producerKeys = Array.from(new Set([producerUserId, producerRowId].map((v) => String(v || '').trim()).filter(Boolean)))
+      const allowed = await producerCanManageStudent({ admin, producerUserId, producerKeys, targetUserId })
+      if (!allowed) return json(res, 403, { error: 'forbidden' })
+
+      const rUser = await admin.auth.admin.getUserById(targetUserId)
+      const email = String(rUser?.data?.user?.email || '').trim()
+      if (!isValidEmail(email)) return json(res, 400, { error: 'invalid_email' })
+
+      const link = await generateRecoveryLink(email)
+      if (!link) return json(res, 500, { error: 'link_failed' })
+
+      let emailed = false
+      if (send) {
+        const payload = buildFirstAccessEmail({ toEmail: email, link })
+        const sent = await sendSendgridEmail({ to: email, subject: payload.subject, text: payload.text, html: payload.html })
+        if (!sent.ok) return json(res, 500, { error: sent.skipped ? 'email_unavailable' : 'email_failed' })
+        emailed = true
+      }
+
+      return json(res, 200, { ok: true, user_id: targetUserId, firstAccessLink: link, emailed })
+    }
+
     if (type === 'student_entitlements_get') {
       res.setHeader('Cache-Control', 'no-store')
       const producerUserId = String(auth.user?.id || '').trim()
@@ -2745,12 +2970,24 @@ export default async function handler(req, res) {
         .filter((p) => p.title)
       products.sort((a, b) => a.title.localeCompare(b.title, 'pt-BR'))
 
+      let student = null
+      try {
+        const ru = await admin.auth.admin.getUserById(targetUserId)
+        const u1 = ru?.data?.user || null
+        const bannedUntil = String(u1?.banned_until || '').trim()
+        const disabled = bannedUntil ? new Date(bannedUntil).getTime() > Date.now() : false
+        student = { disabled: !!disabled, banned_until: bannedUntil || '' }
+      } catch (_) {
+        student = null
+      }
+
       return json(res, 200, {
         ok: true,
         user_id: targetUserId,
         courses: (Array.isArray(courses) ? courses : []).map((c) => ({ id: String(c?.id || '').trim(), title: String(c?.title || '').trim() })).filter((c) => c.id),
         simulados: simulados.map((s) => ({ id: String(s?.id || '').trim(), title: String(s?.title || '').trim() })).filter((s) => s.id),
         products,
+        student,
         entitlements: {
           courses: entCourses.map((e) => ({ courseId: e.entityId, expiresAt: e.expiresAt || '', expired: !!e.expired })),
           simulados: entSims.map((e) => ({ simId: e.entityId, expiresAt: e.expiresAt || '', expired: !!e.expired })),

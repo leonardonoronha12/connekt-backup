@@ -514,16 +514,19 @@ export default function PlatformAdminWithdrawRequestsPage() {
                         const producerName = String(r?.producerName || '').trim() || `Produtor ${String(r?.producerId || '').slice(0, 8)}`
                         const msg = `Olá ${producerName}, estou entrando em contato sobre sua solicitação de saque (${formatMoneyFromCents(r?.amountCents || 0)}).`
                         const waUrl = buildWhatsappUrl({ phone: r?.producerPhone || '', text: msg })
+                        const email = String(r?.producerEmail || '').trim()
+                        const mailUrl = email ? `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent('Connekt • Solicitação de saque')}&body=${encodeURIComponent(msg)}` : ''
+                        const contactUrl = waUrl || mailUrl
                         return (
                       <tr key={String(r?.id || Math.random())}>
                         <td className="px-6 py-4 text-[13px] text-[#1E1B39]">{formatDateTimeBr(r?.createdAt)}</td>
                         <td className="px-6 py-4 text-[13px] text-[#1E1B39]">{producerName}</td>
-                        <td className="px-6 py-4 text-[13px] text-[#1E1B39]">{String(r?.producerEmail || '').trim() || '—'}</td>
+                        <td className="px-6 py-4 text-[13px] text-[#1E1B39]">{email || '—'}</td>
                         <td className="px-6 py-4">
-                          {waUrl ? (
+                          {contactUrl ? (
                             <a
-                              href={waUrl}
-                              target="_blank"
+                              href={contactUrl}
+                              target={waUrl ? "_blank" : undefined}
                               rel="noreferrer"
                               className="inline-flex items-center gap-2 h-9 px-3 rounded-[10px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#1E1B39] hover:bg-[#F8FAFC]"
                             >
@@ -531,7 +534,7 @@ export default function PlatformAdminWithdrawRequestsPage() {
                               Iniciar conversa
                             </a>
                           ) : (
-                            <span className="text-[12px] text-[#737780]">Sem telefone</span>
+                            <span className="text-[12px] text-[#737780]">Sem contato</span>
                           )}
                         </td>
                         <td className="px-6 py-4 text-[13px] text-[#1E1B39]">{formatMoneyFromCents(r?.amountCents || 0)}</td>
