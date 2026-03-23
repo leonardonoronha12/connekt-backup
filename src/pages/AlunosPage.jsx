@@ -213,6 +213,8 @@ export default function AlunosPage() {
   const [editSimuladosOptions, setEditSimuladosOptions] = useState([])
   const [editPurchasedProducts, setEditPurchasedProducts] = useState([])
   const [editEntitlements, setEditEntitlements] = useState([])
+  const [editStudentDisabled, setEditStudentDisabled] = useState(false)
+  const [editActionLoading, setEditActionLoading] = useState('')
 
   const fetchStudents = useCallback(async () => {
     const producerId = String(user?.id || '').trim()
@@ -235,6 +237,8 @@ export default function AlunosPage() {
     setEditForm({ name: String(r?.name || '').trim(), phone: String(r?.phone || '').trim() })
     setEditPurchasedProducts([])
     setEditEntitlements([])
+    setEditStudentDisabled(false)
+    setEditActionLoading('')
     setEditOpen(true)
     const startedAt = Date.now()
     setEditFetching(true)
@@ -254,6 +258,7 @@ export default function AlunosPage() {
       const courses = Array.isArray(ent?.courses) ? ent.courses : []
       const sims = Array.isArray(ent?.simulados) ? ent.simulados : []
       const purchased = Array.isArray(body?.products) ? body.products : []
+      setEditStudentDisabled(!!body?.student?.disabled)
       const nextEnt = []
       for (const c of courses) {
         const courseId = String(c?.courseId || c?.course_id || '').trim()
@@ -279,6 +284,78 @@ export default function AlunosPage() {
       setEditFetching(false)
     }
   }, [authHeaders, user?.id])
+
+  const toggleStudentDisabled = useCallback(async () => {
+    const producerId = String(user?.id || '').trim()
+    const userId = String(editRow?.id || '').trim()
+    if (!producerId || !userId) return
+    const next = !editStudentDisabled
+    setEditActionLoading('disabled')
+    try {
+      const qs = new URLSearchParams()
+      qs.set('type', 'student_set_disabled')
+      qs.set('producerId', producerId)
+      const r = await fetch(`/api/producer?${qs.toString()}`, {
+        method: 'POST',
+        headers: { ...authHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId, disabled: next }),
+      })
+      const body = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(body?.error || 'Falha ao atualizar')
+      setEditStudentDisabled(!!body?.disabled)
+      toast({ title: 'Ok', description: body?.disabled ? 'Aluno bloqueado.' : 'Aluno desbloqueado.' })
+    } catch (e) {
+      toast({ title: 'Erro', description: e?.message || 'Erro ao atualizar', variant: 'destructive' })
+    } finally {
+      setEditActionLoading('')
+    }
+  }, [authHeaders, editRow?.id, editStudentDisabled, user?.id])
+
+  const copyFirstAccessLink = useCallback(async () => {
+    const producerId = String(user?.id || '').trim()
+    const userId = String(editRow?.id || '').trim()
+    if (!producerId || !userId) return
+    setEditActionLoading('copy')
+    try {
+      const qs = new URLSearchParams()
+      qs.set('type', 'student_first_access_link')
+      qs.set('producerId', producerId)
+      qs.set('user_id', userId)
+      const r = await fetch(`/api/producer?${qs.toString()}`, { headers: authHeaders })
+      const body = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(body?.error || 'Falha ao gerar link')
+      const link = String(body?.firstAccessLink || '').trim()
+      if (!link) throw new Error('link_failed')
+      await navigator.clipboard.writeText(link)
+      toast({ title: 'Copiado', description: 'Link de primeiro acesso copiado.' })
+    } catch (e) {
+      toast({ title: 'Erro', description: e?.message || 'Erro ao copiar', variant: 'destructive' })
+    } finally {
+      setEditActionLoading('')
+    }
+  }, [authHeaders, editRow?.id, user?.id])
+
+  const sendFirstAccessEmail = useCallback(async () => {
+    const producerId = String(user?.id || '').trim()
+    const userId = String(editRow?.id || '').trim()
+    if (!producerId || !userId) return
+    setEditActionLoading('email')
+    try {
+      const qs = new URLSearchParams()
+      qs.set('type', 'student_first_access_link')
+      qs.set('producerId', producerId)
+      qs.set('user_id', userId)
+      qs.set('send', '1')
+      const r = await fetch(`/api/producer?${qs.toString()}`, { headers: authHeaders })
+      const body = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(body?.error || 'Falha ao enviar email')
+      toast({ title: 'Enviado', description: 'Email de acesso enviado.' })
+    } catch (e) {
+      toast({ title: 'Erro', description: e?.message || 'Erro ao enviar', variant: 'destructive' })
+    } finally {
+      setEditActionLoading('')
+    }
+  }, [authHeaders, editRow?.id, user?.id])
 
   const saveEdit = useCallback(async () => {
     const producerId = String(user?.id || '').trim()
@@ -466,10 +543,41 @@ export default function AlunosPage() {
             <div className="min-w-0">
               <div className="text-[14px] font-semibold text-[#1E1B39]">Editar usuário</div>
               <div className="text-[12px] text-[#737780] truncate">{String(editRow?.email || '').trim()}</div>
+              {editStudentDisabled ? (
+                <div className="mt-1 inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-[#FDECEC] text-[#E53935]">
+                  Bloqueado
+                </div>
+              ) : null}
             </div>
-            <button type="button" className="h-9 px-3 rounded-[10px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#1E1B39] hover:bg-[#F8FAFC]" disabled={editSaving} onClick={() => setEditOpen(false)}>
-              Fechar
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="h-9 px-3 rounded-[10px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#1E1B39] hover:bg-[#F8FAFC] disabled:opacity-50"
+                disabled={editFetching || editSaving || !!editActionLoading}
+                onClick={toggleStudentDisabled}
+              >
+                {editActionLoading === 'disabled' ? 'Carregando...' : (editStudentDisabled ? 'Desbloquear' : 'Bloquear')}
+              </button>
+              <button
+                type="button"
+                className="h-9 px-3 rounded-[10px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#1E1B39] hover:bg-[#F8FAFC] disabled:opacity-50"
+                disabled={editFetching || editSaving || !!editActionLoading}
+                onClick={sendFirstAccessEmail}
+              >
+                {editActionLoading === 'email' ? 'Carregando...' : 'Enviar acesso'}
+              </button>
+              <button
+                type="button"
+                className="h-9 px-3 rounded-[10px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#1E1B39] hover:bg-[#F8FAFC] disabled:opacity-50"
+                disabled={editFetching || editSaving || !!editActionLoading}
+                onClick={copyFirstAccessLink}
+              >
+                {editActionLoading === 'copy' ? 'Carregando...' : 'Copiar link'}
+              </button>
+              <button type="button" className="h-9 px-3 rounded-[10px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#1E1B39] hover:bg-[#F8FAFC]" disabled={editSaving} onClick={() => setEditOpen(false)}>
+                Fechar
+              </button>
+            </div>
           </div>
 
           {editFetching ? (
