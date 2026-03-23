@@ -33,6 +33,91 @@ function getModuleLessons(mod) {
   return []
 }
 
+function normalizeText(v) {
+  return String(v || '').trim().toLowerCase()
+}
+
+function SearchableSelect({ options, value, onChange, disabled }) {
+  const rootRef = useRef(null)
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState('')
+
+  const selectedLabel = useMemo(() => {
+    const v = String(value || '')
+    const found = (Array.isArray(options) ? options : []).find((o) => String(o?.value || '') === v)
+    return String(found?.label || '').trim()
+  }, [options, value])
+
+  const filtered = useMemo(() => {
+    const list = Array.isArray(options) ? options : []
+    const q = normalizeText(query)
+    if (!q) return list
+    return list.filter((o) => normalizeText(o?.label).includes(q))
+  }, [options, query])
+
+  const visible = useMemo(() => {
+    const list = Array.isArray(filtered) ? filtered : []
+    return list.slice(0, 200)
+  }, [filtered])
+
+  useEffect(() => {
+    if (!open) return
+    const onMouseDown = (e) => {
+      const root = rootRef.current
+      if (root && root.contains(e.target)) return
+      setOpen(false)
+    }
+    window.addEventListener('mousedown', onMouseDown)
+    return () => window.removeEventListener('mousedown', onMouseDown)
+  }, [open])
+
+  return (
+    <div ref={rootRef} className="relative">
+      <input
+        value={open ? query : (selectedLabel || '')}
+        placeholder="Buscar..."
+        disabled={disabled}
+        onFocus={() => {
+          if (disabled) return
+          setOpen(true)
+          setQuery('')
+        }}
+        onChange={(e) => {
+          if (!open) setOpen(true)
+          setQuery(e.target.value)
+        }}
+        className="w-full h-[40px] rounded-[10px] border border-[#E3E4E5] px-3 text-[13px] bg-white outline-none focus:border-[#0047BB] disabled:opacity-50"
+      />
+      {open ? (
+        <div className="absolute left-0 right-0 mt-1 rounded-[10px] border border-[#E3E4E5] bg-white shadow-lg z-[2] max-h-[280px] overflow-auto">
+          {visible.length === 0 ? (
+            <div className="px-3 py-2 text-[12px] text-[#737780]">Nenhum resultado.</div>
+          ) : (
+            visible.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                className={`w-full text-left px-3 py-2 text-[12px] hover:bg-[#F8FAFC] ${String(opt.value) === String(value) ? 'bg-[#F6F5FA]' : ''}`}
+                onClick={() => {
+                  onChange(String(opt.value))
+                  setOpen(false)
+                }}
+              >
+                {opt.label}
+              </button>
+            ))
+          )}
+          {filtered.length > visible.length ? (
+            <div className="px-3 py-2 text-[11px] text-[#737780] border-t border-[#E3E4E5]">
+              Mostrando {visible.length} de {filtered.length}. Continue digitando para filtrar.
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 function formatPhone(raw) {
   const digits = String(raw || '').replace(/\D/g, '')
   if (!digits) return ''
@@ -394,10 +479,11 @@ export default function AlunosPage() {
                   (Array.isArray(editEntitlements) ? editEntitlements : []).map((s, idx) => (
                     <div key={`${s?.selectValue || s?.id || 'new'}-${idx}`} className="grid grid-cols-1 md:grid-cols-12 gap-2 items-center">
                       <div className="md:col-span-7">
-                        <select
+                        <SearchableSelect
+                          options={dropdownOptions}
                           value={String(s?.selectValue || '')}
-                          onChange={(e) => {
-                            const v = e.target.value
+                          disabled={editFetching || editSaving}
+                          onChange={(v) => {
                             const picked = dropdownByValue.get(v) || null
                             setEditEntitlements((p) => {
                               const next = Array.isArray(p) ? p.slice() : []
@@ -405,13 +491,7 @@ export default function AlunosPage() {
                               return next
                             })
                           }}
-                          className="w-full h-[40px] rounded-[10px] border border-[#E3E4E5] px-3 text-[13px] bg-white outline-none focus:border-[#0047BB]"
-                        >
-                          <option value="">Selecione um produto</option>
-                          {dropdownOptions.map((opt) => (
-                            <option key={opt.value} value={opt.value}>{opt.label}</option>
-                          ))}
-                        </select>
+                        />
                       </div>
                       <div className="md:col-span-4">
                         <input
