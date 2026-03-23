@@ -75,6 +75,16 @@ function buildWhatsappUrl({ phone, text }) {
   return `https://wa.me/${p}${q}`
 }
 
+function normalizeWithdrawStatus(raw) {
+  const s = String(raw || '').trim().toLowerCase()
+  if (!s) return 'requested'
+  if (s === 'solicitado') return 'requested'
+  if (s === 'em_analise' || s === 'em análise') return 'processing'
+  if (s === 'concluido' || s === 'concluído') return 'paid'
+  if (s === 'cancelado') return 'canceled'
+  return s
+}
+
 export default function PlatformAdminWithdrawRequestsPage() {
   const { session, user } = useAuth()
   const authHeaders = useMemo(() => {
@@ -96,6 +106,8 @@ export default function PlatformAdminWithdrawRequestsPage() {
   const [minAmount, setMinAmount] = useState('')
   const [onlyWithBalance, setOnlyWithBalance] = useState(false)
   const [standardStatus, setStandardStatus] = useState('all')
+
+  const [updatingById, setUpdatingById] = useState({})
 
   const monitorStateRef = useRef({
     statusById: new Map(),
@@ -141,6 +153,37 @@ export default function PlatformAdminWithdrawRequestsPage() {
   useEffect(() => {
     runFetch()
   }, [runFetch])
+
+  const updateWithdrawStatus = useCallback(async ({ id, status }) => {
+    const rid = String(id || '').trim()
+    const nextStatus = normalizeWithdrawStatus(status)
+    if (!rid) return { ok: false, error: 'missing_id' }
+    if (!nextStatus) return { ok: false, error: 'missing_status' }
+    setUpdatingById((p) => ({ ...(p || {}), [rid]: true }))
+    setRequests((prev) => (Array.isArray(prev)
+      ? prev.map((row) => (String(row?.id || '') === rid ? { ...row, status: nextStatus, updatedAt: new Date().toISOString() } : row))
+      : prev))
+    try {
+      const r = await fetch('/api/admin/withdraw-requests/update-status', {
+        method: 'POST',
+        headers: { ...authHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: rid, status: nextStatus }),
+      })
+      const body = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(body?.error || 'Falha ao atualizar status')
+      const confirmed = normalizeWithdrawStatus(body?.status || nextStatus)
+      setRequests((prev) => (Array.isArray(prev)
+        ? prev.map((row) => (String(row?.id || '') === rid ? { ...row, status: confirmed, updatedAt: body?.updatedAt || row?.updatedAt || null } : row))
+        : prev))
+      return { ok: true, status: confirmed }
+    } catch (e) {
+      toast({ title: 'Erro', description: e?.message || 'Erro ao atualizar status', variant: 'destructive' })
+      runFetch()
+      return { ok: false, error: e?.message || String(e) }
+    } finally {
+      setUpdatingById((p) => ({ ...(p || {}), [rid]: false }))
+    }
+  }, [authHeaders, runFetch])
 
   const sendSelfEmail = useCallback(async ({ subject, text }) => {
     const token = String(session?.access_token || '').trim()
@@ -517,6 +560,9 @@ export default function PlatformAdminWithdrawRequestsPage() {
                         const email = String(r?.producerEmail || '').trim()
                         const mailUrl = email ? `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent('Connekt • Solicitação de saque')}&body=${encodeURIComponent(msg)}` : ''
                         const contactUrl = waUrl || mailUrl
+                        const normalized = normalizeWithdrawStatus(r?.status)
+                        const isRequested = normalized === 'requested'
+                        const isUpdating = !!updatingById?.[String(r?.id || '').trim()]
                         return (
                       <tr key={String(r?.id || Math.random())}>
                         <td className="px-6 py-4 text-[13px] text-[#1E1B39]">{formatDateTimeBr(r?.createdAt)}</td>
@@ -524,15 +570,49 @@ export default function PlatformAdminWithdrawRequestsPage() {
                         <td className="px-6 py-4 text-[13px] text-[#1E1B39]">{email || '—'}</td>
                         <td className="px-6 py-4">
                           {contactUrl ? (
-                            <a
-                              href={contactUrl}
-                              target={waUrl ? "_blank" : undefined}
-                              rel="noreferrer"
-                              className="inline-flex items-center gap-2 h-9 px-3 rounded-[10px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#1E1B39] hover:bg-[#F8FAFC]"
-                            >
-                              <MessageCircle className="w-4 h-4 text-[#1E1B39]" />
-                              Iniciar conversa
-                            </a>
+                            <div className="flex flex-col gap-2">
+                              <button
+                                type="button"
+                                disabled={isUpdating}
+                                onClick={() => {
+                                  if (isRequested && r?.id) updateWithdrawStatus({ id: r.id, status: 'processing' })
+                                  if (waUrl) window.open(waUrl, '_blank', 'noopener,noreferrer')
+                                  else if (mailUrl) window.location.href = mailUrl
+                                }}
+                                className="inline-flex items-center justify-center gap-2 h-9 px-3 rounded-[10px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#1E1B39] hover:bg-[#F8FAFC] disabled:opacity-50"
+                              >
+                                <MessageCircle className="w-4 h-4 text-[#1E1B39]" />
+                                {isUpdating ? 'Carregando…' : (isRequested ? 'Iniciar conversa' : 'Abrir conversa')}
+                              </button>
+                              {!isRequested ? (
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    type="button"
+                                    disabled={isUpdating}
+                                    onClick={() => updateWithdrawStatus({ id: r.id, status: 'processing' })}
+                                    className="h-8 px-3 rounded-[10px] border border-[#E3E4E5] bg-white text-[11px] font-semibold text-[#1E1B39] hover:bg-[#F8FAFC] disabled:opacity-50"
+                                  >
+                                    Em análise
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={isUpdating}
+                                    onClick={() => updateWithdrawStatus({ id: r.id, status: 'paid' })}
+                                    className="h-8 px-3 rounded-[10px] border border-[#E3E4E5] bg-white text-[11px] font-semibold text-[#1E1B39] hover:bg-[#F8FAFC] disabled:opacity-50"
+                                  >
+                                    Concluído
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={isUpdating}
+                                    onClick={() => updateWithdrawStatus({ id: r.id, status: 'canceled' })}
+                                    className="h-8 px-3 rounded-[10px] border border-[#E3E4E5] bg-white text-[11px] font-semibold text-[#1E1B39] hover:bg-[#F8FAFC] disabled:opacity-50"
+                                  >
+                                    Cancelar
+                                  </button>
+                                </div>
+                              ) : null}
+                            </div>
                           ) : (
                             <span className="text-[12px] text-[#737780]">Sem contato</span>
                           )}
