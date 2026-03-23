@@ -27,6 +27,7 @@ import adminUsersFirstAccessLink from '../api_handlers/admin/users/first-access-
 import adminVercelStatus from '../api_handlers/admin/vercel/status.js'
 import adminVercelDeploy from '../api_handlers/admin/vercel/deploy.js'
 import adminWithdrawRequestsList from '../api_handlers/admin/withdraw_requests/list.js'
+import adminWithdrawRequestsUpdateStatus from '../api_handlers/admin/withdraw_requests/update-status.js'
 
 function getPathFromRequest(req) {
   try {
@@ -69,6 +70,7 @@ export default async function handler(req, res) {
       ['/api/admin/vercel/status', adminVercelStatus],
       ['/api/admin/vercel/deploy', adminVercelDeploy],
       ['/api/admin/withdraw-requests/list', adminWithdrawRequestsList],
+      ['/api/admin/withdraw-requests/update-status', adminWithdrawRequestsUpdateStatus],
     ])
 
     const direct = routes.get(pathname)
