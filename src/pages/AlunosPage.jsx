@@ -39,8 +39,11 @@ function normalizeText(v) {
 
 function SearchableSelect({ options, value, onChange, disabled }) {
   const rootRef = useRef(null)
+  const inputRef = useRef(null)
+  const menuRef = useRef(null)
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
+  const [menuPos, setMenuPos] = useState(null)
 
   const selectedLabel = useMemo(() => {
     const v = String(value || '')
@@ -62,20 +65,57 @@ function SearchableSelect({ options, value, onChange, disabled }) {
 
   useEffect(() => {
     if (!open) return
+    const updatePos = () => {
+      const el = inputRef.current
+      if (!el) return
+      const r = el.getBoundingClientRect()
+      const vh = window.innerHeight || 0
+      const spaceBelow = vh - r.bottom
+      const spaceAbove = r.top
+      const preferUp = spaceBelow < 220 && spaceAbove > spaceBelow
+      const maxH = Math.max(140, Math.min(280, (preferUp ? spaceAbove : spaceBelow) - 12))
+      setMenuPos({
+        left: r.left,
+        width: r.width,
+        dir: preferUp ? 'up' : 'down',
+        top: preferUp ? null : (r.bottom + 4),
+        bottom: preferUp ? (vh - r.top + 4) : null,
+        maxHeight: maxH,
+      })
+    }
+
+    updatePos()
+
     const onMouseDown = (e) => {
       const root = rootRef.current
+      const menu = menuRef.current
       if (root && root.contains(e.target)) return
+      if (menu && menu.contains(e.target)) return
       setOpen(false)
     }
+
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+
     window.addEventListener('mousedown', onMouseDown)
-    return () => window.removeEventListener('mousedown', onMouseDown)
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('resize', updatePos)
+    window.addEventListener('scroll', updatePos, true)
+    return () => {
+      window.removeEventListener('mousedown', onMouseDown)
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('resize', updatePos)
+      window.removeEventListener('scroll', updatePos, true)
+    }
   }, [open])
 
   return (
     <div ref={rootRef} className="relative">
       <input
+        ref={inputRef}
         value={open ? query : (selectedLabel || '')}
-        placeholder="Buscar..."
+        placeholder={selectedLabel ? 'Buscar…' : 'Buscar…'}
         disabled={disabled}
         onFocus={() => {
           if (disabled) return
@@ -88,8 +128,18 @@ function SearchableSelect({ options, value, onChange, disabled }) {
         }}
         className="w-full h-[40px] rounded-[10px] border border-[#E3E4E5] px-3 text-[13px] bg-white outline-none focus:border-[#0047BB] disabled:opacity-50"
       />
-      {open ? (
-        <div className="absolute left-0 right-0 mt-1 rounded-[10px] border border-[#E3E4E5] bg-white shadow-lg z-[2] max-h-[280px] overflow-auto">
+      {open && typeof document !== 'undefined' && menuPos ? createPortal(
+        <div
+          ref={menuRef}
+          className="fixed rounded-[10px] border border-[#E3E4E5] bg-white shadow-lg z-[100000] overflow-auto"
+          style={{
+            left: `${menuPos.left}px`,
+            width: `${menuPos.width}px`,
+            top: menuPos.top == null ? undefined : `${menuPos.top}px`,
+            bottom: menuPos.bottom == null ? undefined : `${menuPos.bottom}px`,
+            maxHeight: `${menuPos.maxHeight || 280}px`,
+          }}
+        >
           {visible.length === 0 ? (
             <div className="px-3 py-2 text-[12px] text-[#737780]">Nenhum resultado.</div>
           ) : (
@@ -112,7 +162,8 @@ function SearchableSelect({ options, value, onChange, disabled }) {
               Mostrando {visible.length} de {filtered.length}. Continue digitando para filtrar.
             </div>
           ) : null}
-        </div>
+        </div>,
+        document.body,
       ) : null}
     </div>
   )
