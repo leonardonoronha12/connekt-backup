@@ -360,6 +360,214 @@ async function sendSendgridEmail({ to, subject, text, html }) {
   return { ok: true }
 }
 
+function addMonthsClamped(date, months) {
+  const d = new Date(date.getTime())
+  const day = d.getDate()
+  d.setMonth(d.getMonth() + Number(months || 0))
+  if (d.getDate() !== day) d.setDate(0)
+  return d
+}
+
+function addYearsClamped(date, years) {
+  const d = new Date(date.getTime())
+  d.setFullYear(d.getFullYear() + Number(years || 0))
+  return d
+}
+
+function normalizePlanSlugToKey(slug) {
+  const s = String(slug || '').trim().toLowerCase()
+  if (!s) return ''
+  if (s === 'basic' || s === 'start') return 'start'
+  if (s === 'pro') return 'pro'
+  if (s === 'enterprise' || s === 'premium') return 'premium'
+  if (s === 'qa') return 'qa'
+  if (s === 'teste' || s === 'test') return 'teste'
+  return s
+}
+
+function normalizeCycle(raw) {
+  const s = String(raw || '').trim().toLowerCase()
+  if (s === 'anual' || s === 'annual' || s === 'year' || s === 'yearly') return 'anual'
+  return 'mensal'
+}
+
+function formatDateBrShort(value) {
+  const v = String(value || '').trim()
+  if (!v) return '—'
+  const d = new Date(v)
+  if (!Number.isFinite(d.getTime())) return v
+  const dd = String(d.getDate()).padStart(2, '0')
+  const mm = String(d.getMonth() + 1).padStart(2, '0')
+  const yyyy = String(d.getFullYear())
+  return `${dd}/${mm}/${yyyy}`
+}
+
+function buildPlanExpiryEmail({ toEmail, planKey, expiresAtIso, graceDays }) {
+  const planLabel = planKey ? `Connekt ${String(planKey).toUpperCase()}` : 'Connekt'
+  const expBr = formatDateBrShort(expiresAtIso)
+  const subject = `${planLabel} • Plano vencido`
+  const text =
+    `Olá!\n\n` +
+    `Seu plano (${planLabel}) venceu em ${expBr}.\n\n` +
+    `Se o pagamento da renovação automática não foi reconhecido, você tem ${Number(graceDays || 7)} dias para regularizar antes do bloqueio.\n\n` +
+    `Acesse a Connekt para verificar seu plano.\n\n` +
+    `Connekt`
+  const html =
+    `<div style="font-family:Arial,Helvetica,sans-serif;background:#F8FAFC;padding:24px;">` +
+    `<div style="max-width:560px;margin:0 auto;background:#fff;border:1px solid #E3E4E5;border-radius:12px;overflow:hidden;">` +
+    `<div style="padding:18px 20px;border-bottom:1px solid #E3E4E5;">` +
+    `<div style="font-size:18px;font-weight:800;color:#1E1B39;">Connekt</div>` +
+    `</div>` +
+    `<div style="padding:20px;">` +
+    `<div style="font-size:16px;font-weight:800;color:#1E1B39;margin-bottom:10px;">Plano vencido</div>` +
+    `<div style="font-size:13px;color:#404040;line-height:1.6;">Seu plano (<strong>${escapeHtml(planLabel)}</strong>) venceu em <strong>${escapeHtml(expBr)}</strong>.</div>` +
+    `<div style="font-size:13px;color:#404040;line-height:1.6;margin-top:10px;">Se a renovação automática não foi reconhecida, você tem ${Number(graceDays || 7)} dias para regularizar antes do bloqueio.</div>` +
+    `</div>` +
+    `<div style="padding:14px 20px;border-top:1px solid #E3E4E5;font-size:12px;color:#8F9299;">` +
+    `Este email foi enviado para ${escapeHtml(toEmail)}.` +
+    `</div>` +
+    `</div>` +
+    `</div>`
+  return { subject, text, html }
+}
+
+function buildPlanCutoffEmail({ toEmail, planKey, expiresAtIso }) {
+  const planLabel = planKey ? `Connekt ${String(planKey).toUpperCase()}` : 'Connekt'
+  const expBr = formatDateBrShort(expiresAtIso)
+  const subject = `${planLabel} • Acesso bloqueado`
+  const text =
+    `Olá!\n\n` +
+    `Seu plano (${planLabel}) venceu em ${expBr} e o prazo de 7 dias para regularização expirou.\n\n` +
+    `Seu acesso foi bloqueado até a confirmação do pagamento/renovação.\n\n` +
+    `Connekt`
+  const html =
+    `<div style="font-family:Arial,Helvetica,sans-serif;background:#F8FAFC;padding:24px;">` +
+    `<div style="max-width:560px;margin:0 auto;background:#fff;border:1px solid #E3E4E5;border-radius:12px;overflow:hidden;">` +
+    `<div style="padding:18px 20px;border-bottom:1px solid #E3E4E5;">` +
+    `<div style="font-size:18px;font-weight:800;color:#1E1B39;">Connekt</div>` +
+    `</div>` +
+    `<div style="padding:20px;">` +
+    `<div style="font-size:16px;font-weight:800;color:#1E1B39;margin-bottom:10px;">Acesso bloqueado</div>` +
+    `<div style="font-size:13px;color:#404040;line-height:1.6;">Seu plano (<strong>${escapeHtml(planLabel)}</strong>) venceu em <strong>${escapeHtml(expBr)}</strong> e o prazo de 7 dias para regularização expirou.</div>` +
+    `<div style="font-size:13px;color:#404040;line-height:1.6;margin-top:10px;">Seu acesso foi bloqueado até a confirmação do pagamento/renovação.</div>` +
+    `</div>` +
+    `<div style="padding:14px 20px;border-top:1px solid #E3E4E5;font-size:12px;color:#8F9299;">` +
+    `Este email foi enviado para ${escapeHtml(toEmail)}.` +
+    `</div>` +
+    `</div>` +
+    `</div>`
+  return { subject, text, html }
+}
+
+async function resolveLatestPaidPayment(admin, userId) {
+  const uid = String(userId || '').trim()
+  if (!uid) return null
+  const selectAttempts = [
+    'id,user_id,plan_slug,cycle,status,paid_at,created_at,due_at,expires_at,valid_until,period_end,current_period_end',
+    'id,user_id,plan_slug,cycle,status,paid_at,created_at,expires_at,period_end,current_period_end',
+    'id,user_id,plan_slug,cycle,status,paid_at,created_at',
+    '*',
+  ]
+  const paidStatuses = new Set(['paid', 'pago', 'success', 'succeeded', 'captured', 'aprovado', 'approved'])
+  for (const sel of selectAttempts) {
+    try {
+      const { data, error } = await admin
+        .from('payments')
+        .select(sel)
+        .eq('user_id', uid)
+        .order('created_at', { ascending: false })
+        .limit(20)
+      if (error) continue
+      const rows = Array.isArray(data) ? data : []
+      const paid = rows.find((p) => paidStatuses.has(String(p?.status || '').trim().toLowerCase()))
+      if (paid) return paid
+    } catch (_) {}
+  }
+  return null
+}
+
+function computePlanExpiryFromPayment(payment) {
+  const p = payment && typeof payment === 'object' ? payment : {}
+  const base = new Date(String(p?.paid_at || p?.paidAt || p?.created_at || p?.createdAt || '').trim())
+  if (!Number.isFinite(base.getTime())) return { planKey: '', billingCycle: 'mensal', activatedAt: '', expiresAt: '' }
+  const planKey = normalizePlanSlugToKey(p?.plan_slug || '')
+  const billingCycle = normalizeCycle(p?.cycle || '')
+  const expiresAt = billingCycle === 'anual' ? addYearsClamped(base, 1) : addMonthsClamped(base, 1)
+  return { planKey, billingCycle, activatedAt: base.toISOString(), expiresAt: expiresAt.toISOString() }
+}
+
+function computePlanExpiryFallback({ planKey, activatedAtIso }) {
+  const pk = normalizePlanSlugToKey(planKey || '')
+  const base = new Date(String(activatedAtIso || '').trim())
+  if (!pk || !Number.isFinite(base.getTime())) return { planKey: pk, billingCycle: 'mensal', activatedAt: '', expiresAt: '' }
+  const expiresAt =
+    pk === 'teste'
+      ? new Date(base.getTime() + 24 * 60 * 60 * 1000)
+      : addMonthsClamped(base, 1)
+  return { planKey: pk, billingCycle: 'mensal', activatedAt: base.toISOString(), expiresAt: expiresAt.toISOString() }
+}
+
+async function enforceProducerPlan({ admin, user, producerId, type }) {
+  const uid = String(user?.id || '').trim()
+  const pid = String(producerId || '').trim()
+  if (!uid || !pid || uid !== pid) return { ok: true, blocked: false }
+  if (!type || type === 'public_branding') return { ok: true, blocked: false }
+
+  let profile = null
+  try {
+    const { data } = await admin.from('profiles').select('active_plan,plan_activated_at').eq('user_id', uid).maybeSingle()
+    profile = data || null
+  } catch (_) {
+    profile = null
+  }
+
+  const payment = await resolveLatestPaidPayment(admin, uid)
+  const fromPayment = payment ? computePlanExpiryFromPayment(payment) : null
+  const fromProfile = computePlanExpiryFallback({ planKey: profile?.active_plan || '', activatedAtIso: profile?.plan_activated_at || '' })
+  const snapshot = (fromPayment && fromPayment.planKey) ? fromPayment : fromProfile
+
+  const expiresAtMs = snapshot?.expiresAt ? new Date(snapshot.expiresAt).getTime() : NaN
+  if (!Number.isFinite(expiresAtMs)) return { ok: true, blocked: false }
+
+  const nowMs = Date.now()
+  const graceDays = 7
+  const expiredDays = Math.floor((nowMs - expiresAtMs) / (24 * 60 * 60 * 1000))
+  const expired = expiredDays >= 0
+  if (!expired) return { ok: true, blocked: false }
+
+  const toEmail = String(user?.email || '').trim().toLowerCase()
+  const expiresKey = String(snapshot.expiresAt || '').slice(0, 10)
+  const rUser = await admin.auth.admin.getUserById(uid)
+  const existingMeta = rUser?.data?.user?.user_metadata && typeof rUser.data.user.user_metadata === 'object' ? rUser.data.user.user_metadata : {}
+  const metaExpiryFor = String(existingMeta?.plan_expiry_email_for || '').trim()
+  const metaCutoffFor = String(existingMeta?.plan_cutoff_email_for || '').trim()
+
+  if (isValidEmail(toEmail) && expiresKey && metaExpiryFor !== expiresKey) {
+    const payload = buildPlanExpiryEmail({ toEmail, planKey: snapshot.planKey, expiresAtIso: snapshot.expiresAt, graceDays })
+    const sent = await sendSendgridEmail({ to: toEmail, subject: payload.subject, text: payload.text, html: payload.html })
+    if (sent.ok) {
+      await admin.auth.admin.updateUserById(uid, { user_metadata: { ...existingMeta, plan_expiry_email_for: expiresKey } })
+    }
+  }
+
+  const shouldBlock = expiredDays >= graceDays
+  if (shouldBlock && isValidEmail(toEmail) && expiresKey && metaCutoffFor !== expiresKey) {
+    const payload = buildPlanCutoffEmail({ toEmail, planKey: snapshot.planKey, expiresAtIso: snapshot.expiresAt })
+    const sent = await sendSendgridEmail({ to: toEmail, subject: payload.subject, text: payload.text, html: payload.html })
+    if (sent.ok) {
+      await admin.auth.admin.updateUserById(uid, { user_metadata: { ...existingMeta, plan_cutoff_email_for: expiresKey, plan_blocked: true, plan_blocked_at: new Date().toISOString() } })
+    }
+  }
+
+  if (!shouldBlock) return { ok: true, blocked: false, expiresAt: snapshot.expiresAt, planKey: snapshot.planKey, graceDays, expiredDays }
+
+  try {
+    await admin.from('profiles').update({ active_plan: null, plan_activated_at: null }).eq('user_id', uid)
+  } catch (_) {}
+
+  return { ok: false, blocked: true, error: 'plan_expired', expiresAt: snapshot.expiresAt, planKey: snapshot.planKey, graceDays, expiredDays }
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'GET' && req.method !== 'POST') return json(res, 405, { error: 'method_not_allowed' })
 
@@ -613,6 +821,11 @@ export default async function handler(req, res) {
 
     const auth = await getAuthedUser(admin, req)
     if (!auth.user) return json(res, 401, { error: auth.error || 'unauthorized' })
+
+    const planGuard = await enforceProducerPlan({ admin, user: auth.user, producerId, type })
+    if (planGuard && planGuard.blocked) {
+      return json(res, 402, { ok: false, error: planGuard.error || 'plan_expired', expiresAt: planGuard.expiresAt || '', graceDays: planGuard.graceDays || 7, expiredDays: planGuard.expiredDays || 0 })
+    }
 
     if (type === 'ensure_courses_media_upload' && (req.method === 'GET' || req.method === 'POST')) {
       res.setHeader('Cache-Control', 'no-store')
