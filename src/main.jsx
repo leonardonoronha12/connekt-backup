@@ -12,17 +12,74 @@ function renderFatal(message, detail) {
   if (!root) return
   const safeMessage = String(message || 'Erro ao carregar').slice(0, 5000)
   const safeDetail = String(detail || '').slice(0, 12000)
-  root.innerHTML = `
-    <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:#f8fafc;color:#111827;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif">
-      <div style="width:100%;max-width:560px;background:#ffffff;border:1px solid #E3E4E5;border-radius:16px;padding:20px">
-        <div style="font-weight:800;font-size:16px;margin-bottom:8px">Connekt</div>
-        <div style="font-weight:700;font-size:14px;margin-bottom:6px">Não foi possível carregar a página</div>
-        <div style="font-size:12px;color:#6B7280;line-height:1.5;margin-bottom:12px">${safeMessage}</div>
-        ${safeDetail ? `<pre style="white-space:pre-wrap;word-break:break-word;background:#F9FAFB;border:1px solid #E3E4E5;border-radius:12px;padding:12px;font-size:12px;color:#111827;margin:0">${safeDetail}</pre>` : ''}
-        <div style="margin-top:14px;font-size:12px;color:#6B7280">Tente recarregar (Ctrl+F5). Se persistir, limpe o cache do site e tente novamente.</div>
-      </div>
-    </div>
-  `
+
+  while (root.firstChild) root.removeChild(root.firstChild)
+
+  const outer = document.createElement('div')
+  outer.style.minHeight = '100vh'
+  outer.style.display = 'flex'
+  outer.style.alignItems = 'center'
+  outer.style.justifyContent = 'center'
+  outer.style.padding = '24px'
+  outer.style.background = '#f8fafc'
+  outer.style.color = '#111827'
+  outer.style.fontFamily = 'Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif'
+
+  const card = document.createElement('div')
+  card.style.width = '100%'
+  card.style.maxWidth = '560px'
+  card.style.background = '#ffffff'
+  card.style.border = '1px solid #E3E4E5'
+  card.style.borderRadius = '16px'
+  card.style.padding = '20px'
+
+  const title = document.createElement('div')
+  title.style.fontWeight = '800'
+  title.style.fontSize = '16px'
+  title.style.marginBottom = '8px'
+  title.textContent = 'Connekt'
+
+  const subtitle = document.createElement('div')
+  subtitle.style.fontWeight = '700'
+  subtitle.style.fontSize = '14px'
+  subtitle.style.marginBottom = '6px'
+  subtitle.textContent = 'Não foi possível carregar a página'
+
+  const messageEl = document.createElement('div')
+  messageEl.style.fontSize = '12px'
+  messageEl.style.color = '#6B7280'
+  messageEl.style.lineHeight = '1.5'
+  messageEl.style.marginBottom = '12px'
+  messageEl.textContent = safeMessage
+
+  card.appendChild(title)
+  card.appendChild(subtitle)
+  card.appendChild(messageEl)
+
+  if (safeDetail) {
+    const pre = document.createElement('pre')
+    pre.style.whiteSpace = 'pre-wrap'
+    pre.style.wordBreak = 'break-word'
+    pre.style.background = '#F9FAFB'
+    pre.style.border = '1px solid #E3E4E5'
+    pre.style.borderRadius = '12px'
+    pre.style.padding = '12px'
+    pre.style.fontSize = '12px'
+    pre.style.color = '#111827'
+    pre.style.margin = '0'
+    pre.textContent = safeDetail
+    card.appendChild(pre)
+  }
+
+  const hint = document.createElement('div')
+  hint.style.marginTop = '14px'
+  hint.style.fontSize = '12px'
+  hint.style.color = '#6B7280'
+  hint.textContent = 'Tente recarregar (Ctrl+F5). Se persistir, limpe o cache do site e tente novamente.'
+  card.appendChild(hint)
+
+  outer.appendChild(card)
+  root.appendChild(outer)
 }
 
 try {
