@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
-import { supabase, supabasePkce } from '@/lib/supabaseClient';
+import { supabase, supabasePkce, SUPABASE_ENV_OK, SUPABASE_ENV_ERROR } from '@/lib/supabaseClient';
 import { deviceSessionService } from '@/services/deviceSessionService';
 import { getActiveProducerUserId, setActiveProducerUserId } from '@/services/producerScope'
 
@@ -312,6 +312,10 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     const getSession = async () => {
       try {
+        if (!SUPABASE_ENV_OK) {
+          handleSession(null)
+          return
+        }
         try {
           if (sessionStorage.getItem('connekt_setting_session_from_hash') === '1') return
         } catch (_) {}
@@ -701,6 +705,7 @@ export const AuthProvider = ({ children }) => {
   }, [user?.id, deviceLock, shouldEnforceDeviceLock])
 
   const signUp = useCallback(async (email, password, options) => {
+    if (!SUPABASE_ENV_OK) return { error: { message: SUPABASE_ENV_ERROR } }
     const { error } = await supabase.auth.signUp({
       email,
       password,
@@ -739,6 +744,7 @@ export const AuthProvider = ({ children }) => {
   }, [])
 
   const signIn = useCallback(async (email, password) => {
+    if (!SUPABASE_ENV_OK) return { error: { message: SUPABASE_ENV_ERROR } }
     const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
@@ -846,6 +852,7 @@ export const AuthProvider = ({ children }) => {
   }, [refreshPendingDeviceRequest])
 
   const signInWithOAuth = useCallback(async (provider, redirectPath = '/login') => {
+    if (!SUPABASE_ENV_OK) return { data: null, error: { message: SUPABASE_ENV_ERROR } }
     const currentHost = String(window.location.hostname || '').toLowerCase()
     const isWhitelabelHost = currentHost.endsWith('.app.connektco.com') && currentHost !== 'app.connektco.com'
     const currentOrigin = (() => {
