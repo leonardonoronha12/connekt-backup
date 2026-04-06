@@ -1,10 +1,18 @@
 import { createClient } from '@supabase/supabase-js';
-const url = import.meta.env.VITE_SUPABASE_URL;
-const anon = import.meta.env.VITE_SUPABASE_ANON_KEY;
-if (!url || !anon) throw new Error('Env Supabase ausente: verifique VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY');
+const url =
+  import.meta.env.VITE_SUPABASE_URL ||
+  import.meta.env.VITE_PUBLIC_SUPABASE_URL ||
+  '';
+const anon =
+  import.meta.env.VITE_SUPABASE_ANON_KEY ||
+  import.meta.env.VITE_SUPABASE_KEY ||
+  import.meta.env.VITE_SUPABASE_PUBLIC_ANON_KEY ||
+  '';
 
 export const SUPABASE_URL = url
 export const SUPABASE_ANON_KEY = anon
+export const SUPABASE_ENV_OK = Boolean(url && anon)
+export const SUPABASE_ENV_ERROR = SUPABASE_ENV_OK ? '' : 'Env Supabase ausente: verifique VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY'
 
 function getAvailableStorage() {
   if (typeof window === 'undefined') return undefined
@@ -80,7 +88,22 @@ function createRetryingFetch(baseFetch) {
 
 migrateSupabaseAuthFromSessionToLocal()
 
+function createThrowingProxy(message) {
+  const safeMessage = String(message || 'Supabase não configurado')
+  const make = () => new Proxy(function () {}, {
+    get(_target, prop) {
+      if (prop === 'then') return undefined
+      return make()
+    },
+    apply() {
+      throw new Error(safeMessage)
+    },
+  })
+  return make()
+}
+
 function createSupabaseClient(flowType) {
+  if (!SUPABASE_ENV_OK) return createThrowingProxy(SUPABASE_ENV_ERROR)
   return createClient(url, anon, {
     global: {
       fetch: createRetryingFetch(fetch),
