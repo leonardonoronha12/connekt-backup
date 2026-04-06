@@ -39,7 +39,16 @@ jobs:
           if [ -n "${{ secrets.VERCEL_SCOPE }}" ]; then
             SCOPE_ARG="--scope=${{ secrets.VERCEL_SCOPE }}"
           fi
+          echo "Vercel CLI version:"
+          npx vercel --version
+          echo "Using scope arg: ${SCOPE_ARG:-<none>}"
           npx vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }} $SCOPE_ARG
+          if [ -f .vercel/project.json ]; then
+            echo ".vercel/project.json:"
+            cat .vercel/project.json
+          else
+            echo "Warning: .vercel/project.json not found after vercel pull"
+          fi
           npx vercel build --prod --token=${{ secrets.VERCEL_TOKEN }} $SCOPE_ARG
           DEPLOY_URL="$(npx vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }} $SCOPE_ARG | tail -n 1)"
           echo "Deployed: ${DEPLOY_URL}"
