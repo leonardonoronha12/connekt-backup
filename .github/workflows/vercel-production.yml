@@ -47,4 +47,6 @@ jobs:
           if [ -z "${DOMAIN}" ]; then
             DOMAIN="app.connektco.com"
           fi
-          npx vercel alias set "${DEPLOY_URL}" "${DOMAIN}" --token=${{ secrets.VERCEL_TOKEN }} $SCOPE_ARG
+          if [ -n "${DOMAIN}" ]; then
+            npx vercel alias set "${DEPLOY_URL}" "${DOMAIN}" --token=${{ secrets.VERCEL_TOKEN }} $SCOPE_ARG || echo "Warning: vercel alias failed for domain ${DOMAIN}. Check domain ownership/verification or set VERCEL_PRODUCTION_DOMAIN."
+          fi
