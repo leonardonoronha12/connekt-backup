@@ -13,8 +13,6 @@ export const SUPABASE_URL = rawUrl
 export const SUPABASE_ANON_KEY = rawAnon
 export const SUPABASE_ENV_OK = Boolean(rawUrl && rawAnon)
 export const SUPABASE_ENV_ERROR = SUPABASE_ENV_OK ? '' : 'Env Supabase ausente: verifique VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY'
-const effectiveUrl = SUPABASE_ENV_OK ? rawUrl : 'https://invalid.supabase.co'
-const effectiveAnon = SUPABASE_ENV_OK ? rawAnon : 'invalid-anon-key'
 
 function getAvailableStorage() {
   if (typeof window === 'undefined') return undefined
@@ -90,8 +88,97 @@ function createRetryingFetch(baseFetch) {
 
 migrateSupabaseAuthFromSessionToLocal()
 
+function disabledError() {
+  return { message: SUPABASE_ENV_ERROR }
+}
+
+function createDisabledQueryBuilder() {
+  const builder = {}
+  const chain = () => builder
+  const result = () => ({ data: null, error: disabledError() })
+
+  Object.assign(builder, {
+    select: chain,
+    insert: chain,
+    update: chain,
+    upsert: chain,
+    delete: chain,
+    eq: chain,
+    neq: chain,
+    gt: chain,
+    gte: chain,
+    lt: chain,
+    lte: chain,
+    in: chain,
+    is: chain,
+    order: chain,
+    limit: chain,
+    range: chain,
+    single: chain,
+    maybeSingle: chain,
+    match: chain,
+    filter: chain,
+    contains: chain,
+    like: chain,
+    ilike: chain,
+    then: (resolve, reject) => Promise.resolve(result()).then(resolve, reject),
+    catch: (reject) => Promise.resolve(result()).catch(reject),
+    finally: (cb) => Promise.resolve(result()).finally(cb),
+  })
+
+  return builder
+}
+
+function createDisabledStorageBucket() {
+  const err = disabledError()
+  return {
+    upload: async () => ({ data: null, error: err }),
+    update: async () => ({ data: null, error: err }),
+    remove: async () => ({ data: null, error: err }),
+    list: async () => ({ data: null, error: err }),
+    getPublicUrl: () => ({ data: { publicUrl: '' }, error: err }),
+    createSignedUrl: async () => ({ data: null, error: err }),
+    createSignedUrls: async () => ({ data: null, error: err }),
+  }
+}
+
+function createDisabledChannel() {
+  return {
+    on() { return this },
+    subscribe() { return this },
+    unsubscribe() { return this },
+  }
+}
+
+function createDisabledSupabaseClient() {
+  return {
+    auth: {
+      getSession: async () => ({ data: { session: null }, error: disabledError() }),
+      onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } }, error: null }),
+      signInWithOAuth: async () => ({ data: null, error: disabledError() }),
+      signInWithPassword: async () => ({ data: null, error: disabledError() }),
+      signUp: async () => ({ data: null, error: disabledError() }),
+      signOut: async () => ({ error: null }),
+      setSession: async () => ({ data: null, error: disabledError() }),
+      exchangeCodeForSession: async () => ({ data: null, error: disabledError() }),
+    },
+    from: () => createDisabledQueryBuilder(),
+    rpc: () => createDisabledQueryBuilder(),
+    storage: {
+      from: () => createDisabledStorageBucket(),
+      createBucket: async () => ({ data: null, error: disabledError() }),
+    },
+    functions: {
+      invoke: async () => ({ data: null, error: disabledError() }),
+    },
+    channel: () => createDisabledChannel(),
+    removeChannel: () => {},
+  }
+}
+
 function createSupabaseClient(flowType) {
-  return createClient(effectiveUrl, effectiveAnon, {
+  if (!SUPABASE_ENV_OK) return createDisabledSupabaseClient()
+  return createClient(rawUrl, rawAnon, {
     global: {
       fetch: createRetryingFetch(fetch),
     },
@@ -106,5 +193,4 @@ function createSupabaseClient(flowType) {
 }
 
 export const supabase = createSupabaseClient('implicit')
-
 export const supabasePkce = createSupabaseClient('pkce')
