@@ -44,8 +44,8 @@ jobs:
           echo "Checking required Vercel env vars (Production):"
           ENVS="$(npx vercel env ls production --token=${{ secrets.VERCEL_TOKEN }} $SCOPE_ARG || true)"
           echo "${ENVS}"
-          echo "${ENVS}" | grep -q "VITE_SUPABASE_URL" || { echo "Missing Vercel env: VITE_SUPABASE_URL (Production)"; exit 1; }
-          echo "${ENVS}" | grep -q "VITE_SUPABASE_ANON_KEY" || { echo "Missing Vercel env: VITE_SUPABASE_ANON_KEY (Production)"; exit 1; }
+          echo "${ENVS}" | grep -Eq "VITE_SUPABASE_URL|VITE_PUBLIC_SUPABASE_URL" || { echo "Missing Vercel env: VITE_SUPABASE_URL (Production)"; exit 1; }
+          echo "${ENVS}" | grep -Eq "VITE_SUPABASE_ANON_KEY|VITE_PUBLIC_SUPABASE_ANON_KEY|VITE_SUPABASE_KEY|VITE_PUBLIC_SUPABASE_KEY" || { echo "Missing Vercel env: VITE_SUPABASE_ANON_KEY (Production)"; exit 1; }
           npx vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }} $SCOPE_ARG
           if [ -f .vercel/project.json ]; then
             echo ".vercel/project.json:"
