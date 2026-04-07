@@ -1,7 +1,21 @@
 import { createClient } from '@supabase/supabase-js';
+const injected = (() => {
+  if (typeof window === 'undefined') return {}
+  try {
+    const o = window.__CONNEKT__ || window.__CONNEKT_PUBLIC_CONFIG__ || {}
+    if (!o || typeof o !== 'object') return {}
+    const supabaseUrl = o.supabaseUrl ? String(o.supabaseUrl).trim() : ''
+    const supabaseAnonKey = o.supabaseAnonKey ? String(o.supabaseAnonKey).trim() : ''
+    return { supabaseUrl, supabaseAnonKey }
+  } catch (_) {
+    return {}
+  }
+})()
+
 const rawUrl =
   import.meta.env.VITE_SUPABASE_URL ||
   import.meta.env.VITE_PUBLIC_SUPABASE_URL ||
+  injected.supabaseUrl ||
   '';
 const rawAnon =
   import.meta.env.VITE_SUPABASE_ANON_KEY ||
@@ -9,6 +23,7 @@ const rawAnon =
   import.meta.env.VITE_SUPABASE_KEY ||
   import.meta.env.VITE_PUBLIC_SUPABASE_KEY ||
   import.meta.env.VITE_SUPABASE_PUBLIC_ANON_KEY ||
+  injected.supabaseAnonKey ||
   '';
 
 export const SUPABASE_URL = rawUrl
