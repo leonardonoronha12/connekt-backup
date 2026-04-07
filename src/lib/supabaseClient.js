@@ -5,7 +5,9 @@ const rawUrl =
   '';
 const rawAnon =
   import.meta.env.VITE_SUPABASE_ANON_KEY ||
+  import.meta.env.VITE_PUBLIC_SUPABASE_ANON_KEY ||
   import.meta.env.VITE_SUPABASE_KEY ||
+  import.meta.env.VITE_PUBLIC_SUPABASE_KEY ||
   import.meta.env.VITE_SUPABASE_PUBLIC_ANON_KEY ||
   '';
 
