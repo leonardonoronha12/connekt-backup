@@ -1,8 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { HelmetProvider } from 'react-helmet-async';
-import App from '@/App';
-import { BrandingProvider } from '@/contexts/BrandingContext'
 import '@/index.css';
 
 // Logs de diagnóstico removidos após validação de ambiente
@@ -162,13 +160,59 @@ try {
 try {
   const el = document.getElementById('root')
   if (!el) throw new Error('root_not_found')
-  ReactDOM.createRoot(el).render(
-    <HelmetProvider>
-      <BrandingProvider>
-        <App />
-      </BrandingProvider>
-    </HelmetProvider>
-  );
+  const hasSupabaseEnv = (() => {
+    try {
+      const url = import.meta?.env?.VITE_SUPABASE_URL || import.meta?.env?.VITE_PUBLIC_SUPABASE_URL || ''
+      const anon =
+        import.meta?.env?.VITE_SUPABASE_ANON_KEY ||
+        import.meta?.env?.VITE_PUBLIC_SUPABASE_ANON_KEY ||
+        import.meta?.env?.VITE_SUPABASE_KEY ||
+        import.meta?.env?.VITE_PUBLIC_SUPABASE_KEY ||
+        import.meta?.env?.VITE_SUPABASE_PUBLIC_ANON_KEY ||
+        ''
+      return !!(String(url).trim() && String(anon).trim())
+    } catch (_) {
+      return false
+    }
+  })()
+
+  ;(async () => {
+    if (!hasSupabaseEnv) {
+      try {
+        const r = await fetch('/api/version', { cache: 'no-store' })
+        const body = await r.json().catch(() => ({}))
+        const supabaseUrl = String(body?.public?.supabaseUrl || '').trim()
+        const supabaseAnonKey = String(body?.public?.supabaseAnonKey || '').trim()
+        if (supabaseUrl && supabaseAnonKey) {
+          window.__CONNEKT_PUBLIC_CONFIG__ = { supabaseUrl, supabaseAnonKey }
+        }
+      } catch (_) {}
+    }
+
+    const [{ default: App }, branding] = await Promise.all([
+      import('@/App'),
+      import('@/contexts/BrandingContext'),
+    ])
+
+    const BrandingProvider = branding?.BrandingProvider
+    const tree = BrandingProvider
+      ? (
+        <HelmetProvider>
+          <BrandingProvider>
+            <App />
+          </BrandingProvider>
+        </HelmetProvider>
+      )
+      : (
+        <HelmetProvider>
+          <App />
+        </HelmetProvider>
+      )
+
+    ReactDOM.createRoot(el).render(tree)
+  })().catch((e) => {
+    renderFatal('Falha ao inicializar o app.', e?.message || String(e))
+  })
 } catch (e) {
   renderFatal('Falha ao inicializar o app.', e?.message || String(e))
 }
