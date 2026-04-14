@@ -1,8 +1,21 @@
-// ESM script to test Supabase Auth token endpoint with anon headers
-const url = 'https://ucsijwfarkrljbkdvrbd.supabase.co/auth/v1/token?grant_type=password';
-const anon = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
+const supabaseUrl =
+  process.env.VITE_SUPABASE_URL ||
+  process.env.VITE_PUBLIC_SUPABASE_URL ||
+  process.env.SUPABASE_URL
+
+const anon =
+  process.env.VITE_SUPABASE_ANON_KEY ||
+  process.env.VITE_PUBLIC_SUPABASE_ANON_KEY ||
+  process.env.SUPABASE_ANON_KEY
+
+if (!supabaseUrl) {
+  console.error('Missing Supabase URL in env: set VITE_SUPABASE_URL or SUPABASE_URL')
+  process.exit(1)
+}
+
+const url = `${String(supabaseUrl).replace(/\/+$/, '')}/auth/v1/token?grant_type=password`
 if (!anon) {
-  console.error('Missing anon key in env: set VITE_SUPABASE_ANON_KEY');
+  console.error('Missing anon key in env: set VITE_SUPABASE_ANON_KEY or SUPABASE_ANON_KEY');
   process.exit(1);
 }
 const email = process.env.TEST_EMAIL || 'demo@example.com';

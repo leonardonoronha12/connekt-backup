@@ -25,7 +25,7 @@ No Meta Developers, em **Valid OAuth Redirect URIs**, adicione:
 - `https://<SEU_PROJECT_REF>.supabase.co/auth/v1/callback`
 
 Exemplo:
-- `https://ucsijwfarkrljbkdvrbd.supabase.co/auth/v1/callback`
+- `https://<PROJECT_REF>.supabase.co/auth/v1/callback`
 
 ## 3) Habilitar Facebook no Supabase
 
