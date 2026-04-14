@@ -879,8 +879,7 @@ export const AuthProvider = ({ children }) => {
       currentHost === 'app.connektco.com' &&
       safePath.startsWith('/login-aluno') &&
       !safePath.startsWith('/login-aluno-wl')
-    const shouldUsePkce = (isAlunoRedirect || intent === 'aluno' || isWhitelabelHost)
-    const authClient = shouldUsePkce ? supabasePkce : supabase
+    const authClient = supabasePkce
 
     const providerKey = typeof provider === 'string' ? provider.toLowerCase() : provider
     const queryParams = providerKey === 'google'
