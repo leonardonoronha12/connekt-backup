@@ -13,17 +13,17 @@ const injected = (() => {
 })()
 
 const rawUrl =
+  injected.supabaseUrl ||
   import.meta.env.VITE_SUPABASE_URL ||
   import.meta.env.VITE_PUBLIC_SUPABASE_URL ||
-  injected.supabaseUrl ||
   '';
 const rawAnon =
+  injected.supabaseAnonKey ||
   import.meta.env.VITE_SUPABASE_ANON_KEY ||
   import.meta.env.VITE_PUBLIC_SUPABASE_ANON_KEY ||
   import.meta.env.VITE_SUPABASE_KEY ||
   import.meta.env.VITE_PUBLIC_SUPABASE_KEY ||
   import.meta.env.VITE_SUPABASE_PUBLIC_ANON_KEY ||
-  injected.supabaseAnonKey ||
   '';
 
 export const SUPABASE_URL = rawUrl
