@@ -244,8 +244,18 @@ const LoginForm = ({ onShowRegister, mode = 'producer' }) => {
         showAlert('Provedor de login não suportado.');
         return;
       }
-      try { sessionStorage.setItem('connekt_login_intent', 'produtor') } catch (_) {}
-      try { sessionStorage.setItem('connekt_login_mode', 'produtor') } catch (_) { try { localStorage.setItem('connekt_login_mode', 'produtor') } catch (_) {} }
+      const intent = (() => {
+        if (isStudentMode) return 'aluno'
+        try {
+          const params = new URLSearchParams(window.location.search || '')
+          const loginIntent = String(params.get('login_intent') || '').trim().toLowerCase()
+          const hasProducerUid = !!params.get('producer_uid') || !!params.get('producerUserId') || !!params.get('producer_uid'.toUpperCase())
+          if (loginIntent === 'aluno' || hasProducerUid) return 'aluno'
+        } catch (_) {}
+        return 'produtor'
+      })()
+      try { sessionStorage.setItem('connekt_login_intent', intent) } catch (_) {}
+      try { sessionStorage.setItem('connekt_login_mode', intent) } catch (_) { try { localStorage.setItem('connekt_login_mode', intent) } catch (_) {} }
       setOauthLoading(p)
       const { error } = await signInWithOAuth(p, '/login');
       if (error) {

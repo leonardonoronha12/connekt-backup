@@ -916,7 +916,7 @@ export const AuthProvider = ({ children }) => {
       const redirectTo = `${base}${p}`
       const { data, error } = await authClient.auth.signInWithOAuth({
         provider: providerKey,
-        options: { redirectTo, skipBrowserRedirect: true, queryParams, scopes },
+        options: { redirectTo, queryParams, scopes },
       })
       return { data, error }
     }
@@ -940,11 +940,6 @@ export const AuthProvider = ({ children }) => {
     const { data, error } = result || { data: null, error: { message: 'Falha ao iniciar OAuth' } }
     if (!error && !data?.url) {
       return { data, error: { message: 'Não foi possível obter a URL de autenticação' } }
-    }
-    if (!error && data?.url && typeof window !== 'undefined') {
-      try {
-        window.location.assign(data.url)
-      } catch (_) {}
     }
     return { data, error };
   }, []);
