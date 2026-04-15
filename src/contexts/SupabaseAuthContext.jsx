@@ -248,34 +248,50 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     let cancelled = false
     const run = async () => {
+      let didTry = false
       try {
         const hash = String(window.location.hash || '')
         if (!hash || hash === '#') return
+        didTry = true
+        try { sessionStorage.setItem('connekt_setting_session_from_hash', '1') } catch (_) {}
+
         const normalizedHash = hash.startsWith('#') ? hash.slice(1) : hash
         const params = new URLSearchParams(normalizedHash)
         const at = String(params.get('sb_at') || params.get('access_token') || '').trim()
         const rt = String(params.get('sb_rt') || params.get('refresh_token') || '').trim()
-        if (!at || !rt) return
-        try { sessionStorage.setItem('connekt_setting_session_from_hash', '1') } catch (_) {}
+
         try {
           const intent = String(sessionStorage.getItem('connekt_login_intent') || localStorage.getItem('connekt_login_intent') || '').trim().toLowerCase()
-          const mode = intent === 'aluno' ? 'aluno' : (String(sessionStorage.getItem('connekt_login_mode') || localStorage.getItem('connekt_login_mode') || '').trim().toLowerCase() || '')
+          const mode = intent === 'aluno'
+            ? 'aluno'
+            : (String(sessionStorage.getItem('connekt_login_mode') || localStorage.getItem('connekt_login_mode') || '').trim().toLowerCase() || '')
           if (mode) {
             try { sessionStorage.setItem('connekt_login_mode', mode) } catch (_) { try { localStorage.setItem('connekt_login_mode', mode) } catch (_) {} }
           }
         } catch (_) {}
-        const { data } = await supabase.auth.setSession({ access_token: at, refresh_token: rt }).catch(() => ({ data: null }))
-        if (cancelled) return
-        if (data?.session) {
-          handleSession(data.session)
+
+        if (at && rt) {
+          await supabase.auth.setSession({ access_token: at, refresh_token: rt }).catch(() => null)
         }
-      } catch (_) {}
-      try {
-        const clean = `${window.location.pathname}${window.location.search}`
-        window.history.replaceState({}, '', clean)
-        window.dispatchEvent(new PopStateEvent('popstate'))
-      } catch (_) {}
-      try { sessionStorage.removeItem('connekt_setting_session_from_hash') } catch (_) {}
+
+        const { data: sessData } = await withTimeout(supabase.auth.getSession(), 12000).catch(() => ({ data: { session: null } }))
+        if (cancelled) return
+        handleSession(sessData?.session || null)
+      } catch (_) {
+        if (!didTry) return
+        try {
+          const { data: sessData } = await withTimeout(supabase.auth.getSession(), 12000).catch(() => ({ data: { session: null } }))
+          if (cancelled) return
+          handleSession(sessData?.session || null)
+        } catch (_) {}
+      } finally {
+        try {
+          const clean = `${window.location.pathname}${window.location.search}`
+          window.history.replaceState({}, '', clean)
+          window.dispatchEvent(new PopStateEvent('popstate'))
+        } catch (_) {}
+        try { sessionStorage.removeItem('connekt_setting_session_from_hash') } catch (_) {}
+      }
     }
     run()
     return () => { cancelled = true }
@@ -357,9 +373,6 @@ export const AuthProvider = ({ children }) => {
           handleSession(null)
           return
         }
-        try {
-          if (sessionStorage.getItem('connekt_setting_session_from_hash') === '1') return
-        } catch (_) {}
         const { data: { session: currentSession } } = await withTimeout(supabase.auth.getSession(), 12000);
         handleSession(currentSession);
       } catch (e) {
