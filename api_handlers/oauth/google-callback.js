@@ -1,0 +1,151 @@
+function readEnv(name, fallback = '') {
+  const v = process.env[name]
+  return v ? String(v).trim() : fallback
+}
+
+function getAppOrigin(req) {
+  const proto = String(req?.headers?.['x-forwarded-proto'] || 'https').split(',')[0].trim() || 'https'
+  const host = String(req?.headers?.['x-forwarded-host'] || req?.headers?.host || '').split(',')[0].trim()
+  return host ? `${proto}://${host}` : ''
+}
+
+function parseCookies(req) {
+  const header = String(req?.headers?.cookie || '')
+  const out = {}
+  if (!header) return out
+  const parts = header.split(';')
+  for (const p of parts) {
+    const s = String(p || '').trim()
+    if (!s) continue
+    const idx = s.indexOf('=')
+    if (idx <= 0) continue
+    const k = s.slice(0, idx).trim()
+    const v = s.slice(idx + 1).trim()
+    if (!k) continue
+    try { out[k] = decodeURIComponent(v) } catch (_) { out[k] = v }
+  }
+  return out
+}
+
+function safeNextPath(raw) {
+  const p = String(raw || '').trim()
+  if (!p) return '/login'
+  if (!p.startsWith('/')) return '/login'
+  if (p.startsWith('//')) return '/login'
+  if (p.toLowerCase().includes('http:') || p.toLowerCase().includes('https:')) return '/login'
+  return p
+}
+
+export default async function handler(req, res) {
+  try {
+    if (req.method !== 'GET') {
+      res.statusCode = 405
+      res.setHeader('Content-Type', 'application/json')
+      res.end(JSON.stringify({ error: 'method_not_allowed' }))
+      return
+    }
+
+    const supabaseUrl =
+      readEnv('SUPABASE_URL', '') ||
+      readEnv('VITE_SUPABASE_URL', '') ||
+      readEnv('VITE_PUBLIC_SUPABASE_URL', '')
+    const anonKey =
+      readEnv('SUPABASE_ANON_KEY', '') ||
+      readEnv('VITE_SUPABASE_ANON_KEY', '') ||
+      readEnv('VITE_PUBLIC_SUPABASE_ANON_KEY', '') ||
+      readEnv('VITE_SUPABASE_KEY', '') ||
+      readEnv('VITE_PUBLIC_SUPABASE_KEY', '')
+
+    const appOrigin = getAppOrigin(req)
+    if (!appOrigin) {
+      res.statusCode = 500
+      res.setHeader('Content-Type', 'application/json')
+      res.end(JSON.stringify({ error: 'missing_app_origin' }))
+      return
+    }
+
+    const url = new URL(req.url, appOrigin)
+    const next = safeNextPath(url.searchParams.get('next') || '')
+    const code = String(url.searchParams.get('code') || '').trim()
+
+    const clearCookie = [
+      'connekt_pkce_verifier=',
+      'Path=/',
+      'HttpOnly',
+      'SameSite=Lax',
+      'Max-Age=0',
+    ]
+    if (String(appOrigin).startsWith('https://')) clearCookie.push('Secure')
+
+    if (!supabaseUrl || !anonKey) {
+      res.setHeader('Set-Cookie', clearCookie.join('; '))
+      res.statusCode = 302
+      res.setHeader('Location', `/login?error=missing_supabase_env&error_description=${encodeURIComponent('missing_supabase_env')}`)
+      res.end()
+      return
+    }
+
+    if (!code) {
+      res.setHeader('Set-Cookie', clearCookie.join('; '))
+      res.statusCode = 302
+      res.setHeader('Location', `/login?error=missing_code&error_description=${encodeURIComponent('missing_code')}`)
+      res.end()
+      return
+    }
+
+    const cookies = parseCookies(req)
+    const verifier = String(cookies.connekt_pkce_verifier || '').trim()
+    if (!verifier) {
+      res.setHeader('Set-Cookie', clearCookie.join('; '))
+      res.statusCode = 302
+      res.setHeader('Location', `/login?error=missing_pkce_verifier&error_description=${encodeURIComponent('missing_pkce_verifier')}`)
+      res.end()
+      return
+    }
+
+    const tokenUrl = `${supabaseUrl.replace(/\/+$/, '')}/auth/v1/token?grant_type=pkce`
+    const r = await fetch(tokenUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: anonKey,
+        Authorization: `Bearer ${anonKey}`,
+      },
+      body: JSON.stringify({ auth_code: code, code_verifier: verifier }),
+    })
+
+    const text = await r.text().catch(() => '')
+    let body = null
+    try { body = JSON.parse(text || '{}') } catch (_) { body = null }
+
+    res.setHeader('Set-Cookie', clearCookie.join('; '))
+
+    if (!r.ok) {
+      const msg = String(body?.msg || body?.message || body?.error_description || body?.error || text || 'oauth_token_failed')
+      res.statusCode = 302
+      res.setHeader('Location', `/login?error=oauth_token_failed&error_description=${encodeURIComponent(msg)}`)
+      res.end()
+      return
+    }
+
+    const at = String(body?.access_token || '').trim()
+    const rt = String(body?.refresh_token || '').trim()
+    if (!at || !rt) {
+      res.statusCode = 302
+      res.setHeader('Location', `/login?error=missing_tokens&error_description=${encodeURIComponent('missing_tokens')}`)
+      res.end()
+      return
+    }
+
+    const target = new URL(`${appOrigin}${next}`)
+    target.hash = `sb_at=${encodeURIComponent(at)}&sb_rt=${encodeURIComponent(rt)}`
+    res.statusCode = 302
+    res.setHeader('Location', `${target.pathname}${target.search}${target.hash}`)
+    res.end()
+  } catch (e) {
+    res.statusCode = 500
+    res.setHeader('Content-Type', 'application/json')
+    res.end(JSON.stringify({ error: 'internal_error', message: e?.message || String(e) }))
+  }
+}
+

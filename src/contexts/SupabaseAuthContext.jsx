@@ -946,19 +946,28 @@ export const AuthProvider = ({ children }) => {
       safePath.startsWith('/login-aluno') &&
       !safePath.startsWith('/login-aluno-wl')
     const providerKey = typeof provider === 'string' ? provider.toLowerCase() : provider
-    const wantsImplicit = String(providerKey || '').trim().toLowerCase() === 'google'
-    const authClient = wantsImplicit ? supabaseImplicit : supabasePkce
+    const providerKeyStr = String(providerKey || '').trim().toLowerCase()
+    if (providerKeyStr === 'google') {
+      try {
+        const origin = getAuthRedirectOrigin()
+        const rawPath = String(redirectPath || '/login')
+        const safePath = rawPath.startsWith('/') ? rawPath : `/${String(rawPath || 'login')}`
+        const nextUrl = new URL(`${origin}${safePath}`)
+        const startUrl = new URL('/api/oauth/google/start', origin)
+        startUrl.searchParams.set('next', `${nextUrl.pathname}${nextUrl.search}`)
+        window.location.assign(startUrl.toString())
+        return { data: { url: startUrl.toString() }, error: null }
+      } catch (e) {
+        return { data: null, error: { message: e?.message || String(e) } }
+      }
+    }
+    const authClient = supabasePkce
     try {
       const pv = String(providerKey || '').trim().toLowerCase()
       if (pv) {
         try { sessionStorage.setItem('connekt_last_oauth_provider', pv) } catch (_) { try { localStorage.setItem('connekt_last_oauth_provider', pv) } catch (_) {} }
         try { localStorage.setItem('connekt_last_oauth_provider', pv) } catch (_) {}
       }
-    } catch (_) {}
-    try {
-      const fv = wantsImplicit ? 'implicit' : 'pkce'
-      try { sessionStorage.setItem('connekt_last_oauth_flow', fv) } catch (_) { try { localStorage.setItem('connekt_last_oauth_flow', fv) } catch (_) {} }
-      try { localStorage.setItem('connekt_last_oauth_flow', fv) } catch (_) {}
     } catch (_) {}
     const queryParams = providerKey === 'google'
       ? { prompt: 'select_account' }
@@ -982,7 +991,7 @@ export const AuthProvider = ({ children }) => {
       try {
         const u = new URL(`${base}${p}`)
         if (!u.searchParams.get('oauth_provider')) u.searchParams.set('oauth_provider', providerKey)
-        if (!u.searchParams.get('oauth_flow')) u.searchParams.set('oauth_flow', wantsImplicit ? 'implicit' : 'pkce')
+        if (!u.searchParams.get('oauth_flow')) u.searchParams.set('oauth_flow', 'pkce')
         p = `${u.pathname}${u.search}`
       } catch (_) {}
       const redirectTo = `${base}${p}`
