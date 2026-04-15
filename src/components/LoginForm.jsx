@@ -257,7 +257,8 @@ const LoginForm = ({ onShowRegister, mode = 'producer' }) => {
       try { sessionStorage.setItem('connekt_login_intent', intent) } catch (_) {}
       try { sessionStorage.setItem('connekt_login_mode', intent) } catch (_) { try { localStorage.setItem('connekt_login_mode', intent) } catch (_) {} }
       setOauthLoading(p)
-      const { error } = await signInWithOAuth(p, '/login');
+      const currentRedirect = `${window.location.pathname}${window.location.search}`
+      const { error } = await signInWithOAuth(p, currentRedirect);
       if (error) {
         const msg = String(error?.message || error?.error_description || String(error) || '')
         if (msg.toLowerCase().includes('provider is not enabled') || msg.toLowerCase().includes('unsupported provider')) {

@@ -308,3 +308,4 @@ function createSupabaseClient(flowType) {
 
 export const supabase = createSupabaseClient('pkce')
 export const supabasePkce = supabase
+export const supabaseImplicit = createSupabaseClient('implicit')
