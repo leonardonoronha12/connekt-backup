@@ -61,6 +61,8 @@ export default async function handler(req, res) {
       ['/api/version', version],
       ['/api/oauth/google/start', oauthGoogleStart],
       ['/api/oauth/google/callback', oauthGoogleCallback],
+      ['/api/oauth/google-start', oauthGoogleStart],
+      ['/api/oauth/google-callback', oauthGoogleCallback],
       ['/api/admin/me', adminMe],
       ['/api/admin/courses/list', adminCoursesList],
       ['/api/admin/users/list', adminUsersList],
