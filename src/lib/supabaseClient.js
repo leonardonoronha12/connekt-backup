@@ -43,6 +43,63 @@ function getStorages() {
 function createDualStorage() {
   const { ls, ss } = getStorages()
   if (!ls && !ss) return undefined
+
+  const shouldCookie = (k) => {
+    const key = String(k || '')
+    return key.includes('code-verifier')
+  }
+
+  const cookieNameForKey = (k) => {
+    try {
+      const raw = String(k || '')
+      const b64 = btoa(raw).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
+      return `ck_${b64}`
+    } catch (_) {
+      return ''
+    }
+  }
+
+  const cookieGet = (name) => {
+    try {
+      const all = String(document.cookie || '')
+      if (!all) return null
+      const parts = all.split(';')
+      for (const p of parts) {
+        const s = String(p || '').trim()
+        if (!s) continue
+        if (!s.startsWith(`${name}=`)) continue
+        const v = s.slice(name.length + 1)
+        try { return decodeURIComponent(v) } catch (_) { return v }
+      }
+      return null
+    } catch (_) {
+      return null
+    }
+  }
+
+  const cookieSet = (name, value, maxAgeSec = 900) => {
+    try {
+      if (!name) return
+      const v = encodeURIComponent(String(value ?? ''))
+      let cookie = `${name}=${v}; Max-Age=${Math.max(1, Number(maxAgeSec || 0) || 900)}; Path=/; SameSite=Lax`
+      try {
+        if (String(window.location?.protocol || '') === 'https:') cookie += '; Secure'
+      } catch (_) {}
+      document.cookie = cookie
+    } catch (_) {}
+  }
+
+  const cookieDel = (name) => {
+    try {
+      if (!name) return
+      let cookie = `${name}=; Max-Age=0; Path=/; SameSite=Lax`
+      try {
+        if (String(window.location?.protocol || '') === 'https:') cookie += '; Secure'
+      } catch (_) {}
+      document.cookie = cookie
+    } catch (_) {}
+  }
+
   return {
     getItem(key) {
       const k = String(key || '')
@@ -54,6 +111,15 @@ function createDualStorage() {
         const v = ss?.getItem?.(k)
         if (v != null) return v
       } catch (_) {}
+      if (shouldCookie(k)) {
+        const cn = cookieNameForKey(k)
+        const v = cn ? cookieGet(cn) : null
+        if (v != null) {
+          try { ls?.setItem?.(k, v) } catch (_) {}
+          try { ss?.setItem?.(k, v) } catch (_) {}
+          return v
+        }
+      }
       return null
     },
     setItem(key, value) {
@@ -61,11 +127,19 @@ function createDualStorage() {
       const v = String(value ?? '')
       try { ls?.setItem?.(k, v) } catch (_) {}
       try { ss?.setItem?.(k, v) } catch (_) {}
+      if (shouldCookie(k)) {
+        const cn = cookieNameForKey(k)
+        if (cn) cookieSet(cn, v, 900)
+      }
     },
     removeItem(key) {
       const k = String(key || '')
       try { ls?.removeItem?.(k) } catch (_) {}
       try { ss?.removeItem?.(k) } catch (_) {}
+      if (shouldCookie(k)) {
+        const cn = cookieNameForKey(k)
+        if (cn) cookieDel(cn)
+      }
     },
   }
 }
