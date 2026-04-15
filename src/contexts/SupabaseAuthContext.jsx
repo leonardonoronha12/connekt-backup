@@ -296,7 +296,19 @@ export const AuthProvider = ({ children }) => {
 
         const { data, error } = await supabasePkce.auth.exchangeCodeForSession(code)
         if (cancelled) return
-        if (error) return
+        if (error) {
+          try {
+            const url = new URL(window.location.href)
+            const msg = String(error?.message || error?.error_description || 'Falha ao finalizar login com Google')
+            url.searchParams.delete('code')
+            url.searchParams.delete('state')
+            url.searchParams.set('error', 'oauth_exchange_failed')
+            url.searchParams.set('error_description', msg)
+            window.history.replaceState({}, '', `${url.pathname}?${url.searchParams.toString()}`)
+            window.dispatchEvent(new PopStateEvent('popstate'))
+          } catch (_) {}
+          return
+        }
         if (data?.session) {
           try {
             await supabase.auth.setSession({ access_token: data.session.access_token, refresh_token: data.session.refresh_token })
