@@ -209,5 +209,5 @@ function createSupabaseClient(flowType) {
   })
 }
 
-export const supabase = createSupabaseClient('implicit')
-export const supabasePkce = createSupabaseClient('pkce')
+export const supabase = createSupabaseClient('pkce')
+export const supabasePkce = supabase
