@@ -322,7 +322,16 @@ export const AuthProvider = ({ children }) => {
         if (error) {
           const msg = String(error?.message || error?.error_description || '')
           const msgLower = msg.toLowerCase()
-          const oauthProvider = String(url.searchParams.get('oauth_provider') || '').trim().toLowerCase()
+          const oauthProvider = (() => {
+            const fromUrl = String(url.searchParams.get('oauth_provider') || '').trim().toLowerCase()
+            if (fromUrl) return fromUrl
+            try {
+              const v = String(sessionStorage.getItem('connekt_last_oauth_provider') || localStorage.getItem('connekt_last_oauth_provider') || '').trim().toLowerCase()
+              return v
+            } catch (_) {
+              return ''
+            }
+          })()
           if (oauthProvider && msgLower.includes('code verifier') && msgLower.includes('not found')) {
             const retryKey = `connekt_oauth_implicit_retry:${oauthProvider}`
             try {
@@ -939,6 +948,13 @@ export const AuthProvider = ({ children }) => {
     const authClient = supabasePkce
 
     const providerKey = typeof provider === 'string' ? provider.toLowerCase() : provider
+    try {
+      const pv = String(providerKey || '').trim().toLowerCase()
+      if (pv) {
+        try { sessionStorage.setItem('connekt_last_oauth_provider', pv) } catch (_) { try { localStorage.setItem('connekt_last_oauth_provider', pv) } catch (_) {} }
+        try { localStorage.setItem('connekt_last_oauth_provider', pv) } catch (_) {}
+      }
+    } catch (_) {}
     const queryParams = providerKey === 'google'
       ? { prompt: 'select_account' }
       : undefined
