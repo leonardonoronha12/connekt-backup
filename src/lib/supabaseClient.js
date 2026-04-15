@@ -31,25 +31,48 @@ export const SUPABASE_ANON_KEY = rawAnon
 export const SUPABASE_ENV_OK = Boolean(rawUrl && rawAnon)
 export const SUPABASE_ENV_ERROR = SUPABASE_ENV_OK ? '' : 'Env Supabase ausente: verifique VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY'
 
-function getAvailableStorage() {
-  if (typeof window === 'undefined') return undefined
-  try {
-    const ls = window.localStorage
-    if (ls) return ls
-  } catch (_) {}
-  try {
-    const ss = window.sessionStorage
-    if (ss) return ss
-  } catch (_) {}
-  return undefined
+function getStorages() {
+  if (typeof window === 'undefined') return { ls: null, ss: null }
+  let ls = null
+  let ss = null
+  try { ls = window.localStorage } catch (_) { ls = null }
+  try { ss = window.sessionStorage } catch (_) { ss = null }
+  return { ls, ss }
+}
+
+function createDualStorage() {
+  const { ls, ss } = getStorages()
+  if (!ls && !ss) return undefined
+  return {
+    getItem(key) {
+      const k = String(key || '')
+      try {
+        const v = ls?.getItem?.(k)
+        if (v != null) return v
+      } catch (_) {}
+      try {
+        const v = ss?.getItem?.(k)
+        if (v != null) return v
+      } catch (_) {}
+      return null
+    },
+    setItem(key, value) {
+      const k = String(key || '')
+      const v = String(value ?? '')
+      try { ls?.setItem?.(k, v) } catch (_) {}
+      try { ss?.setItem?.(k, v) } catch (_) {}
+    },
+    removeItem(key) {
+      const k = String(key || '')
+      try { ls?.removeItem?.(k) } catch (_) {}
+      try { ss?.removeItem?.(k) } catch (_) {}
+    },
+  }
 }
 
 function migrateSupabaseAuthFromSessionToLocal() {
   if (typeof window === 'undefined') return
-  let ss = null
-  let ls = null
-  try { ss = window.sessionStorage } catch (_) { ss = null }
-  try { ls = window.localStorage } catch (_) { ls = null }
+  const { ss, ls } = getStorages()
   if (!ss || !ls) return
   try {
     const keys = Object.keys(ss || {})
@@ -200,7 +223,7 @@ function createSupabaseClient(flowType) {
       fetch: createRetryingFetch(fetch),
     },
     auth: {
-      storage: getAvailableStorage(),
+      storage: createDualStorage(),
       flowType,
       persistSession: true,
       autoRefreshToken: true,
