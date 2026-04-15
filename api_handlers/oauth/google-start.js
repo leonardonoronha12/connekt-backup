@@ -62,7 +62,7 @@ export default async function handler(req, res) {
     const codeVerifier = base64url(crypto.randomBytes(32))
     const codeChallenge = base64url(crypto.createHash('sha256').update(codeVerifier).digest())
 
-    const callbackUrl = new URL('/api/oauth/google-callback', appOrigin)
+    const callbackUrl = new URL('/api/oauth/google/callback', appOrigin)
     callbackUrl.searchParams.set('next', next)
 
     const authorizeUrl = new URL(`${supabaseUrl.replace(/\/+$/, '')}/auth/v1/authorize`)
@@ -89,4 +89,3 @@ export default async function handler(req, res) {
     res.end(JSON.stringify({ error: 'internal_error', message: e?.message || String(e) }))
   }
 }
-
