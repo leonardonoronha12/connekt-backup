@@ -177,7 +177,15 @@ try {
   })()
 
   ;(async () => {
-    if (!hasSupabaseEnv) {
+    const shouldFetchPublicConfig = (() => {
+      try {
+        const host = String(window.location.hostname || '').toLowerCase()
+        if (host === 'localhost' || host === '127.0.0.1') return false
+      } catch (_) {}
+      return true
+    })()
+
+    if (shouldFetchPublicConfig) {
       try {
         const r = await fetch('/api/version', { cache: 'no-store' })
         const body = await r.json().catch(() => ({}))
