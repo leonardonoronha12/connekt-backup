@@ -11,6 +11,8 @@ import updateQuestion from '../api_handlers/update-question.js'
 import uploadCourseMedia from '../api_handlers/upload-course-media.js'
 import uploadQuestionMedia from '../api_handlers/upload-question-media.js'
 import version from '../api_handlers/version.js'
+import oauthGoogleStart from '../api_handlers/oauth/google-start.js'
+import oauthGoogleCallback from '../api_handlers/oauth/google-callback.js'
 
 import authAction from '../api_handlers/auth/[action].js'
 
@@ -57,6 +59,8 @@ export default async function handler(req, res) {
       ['/api/upload-course-media', uploadCourseMedia],
       ['/api/upload-question-media', uploadQuestionMedia],
       ['/api/version', version],
+      ['/api/oauth/google/start', oauthGoogleStart],
+      ['/api/oauth/google/callback', oauthGoogleCallback],
       ['/api/admin/me', adminMe],
       ['/api/admin/courses/list', adminCoursesList],
       ['/api/admin/users/list', adminUsersList],
