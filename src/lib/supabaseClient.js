@@ -45,8 +45,8 @@ function createDualStorage() {
   if (!ls && !ss) return undefined
 
   const shouldCookie = (k) => {
-    const key = String(k || '')
-    return key.includes('code-verifier')
+    const key = String(k || '').toLowerCase()
+    return key.includes('code-verifier') || key.includes('code_verifier') || key.includes('verifier') || key.includes('pkce')
   }
 
   const cookieNameForKey = (k) => {
