@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
-import { supabase, supabasePkce, SUPABASE_ENV_OK, SUPABASE_ENV_ERROR } from '@/lib/supabaseClient';
+import { supabase, supabasePkce, supabaseImplicit, SUPABASE_ENV_OK, SUPABASE_ENV_ERROR } from '@/lib/supabaseClient';
 import { deviceSessionService } from '@/services/deviceSessionService';
 import { getActiveProducerUserId, setActiveProducerUserId } from '@/services/producerScope'
 
@@ -250,13 +250,20 @@ export const AuthProvider = ({ children }) => {
     const run = async () => {
       try {
         const hash = String(window.location.hash || '')
-        if (!hash || hash === '#' || (!hash.includes('sb_at=') && !hash.includes('sb_rt='))) return
-        try { sessionStorage.setItem('connekt_setting_session_from_hash', '1') } catch (_) {}
-        const params = new URLSearchParams(hash.startsWith('#') ? hash.slice(1) : hash)
-        const at = String(params.get('sb_at') || '').trim()
-        const rt = String(params.get('sb_rt') || '').trim()
+        if (!hash || hash === '#') return
+        const normalizedHash = hash.startsWith('#') ? hash.slice(1) : hash
+        const params = new URLSearchParams(normalizedHash)
+        const at = String(params.get('sb_at') || params.get('access_token') || '').trim()
+        const rt = String(params.get('sb_rt') || params.get('refresh_token') || '').trim()
         if (!at || !rt) return
-        try { sessionStorage.setItem('connekt_login_mode', 'aluno') } catch (_) { try { localStorage.setItem('connekt_login_mode', 'aluno') } catch (_) {} }
+        try { sessionStorage.setItem('connekt_setting_session_from_hash', '1') } catch (_) {}
+        try {
+          const intent = String(sessionStorage.getItem('connekt_login_intent') || localStorage.getItem('connekt_login_intent') || '').trim().toLowerCase()
+          const mode = intent === 'aluno' ? 'aluno' : (String(sessionStorage.getItem('connekt_login_mode') || localStorage.getItem('connekt_login_mode') || '').trim().toLowerCase() || '')
+          if (mode) {
+            try { sessionStorage.setItem('connekt_login_mode', mode) } catch (_) { try { localStorage.setItem('connekt_login_mode', mode) } catch (_) {} }
+          }
+        } catch (_) {}
         const { data } = await supabase.auth.setSession({ access_token: at, refresh_token: rt }).catch(() => ({ data: null }))
         if (cancelled) return
         if (data?.session) {
@@ -297,6 +304,28 @@ export const AuthProvider = ({ children }) => {
         const { data, error } = await supabasePkce.auth.exchangeCodeForSession(code)
         if (cancelled) return
         if (error) {
+          const msg = String(error?.message || error?.error_description || '')
+          const msgLower = msg.toLowerCase()
+          const oauthProvider = String(url.searchParams.get('oauth_provider') || '').trim().toLowerCase()
+          if (oauthProvider && msgLower.includes('code verifier') && msgLower.includes('not found')) {
+            const retryKey = `connekt_oauth_implicit_retry:${oauthProvider}`
+            try {
+              if (sessionStorage.getItem(retryKey) !== '1') {
+                sessionStorage.setItem(retryKey, '1')
+                const origin = getAuthRedirectOrigin()
+                const redirectToUrl = new URL(`${origin}${url.pathname}${url.search}`)
+                redirectToUrl.searchParams.delete('code')
+                redirectToUrl.searchParams.delete('state')
+                redirectToUrl.searchParams.set('oauth_provider', oauthProvider)
+                redirectToUrl.searchParams.set('oauth_flow', 'implicit')
+                await supabaseImplicit.auth.signInWithOAuth({
+                  provider: oauthProvider,
+                  options: { redirectTo: `${redirectToUrl.origin}${redirectToUrl.pathname}${redirectToUrl.search}` },
+                })
+                return
+              }
+            } catch (_) {}
+          }
           try {
             const url = new URL(window.location.href)
             const msg = String(error?.message || error?.error_description || 'Falha ao finalizar login com Google')
@@ -886,7 +915,10 @@ export const AuthProvider = ({ children }) => {
       safePath.startsWith('/login-aluno') ||
       safePath.startsWith('/aluno/login') ||
       safePath.startsWith('/aluno?') ||
-      safePath === '/aluno'
+      safePath === '/aluno' ||
+      safePath.includes('login_intent=aluno') ||
+      safePath.includes('producer_uid=') ||
+      safePath.includes('produceruserid=')
     const isNormalAlunoLoginRedirect =
       currentHost === 'app.connektco.com' &&
       safePath.startsWith('/login-aluno') &&
@@ -912,7 +944,13 @@ export const AuthProvider = ({ children }) => {
     const runOAuth = async ({ origin, path, ensureWlHost }) => {
       const base = String(origin || '').trim()
       if (!base) return { data: null, error: { message: 'Origem de redirect inválida' } }
-      const p = ensureWlHost ? withWlHostParam(base) : path
+      let p = ensureWlHost ? withWlHostParam(base) : path
+      try {
+        const u = new URL(`${base}${p}`)
+        if (!u.searchParams.get('oauth_provider')) u.searchParams.set('oauth_provider', providerKey)
+        if (!u.searchParams.get('oauth_flow')) u.searchParams.set('oauth_flow', 'pkce')
+        p = `${u.pathname}${u.search}`
+      } catch (_) {}
       const redirectTo = `${base}${p}`
       const { data, error } = await authClient.auth.signInWithOAuth({
         provider: providerKey,
