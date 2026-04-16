@@ -107,9 +107,9 @@ export default async function handler(req, res) {
     }
 
     const supabaseUrl =
-      readEnv('SUPABASE_URL', '') ||
       readEnv('VITE_SUPABASE_URL', '') ||
-      readEnv('VITE_PUBLIC_SUPABASE_URL', '')
+      readEnv('VITE_PUBLIC_SUPABASE_URL', '') ||
+      readEnv('SUPABASE_URL', '')
     const anonKey = pickSupabaseAnonKey({ supabaseUrl })
 
     const appOrigin = getAppOrigin(req)
