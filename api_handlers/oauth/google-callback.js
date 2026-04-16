@@ -80,21 +80,30 @@ function extractProjectRefFromIss(iss) {
 function pickSupabaseAnonKey({ supabaseUrl }) {
   const urlRef = extractProjectRefFromSupabaseUrl(supabaseUrl)
   const candidates = [
-    readEnv('VITE_SUPABASE_ANON_KEY', ''),
-    readEnv('VITE_PUBLIC_SUPABASE_ANON_KEY', ''),
-    readEnv('SUPABASE_ANON_KEY', ''),
-    readEnv('VITE_SUPABASE_KEY', ''),
-    readEnv('VITE_PUBLIC_SUPABASE_KEY', ''),
-  ].filter(Boolean)
+    { name: 'VITE_SUPABASE_ANON_KEY', value: readEnv('VITE_SUPABASE_ANON_KEY', '') },
+    { name: 'VITE_PUBLIC_SUPABASE_ANON_KEY', value: readEnv('VITE_PUBLIC_SUPABASE_ANON_KEY', '') },
+    { name: 'SUPABASE_ANON_KEY', value: readEnv('SUPABASE_ANON_KEY', '') },
+    { name: 'VITE_SUPABASE_KEY', value: readEnv('VITE_SUPABASE_KEY', '') },
+    { name: 'VITE_PUBLIC_SUPABASE_KEY', value: readEnv('VITE_PUBLIC_SUPABASE_KEY', '') },
+  ].filter((c) => Boolean(c.value))
 
-  for (const k of candidates) {
-    const payload = decodeJwtPayload(k) || {}
+  let firstAnon = null
+  let firstAny = null
+
+  for (const c of candidates) {
+    if (!firstAny) firstAny = c
+    const payload = decodeJwtPayload(c.value) || {}
     const role = String(payload?.role || '').trim().toLowerCase()
     const iss = String(payload?.iss || '').trim()
     const keyRef = extractProjectRefFromIss(iss)
-    if (role === 'anon' && (!urlRef || !keyRef || keyRef === urlRef)) return k
+    if (role === 'anon' && !firstAnon) firstAnon = { ...c, role, keyRef, urlRef }
+    if (role === 'anon' && (!urlRef || !keyRef || keyRef === urlRef)) {
+      return { ...c, role, keyRef, urlRef }
+    }
   }
-  return candidates[0] || ''
+  if (firstAnon) return firstAnon
+  if (firstAny) return { ...firstAny, role: '', keyRef: '', urlRef }
+  return { name: '', value: '', role: '', keyRef: '', urlRef }
 }
 
 export default async function handler(req, res) {
@@ -110,7 +119,8 @@ export default async function handler(req, res) {
       readEnv('VITE_SUPABASE_URL', '') ||
       readEnv('VITE_PUBLIC_SUPABASE_URL', '') ||
       readEnv('SUPABASE_URL', '')
-    const anonKey = pickSupabaseAnonKey({ supabaseUrl })
+    const picked = pickSupabaseAnonKey({ supabaseUrl })
+    const anonKey = String(picked?.value || '').trim()
 
     const appOrigin = getAppOrigin(req)
     if (!appOrigin) {
@@ -136,7 +146,8 @@ export default async function handler(req, res) {
     if (!supabaseUrl || !anonKey) {
       res.setHeader('Set-Cookie', clearCookie.join('; '))
       res.statusCode = 302
-      res.setHeader('Location', `/login?error=missing_supabase_env&error_description=${encodeURIComponent('missing_supabase_env')}`)
+      const hint = picked?.name ? ` missing_key_src=${picked.name}` : ''
+      res.setHeader('Location', `/login?error=missing_supabase_env&error_description=${encodeURIComponent(`missing_supabase_env${hint}`)}`)
       res.end()
       return
     }
@@ -177,7 +188,14 @@ export default async function handler(req, res) {
     res.setHeader('Set-Cookie', clearCookie.join('; '))
 
     if (!r.ok) {
-      const msg = String(body?.msg || body?.message || body?.error_description || body?.error || text || 'oauth_token_failed')
+      const baseMsg = String(body?.msg || body?.message || body?.error_description || body?.error || text || 'oauth_token_failed')
+      const msgLower = baseMsg.toLowerCase()
+      const isInvalidKey = msgLower.includes('invalid api key')
+      const extra =
+        isInvalidKey
+          ? ` (key_src=${String(picked?.name || '')} key_role=${String(picked?.role || '')} url_ref=${String(picked?.urlRef || '')} key_ref=${String(picked?.keyRef || '')})`
+          : ''
+      const msg = `${baseMsg}${extra}`
       res.statusCode = 302
       res.setHeader('Location', `/login?error=oauth_token_failed&error_description=${encodeURIComponent(msg)}`)
       res.end()
