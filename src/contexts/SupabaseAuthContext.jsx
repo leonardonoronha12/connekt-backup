@@ -270,13 +270,18 @@ export const AuthProvider = ({ children }) => {
           }
         } catch (_) {}
 
+        let nextSession = null
         if (at && rt) {
-          await supabase.auth.setSession({ access_token: at, refresh_token: rt }).catch(() => null)
+          const r = await supabase.auth.setSession({ access_token: at, refresh_token: rt }).catch(() => null)
+          nextSession = r?.data?.session || null
         }
 
-        const { data: sessData } = await withTimeout(supabase.auth.getSession(), 12000).catch(() => ({ data: { session: null } }))
+        if (!nextSession) {
+          const { data: sessData } = await withTimeout(supabase.auth.getSession(), 12000).catch(() => ({ data: { session: null } }))
+          nextSession = sessData?.session || null
+        }
         if (cancelled) return
-        handleSession(sessData?.session || null)
+        handleSession(nextSession)
       } catch (_) {
         if (!didTry) return
         try {
