@@ -120,7 +120,11 @@ export default async function handler(req, res) {
       readEnv('VITE_PUBLIC_SUPABASE_URL', '') ||
       readEnv('SUPABASE_URL', '')
     const picked = pickSupabaseAnonKey({ supabaseUrl })
-    const anonKey = String(picked?.value || '').trim()
+    const anonKey = String(picked?.value || '')
+      .trim()
+      .replace(/[\r\n\t ]+/g, '')
+      .replace(/^"|"$/g, '')
+      .replace(/^'|'$/g, '')
 
     const appOrigin = getAppOrigin(req)
     if (!appOrigin) {
@@ -143,7 +147,8 @@ export default async function handler(req, res) {
     ]
     if (String(appOrigin).startsWith('https://')) clearCookie.push('Secure')
 
-    if (!supabaseUrl || !anonKey) {
+    const cleanedSupabaseUrl = String(supabaseUrl || '').trim().replace(/^"|"$/g, '').replace(/^'|'$/g, '')
+    if (!cleanedSupabaseUrl || !anonKey) {
       res.setHeader('Set-Cookie', clearCookie.join('; '))
       res.statusCode = 302
       const hint = picked?.name ? ` missing_key_src=${picked.name}` : ''
@@ -170,7 +175,7 @@ export default async function handler(req, res) {
       return
     }
 
-    const tokenUrl = `${supabaseUrl.replace(/\/+$/, '')}/auth/v1/token?grant_type=pkce`
+    const tokenUrl = `${cleanedSupabaseUrl.replace(/\/+$/, '')}/auth/v1/token?grant_type=pkce`
     const r = await fetch(tokenUrl, {
       method: 'POST',
       headers: {
