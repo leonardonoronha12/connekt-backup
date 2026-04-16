@@ -16,8 +16,6 @@ type WebhookBody = {
   user_id?: string
 }
 
-const DEFAULT_WEBHOOK_SECRET = 'wh_REDACTED' // substituível por variável de ambiente
-
 function getEnv(name: string, fallback?: string): string | undefined {
   try { return Deno.env.get(name) ?? fallback } catch (_) { return fallback }
 }
@@ -73,7 +71,11 @@ async function handler(req: Request): Promise<Response> {
   if (req.method !== 'POST') return badRequest('method not allowed')
 
   const auth = req.headers.get('authorization') || ''
-  const envSecret = getEnv('WEBHOOK_SECRET', DEFAULT_WEBHOOK_SECRET) || DEFAULT_WEBHOOK_SECRET
+  const envSecret = String(getEnv('WEBHOOK_SECRET', '') || '').trim()
+  if (!envSecret) {
+    await persistLog({ type: 'webhook_config_error', error: 'missing_webhook_secret' })
+    return json({ ok: false, error: 'missing_webhook_secret' }, { status: 500 })
+  }
   const validBearer = auth === `Bearer ${envSecret}`
 
   let validBasic = false
@@ -88,7 +90,12 @@ async function handler(req: Request): Promise<Response> {
   }
 
   if (!validBearer && !validBasic) {
-    await persistLog({ type: 'webhook_auth_error', auth })
+    const authType = auth.startsWith('Bearer ')
+      ? 'bearer'
+      : auth.startsWith('Basic ')
+        ? 'basic'
+        : (auth ? 'other' : 'missing')
+    await persistLog({ type: 'webhook_auth_error', authType })
     return unauthorized('invalid authorization')
   }
 
