@@ -307,7 +307,7 @@ function createSupabaseClient(flowType) {
   const persistSession = wantsIsolatedStorage ? false : true
   const autoRefreshToken = wantsIsolatedStorage ? false : true
 
-  return createClient(rawUrl, rawAnon, {
+  const client = createClient(rawUrl, rawAnon, {
     global: {
       fetch: createRetryingFetch(fetch),
     },
@@ -320,6 +320,19 @@ function createSupabaseClient(flowType) {
       detectSessionInUrl: false,
     },
   })
+
+  try {
+    const auth = client.auth
+    const originalGetSession = auth.getSession.bind(auth)
+    let inFlight = null
+    auth.getSession = (...args) => {
+      if (inFlight) return inFlight
+      inFlight = Promise.resolve(originalGetSession(...args)).finally(() => { inFlight = null })
+      return inFlight
+    }
+  } catch (_) {}
+
+  return client
 }
 
 export const supabase = createSupabaseClient('pkce')
