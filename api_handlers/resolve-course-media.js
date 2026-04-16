@@ -1,4 +1,4 @@
-import { getSupabaseAdmin, getAuthedUser, json, safeName } from '../src/server/supabaseAdmin.js'
+import { getSupabaseAdmin, getAuthedUser, json, safeName, sanitizeStorageObjectPath, sanitizeStorageSegment } from '../src/server/supabaseAdmin.js'
 
 export default async function handler(req, res) {
   if (req.method !== 'GET') return json(res, 405, { error: 'method_not_allowed' })
@@ -19,7 +19,10 @@ export default async function handler(req, res) {
     if (!courseId || !producerId || !filename) return json(res, 400, { error: 'missing_params' })
 
     const bucket = 'courses-media'
-    const root = `users/${producerId}/courses/${courseId}`
+    const producerSeg = sanitizeStorageSegment(producerId, '')
+    const courseSeg = sanitizeStorageSegment(courseId, '')
+    if (!producerSeg || !courseSeg) return json(res, 400, { error: 'invalid_params' })
+    const root = `users/${producerSeg}/courses/${courseSeg}`
     const wanted = safeName(filename)
 
     const kinds = ['materials', 'material', 'anexos', 'attachments', 'files', 'docs', 'media', 'pdf', 'doc', 'ppt', 'xls']
@@ -49,7 +52,8 @@ export default async function handler(req, res) {
       const picked = exact || suffix || null
       if (!picked?.name) continue
 
-      const objectPath = `${folder}/${picked.name}`
+      const objectPath = sanitizeStorageObjectPath(`${folder}/${picked.name}`)
+      if (!objectPath) continue
       let url = null
       try {
         const { data: signed } = await admin.storage.from(bucket).createSignedUrl(objectPath, 60 * 10)

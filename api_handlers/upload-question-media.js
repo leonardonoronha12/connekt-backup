@@ -1,4 +1,4 @@
-import { getSupabaseAdmin, getAuthedUser, readRawBody, json, safeName, isoSafeNow, isUuid } from '../src/server/supabaseAdmin.js'
+import { getSupabaseAdmin, getAuthedUser, readRawBody, json, safeName, isoSafeNow, isUuid, sanitizeStorageObjectPath, sanitizeStorageSegment, isStorageSubpathOf } from '../src/server/supabaseAdmin.js'
 
 export default async function handler(req, res) {
   if (req.method !== 'POST' && req.method !== 'GET') return json(res, 405, { error: 'method_not_allowed' })
@@ -36,9 +36,13 @@ export default async function handler(req, res) {
 
     const BUCKET = process.env.VITE_SUPABASE_QUESTION_IMAGES_BUCKET || process.env.SUPABASE_QUESTION_IMAGES_BUCKET || 'question-images'
     const ts = isoSafeNow()
-    const bankSegment = isUuid(bankId) ? bankId : String(bankId || 'local')
-    const questionSegment = isUuid(questionId) ? questionId : String(questionId || 'local')
-    const objectPath = providedPath || `${auth.user.id}/question-banks/${bankSegment}/questions/${questionSegment}/${ts}_${safeName(filename)}`
+    const bankSegment = sanitizeStorageSegment(isUuid(bankId) ? bankId : String(bankId || 'local'), 'local')
+    const questionSegment = sanitizeStorageSegment(isUuid(questionId) ? questionId : String(questionId || 'local'), 'local')
+    const defaultPath = sanitizeStorageObjectPath(`${auth.user.id}/question-banks/${bankSegment}/questions/${questionSegment}/${ts}_${safeName(filename)}`)
+    const candidate = providedPath ? sanitizeStorageObjectPath(providedPath) : null
+    const requiredPrefix = `${auth.user.id}/question-banks/${bankSegment}/questions/${questionSegment}`
+    const objectPath = candidate && isStorageSubpathOf(candidate, requiredPrefix) ? candidate : defaultPath
+    if (!objectPath) return json(res, 400, { error: 'invalid_path' })
     let url = null
 
     if (action === 'sign') {

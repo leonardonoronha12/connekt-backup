@@ -236,8 +236,8 @@ export default function uploadProxyPlugin() {
 
           const safeName = String(filename).replace(/[^a-zA-Z0-9_.-]/g, '_');
           const ts = new Date().toISOString().replace(/[:.]/g, '-');
-          const bankSegment = String(bankId || 'local');
-          const questionSegment = String(questionId || 'local');
+          const bankSegment = String(bankId || 'local').replace(/[^a-zA-Z0-9_.-]/g, '_');
+          const questionSegment = String(questionId || 'local').replace(/[^a-zA-Z0-9_.-]/g, '_');
           const objectPath = `service/upload/question-banks/${bankSegment}/questions/${questionSegment}/${ts}_${safeName}`;
 
           // Ensure bucket exists (public for reads)

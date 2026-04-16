@@ -1,4 +1,4 @@
-import { getSupabaseAdmin, getAuthedUser, readRawBody, json, safeName, isoSafeNow } from '../src/server/supabaseAdmin.js'
+import { getSupabaseAdmin, getAuthedUser, readRawBody, json, safeName, isoSafeNow, sanitizeStorageObjectPath, sanitizeStorageSegment } from '../src/server/supabaseAdmin.js'
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return json(res, 405, { error: 'method_not_allowed' })
@@ -21,7 +21,10 @@ export default async function handler(req, res) {
 
     const bucket = 'courses-media'
     const ts = isoSafeNow()
-    const objectPath = `users/${auth.user.id}/courses/${String(courseId)}/${safeName(kind)}/${ts}_${safeName(filename)}`
+    const courseSegment = sanitizeStorageSegment(courseId, '')
+    const kindPath = sanitizeStorageObjectPath(kind) || 'media'
+    const objectPath = sanitizeStorageObjectPath(`users/${auth.user.id}/courses/${courseSegment}/${kindPath}/${ts}_${safeName(filename)}`)
+    if (!courseSegment || !objectPath) return json(res, 400, { error: 'invalid_path' })
 
     const up = await admin.storage.from(bucket).upload(objectPath, buffer, { contentType: String(contentType), upsert: true })
     if (up.error) return json(res, 500, { error: up.error.message || String(up.error) })

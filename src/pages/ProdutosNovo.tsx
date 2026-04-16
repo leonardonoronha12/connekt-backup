@@ -9,6 +9,7 @@ import { toast } from "@/hooks/use-toast"
 import { useToast } from "@/hooks/use-toast"
 import { supabase, SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/supabaseClient"
 import { canUploadBytes, resolvePlanKey } from "@/services/planEntitlements"
+import { sanitizeStorageObjectPath, sanitizeStorageSegment } from "@/shared/storagePath.js"
 import ChatArea from "@/components/ChatArea"
 import { TaxonomyDropdown, type TaxonomyItem } from "@/components/TaxonomyDropdown"
 import { useTaxonomy } from "@/contexts/TaxonomyContext"
@@ -938,7 +939,11 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
           const accessToken = String(session?.access_token || (await supabase.auth.getSession().catch(() => ({ data: null })))?.data?.session?.access_token || '').trim()
           if (!accessToken) throw new Error('Sessão expirada. Faça login novamente para enviar o vídeo.')
           const bucket = 'courses-media'
-          const objectPath = `users/${user.id}/courses/${courseId}/${kind}/${Date.now()}_${safeName}`
+          const uidSeg = sanitizeStorageSegment(user.id, "user")
+          const courseSeg = sanitizeStorageSegment(courseId, "course")
+          const kindPath = sanitizeStorageObjectPath(kind) || "media"
+          const objectPath = sanitizeStorageObjectPath(`users/${uidSeg}/courses/${courseSeg}/${kindPath}/${Date.now()}_${safeName}`)
+          if (!objectPath) throw new Error("invalid_path")
           const endpoint = `${supabaseUrl.replace(/\/+$/, '')}/storage/v1/upload/resumable`
           const tusMod: any = await import('tus-js-client')
           const Upload = tusMod?.Upload
@@ -1014,7 +1019,11 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
         }
 
         const bucket = 'courses-media'
-        const objectPath = `users/${user.id}/courses/${courseId}/${kind}/${Date.now()}_${safeName}`
+        const uidSeg = sanitizeStorageSegment(user.id, "user")
+        const courseSeg = sanitizeStorageSegment(courseId, "course")
+        const kindPath = sanitizeStorageObjectPath(kind) || "media"
+        const objectPath = sanitizeStorageObjectPath(`users/${uidSeg}/courses/${courseSeg}/${kindPath}/${Date.now()}_${safeName}`)
+        if (!objectPath) throw new Error("invalid_path")
         const { data, error } = await supabase.storage.from(bucket).upload(objectPath, file, {
           upsert: true,
           contentType: file.type || 'application/octet-stream',
@@ -1294,7 +1303,11 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
           const accessToken = String(session?.access_token || (await supabase.auth.getSession().catch(() => ({ data: null })))?.data?.session?.access_token || '').trim()
           if (!accessToken) throw new Error('Sessão expirada. Faça login novamente para enviar o vídeo.')
           const bucket = 'courses-media'
-          const objectPath = `users/${user.id}/courses/${courseId}/${kind}/${Date.now()}_${safeName}`
+          const uidSeg = sanitizeStorageSegment(user.id, "user")
+          const courseSeg = sanitizeStorageSegment(courseId, "course")
+          const kindPath = sanitizeStorageObjectPath(kind) || "media"
+          const objectPath = sanitizeStorageObjectPath(`users/${uidSeg}/courses/${courseSeg}/${kindPath}/${Date.now()}_${safeName}`)
+          if (!objectPath) throw new Error("invalid_path")
           const endpoint = `${supabaseUrl.replace(/\/+$/, '')}/storage/v1/upload/resumable`
           const tusMod: any = await import('tus-js-client')
           const Upload = tusMod?.Upload
@@ -1368,7 +1381,11 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
         }
 
         const bucket = 'courses-media'
-        const objectPath = `users/${user.id}/courses/${courseId}/${kind}/${Date.now()}_${safeName}`
+        const uidSeg = sanitizeStorageSegment(user.id, "user")
+        const courseSeg = sanitizeStorageSegment(courseId, "course")
+        const kindPath = sanitizeStorageObjectPath(kind) || "media"
+        const objectPath = sanitizeStorageObjectPath(`users/${uidSeg}/courses/${courseSeg}/${kindPath}/${Date.now()}_${safeName}`)
+        if (!objectPath) throw new Error("invalid_path")
         const { data, error } = await supabase.storage.from(bucket).upload(objectPath, file, {
           upsert: true,
           contentType: file.type || 'application/octet-stream',
@@ -1882,7 +1899,9 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
       const bucket = 'courses-media'
       const safeName = sanitizeFilename(file.name || 'video')
       const root = courseId ? `users/${user.id}/courses/${courseId}` : `users/${user.id}/drafts`
-      const objectPath = `${root}/lesson_video/${lessonId}/${Date.now()}_${safeName}`
+      const lessonSeg = sanitizeStorageSegment(lessonId, "lesson")
+      const objectPath = sanitizeStorageObjectPath(`${root}/lesson_video/${lessonSeg}/${Date.now()}_${safeName}`)
+      if (!objectPath) throw new Error("invalid_path")
       const token = String(session?.access_token || '').trim()
       const effectiveToken = token || String((await supabase.auth.getSession().catch(() => ({ data: null })))?.data?.session?.access_token || '').trim()
       if (effectiveToken) {
@@ -3292,7 +3311,10 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
       }
 
       const bucket = 'courses-media'
-      const objectPath = `users/${user!.id}/courses/${String(editingCourseId)}/materials/${Date.now()}_${safeName}`
+      const uidSeg = sanitizeStorageSegment(user!.id, "user")
+      const courseSeg = sanitizeStorageSegment(String(editingCourseId), "course")
+      const objectPath = sanitizeStorageObjectPath(`users/${uidSeg}/courses/${courseSeg}/materials/${Date.now()}_${safeName}`)
+      if (!objectPath) throw new Error("invalid_path")
       const { data, error } = await supabase.storage.from(bucket).upload(objectPath, file, {
         upsert: true,
         contentType: file.type || 'application/octet-stream',
