@@ -292,6 +292,21 @@ function createDisabledSupabaseClient() {
 
 function createSupabaseClient(flowType) {
   if (!SUPABASE_ENV_OK) return createDisabledSupabaseClient()
+  const projectRef = (() => {
+    try {
+      const u = new URL(String(rawUrl || '').trim())
+      const host = String(u.hostname || '')
+      const m = host.match(/^([a-z0-9-]+)\.supabase\.co$/i)
+      return m ? String(m[1] || '') : ''
+    } catch (_) {
+      return ''
+    }
+  })()
+  const wantsIsolatedStorage = String(flowType || '').toLowerCase() === 'implicit'
+  const storageKey = wantsIsolatedStorage && projectRef ? `sb-${projectRef}-auth-token-implicit` : undefined
+  const persistSession = wantsIsolatedStorage ? false : true
+  const autoRefreshToken = wantsIsolatedStorage ? false : true
+
   return createClient(rawUrl, rawAnon, {
     global: {
       fetch: createRetryingFetch(fetch),
@@ -299,9 +314,10 @@ function createSupabaseClient(flowType) {
     auth: {
       storage: createDualStorage(),
       flowType,
-      persistSession: true,
-      autoRefreshToken: true,
-      detectSessionInUrl: true,
+      storageKey,
+      persistSession,
+      autoRefreshToken,
+      detectSessionInUrl: false,
     },
   })
 }
