@@ -958,14 +958,14 @@ function AppContent() {
       go(resolvedRole === 'aluno' ? '/aluno' : '/dashboard')
       return
     }
-    if (isAlunoView && resolvedRole === 'produtor') {
+    if (isAlunoView && resolvedRole === 'produtor' && !isAlunoFlow) {
       go('/dashboard')
       return
     }
     if (isProducerView && resolvedRole === 'aluno') {
       go('/aluno')
     }
-  }, [loading, user, deviceLock, isPublicView, resolvedRole, currentView])
+  }, [loading, user, deviceLock, isPublicView, resolvedRole, currentView, isAlunoFlow])
 
   useEffect(() => {
     if (loading) return;
