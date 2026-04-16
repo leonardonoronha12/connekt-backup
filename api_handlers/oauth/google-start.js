@@ -38,9 +38,9 @@ export default async function handler(req, res) {
     }
 
     const supabaseUrl =
-      readEnv('SUPABASE_URL', '') ||
       readEnv('VITE_SUPABASE_URL', '') ||
-      readEnv('VITE_PUBLIC_SUPABASE_URL', '')
+      readEnv('VITE_PUBLIC_SUPABASE_URL', '') ||
+      readEnv('SUPABASE_URL', '')
     if (!supabaseUrl) {
       res.statusCode = 500
       res.setHeader('Content-Type', 'application/json')
