@@ -48,6 +48,22 @@ export default function StudentLoginForm({ variant = 'normal' } = {}) {
     let cancelled = false
     const run = async () => {
       try {
+        try {
+          const params = new URLSearchParams(window.location.search || '')
+          const err = String(params.get('error') || '').trim()
+          const errDesc = String(params.get('error_description') || '').trim()
+          const msg = errDesc || err
+          if (msg) {
+            setErrorMsg(msg)
+            setSuccessMsg('')
+            const u = new URL(window.location.href)
+            u.searchParams.delete('error')
+            u.searchParams.delete('error_description')
+            u.searchParams.delete('error_code')
+            window.history.replaceState({}, '', `${u.pathname}${u.search}${u.hash}`)
+          }
+        } catch (_) {}
+
         const host = String(window.location.hostname || '').toLowerCase()
         const isWhitelabelHost = host.endsWith('.app.connektco.com') && host !== 'app.connektco.com'
         const params = new URLSearchParams(window.location.search || '')
