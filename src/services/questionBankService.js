@@ -2,6 +2,7 @@ import { supabase } from '@/lib/supabaseClient'
 import { canCreateQuestion as canCreateQuestionByPlan, canUploadBytes, resolvePlanKey } from '@/services/planEntitlements'
 import { beginUpload } from '@/services/uploadGuard'
 import { getActiveProducerUserId } from '@/services/producerScope'
+import { sanitizeStorageObjectPath, sanitizeStorageSegment } from '@/shared/storagePath.js'
 
 // Dados mock para o frontend (fallback)
 const mockQuestionBanks = [
@@ -319,7 +320,11 @@ class QuestionBankService {
         const ext = (file.type || '').split('/')[1] || 'bin';
         const safeName = (file.name || `image.${ext}`).replace(/[^a-zA-Z0-9_.-]/g, '_');
         const ts = new Date().toISOString().replace(/[:.]/g, '-');
-        const path = `${userId || 'anonymous'}/question-banks/${bankSegment}/questions/${questionSegment}/${ts}_${safeName}`;
+        const uSeg = sanitizeStorageSegment(userId || 'anonymous', 'anonymous')
+        const bSeg = sanitizeStorageSegment(bankSegment, 'local')
+        const qSeg = sanitizeStorageSegment(questionSegment, 'local')
+        const path = sanitizeStorageObjectPath(`${uSeg}/question-banks/${bSeg}/questions/${qSeg}/${ts}_${safeName}`);
+        if (!path) throw new Error('Caminho inválido para upload');
 
         const { data, error } = await supabase
           .storage
@@ -330,7 +335,7 @@ class QuestionBankService {
           });
         if (error) throw error;
 
-        const objectPath = data?.path || path;
+        const objectPath = sanitizeStorageObjectPath(data?.path || path) || path;
         const { data: pub } = await supabase
           .storage
           .from(this.QUESTION_IMAGES_BUCKET)
@@ -582,7 +587,11 @@ class QuestionBankService {
         const ext = (file.type || '').split('/')[1] || 'bin';
         const safeName = (file.name || `video.${ext}`).replace(/[^a-zA-Z0-9_.-]/g, '_');
         const ts = new Date().toISOString().replace(/[:.]/g, '-');
-        const path = `${userId || 'anonymous'}/question-banks/${bankSegment}/questions/${questionSegment}/${ts}_${safeName}`;
+        const uSeg = sanitizeStorageSegment(userId || 'anonymous', 'anonymous')
+        const bSeg = sanitizeStorageSegment(bankSegment, 'local')
+        const qSeg = sanitizeStorageSegment(questionSegment, 'local')
+        const path = sanitizeStorageObjectPath(`${uSeg}/question-banks/${bSeg}/questions/${qSeg}/${ts}_${safeName}`);
+        if (!path) throw new Error('Caminho inválido para upload');
 
         const { data, error } = await supabase
           .storage
@@ -593,7 +602,7 @@ class QuestionBankService {
           });
         if (error) throw error;
 
-        const objectPath = data?.path || path;
+        const objectPath = sanitizeStorageObjectPath(data?.path || path) || path;
         const { data: pub } = await supabase
           .storage
           .from(this.QUESTION_IMAGES_BUCKET)

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Search } from 'lucide-react';
 import { Helmet } from 'react-helmet-async';
 import { supabase } from '@/lib/supabaseClient';
+import { sanitizeStorageObjectPath, sanitizeStorageSegment } from '@/shared/storagePath.js'
 import AproveitamentoIcon from '../components/ui/AproveitamentoIcon.jsx';
 import PontuacaoDot from '../components/ui/PontuacaoDot.jsx';
 
@@ -504,9 +505,13 @@ const SimuladosAproveitamentoPage = () => {
           const re = /\/storage\/v1\/object\/sign\/([^/]+)\/([^?]+)(?:\?|$)/;
           const m = String(signedUrl).match(re);
           if (!m) return '';
-          const bucket = decodeURIComponent(m[1] || '');
-          const path = decodeURIComponent(m[2] || '');
+          const bucket = sanitizeStorageSegment(decodeURIComponent(m[1] || ''), '');
+          const path = sanitizeStorageObjectPath(decodeURIComponent(m[2] || ''));
           if (!bucket || !path) return '';
+          const allowedBucket =
+            String(import.meta?.env?.VITE_SUPABASE_QUESTION_IMAGES_BUCKET || import.meta?.env?.VITE_QUESTION_IMAGES_BUCKET || 'question-images')
+              .trim()
+          if (bucket !== allowedBucket) return '';
           const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 60 * 60 * 24 * 7);
           if (error) return '';
           return String(data?.signedUrl || '').trim();
