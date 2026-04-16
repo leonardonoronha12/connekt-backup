@@ -36,6 +36,67 @@ function safeNextPath(raw) {
   return p
 }
 
+function decodeJwtPayload(token) {
+  const raw = String(token || '').trim()
+  const parts = raw.split('.')
+  if (parts.length < 2) return null
+  const p = parts[1] || ''
+  const pad = p.length % 4 === 0 ? '' : '='.repeat(4 - (p.length % 4))
+  const b64 = (p + pad).replace(/-/g, '+').replace(/_/g, '/')
+  try {
+    const jsonText = Buffer.from(b64, 'base64').toString('utf-8')
+    return JSON.parse(jsonText || '{}')
+  } catch (_) {
+    return null
+  }
+}
+
+function extractProjectRefFromSupabaseUrl(url) {
+  const raw = String(url || '').trim()
+  if (!raw) return ''
+  try {
+    const u = new URL(raw)
+    const host = String(u.hostname || '')
+    const m = host.match(/^([a-z0-9-]+)\.supabase\.co$/i)
+    return m ? String(m[1] || '') : ''
+  } catch (_) {
+    return ''
+  }
+}
+
+function extractProjectRefFromIss(iss) {
+  const raw = String(iss || '').trim()
+  if (!raw) return ''
+  try {
+    const u = new URL(raw)
+    const host = String(u.hostname || '')
+    const m = host.match(/^([a-z0-9-]+)\.supabase\.co$/i)
+    return m ? String(m[1] || '') : ''
+  } catch (_) {
+    return ''
+  }
+}
+
+function pickSupabaseAnonKey({ supabaseUrl }) {
+  const urlRef = extractProjectRefFromSupabaseUrl(supabaseUrl)
+  const candidates = [
+    readEnv('VITE_SUPABASE_ANON_KEY', ''),
+    readEnv('VITE_PUBLIC_SUPABASE_ANON_KEY', ''),
+    readEnv('SUPABASE_ANON_KEY', ''),
+    readEnv('VITE_SUPABASE_KEY', ''),
+    readEnv('VITE_PUBLIC_SUPABASE_KEY', ''),
+  ].filter(Boolean)
+
+  for (const k of candidates) {
+    const payload = decodeJwtPayload(k) || {}
+    const role = String(payload?.role || '').trim().toLowerCase()
+    const iss = String(payload?.iss || '').trim()
+    const keyRef = extractProjectRefFromIss(iss)
+    if (role === 'anon' && (!urlRef || !keyRef || keyRef === urlRef)) return k
+  }
+  return candidates[0] || ''
+}
+
 export default async function handler(req, res) {
   try {
     if (req.method !== 'GET') {
@@ -49,12 +110,7 @@ export default async function handler(req, res) {
       readEnv('SUPABASE_URL', '') ||
       readEnv('VITE_SUPABASE_URL', '') ||
       readEnv('VITE_PUBLIC_SUPABASE_URL', '')
-    const anonKey =
-      readEnv('SUPABASE_ANON_KEY', '') ||
-      readEnv('VITE_SUPABASE_ANON_KEY', '') ||
-      readEnv('VITE_PUBLIC_SUPABASE_ANON_KEY', '') ||
-      readEnv('VITE_SUPABASE_KEY', '') ||
-      readEnv('VITE_PUBLIC_SUPABASE_KEY', '')
+    const anonKey = pickSupabaseAnonKey({ supabaseUrl })
 
     const appOrigin = getAppOrigin(req)
     if (!appOrigin) {
@@ -148,4 +204,3 @@ export default async function handler(req, res) {
     res.end(JSON.stringify({ error: 'internal_error', message: e?.message || String(e) }))
   }
 }
-
