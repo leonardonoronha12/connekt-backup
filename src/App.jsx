@@ -920,11 +920,19 @@ function AppContent() {
     if (loading) return
     if (!user) return
     if (deviceLock) return
-    if (isPublicView) return
     if (resolvedRole === '' || resolvedRole === 'checking') return
 
     const view = String(currentView || '')
     const path = String(window.location.pathname || '')
+    const isLoginView =
+      view === 'login' ||
+      view === 'loginAluno' ||
+      view === 'loginAlunoWhitelabel' ||
+      path === '/login' ||
+      path === '/login-aluno' ||
+      path === '/login-aluno-wl' ||
+      path === '/aluno/login'
+    if (isPublicView && !isLoginView) return
     const isPlatformAdminView = view === 'platformAdminPanel' || view === 'platformAdminDeploy' || view === 'platformAdminLogin' || path === '/admin' || path.startsWith('/admin/')
     const isAlunoView = view.startsWith('aluno') || path === '/aluno' || path.startsWith('/aluno/')
     const isProducerView =
