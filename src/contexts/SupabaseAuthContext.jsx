@@ -148,13 +148,31 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [deviceLock, setDeviceLock] = useState(null);
   const [pendingDeviceRequest, setPendingDeviceRequest] = useState(null)
+  const isDeviceLockBypassed = useMemo(() => {
+    try {
+      const raw =
+        String(import.meta?.env?.VITE_DEVICE_LOCK_BYPASS_EMAILS || import.meta?.env?.VITE_DEVICE_APPROVAL_BYPASS_EMAILS || '')
+      const allow = raw
+        .split(',')
+        .map((v) => String(v || '').trim().toLowerCase())
+        .filter(Boolean)
+      allow.push('leonardonoronha12@gmail.com')
+      const email = String(user?.email || '').trim().toLowerCase()
+      if (!email) return false
+      return allow.includes(email)
+    } catch (_) {
+      const email = String(user?.email || '').trim().toLowerCase()
+      return email === 'leonardonoronha12@gmail.com'
+    }
+  }, [user?.email])
   const shouldEnforceDeviceLock = useMemo(() => {
+    if (isDeviceLockBypassed) return false
     try {
       const host = String(window.location.hostname || '').toLowerCase()
       if (host === 'localhost' || host === '127.0.0.1') return false
     } catch (_) {}
     return true
-  }, [])
+  }, [isDeviceLockBypassed])
 
   const handleSession = useCallback(async (currentSession) => {
     setSession(currentSession);
@@ -558,6 +576,20 @@ export const AuthProvider = ({ children }) => {
         }
         if (event === 'SIGNED_IN') {
           let isLocked = false
+          let bypassDeviceLock = false
+          try {
+            const em = String(currentSession?.user?.email || '').trim().toLowerCase()
+            const raw =
+              String(import.meta?.env?.VITE_DEVICE_LOCK_BYPASS_EMAILS || import.meta?.env?.VITE_DEVICE_APPROVAL_BYPASS_EMAILS || '')
+            const allow = raw
+              .split(',')
+              .map((v) => String(v || '').trim().toLowerCase())
+              .filter(Boolean)
+            allow.push('leonardonoronha12@gmail.com')
+            bypassDeviceLock = !!(em && allow.includes(em))
+          } catch (_) {
+            bypassDeviceLock = String(currentSession?.user?.email || '').trim().toLowerCase() === 'leonardonoronha12@gmail.com'
+          }
           const pathname = window.location.pathname
           const intent = readStoredLoginIntent()
           const mode = readStoredLoginMode()
@@ -571,7 +603,7 @@ export const AuthProvider = ({ children }) => {
             pathname.startsWith('/aluno/')
           const isStudentFlow = isWhitelabelHost ? true : (isStudentPath || intent === 'aluno' || mode === 'aluno')
 
-          if (shouldEnforceDeviceLock) {
+          if (!bypassDeviceLock && shouldEnforceDeviceLock) {
             try {
               const userId = currentSession?.user?.id
               if (userId) {
