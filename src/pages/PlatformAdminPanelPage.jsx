@@ -112,7 +112,7 @@ export default function PlatformAdminPanelPage() {
   const [editOpen, setEditOpen] = useState(false)
   const [editLoading, setEditLoading] = useState(false)
   const [editUser, setEditUser] = useState(null)
-  const [editForm, setEditForm] = useState({ name: '', phone: '', accountType: 'aluno', disabled: false, courses: [] })
+  const [editForm, setEditForm] = useState({ name: '', phone: '', accountType: 'aluno', disabled: false, courses: [], planKey: '', planCycle: 'mensal' })
   const [firstAccessBusy, setFirstAccessBusy] = useState(false)
 
   const [bulkCsvOpen, setBulkCsvOpen] = useState(false)
@@ -229,6 +229,8 @@ export default function PlatformAdminPanelPage() {
         accountType: normalizeType(body?.user?.accountType || 'aluno'),
         disabled: Boolean(body?.user?.disabled),
         courses: Array.isArray(body?.user?.courses) ? body.user.courses : [],
+        planKey: String(body?.user?.activePlan || '').trim(),
+        planCycle: String(body?.user?.planCycle || '').trim() || 'mensal',
       })
     } catch (e) {
       toast({ title: 'Erro', description: e?.message || 'Erro ao carregar usuário', variant: 'destructive' })
@@ -252,6 +254,10 @@ export default function PlatformAdminPanelPage() {
           courseId: String(c?.courseId || '').trim(),
           expiresAt: String(c?.expiresAt || '').trim() || null,
         })).filter((c) => c.courseId),
+      }
+      if (normalizeType(editForm.accountType) === 'produtor') {
+        payload.planKey = String(editForm.planKey || '').trim() || null
+        payload.planCycle = String(editForm.planCycle || '').trim() || null
       }
       const r = await fetch('/api/admin/users/update', {
         method: 'POST',
@@ -925,23 +931,115 @@ export default function PlatformAdminPanelPage() {
                     </div>
 
                     {normalizeType(editForm.accountType) === 'produtor' ? (
-                      <div className="md:col-span-2 rounded-[12px] border border-[#E3E4E5] bg-[#F8FAFC] p-4">
-                        <div className="text-[12px] font-semibold text-[#1E1B39]">Cursos do produtor</div>
-                        <div className="mt-3 space-y-2">
-                          {Array.isArray(editUser?.ownedCourses) && editUser.ownedCourses.length ? (
-                            <div className="rounded-[12px] border border-[#E3E4E5] bg-white p-3">
-                              {editUser.ownedCourses.slice(0, 30).map((c, idx) => (
-                                <div key={`${c?.id || ''}-${idx}`} className="flex items-center justify-between gap-3 py-1">
-                                  <div className="min-w-0 text-[12px] text-[#1E1B39] truncate">{String(c?.title || 'Curso')}</div>
-                                  <div className="text-[11px] text-[#737780] whitespace-nowrap">{formatDt(c?.createdAt)}</div>
-                                </div>
-                              ))}
+                      <>
+                        <div className="md:col-span-2 rounded-[12px] border border-[#E3E4E5] bg-[#F8FAFC] p-4">
+                          <div className="text-[12px] font-semibold text-[#1E1B39]">Plano do produtor</div>
+                          <div className="mt-3 grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+                            <div className="md:col-span-6">
+                              <label className="text-[12px] text-[#737780]">Plano ativo</label>
+                              <select
+                                value={String(editForm.planKey || '')}
+                                onChange={(e) => setEditForm((p) => ({ ...p, planKey: e.target.value }))}
+                                className="mt-2 w-full h-[40px] rounded-[10px] border border-[#E3E4E5] px-3 text-[13px] bg-white outline-none focus:border-[#0047BB]"
+                              >
+                                <option value="">Sem plano</option>
+                                <option value="start">Start</option>
+                                <option value="pro">Pro</option>
+                                <option value="premium">Premium</option>
+                                <option value="teste">Teste</option>
+                                <option value="qa">QA</option>
+                              </select>
+                            </div>
+                            <div className="md:col-span-4">
+                              <label className="text-[12px] text-[#737780]">Ciclo</label>
+                              <select
+                                value={String(editForm.planCycle || 'mensal')}
+                                onChange={(e) => setEditForm((p) => ({ ...p, planCycle: e.target.value }))}
+                                className="mt-2 w-full h-[40px] rounded-[10px] border border-[#E3E4E5] px-3 text-[13px] bg-white outline-none focus:border-[#0047BB]"
+                              >
+                                <option value="mensal">Mensal</option>
+                                <option value="anual">Anual</option>
+                              </select>
+                            </div>
+                            <div className="md:col-span-2">
+                              <button
+                                type="button"
+                                disabled={editLoading}
+                                onClick={saveEdit}
+                                className="w-full h-[40px] rounded-[10px] bg-[#0047BB] text-white text-[12px] font-semibold hover:bg-[#003da0] disabled:opacity-50"
+                              >
+                                Aplicar
+                              </button>
+                            </div>
+                          </div>
+                          <div className="mt-3 text-[12px] text-[#737780]">
+                            {editUser?.planActivatedAt ? `Ativado em: ${formatDt(editUser.planActivatedAt)}` : 'Sem data de ativação.'}
+                          </div>
+                          {editUser?.paymentsMissing ? (
+                            <div className="mt-3 text-[12px] font-semibold text-[#991B1B] bg-[#FDECEC] border border-[#F3C7C7] px-3 py-2 rounded-[10px]">
+                              Tabela payments não encontrada no banco
+                            </div>
+                          ) : null}
+                          {Array.isArray(editUser?.payments) && editUser.payments.length ? (
+                            <div className="mt-4 rounded-[12px] border border-[#E3E4E5] bg-white overflow-hidden">
+                              <div className="px-4 py-3 border-b border-[#E3E4E5] text-[12px] font-semibold text-[#1E1B39]">Últimos pagamentos</div>
+                              <div className="overflow-x-auto">
+                                <table className="min-w-full">
+                                  <thead>
+                                    <tr className="bg-white">
+                                      <th className="px-4 py-3 text-left text-[11px] font-semibold text-[#737780]">Plano</th>
+                                      <th className="px-4 py-3 text-left text-[11px] font-semibold text-[#737780]">Ciclo</th>
+                                      <th className="px-4 py-3 text-left text-[11px] font-semibold text-[#737780]">Status</th>
+                                      <th className="px-4 py-3 text-left text-[11px] font-semibold text-[#737780]">Criado</th>
+                                      <th className="px-4 py-3 text-left text-[11px] font-semibold text-[#737780]">Pago</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-[#EDEEF0]">
+                                    {editUser.payments.slice(0, 12).map((p, idx) => {
+                                      const status = String(p?.status || '').toLowerCase()
+                                      const paid = status === 'paid' || status === 'pago' || status === 'success' || status === 'succeeded'
+                                      const refused = status === 'failed' || status === 'recusado' || status === 'canceled' || status === 'cancelado'
+                                      const label = paid ? 'Pago' : (refused ? 'Recusado' : (status ? status : 'Pendente'))
+                                      const color = paid ? 'bg-green-100 text-green-700' : (refused ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700')
+                                      return (
+                                        <tr key={String(p?.id || idx)} className="bg-white">
+                                          <td className="px-4 py-3 text-[12px] text-[#1E1B39]">{String(p?.plan_slug || '—')}</td>
+                                          <td className="px-4 py-3 text-[12px] text-[#1E1B39]">{String(p?.cycle || '—')}</td>
+                                          <td className="px-4 py-3">
+                                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-[11px] font-semibold ${color}`}>{label}</span>
+                                          </td>
+                                          <td className="px-4 py-3 text-[12px] text-[#1E1B39]">{formatDt(p?.created_at)}</td>
+                                          <td className="px-4 py-3 text-[12px] text-[#1E1B39]">{p?.paid_at ? formatDt(p?.paid_at) : '—'}</td>
+                                        </tr>
+                                      )
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
                             </div>
                           ) : (
-                            <div className="text-[12px] text-[#737780]">Nenhum curso encontrado para este produtor.</div>
+                            <div className="mt-3 text-[12px] text-[#737780]">Nenhum pagamento encontrado para este produtor.</div>
                           )}
                         </div>
-                      </div>
+
+                        <div className="md:col-span-2 rounded-[12px] border border-[#E3E4E5] bg-[#F8FAFC] p-4">
+                          <div className="text-[12px] font-semibold text-[#1E1B39]">Cursos do produtor</div>
+                          <div className="mt-3 space-y-2">
+                            {Array.isArray(editUser?.ownedCourses) && editUser.ownedCourses.length ? (
+                              <div className="rounded-[12px] border border-[#E3E4E5] bg-white p-3">
+                                {editUser.ownedCourses.slice(0, 30).map((c, idx) => (
+                                  <div key={`${c?.id || ''}-${idx}`} className="flex items-center justify-between gap-3 py-1">
+                                    <div className="min-w-0 text-[12px] text-[#1E1B39] truncate">{String(c?.title || 'Curso')}</div>
+                                    <div className="text-[11px] text-[#737780] whitespace-nowrap">{formatDt(c?.createdAt)}</div>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="text-[12px] text-[#737780]">Nenhum curso encontrado para este produtor.</div>
+                            )}
+                          </div>
+                        </div>
+                      </>
                     ) : null}
 
                     {normalizeType(editForm.accountType) === 'aluno' ? (

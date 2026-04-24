@@ -78,12 +78,34 @@ export default async function handler(req, res) {
     const desiredDisabled = Boolean(body?.disabled)
     const actorUserId = String(actor?.id || '').trim()
 
+    const planKeyRaw = body?.planKey
+    const planCycleRaw = body?.planCycle
+    const wantsPlanChange = planKeyRaw !== undefined || planCycleRaw !== undefined
+    const allowedPlans = new Set(['start', 'pro', 'premium', 'teste', 'qa'])
+    const normalizedPlanKey = (() => {
+      if (planKeyRaw === null) return null
+      const k = String(planKeyRaw || '').trim().toLowerCase()
+      if (!k) return null
+      return allowedPlans.has(k) ? k : null
+    })()
+    const normalizedPlanCycle = (() => {
+      const c = String(planCycleRaw || '').trim().toLowerCase()
+      if (!c) return null
+      if (c === 'mensal' || c === 'anual') return c
+      return null
+    })()
+
     const nextMeta = {
       ...existingMeta,
       ...(name ? { name, full_name: name } : {}),
       ...(phone ? { profile_phone: phone } : { profile_phone: existingMeta?.profile_phone || '' }),
       account_type: accountType,
       disabled: desiredDisabled,
+      ...(wantsPlanChange ? {
+        plan_override: normalizedPlanKey
+          ? { plan: normalizedPlanKey, cycle: normalizedPlanCycle || null, set_by: actorUserId || null, set_at: new Date().toISOString() }
+          : null,
+      } : {}),
     }
 
     const bannedUntil = desiredDisabled ? '9999-12-31T23:59:59.999Z' : null
@@ -93,6 +115,30 @@ export default async function handler(req, res) {
     })
 
     await upsertProfile(admin, userId, name, phone)
+
+    if (wantsPlanChange) {
+      try {
+        const nowIso = new Date().toISOString()
+        await admin
+          .from('profiles')
+          .upsert(
+            { user_id: userId, active_plan: normalizedPlanKey, plan_activated_at: normalizedPlanKey ? nowIso : null },
+            { onConflict: 'user_id' }
+          )
+      } catch (_) {}
+
+      try {
+        await admin
+          .from('users')
+          .update({
+            plan: normalizedPlanKey,
+            plan_cycle: normalizedPlanCycle,
+            plan_active: !!normalizedPlanKey,
+            plan_activated_at: normalizedPlanKey ? new Date().toISOString() : null,
+          })
+          .eq('id', userId)
+      } catch (_) {}
+    }
 
     const desiredCourses = Array.isArray(body?.courses) ? body.courses : []
     const desiredMap = new Map()
@@ -133,4 +179,3 @@ export default async function handler(req, res) {
     return json(res, 500, { error: 'internal_error', message: e?.message || String(e) })
   }
 }
-

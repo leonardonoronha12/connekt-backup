@@ -1,9 +1,12 @@
-import React, { useMemo } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { Monitor, Smartphone, X, ShieldAlert } from 'lucide-react'
 import { useAuth } from '@/contexts/SupabaseAuthContext'
 
 export default function DeviceLockPage() {
-  const { deviceLock, resolveDeviceLock } = useAuth()
+  const { deviceLock, resolveDeviceLock, sendDeviceLockEmail, confirmDeviceLockFromEmail } = useAuth()
+  const [emailBusy, setEmailBusy] = useState(false)
+  const [confirmBusy, setConfirmBusy] = useState(false)
+  const [feedback, setFeedback] = useState('')
 
   const device = deviceLock?.activeDevice || null
   const label = device?.label || device?.active_device_label || 'Outro dispositivo'
@@ -37,6 +40,37 @@ export default function DeviceLockPage() {
     return /iphone|ipad|ipod|android/i.test(ua)
   })()
   const isAwaiting = String(deviceLock?.reason || '') === 'awaiting_approval'
+
+  useEffect(() => {
+    let active = true
+    const run = async () => {
+      if (!confirmDeviceLockFromEmail) return
+      let token = ''
+      try {
+        const u = new URL(window.location.href)
+        token = String(u.searchParams.get('device_confirm') || '').trim()
+      } catch (_) {
+        token = ''
+      }
+      if (!token) return
+      setConfirmBusy(true)
+      setFeedback('Confirmando dispositivo…')
+      try {
+        const r = await confirmDeviceLockFromEmail(token)
+        if (!active) return
+        if (r?.ok) setFeedback('Dispositivo confirmado. Entrando…')
+        else setFeedback('Não foi possível confirmar este dispositivo.')
+      } catch (_) {
+        if (!active) return
+        setFeedback('Não foi possível confirmar este dispositivo.')
+      } finally {
+        if (!active) return
+        setConfirmBusy(false)
+      }
+    }
+    run()
+    return () => { active = false }
+  }, [confirmDeviceLockFromEmail])
 
   return (
     <div className="min-h-screen bg-[#F8F9FA] flex items-center justify-center p-4">
@@ -81,24 +115,47 @@ export default function DeviceLockPage() {
           </div>
 
           <div className="bg-[#F8FAFC] border border-[#E3E4E5] rounded-[10px] p-4 text-[12px] text-[#404040]">
-            {isAwaiting
+            {feedback
+              ? feedback
+              : isAwaiting
               ? 'Solicitação enviada. Assim que for aprovada em um dispositivo cadastrado, você poderá entrar automaticamente.'
               : 'Para usar esta conta aqui, envie uma solicitação de entrada. A aprovação deve ser feita em um dos dispositivos cadastrados.'}
           </div>
 
-          <div className="flex flex-col sm:flex-row gap-3">
+          <div className="flex flex-col gap-3">
             <button
               type="button"
-              disabled={isAwaiting}
+              disabled={isAwaiting || emailBusy || confirmBusy}
               onClick={() => resolveDeviceLock('request')}
-              className={`flex-1 px-4 py-3 rounded-[8px] text-[14px] font-semibold transition-colors ${isAwaiting ? 'bg-[#0047BB] text-white opacity-60 cursor-not-allowed' : 'bg-[#0047BB] text-white hover:bg-[#003da0]'}`}
+              className={`w-full px-4 py-3 rounded-[8px] text-[14px] font-semibold transition-colors ${(isAwaiting || emailBusy || confirmBusy) ? 'bg-[#0047BB] text-white opacity-60 cursor-not-allowed' : 'bg-[#0047BB] text-white hover:bg-[#003da0]'}`}
             >
-              {isAwaiting ? 'Aguardando aprovação…' : 'Solicitar entrada deste dispositivo'}
+              {(confirmBusy || emailBusy) ? 'Aguarde…' : isAwaiting ? 'Aguardando aprovação…' : 'Solicitar entrada deste dispositivo'}
+            </button>
+            <button
+              type="button"
+              disabled={isAwaiting || emailBusy || confirmBusy}
+              onClick={async () => {
+                if (isAwaiting || emailBusy || confirmBusy) return
+                setEmailBusy(true)
+                setFeedback('Enviando e-mail de confirmação…')
+                try {
+                  const r = await sendDeviceLockEmail()
+                  if (r?.ok) setFeedback('E-mail enviado. Abra o link para confirmar este dispositivo.')
+                  else setFeedback('Não foi possível enviar o e-mail. Tente novamente.')
+                } catch (_) {
+                  setFeedback('Não foi possível enviar o e-mail. Tente novamente.')
+                } finally {
+                  setEmailBusy(false)
+                }
+              }}
+              className={`w-full border border-[#E3E4E5] text-[#1E1B39] px-4 py-3 rounded-[8px] text-[14px] font-semibold hover:bg-[#F8FAFC] transition-colors ${(isAwaiting || emailBusy || confirmBusy) ? 'opacity-60 cursor-not-allowed' : ''}`}
+            >
+              Enviar e-mail para confirmar
             </button>
             <button
               type="button"
               onClick={() => resolveDeviceLock('signout')}
-              className="flex-1 border border-[#E3E4E5] text-[#1E1B39] px-4 py-3 rounded-[8px] text-[14px] font-semibold hover:bg-[#F8FAFC] transition-colors"
+              className="w-full border border-[#E3E4E5] text-[#1E1B39] px-4 py-3 rounded-[8px] text-[14px] font-semibold hover:bg-[#F8FAFC] transition-colors"
             >
               Sair
             </button>

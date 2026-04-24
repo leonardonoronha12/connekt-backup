@@ -6,8 +6,13 @@ function readEnv(name, fallback = '') {
 }
 
 function getAppOrigin(req) {
-  const proto = String(req?.headers?.['x-forwarded-proto'] || 'https').split(',')[0].trim() || 'https'
-  const host = String(req?.headers?.['x-forwarded-host'] || req?.headers?.host || '').split(',')[0].trim()
+  const rawHost = String(req?.headers?.['x-forwarded-host'] || req?.headers?.host || '').split(',')[0].trim()
+  const isLocal =
+    rawHost.includes('localhost') ||
+    rawHost.startsWith('127.0.0.1') ||
+    rawHost.startsWith('0.0.0.0')
+  const proto = String(req?.headers?.['x-forwarded-proto'] || (isLocal ? 'http' : 'https')).split(',')[0].trim() || (isLocal ? 'http' : 'https')
+  const host = rawHost
   return host ? `${proto}://${host}` : ''
 }
 
@@ -60,6 +65,7 @@ export default async function handler(req, res) {
     const u = new URL(req.url, appOrigin)
     const next = safeNextPath(u.searchParams.get('next') || u.searchParams.get('redirect') || '')
 
+    const state = base64url(crypto.randomBytes(16))
     const codeVerifier = base64url(crypto.randomBytes(32))
     const codeChallenge = base64url(crypto.createHash('sha256').update(codeVerifier).digest())
 
@@ -71,9 +77,11 @@ export default async function handler(req, res) {
     authorizeUrl.searchParams.set('redirect_to', callbackUrl.toString())
     authorizeUrl.searchParams.set('code_challenge', codeChallenge)
     authorizeUrl.searchParams.set('code_challenge_method', 's256')
+    authorizeUrl.searchParams.set('state', state)
 
+    const cookieName = `connekt_pkce_${state}`
     const cookie = [
-      `connekt_pkce_verifier=${encodeURIComponent(codeVerifier)}`,
+      `${cookieName}=${encodeURIComponent(codeVerifier)}`,
       'Path=/',
       'HttpOnly',
       'SameSite=Lax',

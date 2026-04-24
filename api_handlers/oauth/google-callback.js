@@ -4,8 +4,13 @@ function readEnv(name, fallback = '') {
 }
 
 function getAppOrigin(req) {
-  const proto = String(req?.headers?.['x-forwarded-proto'] || 'https').split(',')[0].trim() || 'https'
-  const host = String(req?.headers?.['x-forwarded-host'] || req?.headers?.host || '').split(',')[0].trim()
+  const rawHost = String(req?.headers?.['x-forwarded-host'] || req?.headers?.host || '').split(',')[0].trim()
+  const isLocal =
+    rawHost.includes('localhost') ||
+    rawHost.startsWith('127.0.0.1') ||
+    rawHost.startsWith('0.0.0.0')
+  const proto = String(req?.headers?.['x-forwarded-proto'] || (isLocal ? 'http' : 'https')).split(',')[0].trim() || (isLocal ? 'http' : 'https')
+  const host = rawHost
   return host ? `${proto}://${host}` : ''
 }
 
@@ -137,19 +142,24 @@ export default async function handler(req, res) {
     const url = new URL(req.url, appOrigin)
     const next = safeNextPath(url.searchParams.get('next') || '')
     const code = String(url.searchParams.get('code') || '').trim()
+    const state = String(url.searchParams.get('state') || '').trim()
 
-    const clearCookie = [
-      'connekt_pkce_verifier=',
+    const clearCookieBase = [
       'Path=/',
       'HttpOnly',
       'SameSite=Lax',
       'Max-Age=0',
     ]
-    if (String(appOrigin).startsWith('https://')) clearCookie.push('Secure')
+    const clearCookieAttr = String(appOrigin).startsWith('https://')
+      ? [...clearCookieBase, 'Secure']
+      : clearCookieBase
+    const legacyClearCookie = ['connekt_pkce_verifier=', ...clearCookieAttr].join('; ')
+    const stateCookieName = state ? `connekt_pkce_${state}` : ''
+    const stateClearCookie = stateCookieName ? [`${stateCookieName}=`, ...clearCookieAttr].join('; ') : ''
 
     const cleanedSupabaseUrl = String(supabaseUrl || '').trim().replace(/^"|"$/g, '').replace(/^'|'$/g, '')
     if (!cleanedSupabaseUrl || !anonKey) {
-      res.setHeader('Set-Cookie', clearCookie.join('; '))
+      res.setHeader('Set-Cookie', stateClearCookie ? [stateClearCookie, legacyClearCookie] : legacyClearCookie)
       res.statusCode = 302
       const hint = picked?.name ? ` missing_key_src=${picked.name}` : ''
       res.setHeader('Location', `/login?error=missing_supabase_env&error_description=${encodeURIComponent(`missing_supabase_env${hint}`)}`)
@@ -158,7 +168,7 @@ export default async function handler(req, res) {
     }
 
     if (!code) {
-      res.setHeader('Set-Cookie', clearCookie.join('; '))
+      res.setHeader('Set-Cookie', stateClearCookie ? [stateClearCookie, legacyClearCookie] : legacyClearCookie)
       res.statusCode = 302
       res.setHeader('Location', `/login?error=missing_code&error_description=${encodeURIComponent('missing_code')}`)
       res.end()
@@ -166,9 +176,11 @@ export default async function handler(req, res) {
     }
 
     const cookies = parseCookies(req)
-    const verifier = String(cookies.connekt_pkce_verifier || '').trim()
+    const verifier =
+      (stateCookieName ? String(cookies[stateCookieName] || '').trim() : '') ||
+      String(cookies.connekt_pkce_verifier || '').trim()
     if (!verifier) {
-      res.setHeader('Set-Cookie', clearCookie.join('; '))
+      res.setHeader('Set-Cookie', stateClearCookie ? [stateClearCookie, legacyClearCookie] : legacyClearCookie)
       res.statusCode = 302
       res.setHeader('Location', `/login?error=missing_pkce_verifier&error_description=${encodeURIComponent('missing_pkce_verifier')}`)
       res.end()
@@ -190,7 +202,7 @@ export default async function handler(req, res) {
     let body = null
     try { body = JSON.parse(text || '{}') } catch (_) { body = null }
 
-    res.setHeader('Set-Cookie', clearCookie.join('; '))
+    res.setHeader('Set-Cookie', stateClearCookie ? [stateClearCookie, legacyClearCookie] : legacyClearCookie)
 
     if (!r.ok) {
       const baseMsg = String(body?.msg || body?.message || body?.error_description || body?.error || text || 'oauth_token_failed')
