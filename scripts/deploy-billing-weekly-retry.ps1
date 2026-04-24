@@ -32,11 +32,11 @@ Write-Step "Checando Supabase CLI"
 $cliCmd = "supabase"
 $cliMode = "global"
 $cliPrefix = @()
-function Invoke-SupabaseCli([string[]]$Args) {
+function Invoke-SupabaseCli([string[]]$CliArgs) {
   if ($cliMode -eq "npx") {
-    & $cliCmd @($cliPrefix + $Args) | Out-Host
+    & $cliCmd @($cliPrefix + $CliArgs) | Out-Host
   } else {
-    & $cliCmd @Args | Out-Host
+    & $cliCmd @CliArgs | Out-Host
   }
 }
 function SupabaseVersion() {
