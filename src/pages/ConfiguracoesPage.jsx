@@ -1670,12 +1670,13 @@ const ConfiguracoesPage = () => {
                       <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#1E1B39]">Data do vencimento</th>
                       <th className="px-6 py-4 text-left text-[12px] font-semibold text-[#1E1B39]">Data do pagamento</th>
                       <th className="px-6 py-4 text-right text-[12px] font-semibold text-[#1E1B39]">Status</th>
+                      <th className="px-6 py-4 text-right text-[12px] font-semibold text-[#1E1B39]">Ação</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#E3E4E5]">
                     {paymentsLoading ? (
                       <tr className="bg-white">
-                        <td className="px-6 py-6 text-[12px] text-[#737780]" colSpan={4}>Carregando histórico…</td>
+                        <td className="px-6 py-6 text-[12px] text-[#737780]" colSpan={5}>Carregando histórico…</td>
                       </tr>
                     ) : (payments && payments.length > 0 ? (
                       payments.map((p) => {
@@ -1686,6 +1687,7 @@ const ConfiguracoesPage = () => {
                         const statusColor = paid ? 'bg-green-100 text-green-700' : (refused ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700');
                         const planKey = String(p?.plan_slug || '');
                         const planName = plansCatalog[planKey]?.name || planKey || '—';
+                        const billingCycle = String(p?.cycle || '').trim().toLowerCase() === 'anual' ? 'anual' : 'mensal'
                         return (
                           <tr key={p.id} className="bg-white hover:bg-gray-50 transition-colors">
                             <td className="px-6 py-4">
@@ -1701,12 +1703,38 @@ const ConfiguracoesPage = () => {
                                 {label}
                               </span>
                             </td>
+                            <td className="px-6 py-4 text-right">
+                              {!paid ? (
+                                <button
+                                  type="button"
+                                  className="h-9 px-3 rounded-[10px] bg-[#0047BB] text-white text-[12px] font-semibold hover:bg-[#003da0]"
+                                  onClick={async () => {
+                                    try {
+                                      if (!user?.id) {
+                                        toast({ title: 'Faça login', description: 'Você precisa estar logado para efetuar o pagamento.', duration: 6000 })
+                                        return
+                                      }
+                                      const r = await planService.startCheckout(planKey, billingCycle, user, { openInNewTab: true })
+                                      if (!r?.ok) {
+                                        toast({ title: 'Falha ao iniciar pagamento', description: String(r?.error || 'Tente novamente.'), duration: 6000 })
+                                      }
+                                    } catch (e) {
+                                      toast({ title: 'Falha ao iniciar pagamento', description: e?.message || 'Tente novamente.', duration: 6000 })
+                                    }
+                                  }}
+                                >
+                                  Efetuar pagamento atrasado
+                                </button>
+                              ) : (
+                                <span className="text-[12px] text-[#737780]">—</span>
+                              )}
+                            </td>
                           </tr>
                         );
                       })
                     ) : (
                       <tr className="bg-white">
-                        <td className="px-6 py-6 text-[12px] text-[#737780]" colSpan={4}>Nenhum pagamento encontrado.</td>
+                        <td className="px-6 py-6 text-[12px] text-[#737780]" colSpan={5}>Nenhum pagamento encontrado.</td>
                       </tr>
                     ))}
                 </tbody>

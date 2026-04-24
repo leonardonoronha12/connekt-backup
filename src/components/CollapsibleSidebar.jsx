@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { CreditCard, ChevronLeft, ChevronRight } from 'lucide-react';
+import { CreditCard, ChevronLeft, ChevronRight, Menu } from 'lucide-react';
 import { planService } from '@/services/planService.js';
 
 const CollapsibleSidebar = () => {
@@ -37,7 +37,18 @@ const CollapsibleSidebar = () => {
     };
 
     const handleResize = () => {
-      setIsMobile(window.innerWidth < 768);
+      const nextMobile = window.innerWidth < 768
+      setIsMobile(nextMobile)
+      if (nextMobile) {
+        setIsExpanded(false)
+      } else {
+        try {
+          const saved = localStorage.getItem('sidebarOpen')
+          setIsExpanded(saved !== null ? JSON.parse(saved) : true)
+        } catch (_) {
+          setIsExpanded(true)
+        }
+      }
     };
 
     window.addEventListener('popstate', handleLocationChange);
@@ -174,10 +185,21 @@ const CollapsibleSidebar = () => {
   // Ocultar temporariamente algumas abas
   const hiddenLabels = new Set(['KPlay', 'KHub']);
 
-  const sidebarWidth = isExpanded ? '260px' : '92px';
+  const sidebarWidth = isMobile ? (isExpanded ? '260px' : '0px') : (isExpanded ? '260px' : '92px');
 
   return (
     <>
+      {isMobile && !isExpanded && (
+        <button
+          type="button"
+          aria-label="Abrir menu"
+          onClick={() => setIsExpanded(true)}
+          className="fixed left-3 top-3 z-50 w-10 h-10 rounded-[10px] flex items-center justify-center shadow-lg"
+          style={{ backgroundColor: 'rgb(0, 71, 187)' }}
+        >
+          <Menu className="w-5 h-5 text-white" />
+        </button>
+      )}
       {/* Mobile Backdrop */}
       {isMobile && isExpanded && (
         <div 
@@ -193,7 +215,9 @@ const CollapsibleSidebar = () => {
         }`}
         style={{
           width: sidebarWidth,
-          background: 'linear-gradient(180deg, rgb(15, 6, 39) 0%, rgb(0, 0, 104) 100%)'
+          background: 'linear-gradient(180deg, rgb(15, 6, 39) 0%, rgb(0, 0, 104) 100%)',
+          overflow: isMobile && !isExpanded ? 'hidden' : undefined,
+          pointerEvents: isMobile && !isExpanded ? 'none' : undefined
         }}
       >
         {/* Header com Logo e Toggle */}

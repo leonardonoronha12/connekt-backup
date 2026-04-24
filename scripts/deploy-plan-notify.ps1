@@ -17,18 +17,45 @@ function Require($name, $value) {
 Write-Step "Checando Supabase CLI"
 $cliCmd = "supabase"
 $cliMode = "global"
+$cliPrefix = @()
+function Invoke-SupabaseCli([string[]]$Args) {
+  if ($cliMode -eq "npx") {
+    & $cliCmd @($cliPrefix + $Args) | Out-Host
+  } else {
+    & $cliCmd @Args | Out-Host
+  }
+}
+function SupabaseVersion() {
+  try {
+    if ($cliMode -eq "npx") {
+      return & $cliCmd @($cliPrefix + @("--version")) 2>$null
+    }
+    return & $cliCmd --version 2>$null
+  } catch { return $null }
+}
+
+$localCmd = Join-Path (Join-Path $PSScriptRoot "..\\node_modules\\.bin") "supabase.cmd"
+if (Test-Path $localCmd) {
+  $cliCmd = $localCmd
+  $cliMode = "local"
+  $ver = SupabaseVersion
+  if ($ver) {
+    Write-Ok "Supabase CLI local (node_modules) encontrado: $ver"
+  }
+}
 try {
-  $ver = & $cliCmd --version 2>$null
+  if ($cliMode -ne "local") { $ver = SupabaseVersion }
   if (-not $ver) { throw "not found" }
-  Write-Ok "Supabase CLI encontrado: $ver"
+  if ($cliMode -ne "local") { Write-Ok "Supabase CLI encontrado: $ver" }
 } catch {
   # Preferir CLI local via npm (npx) quando disponível para evitar download bloqueado.
   try {
     $npx = "npx"
-    $ver = & $npx supabase --version 2>$null
+    $cliCmd = $npx
+    $cliMode = "npx"
+    $cliPrefix = @("--yes","supabase")
+    $ver = SupabaseVersion
     if ($ver) {
-      $cliCmd = $npx
-      $cliMode = "npx"
       Write-Ok "Supabase CLI encontrado via npx: $ver"
     } else {
       throw "npx supabase not available"
@@ -113,17 +140,10 @@ Require "APP_BASE_URL (param ou env)" $AppBaseUrl
 
 Write-Step "Configurando secrets (plan-notify)"
 try {
-  if ($cliMode -eq "npx") {
-    & $cliCmd supabase secrets set --project-ref $ProjectRef SENDGRID_API_KEY=$sendgridApiKey | Out-Host
-    & $cliCmd supabase secrets set --project-ref $ProjectRef SENDGRID_FROM_EMAIL=$sendgridFromEmail | Out-Host
-    & $cliCmd supabase secrets set --project-ref $ProjectRef SENDGRID_FROM_NAME=$sendgridFromName | Out-Host
-    & $cliCmd supabase secrets set --project-ref $ProjectRef APP_BASE_URL=$AppBaseUrl | Out-Host
-  } else {
-    & $cliCmd secrets set --project-ref $ProjectRef SENDGRID_API_KEY=$sendgridApiKey | Out-Host
-    & $cliCmd secrets set --project-ref $ProjectRef SENDGRID_FROM_EMAIL=$sendgridFromEmail | Out-Host
-    & $cliCmd secrets set --project-ref $ProjectRef SENDGRID_FROM_NAME=$sendgridFromName | Out-Host
-    & $cliCmd secrets set --project-ref $ProjectRef APP_BASE_URL=$AppBaseUrl | Out-Host
-  }
+  Invoke-SupabaseCli @("secrets","set","--project-ref",$ProjectRef,"SENDGRID_API_KEY=$sendgridApiKey")
+  Invoke-SupabaseCli @("secrets","set","--project-ref",$ProjectRef,"SENDGRID_FROM_EMAIL=$sendgridFromEmail")
+  Invoke-SupabaseCli @("secrets","set","--project-ref",$ProjectRef,"SENDGRID_FROM_NAME=$sendgridFromName")
+  Invoke-SupabaseCli @("secrets","set","--project-ref",$ProjectRef,"APP_BASE_URL=$AppBaseUrl")
   Write-Ok "Secrets configurados"
 } catch {
   Write-Err "Erro ao configurar secrets: $_"
@@ -132,11 +152,7 @@ try {
 
 Write-Step "Fazendo deploy da função plan-notify"
 try {
-  if ($cliMode -eq "npx") {
-    & $cliCmd supabase functions deploy plan-notify --project-ref $ProjectRef | Out-Host
-  } else {
-    & $cliCmd functions deploy plan-notify --project-ref $ProjectRef | Out-Host
-  }
+  Invoke-SupabaseCli @("functions","deploy","plan-notify","--project-ref",$ProjectRef)
   Write-Ok "Deploy concluído"
 } catch {
   Write-Err "Erro no deploy: $_"

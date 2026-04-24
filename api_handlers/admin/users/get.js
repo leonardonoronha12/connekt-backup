@@ -41,14 +41,39 @@ export default async function handler(req, res) {
 
     let profilePhone = ''
     let profileName = ''
+    let profileActivePlan = ''
+    let profilePlanActivatedAt = null
     try {
-      const { data } = await admin
-        .from('profiles')
-        .select('profile_full_name,profile_phone')
-        .eq('user_id', userId)
-        .maybeSingle()
-      profilePhone = String(data?.profile_phone || '').trim()
-      profileName = String(data?.profile_full_name || '').trim()
+      const isMissingColumn = (err) => {
+        const msg = String(err?.message || err?.details || err || '').toLowerCase()
+        const code = String(err?.code || '').toUpperCase()
+        return code === 'PGRST204' || code === '42703' || (msg.includes('does not exist') && msg.includes('column')) || (msg.includes('schema cache') && msg.includes('could not find') && msg.includes('column'))
+      }
+      const selects = [
+        'profile_full_name,profile_phone,active_plan,plan_activated_at',
+        'profile_full_name,profile_phone,active_plan',
+        'profile_full_name,profile_phone',
+      ]
+      let lastErr = null
+      for (const sel of selects) {
+        const r = await admin
+          .from('profiles')
+          .select(sel)
+          .eq('user_id', userId)
+          .maybeSingle()
+        if (!r.error) {
+          const data = r.data || {}
+          profilePhone = String(data?.profile_phone || '').trim()
+          profileName = String(data?.profile_full_name || '').trim()
+          profileActivePlan = String(data?.active_plan || '').trim()
+          profilePlanActivatedAt = data?.plan_activated_at || null
+          lastErr = null
+          break
+        }
+        lastErr = r.error
+        if (!isMissingColumn(r.error)) break
+      }
+      if (lastErr) throw lastErr
     } catch (_) {}
 
     const disabled = computeDisabled(u)
@@ -134,6 +159,48 @@ export default async function handler(req, res) {
     }))
     const courses = courseEntitlements.filter((c) => !c.expired).map((c) => ({ courseId: c.courseId, expiresAt: c.expiresAt }))
 
+    let payments = []
+    let paymentsMissing = false
+    try {
+      const isMissingColumn = (err) => {
+        const msg = String(err?.message || err?.details || err || '').toLowerCase()
+        const code = String(err?.code || '').toUpperCase()
+        return code === 'PGRST204' || code === '42703' || msg.includes('schema cache') || (msg.includes('does not exist') && msg.includes('column'))
+      }
+      const isMissingTable = (err) => {
+        const msg = String(err?.message || err?.details || err || '').toLowerCase()
+        const code = String(err?.code || '').toUpperCase()
+        return code === '42P01' || msg.includes('does not exist') || msg.includes('relation') || msg.includes('could not find the table')
+      }
+      const selects = [
+        'id,plan_slug,cycle,status,paid_at,created_at,due_at,expires_at,valid_until,period_end,current_period_end',
+        'id,plan_slug,cycle,status,paid_at,created_at,expires_at,period_end,current_period_end',
+        'id,plan_slug,cycle,status,paid_at,created_at,due_at',
+        'id,plan_slug,cycle,status,paid_at,created_at',
+      ]
+      let data = []
+      let lastErr = null
+      for (const sel of selects) {
+        const r = await admin
+          .from('payments')
+          .select(sel)
+          .eq('user_id', userId)
+          .order('created_at', { ascending: false })
+          .limit(30)
+        if (!r.error) { data = Array.isArray(r.data) ? r.data : []; lastErr = null; break }
+        lastErr = r.error
+        if (isMissingTable(r.error)) { paymentsMissing = true; lastErr = null; break }
+        if (!isMissingColumn(r.error)) break
+      }
+      if (lastErr) throw lastErr
+      payments = Array.isArray(data) ? data : []
+    } catch (_) {
+      payments = []
+    }
+
+    const latestPayment = Array.isArray(payments) && payments.length ? payments[0] : null
+    const inferredPlanCycle = String(latestPayment?.cycle || meta?.plan_override?.cycle || '').trim()
+
     return json(res, 200, {
       ok: true,
       user: {
@@ -145,6 +212,11 @@ export default async function handler(req, res) {
         disabled,
         createdAt: u?.created_at || null,
         lastSignInAt: u?.last_sign_in_at || null,
+        activePlan: profileActivePlan || String(meta?.plan_override?.plan || '').trim(),
+        planActivatedAt: profilePlanActivatedAt || null,
+        planCycle: inferredPlanCycle || null,
+        payments,
+        paymentsMissing,
         courses,
         ownedCourses,
         courseEntitlements,

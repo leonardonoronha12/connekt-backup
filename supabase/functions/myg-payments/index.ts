@@ -21,6 +21,7 @@ type CreatePaymentInput = {
   userId: string
   planSlug: 'start' | 'pro' | 'premium' | string
   cycle: 'mensal' | 'anual' | 'monthly' | 'yearly' | string
+  forceNew?: boolean
 }
 
 type MygAuthResponse = {
@@ -120,6 +121,7 @@ async function getMygAuthToken(): Promise<string | null> {
 
 async function createPaymentLink(input: CreatePaymentInput) {
   const { userId, planSlug, cycle } = input
+  const forceNew = Boolean(input?.forceNew)
   // Se supabase não estiver configurado, seguir sem idempotência no banco
 
   const amount_cents = getAmountCents(planSlug, cycle)
@@ -129,7 +131,7 @@ async function createPaymentLink(input: CreatePaymentInput) {
 
   // Idempotência: initiated/pending
   let existing: any[] | null = null
-  if (supabase) {
+  if (supabase && !forceNew) {
     const { data, error: existingErr } = await supabase
       .from('payments')
       .select('*')
@@ -261,6 +263,7 @@ serve(async (req) => {
         userId: String(body?.userId || ''),
         planSlug: String(body?.planSlug || ''),
         cycle: String(body?.cycle || ''),
+        forceNew: Boolean(body?.forceNew),
       }
       if (!input.userId || !input.planSlug || !input.cycle) {
         return withCors(new Response(JSON.stringify({ error: 'missing_parameters' }), { status: 400, headers: { 'Content-Type': 'application/json' } }))

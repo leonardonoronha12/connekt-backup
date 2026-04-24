@@ -23,6 +23,38 @@ function randomId() {
   return `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`
 }
 
+function randomToken() {
+  try {
+    const c = typeof crypto !== 'undefined' ? crypto : null
+    if (c && typeof c.getRandomValues === 'function') {
+      const bytes = new Uint8Array(32)
+      c.getRandomValues(bytes)
+      let s = ''
+      for (let i = 0; i < bytes.length; i += 1) s += String.fromCharCode(bytes[i])
+      const b64 = btoa(s)
+      return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
+    }
+  } catch (_) {}
+  return `${randomId()}_${randomId()}`
+}
+
+async function sha256Base64Url(input) {
+  try {
+    const c = typeof crypto !== 'undefined' ? crypto : null
+    if (!c?.subtle) return ''
+    const enc = new TextEncoder()
+    const data = enc.encode(String(input || ''))
+    const hash = await c.subtle.digest('SHA-256', data)
+    const bytes = new Uint8Array(hash)
+    let s = ''
+    for (let i = 0; i < bytes.length; i += 1) s += String.fromCharCode(bytes[i])
+    const b64 = btoa(s)
+    return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
+  } catch (_) {
+    return ''
+  }
+}
+
 export function getOrCreateDeviceId() {
   const ls = safeGetLocalStorage()
   if (!ls) return randomId()
@@ -138,6 +170,9 @@ function extractDeviceAccessFromMeta(meta) {
       label: obj.label || obj.device_label || obj.deviceLabel || null,
       user_agent: obj.user_agent || obj.userAgent || null,
       requested_at: obj.requested_at || obj.requestedAt || null,
+      approval_token_hash: obj.approval_token_hash || obj.approvalTokenHash || null,
+      approval_expires_at: obj.approval_expires_at || obj.approvalExpiresAt || null,
+      approval_email_sent_at: obj.approval_email_sent_at || obj.approvalEmailSentAt || null,
     }
   }
   return {
@@ -193,6 +228,52 @@ export async function requestDeviceAccess({ deviceType } = {}) {
   })
   if (!r.ok) return r
   return { ok: true, pending: r.deviceAccess?.pending || null, deviceId, deviceType: dt }
+}
+
+export async function requestDeviceAccessEmailApproval({ deviceType, ttlMs } = {}) {
+  const token = randomToken()
+  const tokenHash = await sha256Base64Url(token)
+  if (!tokenHash) return { ok: false, error: 'hash_unavailable' }
+  const deviceId = getOrCreateDeviceId()
+  const info = getDeviceInfo()
+  const dt = String(deviceType || info.type || '').trim().toLowerCase() === 'mobile' ? 'mobile' : 'desktop'
+  const requestedAt = nowIso()
+  const expiresAt = addMsIso(Number.isFinite(Number(ttlMs)) ? Number(ttlMs) : 15 * 60 * 1000)
+  const r = await writeDeviceAccessToMeta({
+    pending: {
+      device_type: dt,
+      device_id: deviceId,
+      label: info.label,
+      user_agent: info.userAgent,
+      requested_at: requestedAt,
+      approval_token_hash: tokenHash,
+      approval_expires_at: expiresAt,
+      approval_email_sent_at: nowIso(),
+    },
+  })
+  if (!r.ok) return r
+  return { ok: true, token, tokenHash, pending: r.deviceAccess?.pending || null, deviceId, deviceType: dt, expiresAt }
+}
+
+export async function confirmPendingDeviceAccessByEmailToken({ token } = {}) {
+  const rawToken = String(token || '').trim()
+  if (!rawToken) return { ok: false, error: 'missing_token' }
+  const state = await getDeviceAccessState()
+  if (!state.ok) return state
+  const pending = state.state?.pending || null
+  if (!pending?.device_id) return { ok: false, error: 'missing_pending' }
+  const currentDeviceId = getOrCreateDeviceId()
+  if (String(pending.device_id) !== String(currentDeviceId)) return { ok: false, error: 'different_device' }
+  const expiresAtMs = pending?.approval_expires_at ? new Date(pending.approval_expires_at).getTime() : 0
+  if (expiresAtMs && Number.isFinite(expiresAtMs) && expiresAtMs <= Date.now()) return { ok: false, error: 'token_expired' }
+  const expected = String(pending?.approval_token_hash || '').trim()
+  if (!expected) return { ok: false, error: 'missing_token_hash' }
+  const got = await sha256Base64Url(rawToken)
+  if (!got) return { ok: false, error: 'hash_unavailable' }
+  if (got !== expected) return { ok: false, error: 'invalid_token' }
+  const approved = await approvePendingDeviceAccess()
+  if (!approved?.ok) return { ok: false, error: approved?.error || 'approve_failed' }
+  return { ok: true, approved: true }
 }
 
 export async function approvePendingDeviceAccess() {
@@ -517,6 +598,8 @@ export const deviceSessionService = {
   enforceDeviceLimit,
   getDeviceAccessState,
   requestDeviceAccess,
+  requestDeviceAccessEmailApproval,
+  confirmPendingDeviceAccessByEmailToken,
   approvePendingDeviceAccess,
   denyPendingDeviceAccess,
   unregisterDeviceType,

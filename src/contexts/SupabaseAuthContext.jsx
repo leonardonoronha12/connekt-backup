@@ -903,6 +903,87 @@ export const AuthProvider = ({ children }) => {
     }
   }, [session?.user?.id, signOut])
 
+  const sendDeviceLockEmail = useCallback(async () => {
+    const userId = session?.user?.id
+    const email = String(session?.user?.email || '').trim()
+    if (!userId) return { ok: false, error: 'missing_user' }
+    if (!email) return { ok: false, error: 'missing_email' }
+    try {
+      const requested = await deviceSessionService.requestDeviceAccessEmailApproval()
+      if (!requested?.ok) return { ok: false, error: requested?.error || 'request_failed' }
+
+      const baseUrl = (() => {
+        try {
+          const envUrl = String(import.meta?.env?.VITE_APP_BASE_URL || import.meta?.env?.VITE_SITE_URL || '').trim()
+          if (envUrl) return new URL(envUrl).origin
+        } catch (_) {}
+        try { return String(window.location.origin || '').trim() } catch (_) { return '' }
+      })()
+
+      const link = (() => {
+        try {
+          const u = new URL(baseUrl || window.location.origin)
+          u.pathname = '/'
+          u.searchParams.set('device_confirm', String(requested.token))
+          return u.toString()
+        } catch (_) {
+          return `${baseUrl || ''}/?device_confirm=${encodeURIComponent(String(requested.token || ''))}`
+        }
+      })()
+
+      const { data } = await supabase.auth.getSession()
+      const accessToken = String(data?.session?.access_token || '').trim()
+      if (!accessToken) return { ok: false, error: 'missing_access_token' }
+
+      const info = deviceSessionService.getDeviceInfo()
+      const deviceLabel = String(info?.label || 'novo dispositivo').trim()
+      const subject = 'Confirmar novo dispositivo'
+      const text = `Recebemos uma solicitação para acessar sua conta em ${deviceLabel}.\n\nPara confirmar este dispositivo, abra o link:\n${link}\n\nSe você não reconhece essa solicitação, ignore este e-mail.`
+      const html = `<div style="font-family:Arial,sans-serif;line-height:1.5"><h2 style="margin:0 0 12px">Confirmar novo dispositivo</h2><p>Recebemos uma solicitação para acessar sua conta em <strong>${deviceLabel}</strong>.</p><p><a href="${link}" style="display:inline-block;padding:12px 16px;background:#0047BB;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">Confirmar este dispositivo</a></p><p style="font-size:12px;color:#6B7280">Se você não reconhece essa solicitação, ignore este e-mail.</p></div>`
+
+      const r = await fetch('/api/send-email', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ to: email, subject, text, html }),
+      })
+      const body = await r.json().catch(() => ({}))
+      if (!r.ok) return { ok: false, error: body?.error || body?.message || 'send_failed' }
+
+      setDeviceLock((prev) => ({
+        ...(prev || {}),
+        reason: 'awaiting_approval',
+        deviceType: requested.deviceType || (prev?.deviceType || null),
+        pending: requested.pending || prev?.pending || null,
+      }))
+      return { ok: true, sent: true }
+    } catch (e) {
+      return { ok: false, error: e?.message || String(e) }
+    }
+  }, [session?.user?.id, session?.user?.email])
+
+  const confirmDeviceLockFromEmail = useCallback(async (token) => {
+    const userId = session?.user?.id
+    if (!userId) return { ok: false, error: 'missing_user' }
+    const raw = String(token || '').trim()
+    if (!raw) return { ok: false, error: 'missing_token' }
+    const confirmed = await deviceSessionService.confirmPendingDeviceAccessByEmailToken({ token: raw })
+    if (!confirmed?.ok) return { ok: false, error: confirmed?.error || 'confirm_failed' }
+    const claimed = await deviceSessionService.claimDevice({ userId })
+    if (!claimed?.ok) return { ok: false, error: claimed?.error || 'claim_failed' }
+    setDeviceLock(null)
+    try {
+      const u = new URL(window.location.href)
+      if (u.searchParams.get('device_confirm')) {
+        u.searchParams.delete('device_confirm')
+        window.history.replaceState({}, '', `${u.pathname}${u.search}${u.hash}`)
+      }
+    } catch (_) {}
+    return { ok: true }
+  }, [session?.user?.id])
+
   const refreshPendingDeviceRequest = useCallback(async () => {
     try {
       const currentUserId = user?.id
@@ -1250,6 +1331,8 @@ export const AuthProvider = ({ children }) => {
     approveDeviceRequest,
     denyDeviceRequest,
     resolveDeviceLock,
+    sendDeviceLockEmail,
+    confirmDeviceLockFromEmail,
     signUp,
     signUpWithEmailConfirmation,
     signIn,
@@ -1258,7 +1341,7 @@ export const AuthProvider = ({ children }) => {
     resetPassword,
     verifyEmailCode,
     resendVerificationCode,
-  }), [user, session, loading, deviceLock, pendingDeviceRequest, approveDeviceRequest, denyDeviceRequest, resolveDeviceLock, signUp, signUpWithEmailConfirmation, signIn, signOut, signInWithOAuth, resetPassword, verifyEmailCode, resendVerificationCode]);
+  }), [user, session, loading, deviceLock, pendingDeviceRequest, approveDeviceRequest, denyDeviceRequest, resolveDeviceLock, sendDeviceLockEmail, confirmDeviceLockFromEmail, signUp, signUpWithEmailConfirmation, signIn, signOut, signInWithOAuth, resetPassword, verifyEmailCode, resendVerificationCode]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
