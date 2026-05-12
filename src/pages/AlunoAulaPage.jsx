@@ -1024,10 +1024,34 @@ export default function AlunoAulaPage() {
       null
     const vis = String(mod?.visibility || '').trim()
     const cents = Number(mod?.priceCents || 0)
-    const paid = vis === 'Paga' || (Number.isFinite(cents) && cents > 0)
+    const mode = (() => {
+      if (vis === 'Gratuita') return 'free'
+      if (vis === 'Gratuita para alunos do curso') return 'course_students_free'
+      if (vis === 'Paga') return 'paid'
+      if (Number.isFinite(cents) && cents > 0) return 'paid'
+      return 'free'
+    })()
     const effectiveMid = String(mod?.id || mod?.module_id || mod?.moduleId || mid || '').trim()
     const ownedKey = effectiveMid ? `connekt_module_owned:${cid}:${effectiveMid}` : ''
-    const owned = isOwnedCourse || !paid || (ownedKey ? safeLsGet(ownedKey) === '1' : true)
+    const owned = (() => {
+      if (mode === 'free') return true
+      if (mode === 'course_students_free') {
+        const raw = mod?.freeCourseIds || mod?.free_course_ids || []
+        const ids = (Array.isArray(raw) ? raw : [])
+          .map((v) => String(v || '').trim())
+          .filter(Boolean)
+          .map((v) => (v === 'self' ? cid : v))
+        const hasCourse = ids.some((id) => {
+          const c = String(id || '').trim()
+          if (!c) return false
+          if (c === cid && isOwnedCourse) return true
+          return safeLsGet(`connekt_course_owned:${c}`) === '1'
+        })
+        if (hasCourse) return true
+      }
+      return ownedKey ? safeLsGet(ownedKey) === '1' : false
+    })()
+    const paid = (mode === 'paid' || mode === 'course_students_free') && (Number.isFinite(cents) && cents > 0)
     return { paid, owned, moduleId: effectiveMid }
   }, [courseId, courseRow, isDemoStudent, isOwnedCourse, moduleId, moduleIndex])
   const gateRedirectRef = useRef(false)
@@ -1344,6 +1368,50 @@ export default function AlunoAulaPage() {
   const current = useMemo(() => {
     return pickModuleAndLesson(courseRow, { moduleId, moduleIndex, lessonId, lessonIndex })
   }, [courseRow, moduleId, moduleIndex, lessonId, lessonIndex])
+
+  const currentLessonPaywall = useMemo(() => {
+    const cid = String(courseId || '').trim()
+    const mid = String(current?.moduleId || '').trim()
+    const lid = String(current?.lessonId || '').trim()
+    if (!cid || !mid || !lid) return { blocked: false }
+    if (isDemoStudent) return { blocked: false }
+    const lesson = current?.lesson || null
+    const vis = String(lesson?.visibility || '').trim()
+    const cents = Number(lesson?.priceCents || 0)
+    const mode = (() => {
+      if (vis === 'Gratuita') return 'free'
+      if (vis === 'Gratuita para alunos do curso') return 'course_students_free'
+      if (vis === 'Paga') return 'paid'
+      if (Number.isFinite(cents) && cents > 0) return 'paid'
+      return 'free'
+    })()
+    if (mode === 'free') return { blocked: false }
+    const ownedKey = `connekt_lesson_owned:${cid}:${mid}:${lid}`
+    const hasLesson = safeLsGet(ownedKey) === '1'
+    if (mode === 'course_students_free' && isOwnedCourse) return { blocked: false }
+    if (hasLesson) return { blocked: false }
+    const reason = (mode === 'course_students_free' && !Number.isFinite(cents)) || (mode === 'course_students_free' && !(cents > 0)) ? 'course' : 'lesson'
+    return { blocked: true, reason, courseId: cid, moduleId: mid, lessonId: lid }
+  }, [courseId, current, isDemoStudent, isOwnedCourse])
+
+  useEffect(() => {
+    const cid = String(currentLessonPaywall?.courseId || '').trim()
+    const mid = String(currentLessonPaywall?.moduleId || '').trim()
+    const lid = String(currentLessonPaywall?.lessonId || '').trim()
+    if (!currentLessonPaywall?.blocked) return
+    if (!cid || !mid || !lid) return
+    try {
+      const title = currentLessonPaywall?.reason === 'course' ? 'Aula restrita' : 'Aula paga'
+      const desc = currentLessonPaywall?.reason === 'course'
+        ? 'Disponível apenas para alunos do curso.'
+        : 'Compre a aula para acessar.'
+      toast({ title, description: desc })
+    } catch (_) {}
+    const qs = new URLSearchParams()
+    qs.set('moduleId', mid)
+    qs.set('lessonId', lid)
+    navigateTo(`/aluno/curso/${encodeURIComponent(cid)}?${qs.toString()}`)
+  }, [currentLessonPaywall])
 
   const currentSimuladosRefs = useMemo(() => {
     const meta = getCourseMeta(courseRow)
@@ -1874,10 +1942,35 @@ export default function AlunoAulaPage() {
       const moduleKey = mid ? `id:${mid}` : `idx:${i}`
       const vis = String(mod?.visibility || '').trim()
       const cents = Number(mod?.priceCents || 0)
-      const paid = vis === 'Paga' || (Number.isFinite(cents) && cents > 0)
+      const mode = (() => {
+        if (vis === 'Gratuita') return 'free'
+        if (vis === 'Gratuita para alunos do curso') return 'course_students_free'
+        if (vis === 'Paga') return 'paid'
+        if (Number.isFinite(cents) && cents > 0) return 'paid'
+        return 'free'
+      })()
       const ownedKey = (cid && mid) ? `connekt_module_owned:${cid}:${mid}` : ''
-      const owned = isDemoStudent || isOwnedCourse || !paid || (ownedKey ? safeLsGet(ownedKey) === '1' : true)
-      const lockedModule = paid && !owned
+      const owned = (() => {
+        if (isDemoStudent) return true
+        if (mode === 'free') return true
+        if (mode === 'course_students_free') {
+          const raw = mod?.freeCourseIds || mod?.free_course_ids || []
+          const ids = (Array.isArray(raw) ? raw : [])
+            .map((v) => String(v || '').trim())
+            .filter(Boolean)
+            .map((v) => (v === 'self' ? cid : v))
+          const hasCourse = ids.some((id) => {
+            const c = String(id || '').trim()
+            if (!c) return false
+            if (c === cid && isOwnedCourse) return true
+            return safeLsGet(`connekt_course_owned:${c}`) === '1'
+          })
+          if (hasCourse) return true
+        }
+        return ownedKey ? safeLsGet(ownedKey) === '1' : false
+      })()
+      const paid = (mode === 'paid') || (mode === 'course_students_free' && (Number.isFinite(cents) && cents > 0))
+      const lockedModule = mode !== 'free' && !owned
       const lessons = getModuleLessons(mod)
       const lessonRows = []
       let completedCount = 0
@@ -1927,13 +2020,15 @@ export default function AlunoAulaPage() {
         subtitle: `${completedCount} de ${total} aulas concluídas`,
         percent,
         locked: lockedModule,
-        badgeText: paid
-          ? (owned
+        badgeText: mode === 'free'
+          ? ''
+          : (owned
               ? 'Adquirido'
-              : (cents > 0 ? (() => {
-                try { return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(cents / 100) } catch (_) { return `R$ ${(cents / 100).toFixed(2)}` }
-              })() : 'Pago'))
-          : '',
+              : (mode === 'course_students_free' && !(Number.isFinite(cents) && cents > 0))
+                  ? 'Alunos do curso'
+                  : (cents > 0 ? (() => {
+                    try { return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(cents / 100) } catch (_) { return `R$ ${(cents / 100).toFixed(2)}` }
+                  })() : 'Pago')),
         lessons: lessonRows,
       })
     }

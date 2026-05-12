@@ -383,8 +383,30 @@ export default function AlunoSimuladoAcessoPage() {
     const n = Number(safeLsGet(progressKey) || 0)
     return Number.isFinite(n) ? n : 0
   }, [progressKey, ownershipTick])
-  const isPaidSimulado = Boolean(simulado?.is_paid) || Math.max(0, Number(simulado?.price || 0)) > 0
-  const isOwnedSimulado = !isPaidSimulado || safeLsGet(ownedKey) === '1' || ownedSimuladoIdSet.has(currentSimId)
+  const simAccessMode = useMemo(() => {
+    const settings = simulado?.settings && typeof simulado.settings === 'object' ? simulado.settings : {}
+    const raw = String(settings?.accessMode || settings?.access_mode || '').trim()
+    if (raw === 'paid' || raw === 'free' || raw === 'course_students_free') return raw
+    const paid = Boolean(simulado?.is_paid) || Math.max(0, Number(simulado?.price || 0)) > 0
+    return paid ? 'paid' : 'free'
+  }, [simulado])
+  const simPriceValue = useMemo(() => {
+    const n = Math.max(0, Number(simulado?.price || 0))
+    return Number.isFinite(n) ? n : 0
+  }, [simulado])
+  const hasCourseEntitlementForSimulado = useMemo(() => {
+    const settings = simulado?.settings && typeof simulado.settings === 'object' ? simulado.settings : {}
+    const idsRaw = Array.isArray(settings?.courseIds) ? settings.courseIds : (Array.isArray(simulado?.course_ids) ? simulado.course_ids : [])
+    const ids = (Array.isArray(idsRaw) ? idsRaw : []).map((v) => String(v || '').trim()).filter(Boolean)
+    for (const cid of ids) {
+      if (safeLsGet(`connekt_course_owned:${cid}`) === '1') return true
+    }
+    return false
+  }, [simulado, ownershipTick])
+  const freeForUser = simAccessMode === 'free' || (simAccessMode === 'course_students_free' && hasCourseEntitlementForSimulado)
+  const isOwnedSimulado = freeForUser || safeLsGet(ownedKey) === '1' || ownedSimuladoIdSet.has(currentSimId)
+  const isRestrictedCourseOnly = simAccessMode === 'course_students_free' && !hasCourseEntitlementForSimulado && simPriceValue <= 0
+  const canBuySimulado = !isOwnedSimulado && !isRestrictedCourseOnly && simAccessMode !== 'free' && simPriceValue > 0
   const isPausedSimulado = isOwnedSimulado && progressValue > 0 && progressValue < 100
   const finishKey = currentSimId ? `connekt_simulado_finish_${currentSimId}` : ''
   const hasFinishedSimulado = useMemo(() => {
@@ -437,7 +459,7 @@ export default function AlunoSimuladoAcessoPage() {
       if (!currentSimId) return
       if (!simulado) return
       if (isOwnedSimulado) return
-      if (!isPaidSimulado) return
+      if (!canBuySimulado) return
       const simTitle = String(simulado?.title || '').trim()
       if (!simTitle) return
       try {
@@ -480,7 +502,7 @@ export default function AlunoSimuladoAcessoPage() {
     }
     run()
     return () => { active = false }
-  }, [params.demo, user?.id, currentSimId, simulado?.id, simulado?.title, isPaidSimulado, isOwnedSimulado, ownedKey])
+  }, [params.demo, user?.id, currentSimId, simulado?.id, simulado?.title, canBuySimulado, isOwnedSimulado, ownedKey])
 
   const primaryCtaLabel = (() => {
     if (loading) return 'Carregando...'
@@ -488,7 +510,8 @@ export default function AlunoSimuladoAcessoPage() {
     if (verifyLoading) return 'Verificando pagamento...'
     if (!currentSimId) return 'Selecione um simulado'
     if (!simulado && !params.demo) return 'Simulado não encontrado'
-    if (!isOwnedSimulado && isPaidSimulado) return 'Comprar simulado'
+    if (!isOwnedSimulado && isRestrictedCourseOnly) return 'Apenas alunos do curso'
+    if (!isOwnedSimulado && canBuySimulado) return 'Comprar simulado'
     if (availabilityWindow.beforeStart) return 'Agendado'
     if (availabilityWindow.afterEnd) return hasFinishedSimulado ? 'Ver resultado' : 'Encerrado'
     if (isPausedSimulado) return 'Voltar para o simulado'
@@ -502,12 +525,21 @@ export default function AlunoSimuladoAcessoPage() {
     || (!params.demo && !simulado)
     || availabilityWindow.beforeStart
     || (availabilityWindow.afterEnd && !hasFinishedSimulado)
+    || isRestrictedCourseOnly
   const currentPath = typeof window !== 'undefined' ? window.location.pathname : '/aluno/simulados/acesso'
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
 
   const startSimuladoCheckout = async () => {
     if (!currentSimId) return
     setCheckoutError('')
+    if (isRestrictedCourseOnly) {
+      setCheckoutError('Este simulado está disponível apenas para alunos dos cursos vinculados.')
+      return
+    }
+    if (!canBuySimulado) {
+      setCheckoutError('Este simulado não está à venda no momento.')
+      return
+    }
     setCheckoutLoading(true)
     try {
       const token = (await supabase.auth.getSession().catch(() => ({ data: null })))?.data?.session?.access_token || ''

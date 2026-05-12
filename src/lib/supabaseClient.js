@@ -176,6 +176,47 @@ function isRetryableNetworkError(err) {
   )
 }
 
+function createTimeoutFetch(baseFetch, timeouts) {
+  const cfg = timeouts && typeof timeouts === 'object' ? timeouts : {}
+  const defaultMs = Math.max(0, Number(cfg.defaultMs || 0) || 0)
+  const authMs = Math.max(0, Number(cfg.authMs || 0) || 0)
+  const storageMs = Math.max(0, Number(cfg.storageMs || 0) || 0)
+  const pickMs = (input) => {
+    let url = ''
+    try {
+      if (typeof input === 'string') url = input
+      else if (input && typeof input === 'object' && typeof input.url === 'string') url = input.url
+    } catch (_) { url = '' }
+    const u = String(url || '')
+    if (authMs && u.includes('/auth/v1/')) return authMs
+    if (storageMs && u.includes('/storage/v1/')) return storageMs
+    return defaultMs
+  }
+  if (!defaultMs && !authMs && !storageMs) return baseFetch
+  return async (input, init = {}) => {
+    const ms = pickMs(input)
+    const controller = new AbortController()
+    const t = ms ? setTimeout(() => controller.abort(), ms) : null
+    const onAbort = () => controller.abort()
+    try {
+      const signal = init?.signal
+      if (signal) {
+        if (signal.aborted) controller.abort()
+        else {
+          try { signal.addEventListener('abort', onAbort, { once: true }) } catch (_) {}
+        }
+      }
+      return await baseFetch(input, { ...init, signal: controller.signal })
+    } finally {
+      try { if (t) clearTimeout(t) } catch (_) {}
+      try {
+        const signal = init?.signal
+        if (signal) signal.removeEventListener('abort', onAbort)
+      } catch (_) {}
+    }
+  }
+}
+
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms))
 }
@@ -306,10 +347,21 @@ function createSupabaseClient(flowType) {
   const storageKey = wantsIsolatedStorage && projectRef ? `sb-${projectRef}-auth-token-implicit` : undefined
   const persistSession = wantsIsolatedStorage ? false : true
   const autoRefreshToken = wantsIsolatedStorage ? false : true
+  const timeoutDefaults = (() => {
+    const read = (k, fallback) => {
+      const raw = import.meta.env?.[k] || ''
+      const n = Number(raw)
+      return Number.isFinite(n) && n > 0 ? n : fallback
+    }
+    const defaultMs = read('VITE_SUPABASE_FETCH_TIMEOUT_MS', read('VITE_FETCH_TIMEOUT_MS', 15000))
+    const authMs = read('VITE_SUPABASE_AUTH_FETCH_TIMEOUT_MS', 45000)
+    const storageMs = read('VITE_SUPABASE_STORAGE_FETCH_TIMEOUT_MS', 60000)
+    return { defaultMs, authMs, storageMs }
+  })()
 
   const client = createClient(rawUrl, rawAnon, {
     global: {
-      fetch: createRetryingFetch(fetch),
+      fetch: createRetryingFetch(createTimeoutFetch(fetch, timeoutDefaults)),
     },
     auth: {
       storage: createDualStorage(),
@@ -320,17 +372,6 @@ function createSupabaseClient(flowType) {
       detectSessionInUrl: false,
     },
   })
-
-  try {
-    const auth = client.auth
-    const originalGetSession = auth.getSession.bind(auth)
-    let inFlight = null
-    auth.getSession = (...args) => {
-      if (inFlight) return inFlight
-      inFlight = Promise.resolve(originalGetSession(...args)).finally(() => { inFlight = null })
-      return inFlight
-    }
-  } catch (_) {}
 
   return client
 }

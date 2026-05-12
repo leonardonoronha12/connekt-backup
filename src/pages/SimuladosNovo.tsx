@@ -71,6 +71,32 @@ export default function NovoSimuladoPage() {
     return isNaN(num) ? 0 : Math.round(num * 100) / 100
   }
 
+  const withTimeout = async <T,>(promise: Promise<T>, ms: number, label: string) => {
+    let t: any = null
+    try {
+      return await Promise.race([
+        promise,
+        new Promise<T>((_, reject) => {
+          t = setTimeout(() => reject(new Error(label)), ms)
+        }),
+      ])
+    } finally {
+      try { if (t) clearTimeout(t) } catch (_) {}
+    }
+  }
+
+  const fetchJsonWithTimeout = async (url: string, init: RequestInit, ms: number) => {
+    const controller = new AbortController()
+    const t = setTimeout(() => controller.abort(), ms)
+    try {
+      const r = await fetch(url, { ...init, signal: controller.signal })
+      const body = await r.json().catch(() => ({}))
+      return { r, body }
+    } finally {
+      try { clearTimeout(t) } catch (_) {}
+    }
+  }
+
   async function handleCreateSimulado() {
     try {
       if (isSaving) return
@@ -79,7 +105,7 @@ export default function NovoSimuladoPage() {
       // Verificar autenticação antes de salvar
       let currentUserId: string | null = null
       try {
-        const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+        const { data: sessionData, error: sessionError } = await withTimeout(supabase.auth.getSession(), 10000, 'auth_session_timeout')
         if (sessionError) {
           console.error("Erro ao verificar sessão:", sessionError)
         }
@@ -104,6 +130,20 @@ export default function NovoSimuladoPage() {
         return
       }
 
+      const selectedCourseIds = (selectedCourses || []).map((c: any) => c?.id).filter(Boolean)
+      if (accessMode === 'course_students_free' && selectedCourseIds.length === 0) {
+        toast({
+          title: "Selecione ao menos 1 curso",
+          description: "Para deixar gratuito para alunos de determinados cursos, selecione os cursos na seção “Cursos”.",
+          variant: "destructive",
+        })
+        try {
+          document.getElementById('simulado-courses-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        } catch (_) {}
+        setIsSaving(false)
+        return
+      }
+
       const priceNumber = parseBRLToNumber(simulationPrice)
       const coverImageUrl = "/simulado-cover.svg"
       const availabilityISO = (() => {
@@ -123,7 +163,7 @@ export default function NovoSimuladoPage() {
         const payload: any = {
         title: titleTrimmed,
         cover_image_url: coverImageUrl,
-        is_paid: Boolean(isPaid) || priceNumber > 0,
+        is_paid: accessMode === 'paid' || priceNumber > 0,
         price: priceNumber,
         availability_date: availabilityISO,
         duration_minutes: durationMinutes,
@@ -133,7 +173,7 @@ export default function NovoSimuladoPage() {
         user_id: currentUserId,
           settings: {
           // Redundância para compatibilidade com schemas antigos
-          courseIds: (selectedCourses || []).map((c: any) => c?.id).filter(Boolean),
+          courseIds: selectedCourseIds,
           questionIds: (selectedQuestions || []).map((q: any) => q?.id).filter(Boolean),
           secondChance,
           shuffleQuestions,
@@ -145,6 +185,7 @@ export default function NovoSimuladoPage() {
           subcategories: selectedSubcategories,
           tags: selectedTags,
           description: (description || "").trim(),
+          accessMode,
         },
       }
 
@@ -183,11 +224,15 @@ export default function NovoSimuladoPage() {
       // Em edição, garantir que o registro existe e está acessível antes de atualizar
       if (isEditing && editId) {
         try {
-          const { data: existing, error: selectErr } = await supabase
-            .from("simulados")
-            .select("id")
-            .eq("id", editId)
-            .single()
+          const { data: existing, error: selectErr } = await withTimeout(
+            supabase
+              .from("simulados")
+              .select("id")
+              .eq("id", editId)
+              .single(),
+            15000,
+            'simulado_precheck_timeout'
+          )
           if (selectErr || !existing) {
             toast({
               title: "Registro não acessível para edição",
@@ -210,11 +255,11 @@ export default function NovoSimuladoPage() {
       }
 
       let attemptPayload = payload
-      ;({ data: savedRow, error, op } = await attemptUpsert(attemptPayload))
+      ;({ data: savedRow, error, op } = await withTimeout(attemptUpsert(attemptPayload), 20000, 'simulado_upsert_timeout'))
       if (error && isMissingColumn(error, 'produtor_id')) {
         attemptPayload = { ...attemptPayload }
         delete (attemptPayload as any).produtor_id
-        ;({ data: savedRow, error, op } = await attemptUpsert(attemptPayload))
+        ;({ data: savedRow, error, op } = await withTimeout(attemptUpsert(attemptPayload), 20000, 'simulado_upsert_timeout'))
       }
 
       if (error) {
@@ -274,7 +319,12 @@ export default function NovoSimuladoPage() {
       }
     } catch (err: any) {
       console.error("Exceção ao criar simulado:", err)
-      toast({ title: "Falha inesperada", description: err?.message || "Tente novamente mais tarde.", variant: "destructive" })
+      const msg = String(err?.message || err || '')
+      if (msg === 'auth_session_timeout' || msg === 'simulado_precheck_timeout' || msg === 'simulado_upsert_timeout') {
+        toast({ title: "Tempo excedido", description: "A plataforma demorou para responder. Atualize a página e tente novamente.", variant: "destructive" })
+      } else {
+        toast({ title: "Falha inesperada", description: err?.message || "Tente novamente mais tarde.", variant: "destructive" })
+      }
     } finally {
       setIsSaving(false)
     }
@@ -392,7 +442,7 @@ export default function NovoSimuladoPage() {
   const [courseFilterPickerOpen, setCourseFilterPickerOpen] = useState<null | 'category' | 'subcategory' | 'tag'>(null)
 
   // Payment & availability
-  const [isPaid, setIsPaid] = useState(false)
+  const [accessMode, setAccessMode] = useState<'free' | 'paid' | 'course_students_free'>('free')
   const [simulationPrice, setSimulationPrice] = useState("0,00")
   const [availabilityDate, setAvailabilityDate] = useState("")
   const [availabilityDateDisplay, setAvailabilityDateDisplay] = useState("")
@@ -437,7 +487,12 @@ export default function NovoSimuladoPage() {
         if (draft && typeof draft === 'object') {
           if (typeof draft.title === 'string') setTitle(draft.title)
           if (typeof draft.description === 'string') setDescription(draft.description)
-          if (typeof draft.isPaid === 'boolean') setIsPaid(draft.isPaid)
+          if (typeof draft.accessMode === 'string') {
+            const m = String(draft.accessMode || '').trim()
+            if (m === 'paid' || m === 'course_students_free' || m === 'free') setAccessMode(m as any)
+          } else if (typeof draft.isPaid === 'boolean') {
+            setAccessMode(draft.isPaid ? 'paid' : 'free')
+          }
           if (typeof draft.simulationPrice === 'string') setSimulationPrice(draft.simulationPrice)
           if (typeof draft.availabilityDate === 'string') setAvailabilityDate(draft.availabilityDate)
           if (typeof draft.availabilityDateDisplay === 'string') setAvailabilityDateDisplay(draft.availabilityDateDisplay)
@@ -502,7 +557,13 @@ export default function NovoSimuladoPage() {
           })
           setTitle(data.title || '')
           setDescription((data as any)?.description || (data as any)?.settings?.description || '')
-          setIsPaid(Boolean(data.is_paid))
+          const loadedModeRaw =
+            (typeof (data as any)?.settings?.accessMode === 'string' ? (data as any).settings.accessMode : null) ||
+            (typeof (data as any)?.settings?.access_mode === 'string' ? (data as any).settings.access_mode : null) ||
+            ''
+          const loadedMode = String(loadedModeRaw || '').trim()
+          if (loadedMode === 'paid' || loadedMode === 'course_students_free' || loadedMode === 'free') setAccessMode(loadedMode as any)
+          else setAccessMode(Boolean(data.is_paid) ? 'paid' : 'free')
           setSimulationPrice(typeof data.price === 'number' ? String(data.price).replace('.', ',') : (data.price ?? '0,00'))
           const iso = data.availability_date ? new Date(data.availability_date).toISOString().slice(0,10) : ''
           setAvailabilityDate(iso)
@@ -1030,18 +1091,22 @@ export default function NovoSimuladoPage() {
       setProducerCoursesLoading(true)
       setProducerCoursesError(null)
       try {
-        const { data } = await supabase.auth.getSession()
+        const { data } = await withTimeout(supabase.auth.getSession(), 10000, 'courses_session_timeout')
         const uid = String(data?.session?.user?.id || '').trim()
         if (!uid) {
           if (active) setProducerCourses([])
           return
         }
-        const { data: rows, error } = await supabase
-          .from('courses')
-          .select('id,title,data,user_id,created_at')
-          .eq('user_id', uid)
-          .order('created_at', { ascending: false })
-          .limit(200)
+        const { data: rows, error } = await withTimeout(
+          supabase
+            .from('courses')
+            .select('id,title,data,user_id,created_at')
+            .eq('user_id', uid)
+            .order('created_at', { ascending: false })
+            .limit(200),
+          20000,
+          'courses_select_timeout'
+        )
         if (!active) return
         if (error) throw error
         const list = (Array.isArray(rows) ? rows : []).map((r: any) => ({
@@ -1052,19 +1117,26 @@ export default function NovoSimuladoPage() {
         setProducerCourses(list)
       } catch (e: any) {
         if (!active) return
+        const msg = String(e?.message || e || '')
+        if (msg === 'courses_session_timeout' || msg === 'courses_select_timeout') {
+          setProducerCoursesError('Tempo excedido ao carregar cursos')
+          setProducerCourses([])
+          return
+        }
         if (!isBlockedRead(e)) {
           setProducerCourses([])
           return
         }
         try {
-          const { data } = await supabase.auth.getSession()
+          const { data } = await withTimeout(supabase.auth.getSession(), 10000, 'courses_session_timeout')
           const uid = String(data?.session?.user?.id || '').trim()
           if (!uid) { setProducerCourses([]); return }
           const token = await getAccessToken()
-          const r = await fetch(`/api/producer?type=courses&producerId=${encodeURIComponent(uid)}`, {
-            headers: token ? { Authorization: `Bearer ${token}` } : {},
-          })
-          const body = await r.json().catch(() => ({}))
+          const { r, body } = await fetchJsonWithTimeout(
+            `/api/producer?type=courses&producerId=${encodeURIComponent(uid)}`,
+            { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+            20000
+          )
           if (!active) return
           if (!r.ok) {
             setProducerCourses([])
@@ -1078,7 +1150,12 @@ export default function NovoSimuladoPage() {
           setProducerCourses(list)
         } catch (e2: any) {
           if (!active) return
-          setProducerCoursesError(e2?.message || 'Falha ao carregar cursos')
+          const msg = String(e2?.message || e2 || '')
+          if (msg === 'courses_session_timeout' || msg === 'courses_select_timeout' || msg.toLowerCase().includes('aborted')) {
+            setProducerCoursesError('Tempo excedido ao carregar cursos')
+          } else {
+            setProducerCoursesError(e2?.message || 'Falha ao carregar cursos')
+          }
           setProducerCourses([])
         }
       } finally {
@@ -1127,17 +1204,23 @@ export default function NovoSimuladoPage() {
       setBankLoading(true)
       setBankError(null)
       try {
-        const { data: banks, error: banksErr } = await questionBankService.getQuestionBanks()
+        const { data: banks, error: banksErr } = await withTimeout(questionBankService.getQuestionBanks(), 20000, 'banks_timeout')
         if (banksErr) throw new Error(typeof banksErr === 'string' ? banksErr : 'Falha ao carregar bancos')
         const categories: Category[] = []
         const categoryNameSet = new Set<string>()
         const subcategoryNameSet = new Set<string>()
         const tagNameSet = new Set<string>()
         for (const bank of banks || []) {
-          const { data: qs, error: qErr } = await questionBankService.getQuestionsByBankId(bank.id)
-          if (qErr) {
-            console.warn('Erro ao buscar perguntas do banco', bank.id, qErr)
+          let qs: any[] = []
+          let qErr: any = null
+          try {
+            const r = await withTimeout(questionBankService.getQuestionsByBankId(bank.id), 20000, 'bank_questions_timeout')
+            qs = (r as any)?.data || []
+            qErr = (r as any)?.error || null
+          } catch (e: any) {
+            qErr = e
           }
+          if (qErr) console.warn('Erro ao buscar perguntas do banco', bank.id, qErr)
           const mappedQuestions: Question[] = (qs || []).map((q: any) => {
             const meta = (q?.metadata && typeof q.metadata === 'object') ? q.metadata : {}
             const tax = (meta?.taxonomy && typeof meta.taxonomy === 'object') ? meta.taxonomy : {}
@@ -1175,7 +1258,14 @@ export default function NovoSimuladoPage() {
           setBankTagNames(Array.from(tagNameSet))
         }
       } catch (err: any) {
-        if (!cancelled) setBankError(err?.message || 'Erro desconhecido ao carregar banco de questões')
+        if (!cancelled) {
+          const msg = String(err?.message || err || '')
+          if (msg === 'banks_timeout' || msg === 'bank_questions_timeout') {
+            setBankError('Tempo excedido ao carregar bancos/questões')
+          } else {
+            setBankError(err?.message || 'Erro desconhecido ao carregar banco de questões')
+          }
+        }
       } finally {
         if (!cancelled) setBankLoading(false)
       }
@@ -1422,7 +1512,8 @@ export default function NovoSimuladoPage() {
                     const draft = {
                       title,
                       description,
-                      isPaid,
+                      accessMode,
+                      isPaid: accessMode !== 'free',
                       simulationPrice,
                       availabilityDate,
                       availabilityDateDisplay,
@@ -1716,27 +1807,34 @@ export default function NovoSimuladoPage() {
               <div className="mb-8">
                 <h3 className="mb-1 flex items-center gap-2 text-[14px] font-bold text-[#1E1B39]">Pagamento e Disponibilidade</h3>
                 <p className="mb-4 flex items-center gap-1 text-[12px] text-[#9291A5]">
-                  <Info className="h-4 w-4" /> Defina acesso (gratuito ou pago) e quando estará disponível.
+                  <Info className="h-4 w-4" /> Defina acesso (gratuito, pago ou gratuito para alunos do curso) e quando estará disponível.
                 </p>
                 <div className="rounded-[4px] border border-[#E3E4E5] bg-white p-6">
                   <div className="mb-2 text-[12px] font-medium text-[#737780]">Tipo de simulado</div>
-                  <div className="mb-4 grid gap-3 sm:grid-cols-2">
+                  <div className="mb-4 grid gap-3 sm:grid-cols-3">
                     <button
-                      className={`rounded-[4px] border p-4 text-left ${!isPaid ? "border-[#0047BB] bg-[#0047BB]/5" : "border-[#E3E4E5]"}`}
-                      onClick={() => setIsPaid(false)}
+                      className={`rounded-[4px] border p-4 text-left ${accessMode === 'free' ? "border-[#0047BB] bg-[#0047BB]/5" : "border-[#E3E4E5]"}`}
+                      onClick={() => setAccessMode('free')}
                     >
                       <div className="flex items-center gap-2 text-[12px] font-semibold text-[#1E1B39]"><BadgeCheck className="h-4 w-4 text-[#0047BB]" /> Gratuito</div>
                       <div className="text-[12px] text-[#9291A5]">Disponível para todos os alunos sem custo</div>
                     </button>
                     <button
-                      className={`rounded-[4px] border p-4 text-left ${isPaid ? "border-[#0047BB] bg-[#0047BB]/5" : "border-[#E3E4E5]"}`}
-                      onClick={() => setIsPaid(true)}
+                      className={`rounded-[4px] border p-4 text-left ${accessMode === 'course_students_free' ? "border-[#0047BB] bg-[#0047BB]/5" : "border-[#E3E4E5]"}`}
+                      onClick={() => setAccessMode('course_students_free')}
+                    >
+                      <div className="flex items-center gap-2 text-[12px] font-semibold text-[#1E1B39]"><Users className="h-4 w-4 text-[#0047BB]" /> Alunos do curso</div>
+                      <div className="text-[12px] text-[#9291A5]">Gratuito para quem tem acesso ao curso (demais pagam)</div>
+                    </button>
+                    <button
+                      className={`rounded-[4px] border p-4 text-left ${accessMode === 'paid' ? "border-[#0047BB] bg-[#0047BB]/5" : "border-[#E3E4E5]"}`}
+                      onClick={() => setAccessMode('paid')}
                     >
                       <div className="flex items-center gap-2 text-[12px] font-semibold text-[#1E1B39]"><CreditCard className="h-4 w-4 text-[#0047BB]" /> Pago</div>
                       <div className="text-[12px] text-[#9291A5]">Requer pagamento para acessar o simulado</div>
                     </button>
                   </div>
-                  {isPaid && (
+                  {accessMode !== 'free' && (
                     <div className="mb-4">
                       <div
                         className="flex h-[40px] items-center rounded-[6px] border border-[#E3E4E5] bg-white px-2 hover:border-[#D1D5DB] focus-within:border-[#0047BB]"
@@ -1752,9 +1850,31 @@ export default function NovoSimuladoPage() {
                           placeholder="0,00"
                         />
                       </div>
-                      <div id="priceHelp" className="mt-1 text-[11px] text-[#9291A5]">Informe o valor. Use 0,00 para gratuito.</div>
+                      <div id="priceHelp" className="mt-1 text-[11px] text-[#9291A5]">
+                        {accessMode === 'paid'
+                          ? 'Informe o valor do simulado.'
+                          : 'Opcional: defina um valor para vender para quem não é aluno dos cursos selecionados. Use 0,00 para restringir apenas a alunos.'}
+                      </div>
                     </div>
                   )}
+                  {accessMode === 'course_students_free' ? (
+                    <div className="mb-4 flex items-center justify-between rounded-[6px] border border-[#E3E4E5] bg-[#F9FAFB] px-3 py-2">
+                      <div className="text-[12px] text-[#1E1B39]">
+                        Cursos selecionados: <span className={selectedCourses.length ? 'font-semibold' : 'font-semibold text-[#B91C1C]'}>{selectedCourses.length}</span>
+                      </div>
+                      <button
+                        type="button"
+                        className="text-[12px] font-semibold text-[#0047BB] hover:underline"
+                        onClick={() => {
+                          try {
+                            document.getElementById('simulado-courses-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                          } catch (_) {}
+                        }}
+                      >
+                        Selecionar cursos
+                      </button>
+                    </div>
+                  ) : null}
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div>
                       <label htmlFor="availabilityDate" className="text-[12px] text-[#737780]">Data de Disponibilidade</label>
@@ -2140,7 +2260,7 @@ export default function NovoSimuladoPage() {
                 </div>
               </div>
 
-              <div className="mb-8 overflow-hidden rounded-[8px] border border-[#E3E4E5] bg-white shadow-sm">
+              <div id="simulado-courses-section" className="mb-8 overflow-hidden rounded-[8px] border border-[#E3E4E5] bg-white shadow-sm">
                 <div className="flex items-center justify-between px-6 py-4">
                   <h3 className="flex items-center gap-2 text-[12px] font-bold text-[#1E1B39]">
                     <BookOpen className="h-4 w-4" /> Cursos
@@ -2784,8 +2904,8 @@ export default function NovoSimuladoPage() {
               <div className="rounded-[4px] border border-[#E3E4E5] bg-white p-4">
                 <h5 className="mb-2 text-[12px] font-semibold text-[#737780]">Perguntas</h5>
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between"><span className="text-[12px]">Segunda chance</span><Switch checked={secondChance} onCheckedChange={setSecondChance} /></div>
-                  <p className="text-[12px] text-[#9291A5]">Oferece uma segunda chance para corrigir erros em questões erradas.</p>
+                  <div className="flex items-center justify-between"><span className="text-[12px]">Permitir alterar resposta antes de enviar o simulado</span><Switch checked={secondChance} onCheckedChange={setSecondChance} /></div>
+                  <p className="text-[12px] text-[#9291A5]">Permite que o aluno altere as respostas antes de finalizar o simulado.</p>
                   <div className="flex items-center justify-between"><span className="text-[12px]">Embaralhar questão</span><Switch checked={shuffleQuestions} onCheckedChange={setShuffleQuestions} /></div>
                   <p className="text-[12px] text-[#9291A5]">Ordem diferente de questão, o que evita memorização mecânica e reduz cópia.</p>
                   <div className="flex items-center justify-between"><span className="text-[12px]">Pular questão</span><Switch checked={skipQuestions} onCheckedChange={setSkipQuestions} /></div>

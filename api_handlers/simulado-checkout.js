@@ -256,9 +256,10 @@ export default async function handler(req, res) {
       const moduleRow = (Array.isArray(modules) ? modules : []).find((m) => String(m?.id || m?.module_id || m?.moduleId || '').trim() === moduleId) || null
       if (!moduleRow) return json(res, 404, { error: 'module_not_found', message: 'Módulo não encontrado neste curso.' })
 
-      const paid = String(moduleRow?.visibility || '').trim() === 'Paga' || (Number(moduleRow?.priceCents) > 0)
+      const vis = String(moduleRow?.visibility || '').trim()
+      const paid = vis === 'Paga' || vis === 'Gratuita para alunos do curso' || (Number(moduleRow?.priceCents) > 0)
       const amountCents = Math.round(Number(moduleRow?.priceCents || 0))
-      if (!paid || !(amountCents > 0)) return json(res, 400, { error: 'module_not_paid', message: 'Este módulo não está configurado como pago (defina visibilidade Paga e valor).' })
+      if (!paid || !(amountCents > 0)) return json(res, 400, { error: 'module_not_paid', message: 'Este módulo não está configurado como pago (defina visibilidade Paga ou Gratuita para alunos do curso e valor).' })
 
       const requestUrl = `${String(GATEWAY_URL).replace(/\/$/, '')}/payments/v1/paymentlink`
       const validityHours = Number(process.env.VITE_PAYMENT_LINK_VALIDITY_HOURS || 48)
@@ -356,9 +357,10 @@ export default async function handler(req, res) {
       const lessonRow = (Array.isArray(lessons) ? lessons : []).find((l) => String(l?.id || l?.lesson_id || l?.lessonId || '').trim() === lessonId) || null
       if (!lessonRow) return json(res, 404, { error: 'lesson_not_found', message: 'Aula não encontrada neste módulo.' })
 
-      const paid = String(lessonRow?.visibility || '').trim() === 'Paga' || (Number(lessonRow?.priceCents) > 0)
+      const vis = String(lessonRow?.visibility || '').trim()
+      const paid = vis === 'Paga' || vis === 'Gratuita para alunos do curso' || (Number(lessonRow?.priceCents) > 0)
       const amountCents = Math.round(Number(lessonRow?.priceCents || 0))
-      if (!paid || !(amountCents > 0)) return json(res, 400, { error: 'lesson_not_paid', message: 'Esta aula não está configurada como paga (defina visibilidade Paga e valor).' })
+      if (!paid || !(amountCents > 0)) return json(res, 400, { error: 'lesson_not_paid', message: 'Esta aula não está configurada como paga (defina visibilidade Paga ou Gratuita para alunos do curso e valor).' })
 
       const requestUrl = `${String(GATEWAY_URL).replace(/\/$/, '')}/payments/v1/paymentlink`
       const validityHours = Number(process.env.VITE_PAYMENT_LINK_VALIDITY_HOURS || 48)
@@ -440,15 +442,24 @@ export default async function handler(req, res) {
 
     const { data: simulado, error: simErr } = await admin
       .from('simulados')
-      .select('id,title,is_paid,price')
+      .select('id,title,is_paid,price,settings')
       .eq('id', simId)
       .maybeSingle()
     if (simErr) return json(res, 500, { error: 'supabase_query_failed', message: simErr.message || String(simErr) })
     if (!simulado) return json(res, 404, { error: 'not_found' })
 
-    const isPaid = Boolean(simulado?.is_paid) || Math.max(0, Number(simulado?.price || 0)) > 0
-    const priceNumber = Number(simulado?.price || 0) || 0
-    if (!isPaid || !(priceNumber > 0)) return json(res, 400, { error: 'simulado_not_paid', message: 'Este simulado não está configurado como pago (preço precisa ser > 0).' })
+    const settings = simulado?.settings && typeof simulado.settings === 'object' ? simulado.settings : {}
+    const accessModeRaw = String(settings?.accessMode || settings?.access_mode || '').trim()
+    const accessMode = (accessModeRaw === 'paid' || accessModeRaw === 'free' || accessModeRaw === 'course_students_free') ? accessModeRaw : ''
+    const priceNumber = Math.max(0, Number(simulado?.price || 0) || 0)
+    if (accessMode === 'course_students_free' && !(priceNumber > 0)) {
+      return json(res, 403, {
+        error: 'simulado_course_students_only',
+        message: 'Este simulado está disponível apenas para alunos dos cursos vinculados e não está à venda.',
+      })
+    }
+    const isPaid = Boolean(simulado?.is_paid) || (accessMode === 'paid') || (priceNumber > 0)
+    if (!isPaid || !(priceNumber > 0)) return json(res, 400, { error: 'simulado_not_paid', message: 'Este simulado não está configurado para compra (preço precisa ser > 0).' })
 
     const amountCents = Math.round(priceNumber * 100)
     if (!amountCents || amountCents <= 0) return json(res, 400, { error: 'invalid_amount', message: 'Valor inválido do simulado.' })

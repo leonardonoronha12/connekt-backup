@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Helmet } from 'react-helmet-async'
-import { Download, Loader2, Search, Users, X } from 'lucide-react'
+import { Download, Loader2, Plus, Search, Users, X } from 'lucide-react'
 import { useAuth } from '@/contexts/SupabaseAuthContext'
 import { toast } from '@/hooks/use-toast.ts'
 
@@ -216,6 +216,10 @@ export default function AlunosPage() {
   const [editStudentDisabled, setEditStudentDisabled] = useState(false)
   const [editActionLoading, setEditActionLoading] = useState('')
 
+  const [createOpen, setCreateOpen] = useState(false)
+  const [createSaving, setCreateSaving] = useState(false)
+  const [createForm, setCreateForm] = useState({ name: '', email: '', courseId: '', expiresAt: '' })
+
   const fetchStudents = useCallback(async () => {
     const producerId = String(user?.id || '').trim()
     if (!producerId) return { ok: true, students: [], courses: [] }
@@ -229,6 +233,55 @@ export default function AlunosPage() {
     if (!r.ok) throw new Error(body?.error || 'Falha ao carregar alunos')
     return body || {}
   }, [authHeaders, query, user?.id])
+
+  const submitCreate = useCallback(async () => {
+    const producerId = String(user?.id || '').trim()
+    if (!producerId) return
+    const email = String(createForm?.email || '').trim().toLowerCase()
+    const name = String(createForm?.name || '').trim()
+    const courseId = String(createForm?.courseId || '').trim()
+    const expiresAt = String(createForm?.expiresAt || '').trim()
+    if (!email || !email.includes('@')) {
+      toast({ title: 'Email inválido', description: 'Preencha um email válido.', variant: 'destructive' })
+      return
+    }
+    if (!name) {
+      toast({ title: 'Nome obrigatório', description: 'Preencha o nome do aluno.', variant: 'destructive' })
+      return
+    }
+    if (!courseId) {
+      toast({ title: 'Selecione um curso', description: 'Escolha o curso para liberar acesso.', variant: 'destructive' })
+      return
+    }
+
+    setCreateSaving(true)
+    try {
+      const qs = new URLSearchParams()
+      qs.set('type', 'student_create')
+      qs.set('producerId', producerId)
+      const r = await fetch(`/api/producer?${qs.toString()}`, {
+        method: 'POST',
+        headers: { ...authHeaders, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, name, courseId, expiresAt: expiresAt || null }),
+      })
+      const body = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(body?.error || 'Falha ao criar aluno')
+      toast({ title: 'Aluno criado', description: 'Acesso liberado com sucesso.' })
+      setCreateOpen(false)
+      setCreateForm({ name: '', email: '', courseId: '', expiresAt: '' })
+      try {
+        setLoading(true)
+        const refreshed = await fetchStudents()
+        setRows(Array.isArray(refreshed?.students) ? refreshed.students : [])
+      } catch (_) {} finally {
+        setLoading(false)
+      }
+    } catch (e) {
+      toast({ title: 'Erro', description: e?.message || 'Falha ao criar aluno', variant: 'destructive' })
+    } finally {
+      setCreateSaving(false)
+    }
+  }, [authHeaders, createForm, fetchStudents, user?.id])
 
   const openEdit = useCallback(async (row) => {
     const r = row && typeof row === 'object' ? row : null
@@ -696,6 +749,82 @@ export default function AlunosPage() {
     </div>
   ) : null
 
+  const createModal = createOpen ? (
+    <div className="fixed inset-0 z-[100000] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40" onClick={() => { if (!createSaving) setCreateOpen(false) }} />
+      <div className="relative w-full max-w-[680px] rounded-[14px] bg-white shadow-xl overflow-hidden">
+        <div className="px-5 py-4 border-b border-[#E3E4E5] flex items-center justify-between gap-4">
+          <div className="min-w-0">
+            <div className="text-[14px] font-semibold text-[#1E1B39] truncate">Adicionar aluno</div>
+            <div className="text-[12px] text-[#737780]">Crie o aluno e libere acesso a um curso</div>
+          </div>
+          <button type="button" className="w-9 h-9 rounded-[10px] hover:bg-[#F3F4F6] flex items-center justify-center" onClick={() => { if (!createSaving) setCreateOpen(false) }}>
+            <X className="w-4 h-4 text-[#737780]" />
+          </button>
+        </div>
+
+        <div className="p-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="text-[12px] text-[#737780]">Nome</label>
+              <input
+                value={createForm.name}
+                onChange={(e) => setCreateForm((p) => ({ ...p, name: e.target.value }))}
+                className="mt-2 w-full h-[40px] rounded-[10px] border border-[#E3E4E5] px-3 text-[13px] outline-none focus:border-[#0047BB]"
+              />
+            </div>
+            <div>
+              <label className="text-[12px] text-[#737780]">Email</label>
+              <input
+                value={createForm.email}
+                onChange={(e) => setCreateForm((p) => ({ ...p, email: e.target.value }))}
+                className="mt-2 w-full h-[40px] rounded-[10px] border border-[#E3E4E5] px-3 text-[13px] outline-none focus:border-[#0047BB]"
+              />
+            </div>
+            <div className="md:col-span-2">
+              <label className="text-[12px] text-[#737780]">Curso</label>
+              <select
+                value={createForm.courseId}
+                onChange={(e) => setCreateForm((p) => ({ ...p, courseId: e.target.value }))}
+                className="mt-2 w-full h-[40px] rounded-[10px] border border-[#E3E4E5] px-3 text-[13px] bg-white outline-none focus:border-[#0047BB]"
+              >
+                <option value="">Selecione…</option>
+                {(Array.isArray(producerCourses) ? producerCourses : [])
+                  .map((c) => ({ id: String(c?.id || '').trim(), title: String(c?.title || '').trim() }))
+                  .filter((c) => c.id)
+                  .sort((a, b) => a.title.localeCompare(b.title, 'pt-BR'))
+                  .map((c) => (
+                    <option key={c.id} value={c.id}>{c.title || 'Curso'}</option>
+                  ))}
+              </select>
+              {(Array.isArray(producerCourses) ? producerCourses : []).length === 0 ? (
+                <div className="mt-2 text-[12px] text-[#737780]">Você ainda não tem cursos cadastrados.</div>
+              ) : null}
+            </div>
+            <div>
+              <label className="text-[12px] text-[#737780]">Expira em (opcional)</label>
+              <input
+                type="date"
+                value={createForm.expiresAt}
+                onChange={(e) => setCreateForm((p) => ({ ...p, expiresAt: e.target.value }))}
+                className="mt-2 w-full h-[40px] rounded-[10px] border border-[#E3E4E5] px-3 text-[13px] outline-none focus:border-[#0047BB]"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="px-5 py-4 border-t border-[#E3E4E5] flex items-center justify-end gap-2">
+          <button type="button" className="h-9 px-3 rounded-[10px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#1E1B39] hover:bg-[#F8FAFC]" disabled={createSaving} onClick={() => setCreateOpen(false)}>
+            Cancelar
+          </button>
+          <button type="button" className="h-9 px-3 rounded-[10px] bg-[#0047BB] text-white text-[12px] font-semibold hover:bg-[#003da0] disabled:opacity-50" disabled={createSaving} onClick={submitCreate}>
+            {createSaving ? 'Criando...' : 'Criar aluno'}
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null
+
   return (
     <>
       <Helmet>
@@ -714,15 +843,26 @@ export default function AlunosPage() {
                 <div className="text-[12px] text-[#737780]">Lista de alunos vinculados aos seus cursos</div>
               </div>
             </div>
-            <button
-              type="button"
-              className="h-9 px-3 rounded-[10px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#1E1B39] hover:bg-[#F8FAFC]"
-              onClick={exportXlsx}
-              disabled={loading}
-            >
-              <Download className="w-4 h-4 inline-block mr-2" />
-              Exportar
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="h-9 px-3 rounded-[10px] bg-[#0047BB] text-white text-[12px] font-semibold hover:bg-[#003da0] disabled:opacity-50"
+                onClick={() => setCreateOpen(true)}
+                disabled={loading}
+              >
+                <Plus className="w-4 h-4 inline-block mr-2" />
+                Adicionar aluno
+              </button>
+              <button
+                type="button"
+                className="h-9 px-3 rounded-[10px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#1E1B39] hover:bg-[#F8FAFC]"
+                onClick={exportXlsx}
+                disabled={loading}
+              >
+                <Download className="w-4 h-4 inline-block mr-2" />
+                Exportar
+              </button>
+            </div>
           </div>
 
           <div className="mt-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -801,6 +941,7 @@ export default function AlunosPage() {
       </div>
 
       {typeof document !== 'undefined' && editModal ? createPortal(editModal, document.body) : null}
+      {typeof document !== 'undefined' && createModal ? createPortal(createModal, document.body) : null}
     </>
   )
 }

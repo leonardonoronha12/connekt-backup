@@ -1709,16 +1709,34 @@ const ConfiguracoesPage = () => {
                                   type="button"
                                   className="h-9 px-3 rounded-[10px] bg-[#0047BB] text-white text-[12px] font-semibold hover:bg-[#003da0]"
                                   onClick={async () => {
+                                    const preOpened = (() => {
+                                      try { return window.open('about:blank', '_blank', 'noopener') } catch (_) { return null }
+                                    })()
                                     try {
                                       if (!user?.id) {
                                         toast({ title: 'Faça login', description: 'Você precisa estar logado para efetuar o pagamento.', duration: 6000 })
+                                        try { preOpened && preOpened.close && preOpened.close() } catch (_) {}
                                         return
                                       }
-                                      const r = await planService.startCheckout(planKey, billingCycle, user, { openInNewTab: true })
-                                      if (!r?.ok) {
+                                      const r = await planService.startCheckout(planKey, billingCycle, user, { redirect: false, forceNew: true })
+                                      const url = String(r?.checkout_url || r?.checkoutUrl || '').trim()
+                                      if (!r?.ok || !url) {
+                                        try { preOpened && preOpened.close && preOpened.close() } catch (_) {}
                                         toast({ title: 'Falha ao iniciar pagamento', description: String(r?.error || 'Tente novamente.'), duration: 6000 })
+                                        return
+                                      }
+                                      if (preOpened && typeof preOpened.location !== 'undefined') {
+                                        try { preOpened.location.href = url } catch (_) {}
+                                      } else {
+                                        let opened = null
+                                        try { opened = window.open(url, '_blank', 'noopener') } catch (_) { opened = null }
+                                        if (!opened) {
+                                          try { await navigator.clipboard.writeText(url) } catch (_) {}
+                                          toast({ title: 'Pop-up bloqueado', description: 'Link copiado. Permita pop-ups para abrir o pagamento em nova aba.', duration: 7000 })
+                                        }
                                       }
                                     } catch (e) {
+                                      try { preOpened && preOpened.close && preOpened.close() } catch (_) {}
                                       toast({ title: 'Falha ao iniciar pagamento', description: e?.message || 'Tente novamente.', duration: 6000 })
                                     }
                                   }}

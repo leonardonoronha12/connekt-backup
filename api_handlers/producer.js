@@ -496,6 +496,19 @@ function computePlanExpiryFromPayment(payment) {
   return { planKey, billingCycle, activatedAt: base.toISOString(), expiresAt: expiresAt.toISOString() }
 }
 
+function computePlanExpiryFromOverride(override) {
+  const o = override && typeof override === 'object' ? override : {}
+  const base = new Date(String(o?.set_at || o?.setAt || o?.activated_at || o?.activatedAt || '').trim())
+  const planKey = normalizePlanSlugToKey(o?.plan || o?.planKey || '')
+  const billingCycle = normalizeCycle(o?.cycle || o?.billingCycle || '')
+  if (!planKey || !Number.isFinite(base.getTime())) return { planKey: '', billingCycle: 'mensal', activatedAt: '', expiresAt: '' }
+  const expiresAt =
+    planKey === 'teste'
+      ? new Date(base.getTime() + 24 * 60 * 60 * 1000)
+      : (billingCycle === 'anual' ? addYearsClamped(base, 1) : addMonthsClamped(base, 1))
+  return { planKey, billingCycle: billingCycle || 'mensal', activatedAt: base.toISOString(), expiresAt: expiresAt.toISOString() }
+}
+
 function computePlanExpiryFallback({ planKey, activatedAtIso }) {
   const pk = normalizePlanSlugToKey(planKey || '')
   const base = new Date(String(activatedAtIso || '').trim())
@@ -521,10 +534,28 @@ async function enforceProducerPlan({ admin, user, producerId, type }) {
     profile = null
   }
 
+  const meta = user?.user_metadata && typeof user.user_metadata === 'object' ? user.user_metadata : {}
+  const override = (meta?.plan_override && typeof meta.plan_override === 'object')
+    ? meta.plan_override
+    : ((meta?.planOverride && typeof meta.planOverride === 'object') ? meta.planOverride : null)
+
   const payment = await resolveLatestPaidPayment(admin, uid)
   const fromPayment = payment ? computePlanExpiryFromPayment(payment) : null
   const fromProfile = computePlanExpiryFallback({ planKey: profile?.active_plan || '', activatedAtIso: profile?.plan_activated_at || '' })
-  const snapshot = (fromPayment && fromPayment.planKey) ? fromPayment : fromProfile
+  const fromOverride = computePlanExpiryFromOverride(override)
+  const candidates = [fromPayment, fromProfile, fromOverride].filter(Boolean)
+  let snapshot = null
+  let bestMs = -Infinity
+  for (const s of candidates) {
+    if (!s?.planKey) continue
+    const ms = new Date(String(s?.activatedAt || '').trim()).getTime()
+    if (!Number.isFinite(ms)) continue
+    if (ms > bestMs) {
+      bestMs = ms
+      snapshot = s
+    }
+  }
+  if (!snapshot) snapshot = (fromOverride?.planKey ? fromOverride : ((fromPayment && fromPayment.planKey) ? fromPayment : fromProfile))
 
   const expiresAtMs = snapshot?.expiresAt ? new Date(snapshot.expiresAt).getTime() : NaN
   if (!Number.isFinite(expiresAtMs)) return { ok: true, blocked: false }
@@ -2740,6 +2771,240 @@ export default async function handler(req, res) {
 
       out.sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || ''), 'pt-BR'))
       return json(res, 200, { ok: true, students: out, courses: courses.map((c) => ({ id: String(c?.id || '').trim(), title: String(c?.title || '').trim() })).filter((c) => c.id), meta: { count: out.length, limit: perPage } })
+    }
+
+    if (type === 'student_create') {
+      res.setHeader('Cache-Control', 'no-store')
+      if (req.method !== 'POST') return json(res, 405, { error: 'method_not_allowed' })
+      const producerUserId = String(auth.user?.id || '').trim()
+      if (!producerUserId || producerId !== producerUserId) return json(res, 403, { error: 'forbidden' })
+
+      const raw = await readRawBody(req).catch(() => null)
+      let body = null
+      try { body = raw ? JSON.parse(raw.toString('utf-8') || '{}') : {} } catch (_) { body = {} }
+
+      const email = String(body?.email || '').trim().toLowerCase()
+      const name = String(body?.name || '').trim()
+      const courseId = String(body?.courseId || body?.course_id || '').trim()
+      const expiresAt = parseExpiresYmd(body?.expiresAt || body?.expires_at || '')
+      if (!isValidEmail(email)) return json(res, 400, { error: 'invalid_email' })
+      if (!name) return json(res, 400, { error: 'missing_name' })
+      if (!courseId || !isUuid(courseId)) return json(res, 400, { error: 'invalid_course_id' })
+
+      const producerRowId = await resolveProducerRowIdFromUserId(producerUserId)
+      const producerKeys = Array.from(new Set([producerUserId, producerRowId].map((v) => String(v || '').trim()).filter(Boolean)))
+
+      const fetchCoursesByOwner = async () => {
+        const cols = ['user_id', 'producer_id', 'producer_user_id', 'producer_external_id', 'produtor_id', 'created_by']
+        for (const col of cols) {
+          try {
+            const { data, error } = await admin
+              .from('courses')
+              .select('id,title,modules,data')
+              .in(col, producerKeys)
+              .order('created_at', { ascending: false })
+              .limit(1000)
+            if (error) {
+              if (isMissingColumnLoose(error, col)) continue
+              continue
+            }
+            return Array.isArray(data) ? data : []
+          } catch (e) {
+            if (isMissingColumnLoose(e, col)) continue
+          }
+        }
+        return []
+      }
+
+      const courses = await fetchCoursesByOwner()
+      const courseRow = (Array.isArray(courses) ? courses : []).find((c) => String(c?.id || '').trim() === courseId) || null
+      if (!courseRow) return json(res, 403, { error: 'course_not_owned' })
+      const courseTitle = String(courseRow?.title || 'Curso').trim() || 'Curso'
+
+      const randomPassword = () => `Tmp${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}1A`
+
+      const findUserIdByEmail = async (targetEmail) => {
+        const target = String(targetEmail || '').trim().toLowerCase()
+        if (!target) return ''
+        const perPage = 200
+        for (let page = 1; page <= 30; page += 1) {
+          const r = await admin.auth.admin.listUsers({ page, perPage })
+          const users = Array.isArray(r?.data?.users) ? r.data.users : []
+          for (const u1 of users) {
+            const e = String(u1?.email || '').trim().toLowerCase()
+            if (e && e === target) return String(u1?.id || '').trim()
+          }
+          if (users.length < perPage) break
+        }
+        return ''
+      }
+
+      let userId = ''
+      let createdNewUser = false
+      try {
+        const created = await admin.auth.admin.createUser({
+          email,
+          password: randomPassword(),
+          email_confirm: true,
+          user_metadata: {
+            name,
+            full_name: name,
+            account_type: 'aluno',
+          },
+        })
+        if (created?.data?.user?.id) {
+          userId = String(created.data.user.id).trim()
+          createdNewUser = true
+        }
+      } catch (_) {}
+
+      if (!userId) userId = await findUserIdByEmail(email)
+      if (!userId) return json(res, 500, { error: 'user_create_failed' })
+
+      try {
+        const rUser = await admin.auth.admin.getUserById(userId)
+        const u1 = rUser?.data?.user || null
+        const meta = u1?.user_metadata && typeof u1.user_metadata === 'object' ? u1.user_metadata : {}
+        const accountType = String(meta?.account_type || meta?.accountType || '').trim().toLowerCase()
+        if (accountType && accountType !== 'aluno' && accountType !== 'student') {
+          return json(res, 409, { error: 'email_in_use', accountType })
+        }
+      } catch (_) {}
+
+      try {
+        await admin.auth.admin.updateUserById(userId, {
+          user_metadata: {
+            name,
+            full_name: name,
+            account_type: 'aluno',
+          },
+        })
+      } catch (_) {}
+
+      const ensureStudentRow = async () => {
+        const attempts = [
+          () => admin.from('students').upsert({ email, name, user_id: userId, external_id: userId }, { onConflict: 'email' }),
+          () => admin.from('students').upsert({ email, name, user_id: userId }, { onConflict: 'email' }),
+          () => admin.from('students').upsert({ email, name, external_id: userId }, { onConflict: 'email' }),
+          () => admin.from('students').insert({ email, name, user_id: userId, external_id: userId }),
+          () => admin.from('students').insert({ email, name, user_id: userId }),
+          () => admin.from('students').insert({ email, name }),
+        ]
+        for (const fn of attempts) {
+          try {
+            const { error } = await fn()
+            if (!error) return true
+          } catch (_) {}
+        }
+        return false
+      }
+
+      const studentRowOk = await ensureStudentRow()
+      if (!studentRowOk) return json(res, 500, { error: 'students_row_failed' })
+
+      const resolveStudentId = async () => {
+        const attempts = [
+          () => admin.from('students').select('id').eq('user_id', userId).maybeSingle(),
+          () => admin.from('students').select('id').eq('email', email).maybeSingle(),
+          () => admin.from('students').select('id').eq('external_id', userId).maybeSingle(),
+        ]
+        for (const fn of attempts) {
+          try {
+            const { data, error } = await fn()
+            if (!error && data?.id) return String(data.id).trim()
+          } catch (_) {}
+        }
+        return ''
+      }
+
+      const studentId = await resolveStudentId()
+      if (!studentId) return json(res, 500, { error: 'students_id_not_found' })
+
+      const nowIso = new Date().toISOString()
+      const insertStudentCourse = async () => {
+        const base = {
+          course_id: courseId,
+          course_name: courseTitle,
+          progress: 0,
+          tag: 'Curso',
+          cover_image_url: null,
+          created_at: nowIso,
+        }
+        const attempts = [
+          () => admin.from('student_courses').insert({ ...base, student_id: studentId }),
+          () => admin.from('student_courses').insert({ ...base, studentId, student_id: studentId }),
+          () => admin.from('student_courses').insert({ ...base, user_id: userId }),
+          () => admin.from('student_courses').insert({ ...base, student_user_id: userId }),
+          () => admin.from('student_courses').insert({ ...base, student_external_id: userId }),
+          () => admin.from('student_courses').insert({ ...base, student_email: email }),
+          () => admin.from('student_courses').insert({ course_id: courseId, course_name: courseTitle, student_id: studentId }),
+          () => admin.from('student_courses').insert({ course_id: courseId, course_name: courseTitle, user_id: userId }),
+        ]
+        for (const fn of attempts) {
+          try {
+            const { error } = await fn()
+            if (!error) return true
+            const msg = String(error?.message || error?.details || error || '').toLowerCase()
+            const isDup =
+              String(error?.code || '').toUpperCase() === '23505' ||
+              msg.includes('duplicate key') ||
+              msg.includes('already exists')
+            if (isDup) return true
+          } catch (_) {}
+        }
+        return false
+      }
+
+      const studentCourseOk = await insertStudentCourse()
+      if (!studentCourseOk) return json(res, 500, { error: 'student_course_failed' })
+
+      try {
+        await admin.from('profiles').upsert({ user_id: userId, profile_full_name: name }, { onConflict: 'user_id' })
+      } catch (_) {}
+
+      try {
+        await admin
+          .from('notifications')
+          .upsert({
+            id: deterministicUuid(`notif:producer_panel:grant:course:${courseId}:student:${userId}`),
+            recipient_user_id: userId,
+            type: 'purchase_confirmed',
+            title: 'Acesso liberado',
+            message: `Acesso liberado: ${courseTitle}`,
+            actor_user_id: producerUserId,
+            actor_name: producerUserId,
+            entity_name: courseTitle,
+            entity_type: 'course',
+            entity_id: courseId,
+            created_at: nowIso,
+            data: { type: 'course', source: 'producer_panel', action: 'grant', producer_id: producerUserId, buyer_id: userId, courseId, expires_at: expiresAt || null },
+            href: '/aluno',
+            read_at: null,
+          }, { onConflict: 'id' })
+      } catch (_) {}
+
+      try {
+        await admin
+          .from('notifications')
+          .upsert({
+            id: deterministicUuid(`notif:producer_panel:grant:course:${courseId}:buyer:${userId}:producer:${producerUserId}`),
+            recipient_user_id: producerUserId,
+            type: 'purchase_confirmed',
+            title: 'Acesso liberado',
+            message: `Acesso liberado: ${courseTitle}`,
+            actor_user_id: producerUserId,
+            actor_name: producerUserId,
+            entity_name: courseTitle,
+            entity_type: 'course',
+            entity_id: courseId,
+            created_at: nowIso,
+            data: { type: 'course', source: 'producer_panel', action: 'grant', producer_id: producerUserId, buyer_id: userId, courseId, expires_at: expiresAt || null },
+            href: '/aluno',
+            read_at: null,
+          }, { onConflict: 'id' })
+      } catch (_) {}
+
+      return json(res, 200, { ok: true, user_id: userId, student_id: studentId, course_id: courseId, created_new_user: createdNewUser })
     }
 
     if (type === 'student_update_profile') {
