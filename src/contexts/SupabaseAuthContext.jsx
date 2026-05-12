@@ -319,8 +319,16 @@ export const AuthProvider = ({ children }) => {
         } catch (_) {}
       } finally {
         try {
-          const clean = `${window.location.pathname}${window.location.search}`
-          window.history.replaceState({}, '', clean)
+          const u = new URL(window.location.href)
+          u.hash = ''
+          u.searchParams.delete('error')
+          u.searchParams.delete('error_code')
+          u.searchParams.delete('error_description')
+          u.searchParams.delete('code')
+          u.searchParams.delete('state')
+          u.searchParams.delete('oauth_provider')
+          u.searchParams.delete('oauth_flow')
+          window.history.replaceState({}, '', `${u.pathname}${u.search}`)
           window.dispatchEvent(new PopStateEvent('popstate'))
         } catch (_) {}
         try { sessionStorage.removeItem('connekt_setting_session_from_hash') } catch (_) {}
