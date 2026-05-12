@@ -13,6 +13,8 @@ import uploadQuestionMedia from '../api_handlers/upload-question-media.js'
 import version from '../api_handlers/version.js'
 import oauthGoogleStart from '../api_handlers/oauth/google-start.js'
 import oauthGoogleCallback from '../api_handlers/oauth/google-callback.js'
+import oauthFacebookStart from '../api_handlers/oauth/facebook-start.js'
+import oauthFacebookCallback from '../api_handlers/oauth/facebook-callback.js'
 
 import authAction from '../api_handlers/auth/[action].js'
 
@@ -61,8 +63,12 @@ export default async function handler(req, res) {
       ['/api/version', version],
       ['/api/oauth/google/start', oauthGoogleStart],
       ['/api/oauth/google/callback', oauthGoogleCallback],
+      ['/api/oauth/facebook/start', oauthFacebookStart],
+      ['/api/oauth/facebook/callback', oauthFacebookCallback],
       ['/api/oauth/google-start', oauthGoogleStart],
       ['/api/oauth/google-callback', oauthGoogleCallback],
+      ['/api/oauth/facebook-start', oauthFacebookStart],
+      ['/api/oauth/facebook-callback', oauthFacebookCallback],
       ['/api/admin/me', adminMe],
       ['/api/admin/courses/list', adminCoursesList],
       ['/api/admin/users/list', adminUsersList],
