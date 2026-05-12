@@ -1008,6 +1008,21 @@ function AppContent() {
     }
   }, [user, loading, isPublicView, isDemoStudent, currentView, isAlunoFlow]);
 
+  const hasQueryError = (() => {
+    try {
+      const params = new URLSearchParams(window.location.search || '')
+      return Boolean(params.get('error') || params.get('error_code') || params.get('error_description'))
+    } catch (_) {
+      return false
+    }
+  })()
+
+  if (loading && hasQueryError) {
+    const host = String(window.location.hostname || '').toLowerCase()
+    const isWhitelabelHost = host.endsWith('.app.connektco.com') && host !== 'app.connektco.com'
+    return isAlunoFlow ? (isWhitelabelHost ? <LoginAlunoWhitelabelPage /> : <LoginAlunoPage />) : <LoginPage />
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
