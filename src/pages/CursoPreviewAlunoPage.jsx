@@ -490,16 +490,41 @@ export default function CursoPreviewAlunoPage() {
     if (!id) return null
     return (Array.isArray(modules) ? modules : []).find((m) => String(m?.id || m?.module_id || m?.moduleId || '').trim() === id) || null
   }
+  const moduleFreeCourseIds = (mid) => {
+    const m = findModuleById(mid)
+    const raw = m?.freeCourseIds || m?.free_course_ids || m?.free_course_ids || []
+    const arr = Array.isArray(raw) ? raw : []
+    const out = []
+    for (const v of arr) {
+      const s = String(v || '').trim()
+      if (!s) continue
+      if (s === 'self') {
+        if (courseId) out.push(String(courseId))
+        continue
+      }
+      out.push(s)
+    }
+    return Array.from(new Set(out))
+  }
   const moduleOwnedKey = (mid) => {
     const id = String(mid || '').trim()
     return courseId && id ? `connekt_module_owned:${String(courseId)}:${id}` : ''
   }
-  const isPaidModule = (mid) => {
+  const resolveModuleMode = (mid) => {
     const m = findModuleById(mid)
-    if (!m) return false
     const vis = String(m?.visibility || '').trim()
     const cents = Number(m?.priceCents || 0)
-    return vis === 'Paga' || (Number.isFinite(cents) && cents > 0)
+    if (vis === 'Gratuita') return 'free'
+    if (vis === 'Gratuita para alunos do curso') return 'course_students_free'
+    if (vis === 'Paga') return 'paid'
+    if (Number.isFinite(cents) && cents > 0) return 'paid'
+    return 'free'
+  }
+  const isPaidModule = (mid) => {
+    const mode = resolveModuleMode(mid)
+    if (mode === 'paid') return true
+    if (mode === 'course_students_free') return modulePriceCents(mid) > 0
+    return false
   }
   const modulePriceCents = (mid) => {
     const m = findModuleById(mid)
@@ -508,8 +533,18 @@ export default function CursoPreviewAlunoPage() {
   }
   const isOwnedModule = (mid) => {
     if (!courseId) return false
-    if (isOwnedCourse) return true
-    if (!isPaidModule(mid)) return true
+    const mode = resolveModuleMode(mid)
+    if (mode === 'free') return true
+    if (mode === 'course_students_free') {
+      const ids = moduleFreeCourseIds(mid)
+      const hasCourse = ids.some((cid) => {
+        const c = String(cid || '').trim()
+        if (!c) return false
+        if (String(c) === String(courseId) && isOwnedCourse) return true
+        return safeLsGet(`connekt_course_owned:${c}`) === '1'
+      })
+      if (hasCourse) return true
+    }
     const k = moduleOwnedKey(mid)
     return k ? safeLsGet(k) === '1' : false
   }
@@ -840,20 +875,22 @@ export default function CursoPreviewAlunoPage() {
                 const name = m?.name || m?.title || `Módulo ${idx + 1}`;
                 const moduleId = m?.id || m?.module_id || m?.moduleId || null
                 const lockedCourse = isAlunoView && !isDemoAluno && isPaidCourse && !isOwnedCourse
+                const mode = moduleId ? resolveModuleMode(moduleId) : 'free'
                 const paidModule = isAlunoView && !isDemoAluno && moduleId && isPaidModule(moduleId)
                 const ownedModule = isAlunoView && !isDemoAluno && moduleId && isOwnedModule(moduleId)
                 const lockedModule = isAlunoView && !isDemoAluno && moduleId && paidModule && !ownedModule
-                const lockedFreeModuleByCourse = lockedCourse && !ownedModule && !paidModule
-                const priceText = (paidModule && moduleId) ? formatCentsBRL(modulePriceCents(moduleId)) : ''
+                const cents = moduleId ? modulePriceCents(moduleId) : 0
+                const lockedCourseOnly = lockedCourse && mode === 'course_students_free' && !ownedModule && !(Number(cents || 0) > 0)
+                const priceText = (paidModule && moduleId && Number(cents || 0) > 0) ? formatCentsBRL(cents) : ''
                 return (
                   <button
                     key={m?.id || idx}
-                    className={`shrink-0 w-[180px] h-[326px] rounded-xl overflow-hidden border border-[#E3E4E5] bg-white shadow-sm ${lockedFreeModuleByCourse ? 'opacity-70 grayscale cursor-not-allowed' : ''}`}
+                    className={`shrink-0 w-[180px] h-[326px] rounded-xl overflow-hidden border border-[#E3E4E5] bg-white shadow-sm ${lockedCourseOnly ? 'opacity-70 grayscale cursor-not-allowed' : ''}`}
                     type="button"
                     onClick={() => {
                       if (!isAlunoView) return
                       if (!courseId) return
-                      if (lockedFreeModuleByCourse) return
+                      if (lockedCourseOnly) return
                       if (lockedModule) {
                         setSelectedModule(m)
                         setModuleCheckoutError('')
@@ -879,10 +916,21 @@ export default function CursoPreviewAlunoPage() {
                     >
                       <div className="bg-gradient-to-t from-black/70 to-black/0 h-full">
                         <div className="h-full px-3 pb-5 flex flex-col items-center justify-end text-center relative">
-                          {paidModule ? (
+                          {mode === 'paid' ? (
                             <div className="absolute top-3 left-3 flex flex-col items-start gap-1">
                               <span className="inline-flex items-center justify-center h-[18px] px-3 text-[10px] rounded-[54px] leading-none font-medium bg-[#FEF3C7] text-[#92400E]">
                                 Pago
+                              </span>
+                              {priceText ? (
+                                <span className="inline-flex items-center justify-center h-[18px] px-3 text-[10px] rounded-[54px] leading-none font-medium bg-[#FEF3C7] text-[#92400E]">
+                                  {priceText}
+                                </span>
+                              ) : null}
+                            </div>
+                          ) : mode === 'course_students_free' ? (
+                            <div className="absolute top-3 left-3 flex flex-col items-start gap-1">
+                              <span className="inline-flex items-center justify-center h-[18px] px-3 text-[10px] rounded-[54px] leading-none font-medium bg-[#EEF2FF] text-[#0047BB]">
+                                Alunos do curso
                               </span>
                               {priceText ? (
                                 <span className="inline-flex items-center justify-center h-[18px] px-3 text-[10px] rounded-[54px] leading-none font-medium bg-[#FEF3C7] text-[#92400E]">

@@ -370,6 +370,7 @@ export const planService = {
     const onLog = typeof options?.onLog === 'function' ? options.onLog : null
     const redirect = options?.redirect !== false
     const openInNewTab = options?.openInNewTab === true
+    const forceNew = options?.forceNew === true
     const appBaseUrl = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_APP_BASE_URL)
       ? String(import.meta.env.VITE_APP_BASE_URL)
       : (typeof window !== 'undefined' ? window.location.origin : '')
@@ -423,7 +424,7 @@ export const planService = {
     if (!SKIP_SUPABASE_FUNCTIONS) {
       try {
         const { data, error } = await supabase.functions.invoke('myg-payments', {
-          body: { userId: resolvedUserId, planSlug: planKey, cycle: billingCycle },
+          body: { userId: resolvedUserId, planSlug: planKey, cycle: billingCycle, forceNew },
         })
         await emit({ level: 'debug', step: 'serverless_request', message: 'Invocando myg-payments/paymentlink', data: { ok: !error, error: error?.message } })
         if (!error && data?.checkout_url) {

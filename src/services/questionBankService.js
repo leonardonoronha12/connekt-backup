@@ -49,6 +49,18 @@ function isAbortError(error) {
   return name === 'AbortError' || msg.toLowerCase().includes('aborted') || msg.toLowerCase().includes('abort')
 }
 
+function withTimeout(promise, ms, label) {
+  let t = null
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      t = setTimeout(() => reject(new Error(label)), Math.max(1, Number(ms || 0) || 1))
+    }),
+  ]).finally(() => {
+    try { if (t) clearTimeout(t) } catch (_) {}
+  })
+}
+
 function loadPersistedBanks() {
   try {
     const raw = localStorage.getItem(LS_BANKS_KEY);
@@ -200,7 +212,7 @@ class QuestionBankService {
         query = query.eq('producer_external_id', producerExternalId);
       }
 
-      const { data, error } = await query;
+      const { data, error } = await withTimeout(query, 12000, 'question_banks_timeout');
       if (error) throw error;
       // Overlay dados persistidos localmente (inclui status e campos atualizados em fallback)
       const persisted = loadPersistedBanks();
@@ -1404,11 +1416,15 @@ class QuestionBankService {
       if (!isUuid(questionBankId)) {
         throw new Error('Invalid question bank id');
       }
-      const { data, error } = await supabase
-        .from('questions')
-        .select('id, question_bank_id, title, body, metadata, created_at, updated_at')
-        .eq('question_bank_id', questionBankId)
-        .order('created_at', { ascending: true });
+      const { data, error } = await withTimeout(
+        supabase
+          .from('questions')
+          .select('id, question_bank_id, title, body, metadata, created_at, updated_at')
+          .eq('question_bank_id', questionBankId)
+          .order('created_at', { ascending: true }),
+        12000,
+        'questions_by_bank_timeout'
+      );
       if (error) throw error;
       this.isSupabaseAvailable = true;
       return { data: data || [], error: null };

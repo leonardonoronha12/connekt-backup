@@ -9,6 +9,7 @@ import { toast } from "@/hooks/use-toast"
 import { useToast } from "@/hooks/use-toast"
 import { supabase, SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/supabaseClient"
 import { canUploadBytes, resolvePlanKey } from "@/services/planEntitlements"
+import { planService } from "@/services/planService.js"
 import { sanitizeStorageObjectPath, sanitizeStorageSegment } from "@/shared/storagePath.js"
 import ChatArea from "@/components/ChatArea"
 import { TaxonomyDropdown, type TaxonomyItem } from "@/components/TaxonomyDropdown"
@@ -23,7 +24,7 @@ type Lesson = {
   description?: string;
   description_rich?: any;
   durationMin: number;
-  visibility: "Gratuita" | "Paga";
+  visibility: "Gratuita" | "Paga" | "Gratuita para alunos do curso";
   priceCents?: number;
   difficulty?: "Iniciante" | "Intermediário" | "Avançado";
   tag: string;
@@ -43,7 +44,7 @@ export default function NovoCursoPage() {
   const [title, setTitle] = useState("")
   const [description, setDescription] = useState("")
   const [hiddenAdvanceButtons, setHiddenAdvanceButtons] = useState<string[]>([])
-  const [modules, setModules] = useState<{ id: string; name: string; description: string; lessonsCount: number; lessons: Lesson[]; cover_image_url?: string | null; cover_image_path?: string | null; visibility?: 'Gratuita' | 'Paga'; priceCents?: number }[]>([])
+  const [modules, setModules] = useState<{ id: string; name: string; description: string; lessonsCount: number; lessons: Lesson[]; cover_image_url?: string | null; cover_image_path?: string | null; visibility?: 'Gratuita' | 'Paga' | 'Gratuita para alunos do curso'; priceCents?: number; freeCourseIds?: string[] }[]>([])
   const [showChatBot, setShowChatBot] = useState(false)
   const [expandedModules, setExpandedModules] = useState<string[]>([])
 
@@ -57,8 +58,9 @@ export default function NovoCursoPage() {
   const [moduleEditId, setModuleEditId] = useState<string | null>(null)
   const [moduleEditTitle, setModuleEditTitle] = useState('')
   const [moduleEditDescription, setModuleEditDescription] = useState('')
-  const [moduleEditVisibility, setModuleEditVisibility] = useState<'Gratuita' | 'Paga'>('Gratuita')
+  const [moduleEditVisibility, setModuleEditVisibility] = useState<'Gratuita' | 'Paga' | 'Gratuita para alunos do curso'>('Gratuita')
   const [moduleEditPrice, setModuleEditPrice] = useState<string>('')
+  const [moduleEditFreeCourseIds, setModuleEditFreeCourseIds] = useState<string[]>(['self'])
 const editorRef = useRef<HTMLDivElement | null>(null)
 const lessonTitleRef = useRef<HTMLInputElement | null>(null)
 const modulesSectionRef = useRef<HTMLDivElement | null>(null)
@@ -687,8 +689,9 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
   const [showModuleForm, setShowModuleForm] = useState(false)
   const [newModuleTitle, setNewModuleTitle] = useState("")
   const [newModuleDescription, setNewModuleDescription] = useState("")
-  const [newModuleVisibility, setNewModuleVisibility] = useState<'Gratuita' | 'Paga'>('Gratuita')
+  const [newModuleVisibility, setNewModuleVisibility] = useState<'Gratuita' | 'Paga' | 'Gratuita para alunos do curso'>('Gratuita')
   const [newModulePrice, setNewModulePrice] = useState<string>('')
+  const [newModuleFreeCourseIds, setNewModuleFreeCourseIds] = useState<string[]>(['self'])
   const [newModuleCoverImage, setNewModuleCoverImage] = useState<string | null>(null)
   const [newModuleCoverFile, setNewModuleCoverFile] = useState<File | null>(null)
   const newModuleCoverInputRef = useRef<HTMLInputElement | null>(null)
@@ -855,6 +858,55 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
     return true
   }
 
+  const withTimeout = async <T,>(promise: Promise<T>, ms: number, label: string) => {
+    let t: any = null
+    try {
+      return await Promise.race([
+        promise,
+        new Promise<T>((_, reject) => {
+          t = setTimeout(() => reject(new Error(label)), ms)
+        }),
+      ])
+    } finally {
+      try { if (t) clearTimeout(t) } catch (_) {}
+    }
+  }
+
+  const ensureHasPlanToCreateCourse = async () => {
+    const now = Date.now()
+    const local = (() => {
+      try {
+        const sub = typeof planService.getSubscription === 'function' ? planService.getSubscription() : null
+        const status = String(sub?.status || '').toLowerCase()
+        const planKey = String(sub?.planKey || '').toLowerCase().trim()
+        const expiresAtMs = sub?.expiresAt ? new Date(sub.expiresAt).getTime() : NaN
+        if (planKey) {
+          if (Number.isFinite(expiresAtMs)) return { ok: expiresAtMs > now, reason: expiresAtMs > now ? null : 'expired' }
+          if (status === 'active' || status === 'trial') return { ok: true, reason: null }
+          return { ok: true, reason: null }
+        }
+        const legacy = typeof planService.getActivePlan === 'function' ? planService.getActivePlan() : null
+        return legacy ? { ok: true, reason: null } : { ok: false, reason: 'missing' }
+      } catch (_) {
+        return { ok: false, reason: 'missing' }
+      }
+    })()
+    if (local.ok) return local
+    try {
+      const { data, error } = await withTimeout(
+        supabase.from('profiles').select('active_plan').eq('user_id', String(user?.id || '')).maybeSingle(),
+        8000,
+        'plan_check_timeout'
+      )
+      if (!error) {
+        const activePlan = String((data as any)?.active_plan || '').trim()
+        if (activePlan) return { ok: true, reason: null }
+        return { ok: false, reason: 'missing' }
+      }
+    } catch (_) {}
+    return local
+  }
+
   const handleCreateCourse = async () => {
     if (isSavingCourse) return
     if (!user) {
@@ -864,6 +916,19 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
 
     if (!title.trim()) {
       toast({ title: 'Erro', description: 'O título do curso é obrigatório.', variant: 'destructive' })
+      return
+    }
+
+    const planCheck = await ensureHasPlanToCreateCourse()
+    if (!planCheck.ok) {
+      const desc = planCheck.reason === 'expired'
+        ? 'Seu plano expirou. Renove ou contrate um plano para criar um curso.'
+        : 'Para criar um curso, você precisa contratar um plano.'
+      toast({ title: 'Plano necessário', description: desc, variant: 'destructive' })
+      try {
+        window.history.pushState({}, '', '/planos')
+        window.dispatchEvent(new PopStateEvent('popstate'))
+      } catch (_) {}
       return
     }
 
@@ -899,8 +964,9 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
           const gb = mb / 1024
           return `${gb.toFixed(2)} GB`
         }
-        const allowed = await canUploadBytes(user.id, file.size, resolvePlanKey())
-        if (!allowed.ok) {
+        const allowed = await withTimeout(canUploadBytes(user.id, file.size, resolvePlanKey()), 8000, 'storage_check_timeout')
+          .catch(() => ({ ok: true, reason: 'storage_check_timeout' } as any))
+        if (allowed && allowed.ok === false) {
           const usedText = typeof (allowed as any)?.usedBytes === 'number' ? formatBytes(Number((allowed as any).usedBytes)) : null
           const limitText = typeof (allowed as any)?.limitBytes === 'number' ? formatBytes(Number((allowed as any).limitBytes)) : null
           throw new Error(`Limite de armazenamento atingido${usedText && limitText ? ` (${usedText} de ${limitText})` : ''}. Faça upgrade do seu plano para continuar.`)
@@ -914,8 +980,8 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
           if (!token) throw new Error('Sessão expirada. Faça login novamente para enviar o vídeo.')
           try {
             const qs = new URLSearchParams({ type: 'ensure_courses_media_upload', bytes: String(file.size) })
-            const r = await fetch(`/api/producer?${qs.toString()}`, { headers: { Authorization: `Bearer ${token}` } })
-            const body = await r.json().catch(() => ({}))
+            const r = await withTimeout(fetch(`/api/producer?${qs.toString()}`, { headers: { Authorization: `Bearer ${token}` } }), 15000, 'upload_limit_check_timeout')
+            const body = await withTimeout(r.json().catch(() => ({} as any)), 5000, 'upload_limit_check_parse_timeout').catch(() => ({} as any))
             if (r.ok && body?.ok === true) return
             const err = String(body?.error || 'upload_limit_check_failed')
             if (err === 'file_exceeds_plan_storage' || err === 'file_exceeds_max_single_file') {
@@ -950,6 +1016,7 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
           if (typeof Upload !== 'function') throw new Error('Falha ao inicializar upload resumível')
           await new Promise<void>((resolve, reject) => {
             try {
+              let timeoutId: any = null
               const upload = new Upload(file, {
                 endpoint,
                 retryDelays: [0, 3000, 5000, 10_000, 20_000],
@@ -966,6 +1033,7 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
                   contentType: file.type || 'application/octet-stream',
                 },
                 onError: (err: any) => {
+                  try { if (timeoutId) clearTimeout(timeoutId) } catch (_) {}
                   let status = 0
                   try { status = Number(err?.originalResponse?.getStatus?.() || err?.originalResponse?.getStatusCode?.() || 0) } catch (_) { status = 0 }
                   const msg = String(err?.message || err || '').toLowerCase()
@@ -976,8 +1044,15 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
                   }
                   reject(err)
                 },
-                onSuccess: () => resolve(),
+                onSuccess: () => {
+                  try { if (timeoutId) clearTimeout(timeoutId) } catch (_) {}
+                  resolve()
+                },
               })
+              timeoutId = setTimeout(() => {
+                try { upload.abort(true) } catch (_) {}
+                reject(new Error('upload_timeout'))
+              }, 10 * 60 * 1000)
               upload.start()
             } catch (e) {
               reject(e)
@@ -1024,10 +1099,11 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
         const kindPath = sanitizeStorageObjectPath(kind) || "media"
         const objectPath = sanitizeStorageObjectPath(`users/${uidSeg}/courses/${courseSeg}/${kindPath}/${Date.now()}_${safeName}`)
         if (!objectPath) throw new Error("invalid_path")
-        const { data, error } = await supabase.storage.from(bucket).upload(objectPath, file, {
-          upsert: true,
-          contentType: file.type || 'application/octet-stream',
-        })
+        const { data, error } = await withTimeout(
+          supabase.storage.from(bucket).upload(objectPath, file, { upsert: true, contentType: file.type || 'application/octet-stream' }),
+          180_000,
+          'upload_timeout'
+        )
         if (error) {
           const msg = String((error as any)?.message || error || '')
           if (isVideo && (msg.toLowerCase().includes('maximum allowed size') || msg.toLowerCase().includes('exceeded the maximum'))) {
@@ -1153,10 +1229,18 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
         return next as any
       })()
 
+      const modulesFinal = (Array.isArray(modulesWithUploadedMaterials) ? modulesWithUploadedMaterials : []).map((m: any) => {
+        const vis = String(m?.visibility || '').trim()
+        if (vis !== 'Gratuita para alunos do curso') return { ...m, freeCourseIds: undefined }
+        const raw = m?.freeCourseIds || m?.free_course_ids || []
+        const normalized = normalizeFreeCourseIds(raw, String(courseId))
+        return { ...m, freeCourseIds: normalized }
+      })
+
       const payloadData = {
         title,
         description,
-        modules: modulesWithUploadedMaterials,
+        modules: modulesFinal,
         status: 'draft',
         selectedCourses,
         selectedCategories,
@@ -1188,7 +1272,7 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
         user_id: user.id,
         title,
         description,
-        modules: { modules: modulesWithUploadedMaterials, meta: metaForModules },
+        modules: { modules: modulesFinal, meta: metaForModules },
         cover_image_url: cover?.url || null,
         promo_video_url: promo?.url || null,
         module_layout_image_url: moduleLayout?.url || null,
@@ -1200,7 +1284,7 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
       {
         let attemptPayload: any = { ...fullPayload }
         for (let i = 0; i < 12; i++) {
-          const { error } = await supabase.from('courses').insert(attemptPayload).select('id').single()
+          const { error } = await withTimeout(supabase.from('courses').insert(attemptPayload).select('id').single(), 30000, 'courses_insert_timeout')
           insertError = error
           if (!insertError) break
           const msg = String(insertError?.message || insertError || '')
@@ -1223,6 +1307,22 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
     } catch (error: any) {
       console.error('Erro ao criar curso:', error)
       const msg = String(error?.message || error || '')
+      if (msg.toLowerCase().includes('limite de armazenamento atingido')) {
+        toast({ title: 'Plano necessário', description: 'Para enviar arquivos e criar cursos, faça upgrade/contrate um plano.', variant: 'destructive' })
+        try {
+          window.history.pushState({}, '', '/planos')
+          window.dispatchEvent(new PopStateEvent('popstate'))
+        } catch (_) {}
+        return
+      }
+      if (msg === 'courses_insert_timeout') {
+        toast({ title: 'Tempo excedido', description: 'Não foi possível salvar o curso agora. Tente novamente.', variant: 'destructive' })
+        return
+      }
+      if (msg === 'upload_timeout' || msg === 'upload_limit_check_timeout' || msg === 'upload_limit_check_parse_timeout') {
+        toast({ title: 'Tempo excedido', description: 'O envio de arquivos demorou muito. Tente novamente.', variant: 'destructive' })
+        return
+      }
       if (msg.toLowerCase().includes('bucket not found')) {
         toast({
           title: 'Storage não configurado',
@@ -1529,10 +1629,18 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
         return next as any
       })()
 
+      const modulesFinal = (Array.isArray(modulesWithUploadedMaterials) ? modulesWithUploadedMaterials : []).map((m: any) => {
+        const vis = String(m?.visibility || '').trim()
+        if (vis !== 'Gratuita para alunos do curso') return { ...m, freeCourseIds: undefined }
+        const raw = m?.freeCourseIds || m?.free_course_ids || []
+        const normalized = normalizeFreeCourseIds(raw, String(editingCourseId))
+        return { ...m, freeCourseIds: normalized }
+      })
+
       const payloadData = {
         title,
         description,
-        modules: modulesWithUploadedMaterials,
+        modules: modulesFinal,
         status: courseStatus,
         selectedCourses,
         selectedCategories,
@@ -1562,7 +1670,7 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
       const updatePayload: any = {
         title,
         description,
-        modules: { modules: modulesWithUploadedMaterials, meta: metaForModules },
+        modules: { modules: modulesFinal, meta: metaForModules },
         cover_image_url: finalCoverUrl || null,
         promo_video_url: finalPromoUrl || null,
         module_layout_image_url: finalModuleLayoutUrl || null,
@@ -2508,6 +2616,21 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
     return intValue * 100
   }
 
+  const normalizeFreeCourseIds = (ids: any, selfCourseId: string) => {
+    const arr = Array.isArray(ids) ? ids : []
+    const out: string[] = []
+    for (const v of arr) {
+      const s = String(v || '').trim()
+      if (!s) continue
+      if (s === 'self') {
+        if (selfCourseId) out.push(selfCourseId)
+        continue
+      }
+      out.push(s)
+    }
+    return Array.from(new Set(out))
+  }
+
   const startEditingLesson = (module: { id: string }, lesson: Lesson) => {
     setNewLessonTitle(lesson.title)
     setNewLessonDescription(lesson.description || '')
@@ -3046,7 +3169,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
   const [newLessonDescription, setNewLessonDescription] = useState<string>('')
   const [newLessonDescriptionRich, setNewLessonDescriptionRich] = useState<any>(null)
   const [newLessonDurationMin, setNewLessonDurationMin] = useState<number>(0)
-  const [newLessonVisibility, setNewLessonVisibility] = useState<'Gratuita' | 'Paga'>('Gratuita')
+  const [newLessonVisibility, setNewLessonVisibility] = useState<'Gratuita' | 'Paga' | 'Gratuita para alunos do curso'>('Gratuita')
   const [newLessonPrice, setNewLessonPrice] = useState<string>('')
   const [newLessonDifficulty, setNewLessonDifficulty] = useState<Lesson['difficulty']>('Intermediário')
   // Estados para tokens no modal de nova aula
@@ -3760,8 +3883,9 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
               </div>
               <div>
                 <label className="text-[12px] font-medium text-[#374151]">Visibilidade</label>
-                <select value={newLessonVisibility} onChange={(e) => { const v = e.target.value as 'Gratuita' | 'Paga'; setNewLessonVisibility(v); if (v === 'Gratuita') setNewLessonPrice('') }} className="mt-1 h-9 w-full rounded-[8px] border border-[#E3E4E5] px-3 text-[12px]">
+                <select value={newLessonVisibility} onChange={(e) => { const v = e.target.value as 'Gratuita' | 'Paga' | 'Gratuita para alunos do curso'; setNewLessonVisibility(v); if (v === 'Gratuita') setNewLessonPrice('') }} className="mt-1 h-9 w-full rounded-[8px] border border-[#E3E4E5] px-3 text-[12px]">
                   <option value="Gratuita">Gratuita</option>
+                  <option value="Gratuita para alunos do curso">Gratuita para alunos do curso</option>
                   <option value="Paga">Paga</option>
                 </select>
               </div>
@@ -3775,7 +3899,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
               </div>
             </div>
 
-            {newLessonVisibility === 'Paga' && (
+            {newLessonVisibility !== 'Gratuita' && (
               <div>
                 <label className="text-[12px] font-medium text-[#374151]">Valor da aula</label>
                 <div className="mt-1 flex items-center rounded-[8px] border border-[#E3E4E5] bg-white px-3">
@@ -4195,8 +4319,9 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                 setModules([{ id: modId, name: 'Módulo 1', description: '', lessonsCount: 0, lessons: [] }])
                 selectedModuleId = modId
               }
-              const lessonPriceCents = newLessonVisibility === 'Paga' ? parseBRLValueToCents(newLessonPrice) : null
-              if (newLessonVisibility === 'Paga' && (!lessonPriceCents || lessonPriceCents <= 0)) {
+              const paidLike = newLessonVisibility !== 'Gratuita'
+              const lessonPriceCents = paidLike ? parseBRLValueToCents(newLessonPrice) : null
+              if (paidLike && (!lessonPriceCents || lessonPriceCents <= 0)) {
                 toast({ title: 'Informe o valor', description: 'Defina o valor da aula para visibilidade Paga.', variant: 'destructive' as any })
                 return
               }
@@ -4212,7 +4337,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                   description_rich: newLessonDescriptionRich || null,
                   durationMin: newLessonDurationMin || 15,
                   visibility: newLessonVisibility,
-                  priceCents: newLessonVisibility === 'Paga' ? (lessonPriceCents || undefined) : undefined,
+                  priceCents: paidLike ? (lessonPriceCents || undefined) : undefined,
                   difficulty: newLessonDifficulty || 'Intermediário',
                   tag: newLessonExtraTags.length ? newLessonExtraTags[0] : '',
                   categories: newLessonCategories,
@@ -4401,23 +4526,24 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                 rows={3}
               />
             </div>
-            <div className={newModuleVisibility === 'Paga' ? "grid grid-cols-2 gap-3" : "grid grid-cols-1 gap-3"}>
+            <div className={newModuleVisibility !== 'Gratuita' ? "grid grid-cols-2 gap-3" : "grid grid-cols-1 gap-3"}>
               <div>
                 <label className="text-[12px] font-medium text-[#737780]">Visibilidade</label>
                 <select
                   value={newModuleVisibility}
                   onChange={(e) => {
-                    const v = e.target.value as 'Gratuita' | 'Paga'
+                    const v = e.target.value as 'Gratuita' | 'Paga' | 'Gratuita para alunos do curso'
                     setNewModuleVisibility(v)
                     if (v === 'Gratuita') setNewModulePrice('')
                   }}
                   className="mt-1 w-full h-10 px-3 border border-[#E3E4E5] rounded-[6px] bg-white text-[14px]"
                 >
                   <option value="Gratuita">Gratuito</option>
+                  <option value="Gratuita para alunos do curso">Gratuito para alunos do curso</option>
                   <option value="Paga">Pago</option>
                 </select>
               </div>
-              {newModuleVisibility === 'Paga' ? (
+              {newModuleVisibility !== 'Gratuita' ? (
                 <div>
                   <label className="text-[12px] font-medium text-[#737780]">Valor</label>
                   <div className="mt-1 flex items-center rounded-[6px] border border-[#E3E4E5] bg-white px-3">
@@ -4434,9 +4560,32 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                       placeholder="0,00"
                     />
                   </div>
+                  {newModuleVisibility === 'Gratuita para alunos do curso' ? (
+                    <div className="mt-1 text-[11px] text-[#737780]">Opcional: defina um valor para vender o módulo avulso para quem não é aluno do(s) curso(s).</div>
+                  ) : null}
                 </div>
               ) : null}
             </div>
+            {newModuleVisibility === 'Gratuita para alunos do curso' ? (
+              <div>
+                <label className="text-[12px] font-medium text-[#737780]">Gratuito para alunos de</label>
+                <select
+                  multiple
+                  value={Array.isArray(newModuleFreeCourseIds) ? newModuleFreeCourseIds : []}
+                  onChange={(e) => {
+                    const selected = Array.from(e.currentTarget.selectedOptions).map((o) => String(o.value || '').trim()).filter(Boolean)
+                    setNewModuleFreeCourseIds(selected)
+                  }}
+                  className="mt-1 w-full min-h-[96px] rounded-[6px] border border-[#E3E4E5] bg-white px-3 py-2 text-[13px]"
+                >
+                  <option value="self">Este curso</option>
+                  {availableCourses.map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+                <div className="mt-1 text-[11px] text-[#737780]">Dica: segure Ctrl (Windows) para selecionar mais de um.</div>
+              </div>
+            ) : null}
           </div>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => {
@@ -4445,6 +4594,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
               setNewModuleDescription("");
               setNewModuleVisibility('Gratuita')
               setNewModulePrice('')
+              setNewModuleFreeCourseIds(['self'])
               setNewModuleCoverImage(null)
               setNewModuleCoverFile(null)
               setIsNewModuleCoverGalleryOpen(false)
@@ -4455,13 +4605,18 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                 const name = newModuleTitle.trim();
                 const desc = newModuleDescription.trim();
                 if (!name || !desc) return;
-                const priceCents = newModuleVisibility === 'Paga' ? parseBRLValueToCents(newModulePrice) : null
+                const hasPrice = newModuleVisibility !== 'Gratuita'
+                const priceCents = hasPrice ? (parseBRLValueToCents(newModulePrice) || 0) : null
                 if (newModuleVisibility === 'Paga' && (!priceCents || priceCents <= 0)) {
                   toast({ title: 'Informe o valor', description: 'Defina o valor do módulo para visibilidade Paga.', variant: 'destructive' as any })
                   return
                 }
                 const id = `mod-${Date.now()}`
-                setModules((prev) => [...prev, { id, name, description: desc, lessonsCount: 0, lessons: [], cover_image_url: newModuleCoverImage || null, cover_image_path: null, visibility: newModuleVisibility, priceCents: newModuleVisibility === 'Paga' ? (priceCents || 0) : undefined } as any]);
+                const freeCourseIds =
+                  newModuleVisibility === 'Gratuita para alunos do curso'
+                    ? (Array.isArray(newModuleFreeCourseIds) && newModuleFreeCourseIds.length ? newModuleFreeCourseIds : ['self'])
+                    : undefined
+                setModules((prev) => [...prev, { id, name, description: desc, lessonsCount: 0, lessons: [], cover_image_url: newModuleCoverImage || null, cover_image_path: null, visibility: newModuleVisibility, priceCents: hasPrice ? (priceCents || 0) : undefined, freeCourseIds } as any]);
                 if (newModuleCoverFile) {
                   setModuleCoverFilesById((prev) => ({ ...prev, [id]: newModuleCoverFile }))
                 }
@@ -4472,6 +4627,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                 setNewModuleDescription("");
                 setNewModuleVisibility('Gratuita')
                 setNewModulePrice('')
+                setNewModuleFreeCourseIds(['self'])
                 setNewModuleCoverImage(null)
                 setNewModuleCoverFile(null)
                 setIsNewModuleCoverGalleryOpen(false)
@@ -5059,6 +5215,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                                         onChange={(e) => updateLessonField(m.id, editingLessonId!, 'visibility', e.target.value as Lesson['visibility'])}
                                       >
                                         <option value="Gratuita">Gratuita</option>
+                                        <option value="Gratuita para alunos do curso">Gratuita para alunos do curso</option>
                                         <option value="Paga">Paga</option>
                                       </select>
                                     </div>
@@ -5246,6 +5403,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                                         onChange={(e) => updateLessonField(m.id, editingLessonId!, 'visibility', e.target.value as Lesson['visibility'])}
                                       >
                                         <option value="Gratuita">Gratuita</option>
+                                        <option value="Gratuita para alunos do curso">Gratuita para alunos do curso</option>
                                         <option value="Paga">Paga</option>
                                       </select>
                                     </div>
@@ -5388,8 +5546,9 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                                 </div>
                               <div>
                                   <label className="text-[12px] font-medium text-[#374151]">Visibilidade</label>
-                                  <select value={newLessonVisibility} onChange={(e) => setNewLessonVisibility(e.target.value as 'Gratuita' | 'Paga')} className="mt-1 h-9 w-full rounded-[8px] border border-[#E3E4E5] px-3 text-[12px]">
+                                  <select value={newLessonVisibility} onChange={(e) => setNewLessonVisibility(e.target.value as 'Gratuita' | 'Paga' | 'Gratuita para alunos do curso')} className="mt-1 h-9 w-full rounded-[8px] border border-[#E3E4E5] px-3 text-[12px]">
                                     <option value="Gratuita">Gratuita</option>
+                                    <option value="Gratuita para alunos do curso">Gratuita para alunos do curso</option>
                                     <option value="Paga">Paga</option>
                                   </select>
                                 </div>
@@ -5958,6 +6117,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                                 <label className="text-[12px] font-medium text-[#737780]">Visibilidade*</label>
                                 <select className="mt-1 w-full rounded-[8px] border border-[#E3E4E5] bg-white px-3 py-2 text-[13px]" value={mod.lessons.find((l) => l.id === editingLessonId)?.visibility ?? 'Gratuita'} onChange={(e) => updateLessonField(mod.id, editingLessonId!, 'visibility', e.target.value as Lesson['visibility'])}>
                                   <option value="Gratuita">Gratuita</option>
+                                  <option value="Gratuita para alunos do curso">Gratuita para alunos do curso</option>
                                   <option value="Paga">Paga</option>
                                 </select>
                               </div>
@@ -6948,6 +7108,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                                         setModuleEditDescription('')
                                         setModuleEditVisibility('Gratuita')
                                         setModuleEditPrice('')
+                                        setModuleEditFreeCourseIds(['self'])
                                         setModuleEditCoverImage(null)
                                         setModuleEditCoverPath(null)
                                         setModuleEditCoverFile(null)
@@ -6958,8 +7119,16 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                                       setModuleEditId(m.id)
                                       setModuleEditTitle(m.name)
                                       setModuleEditDescription(m.description || '')
-                                      setModuleEditVisibility((m as any).visibility === 'Paga' ? 'Paga' : 'Gratuita')
-                                      setModuleEditPrice((m as any).visibility === 'Paga' && Number.isFinite(Number((m as any).priceCents)) ? formatCentsToBRLValue(Number((m as any).priceCents)) : '')
+                                      {
+                                        const vis = String((m as any).visibility || '').trim()
+                                        const v = (vis === 'Paga' || vis === 'Gratuita para alunos do curso') ? vis : 'Gratuita'
+                                        setModuleEditVisibility(v as any)
+                                        const cents = Number((m as any).priceCents || 0)
+                                        setModuleEditPrice((v !== 'Gratuita' && Number.isFinite(cents) && cents > 0) ? formatCentsToBRLValue(cents) : '')
+                                        const rawIds = (m as any).freeCourseIds || (m as any).free_course_ids || []
+                                        const ids = Array.isArray(rawIds) ? rawIds.map((x: any) => String(x || '').trim()).filter(Boolean) : []
+                                        setModuleEditFreeCourseIds(ids.length ? ids : ['self'])
+                                      }
                                       setModuleEditCoverImage((m as any).cover_image_url || null)
                                       setModuleEditCoverPath((m as any).cover_image_path || null)
                                       setModuleEditCoverFile(null)
@@ -7119,23 +7288,24 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                                         rows={2}
                                       />
                                     </div>
-                                    <div className={moduleEditVisibility === 'Paga' ? "grid grid-cols-2 gap-3" : "grid grid-cols-1 gap-3"}>
+                                    <div className={moduleEditVisibility !== 'Gratuita' ? "grid grid-cols-2 gap-3" : "grid grid-cols-1 gap-3"}>
                                       <div>
                                         <label className="text-[12px] text-[#737780]">Visibilidade</label>
                                         <select
                                           value={moduleEditVisibility}
                                           onChange={(e) => {
-                                            const v = e.target.value as 'Gratuita' | 'Paga'
+                                            const v = e.target.value as 'Gratuita' | 'Paga' | 'Gratuita para alunos do curso'
                                             setModuleEditVisibility(v)
                                             if (v === 'Gratuita') setModuleEditPrice('')
                                           }}
                                           className="mt-1 h-9 w-full rounded-[8px] border border-[#E3E4E5] bg-white px-3 text-[12px]"
                                         >
                                           <option value="Gratuita">Gratuito</option>
+                                          <option value="Gratuita para alunos do curso">Gratuito para alunos do curso</option>
                                           <option value="Paga">Pago</option>
                                         </select>
                                       </div>
-                                      {moduleEditVisibility === 'Paga' ? (
+                                      {moduleEditVisibility !== 'Gratuita' ? (
                                         <div>
                                           <label className="text-[12px] text-[#737780]">Valor</label>
                                           <div className="mt-1 flex items-center rounded-[8px] border border-[#E3E4E5] bg-white px-3">
@@ -7152,9 +7322,32 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                                               placeholder="0,00"
                                             />
                                           </div>
+                                          {moduleEditVisibility === 'Gratuita para alunos do curso' ? (
+                                            <div className="mt-1 text-[11px] text-[#737780]">Opcional: defina um valor para vender o módulo avulso para quem não é aluno do(s) curso(s).</div>
+                                          ) : null}
                                         </div>
                                       ) : null}
                                     </div>
+                                    {moduleEditVisibility === 'Gratuita para alunos do curso' ? (
+                                      <div>
+                                        <label className="text-[12px] text-[#737780]">Gratuito para alunos de</label>
+                                        <select
+                                          multiple
+                                          value={Array.isArray(moduleEditFreeCourseIds) ? moduleEditFreeCourseIds : []}
+                                          onChange={(e) => {
+                                            const selected = Array.from(e.currentTarget.selectedOptions).map((o) => String(o.value || '').trim()).filter(Boolean)
+                                            setModuleEditFreeCourseIds(selected)
+                                          }}
+                                          className="mt-1 w-full min-h-[96px] rounded-[8px] border border-[#E3E4E5] bg-white px-3 py-2 text-[13px]"
+                                        >
+                                          <option value="self">Este curso</option>
+                                          {availableCourses.map((c) => (
+                                            <option key={c.id} value={c.id}>{c.name}</option>
+                                          ))}
+                                        </select>
+                                        <div className="mt-1 text-[11px] text-[#737780]">Dica: segure Ctrl (Windows) para selecionar mais de um.</div>
+                                      </div>
+                                    ) : null}
                                   </div>
                                   <div className="mt-3 flex items-center justify-end gap-2">
                                     <Button
@@ -7183,14 +7376,19 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                                         const name = moduleEditTitle.trim()
                                         const desc = moduleEditDescription.trim()
                                         if (!name) return
-                                        const priceCents = moduleEditVisibility === 'Paga' ? parseBRLValueToCents(moduleEditPrice) : null
+                                        const hasPrice = moduleEditVisibility !== 'Gratuita'
+                                        const priceCents = hasPrice ? (parseBRLValueToCents(moduleEditPrice) || 0) : null
                                         if (moduleEditVisibility === 'Paga' && (!priceCents || priceCents <= 0)) {
                                           toast({ title: 'Informe o valor', description: 'Defina o valor do módulo para visibilidade Paga.', variant: 'destructive' as any })
                                           return
                                         }
                                         const nextCoverUrl = moduleEditCoverImage || null
                                         const nextCoverPath = moduleEditCoverFile ? null : (moduleEditCoverImage ? moduleEditCoverPath : null)
-                                        setModules((prev) => prev.map((x: any) => x.id === m.id ? { ...x, name, description: desc, cover_image_url: nextCoverUrl, cover_image_path: nextCoverPath, visibility: moduleEditVisibility, priceCents: moduleEditVisibility === 'Paga' ? (priceCents || 0) : undefined } : x))
+                                        const freeCourseIds =
+                                          moduleEditVisibility === 'Gratuita para alunos do curso'
+                                            ? (Array.isArray(moduleEditFreeCourseIds) && moduleEditFreeCourseIds.length ? moduleEditFreeCourseIds : ['self'])
+                                            : undefined
+                                        setModules((prev) => prev.map((x: any) => x.id === m.id ? { ...x, name, description: desc, cover_image_url: nextCoverUrl, cover_image_path: nextCoverPath, visibility: moduleEditVisibility, priceCents: hasPrice ? (priceCents || 0) : undefined, freeCourseIds } : x))
                                         if (moduleEditCoverFile) {
                                           setModuleCoverFilesById((prev) => ({ ...prev, [m.id]: moduleEditCoverFile }))
                                         }
@@ -7208,6 +7406,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                                         setModuleEditDescription('')
                                         setModuleEditVisibility('Gratuita')
                                         setModuleEditPrice('')
+                                        setModuleEditFreeCourseIds(['self'])
                                         setModuleEditCoverImage(null)
                                         setModuleEditCoverPath(null)
                                         setModuleEditCoverFile(null)
@@ -7381,6 +7580,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                             onChange={(e) => updateLessonField(mod.id, editingLessonId!, 'visibility', e.target.value as Lesson['visibility'])}
                           >
                             <option value="Gratuita">Gratuita</option>
+                            <option value="Gratuita para alunos do curso">Gratuita para alunos do curso</option>
                             <option value="Paga">Paga</option>
                           </select>
                         </div>

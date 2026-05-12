@@ -845,12 +845,39 @@ export const AuthProvider = ({ children }) => {
 
   const signIn = useCallback(async (email, password) => {
     if (!SUPABASE_ENV_OK) return { error: { message: SUPABASE_ENV_ERROR } }
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    let data = null
+    let error = null
+    try {
+      const r = await withTimeout(supabase.auth.signInWithPassword({
+        email,
+        password,
+      }), 45000)
+      data = r?.data || null
+      error = r?.error || null
+    } catch (e) {
+      error = e
+    }
+    if (error) return { error }
 
-    return { error };
+    try {
+      const s = data?.session || null
+      const at = String(s?.access_token || '').trim()
+      const rt = String(s?.refresh_token || '').trim()
+      if (at && rt) {
+        try { await supabase.auth.setSession({ access_token: at, refresh_token: rt }) } catch (_) {}
+      }
+    } catch (_) {}
+
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+    for (let i = 0; i < 5; i += 1) {
+      try {
+        const sess = (await withTimeout(supabase.auth.getSession(), 12000).catch(() => ({ data: { session: null } })))?.data?.session || null
+        if (sess?.user?.id) return { error: null }
+      } catch (_) {}
+      await sleep(250)
+    }
+
+    return { error: { message: 'Não foi possível finalizar o login (sessão não persistiu). Tente novamente ou desative bloqueios de cookies/armazenamento do navegador.' } }
   }, []);
 
   const signOut = useCallback(async () => {
@@ -1301,6 +1328,17 @@ export const AuthProvider = ({ children }) => {
             const mid = entityId || String(dataObj?.moduleId || dataObj?.module_id || '').trim()
             if (!cid || !mid) continue
             const k = `connekt_module_owned:${cid}:${mid}`
+            try {
+              if (expired) localStorage.removeItem(k)
+              else localStorage.setItem(k, '1')
+            } catch (_) {}
+          }
+          if (entityType === 'lesson' || dataType === 'lesson') {
+            const cid = String(dataObj?.courseId || dataObj?.course_id || '').trim()
+            const mid = String(dataObj?.moduleId || dataObj?.module_id || '').trim()
+            const lid = entityId || String(dataObj?.lessonId || dataObj?.lesson_id || '').trim()
+            if (!cid || !mid || !lid) continue
+            const k = `connekt_lesson_owned:${cid}:${mid}:${lid}`
             try {
               if (expired) localStorage.removeItem(k)
               else localStorage.setItem(k, '1')

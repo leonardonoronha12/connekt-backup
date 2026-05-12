@@ -32,7 +32,6 @@ function generateUuid() {
  * @returns {Promise<{ id: string|number, image_url: string }>}
  */
 export async function uploadAndSaveImage({ file, contentId, title }) {
-  const endUpload = beginUpload()
   if (!file) throw new Error('Nenhum arquivo selecionado.');
   if (!isImageFile(file)) throw new Error('O arquivo precisa ser uma imagem.');
   const maxBytes = 5 * 1024 * 1024; // 5MB
@@ -40,23 +39,24 @@ export async function uploadAndSaveImage({ file, contentId, title }) {
     throw new Error('A imagem excede 5MB. Selecione um arquivo menor.');
   }
 
+  const endUpload = beginUpload()
   try {
-    const { data } = await supabase.auth.getUser()
-    const uid = data?.user?.id || null
-    if (uid) {
-      const allowed = await canUploadBytes(uid, file.size, resolvePlanKey())
-      if (!allowed.ok) throw new Error('Limite de armazenamento atingido. Faça upgrade do seu plano para continuar.')
+    try {
+      const { data } = await supabase.auth.getUser()
+      const uid = data?.user?.id || null
+      if (uid) {
+        const allowed = await canUploadBytes(uid, file.size, resolvePlanKey())
+        if (!allowed.ok) throw new Error('Limite de armazenamento atingido. Faça upgrade do seu plano para continuar.')
+      }
+    } catch (e) {
+      if (String(e?.message || '').toLowerCase().includes('limite de armazenamento')) throw e
     }
-  } catch (e) {
-    if (String(e?.message || '').toLowerCase().includes('limite de armazenamento')) throw e
-  }
 
-  const bucket = 'images';
-  const ext = getExtension(file);
-  const uuid = generateUuid();
-  const objectPath = `public/${uuid}.${ext}`;
+    const bucket = 'images';
+    const ext = getExtension(file);
+    const uuid = generateUuid();
+    const objectPath = `public/${uuid}.${ext}`;
 
-  try {
     // Upload no Storage
     const { data: uploadData, error: uploadError } = await supabase
       .storage
