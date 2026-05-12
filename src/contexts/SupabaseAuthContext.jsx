@@ -180,6 +180,16 @@ export const AuthProvider = ({ children }) => {
     setLoading(false);
   }, []);
 
+  useEffect(() => {
+    if (!loading) return
+    const t = window.setTimeout(() => {
+      setLoading(false)
+    }, 20000)
+    return () => {
+      window.clearTimeout(t)
+    }
+  }, [loading])
+
   const tryReadStoredSession = useCallback(() => {
     const readFrom = (storage) => {
       if (!storage) return null
