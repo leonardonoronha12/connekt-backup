@@ -15,6 +15,21 @@ function withTimeout(promise, ms) {
   })
 }
 
+function decodeJwtPayload(token) {
+  const raw = String(token || '').trim()
+  const parts = raw.split('.')
+  if (parts.length < 2) return null
+  const p = parts[1] || ''
+  const pad = p.length % 4 === 0 ? '' : '='.repeat(4 - (p.length % 4))
+  const b64 = (p + pad).replace(/-/g, '+').replace(/_/g, '/')
+  try {
+    const jsonText = atob(b64)
+    return JSON.parse(jsonText || '{}')
+  } catch (_) {
+    return null
+  }
+}
+
 function getAuthRedirectOrigin() {
   const readEnvUrl = () => {
     try {
@@ -277,6 +292,7 @@ export const AuthProvider = ({ children }) => {
     let cancelled = false
     const run = async () => {
       let didTry = false
+      let optimisticSession = null
       try {
         const hash = String(window.location.hash || '')
         if (!hash || hash === '#') return
@@ -287,6 +303,42 @@ export const AuthProvider = ({ children }) => {
         const params = new URLSearchParams(normalizedHash)
         const at = String(params.get('sb_at') || params.get('access_token') || '').trim()
         const rt = String(params.get('sb_rt') || params.get('refresh_token') || '').trim()
+
+        try {
+          if (at && rt) {
+            const payload = decodeJwtPayload(at) || {}
+            const userId = String(payload?.sub || '').trim()
+            const email = String(payload?.email || '').trim()
+            const userMetadata = (payload?.user_metadata && typeof payload.user_metadata === 'object') ? payload.user_metadata : ((payload?.userMetadata && typeof payload.userMetadata === 'object') ? payload.userMetadata : {})
+            const appMetadata = (payload?.app_metadata && typeof payload.app_metadata === 'object') ? payload.app_metadata : ((payload?.appMetadata && typeof payload.appMetadata === 'object') ? payload.appMetadata : {})
+            const expiresAt = Number(payload?.exp || 0)
+            const userObj = userId ? { id: userId, email, user_metadata: userMetadata, app_metadata: appMetadata } : null
+            if (userObj) {
+              optimisticSession = {
+                access_token: at,
+                refresh_token: rt,
+                token_type: 'bearer',
+                expires_at: Number.isFinite(expiresAt) && expiresAt > 0 ? expiresAt : null,
+                user: userObj,
+              }
+              handleSession(optimisticSession)
+            }
+          }
+        } catch (_) {}
+
+        try {
+          const u = new URL(window.location.href)
+          u.hash = ''
+          u.searchParams.delete('error')
+          u.searchParams.delete('error_code')
+          u.searchParams.delete('error_description')
+          u.searchParams.delete('code')
+          u.searchParams.delete('state')
+          u.searchParams.delete('oauth_provider')
+          u.searchParams.delete('oauth_flow')
+          window.history.replaceState({}, '', `${u.pathname}${u.search}`)
+          window.dispatchEvent(new PopStateEvent('popstate'))
+        } catch (_) {}
 
         try {
           const intent = String(sessionStorage.getItem('connekt_login_intent') || localStorage.getItem('connekt_login_intent') || '').trim().toLowerCase()
@@ -300,7 +352,7 @@ export const AuthProvider = ({ children }) => {
 
         let nextSession = null
         if (at && rt) {
-          const r = await supabase.auth.setSession({ access_token: at, refresh_token: rt }).catch(() => null)
+          const r = await withTimeout(supabase.auth.setSession({ access_token: at, refresh_token: rt }), 12000).catch(() => null)
           nextSession = r?.data?.session || null
         }
 
@@ -309,13 +361,13 @@ export const AuthProvider = ({ children }) => {
           nextSession = sessData?.session || null
         }
         if (cancelled) return
-        handleSession(nextSession)
+        handleSession(nextSession || optimisticSession)
       } catch (_) {
         if (!didTry) return
         try {
           const { data: sessData } = await withTimeout(supabase.auth.getSession(), 12000).catch(() => ({ data: { session: null } }))
           if (cancelled) return
-          handleSession(sessData?.session || null)
+          handleSession(sessData?.session || optimisticSession || null)
         } catch (_) {}
       } finally {
         try {
