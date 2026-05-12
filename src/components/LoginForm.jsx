@@ -44,14 +44,16 @@ const LoginForm = ({ onShowRegister, mode = 'producer' }) => {
   const [alert, setAlert] = useState({
     show: false,
     message: '',
-    type: 'error'
+    type: 'error',
+    duration: 5000,
   });
 
-  const showAlert = (message, type = 'error') => {
+  const showAlert = (message, type = 'error', duration = 5000) => {
     setAlert({
       show: true,
       message,
-      type
+      type,
+      duration,
     });
   };
 
@@ -59,7 +61,8 @@ const LoginForm = ({ onShowRegister, mode = 'producer' }) => {
     setAlert({
       show: false,
       message: '',
-      type: 'error'
+      type: 'error',
+      duration: 5000,
     });
   };
 
@@ -85,7 +88,7 @@ const LoginForm = ({ onShowRegister, mode = 'producer' }) => {
     } catch (_) {}
 
     if (String(emailConfirmed || '') === 'true') {
-      showAlert('Email confirmado com sucesso! Faça login para continuar.', 'success')
+      showAlert('Email confirmado com sucesso! Faça login para continuar.', 'success', 8000)
       try {
         const url = new URL(window.location.href)
         url.searchParams.delete('email_confirmed')
@@ -95,7 +98,33 @@ const LoginForm = ({ onShowRegister, mode = 'producer' }) => {
     }
 
     const msg = String(errorDesc || error || '').trim()
-    if (!msg) return
+    const fromStorage = (() => {
+      try {
+        const raw = String(sessionStorage.getItem('connekt_pending_login_error') || localStorage.getItem('connekt_pending_login_error') || '').trim()
+        if (!raw) return null
+        const obj = JSON.parse(raw || '{}')
+        const at = Number(obj?.at || 0)
+        if (!Number.isFinite(at) || at <= 0) return null
+        if (Date.now() - at > 2 * 60 * 1000) return null
+        const e = String(obj?.error || '').trim()
+        const ec = String(obj?.error_code || '').trim()
+        const ed = String(obj?.error_description || '').trim()
+        if (!e && !ec && !ed) return null
+        return { error: e, errorCode: ec, errorDesc: ed }
+      } catch (_) {
+        return null
+      }
+    })()
+    if (!msg && !fromStorage) return
+
+    const effectiveError = String(error || fromStorage?.error || '').trim()
+    const effectiveErrorCode = String(errorCode || fromStorage?.errorCode || '').trim()
+    const effectiveErrorDesc = String(errorDesc || fromStorage?.errorDesc || '').trim()
+    const effectiveMsg = String(effectiveErrorDesc || effectiveError || '').trim()
+
+    if (fromStorage) {
+      try { sessionStorage.removeItem('connekt_pending_login_error') } catch (_) { try { localStorage.removeItem('connekt_pending_login_error') } catch (_) {} }
+    }
 
     const cleanupOAuthTemp = () => {
       const clean = (storage) => {
@@ -116,69 +145,40 @@ const LoginForm = ({ onShowRegister, mode = 'producer' }) => {
       try { clean(sessionStorage) } catch (_) {}
     }
 
-    if (String(errorCode || '').trim() === 'bad_oauth_state' || msg.toLowerCase().includes('oauth state') || msg.toLowerCase().includes('bad_oauth_state')) {
+    if (String(effectiveErrorCode || '').trim() === 'bad_oauth_state' || effectiveMsg.toLowerCase().includes('oauth state') || effectiveMsg.toLowerCase().includes('bad_oauth_state')) {
       cleanupOAuthTemp()
-      showAlert('Falha no login social: o estado do OAuth ficou inválido. Clique em "Entrar com Google/Facebook" novamente.', 'error')
-      try {
-        const url = new URL(window.location.href)
-        url.searchParams.delete('error')
-        url.searchParams.delete('error_description')
-        url.searchParams.delete('error_code')
-        window.history.replaceState({}, '', `${url.pathname}${url.search}`)
-      } catch (_) {}
+      showAlert('Falha no login social: o estado do OAuth ficou inválido. Clique em "Entrar com Google/Facebook" novamente.', 'error', 0)
       return
     }
 
-    if (String(error || '').trim() === 'session_lost') {
+    if (String(effectiveError || '').trim() === 'session_lost') {
       const extra = (() => {
         if (!debug) return ''
         let last = ''
         try { last = String(sessionStorage.getItem('connekt_last_auth_event') || localStorage.getItem('connekt_last_auth_event') || '') } catch (_) { last = '' }
         return last ? ` Debug: ${last}` : ''
       })()
-      showAlert(`Login não foi concluído: a sessão foi encerrada logo após autenticar. Isso costuma acontecer por bloqueio de cookies/armazenamento no navegador ou erro de refresh token. Tente em outra guia/janela ou outro navegador.${extra}`, 'error')
-      try {
-        const url = new URL(window.location.href)
-        url.searchParams.delete('error')
-        url.searchParams.delete('error_description')
-        url.searchParams.delete('error_code')
-        window.history.replaceState({}, '', `${url.pathname}${url.search}`)
-      } catch (_) {}
+      showAlert(`Login não foi concluído: a sessão foi encerrada logo após autenticar. Isso costuma acontecer por bloqueio de cookies/armazenamento no navegador ou erro de refresh token. Tente em outra guia/janela ou outro navegador.${extra}`, 'error', 0)
       return
     }
 
-    if (String(error || '').trim() === 'signed_out_after_signin') {
+    if (String(effectiveError || '').trim() === 'signed_out_after_signin') {
       const extra = (() => {
         if (!debug) return ''
         let last = ''
         try { last = String(sessionStorage.getItem('connekt_last_auth_event') || localStorage.getItem('connekt_last_auth_event') || '') } catch (_) { last = '' }
         return last ? ` Debug: ${last}` : ''
       })()
-      showAlert(`Login não foi concluído: o usuário foi deslogado logo após entrar. Isso costuma indicar refresh token inválido/expirado, sessão sendo invalidada pelo Supabase ou bloqueios do navegador.${extra}`, 'error')
-      try {
-        const url = new URL(window.location.href)
-        url.searchParams.delete('error')
-        url.searchParams.delete('error_description')
-        url.searchParams.delete('error_code')
-        window.history.replaceState({}, '', `${url.pathname}${url.search}`)
-      } catch (_) {}
+      showAlert(`Login não foi concluído: o usuário foi deslogado logo após entrar. Isso costuma indicar refresh token inválido/expirado, sessão sendo invalidada pelo Supabase ou bloqueios do navegador.${extra}`, 'error', 0)
       return
     }
 
-    const lower = msg.toLowerCase()
+    const lower = effectiveMsg.toLowerCase()
     if (lower.includes('app') && (lower.includes('inactive') || lower.includes('inativo'))) {
-      showAlert('Login com Facebook indisponível: o app do Facebook está inativo. Ative o app no Meta Developers (modo Live) e garanta seu usuário como Tester/Admin durante testes.')
+      showAlert('Login com Facebook indisponível: o app do Facebook está inativo. Ative o app no Meta Developers (modo Live) e garanta seu usuário como Tester/Admin durante testes.', 'error', 0)
     } else {
-      showAlert(msg)
+      showAlert(effectiveMsg, 'error', 0)
     }
-
-    try {
-      const url = new URL(window.location.href)
-      url.searchParams.delete('error')
-      url.searchParams.delete('error_description')
-      url.searchParams.delete('error_code')
-      window.history.replaceState({}, '', `${url.pathname}${url.search}`)
-    } catch (_) {}
   }, [])
 
   const handleInputChange = (e) => {
@@ -210,13 +210,13 @@ const LoginForm = ({ onShowRegister, mode = 'producer' }) => {
 
       if (error) {
         const translatedMessage = translateErrorMessage(error.message);
-        showAlert(`Erro no login: ${translatedMessage}`);
+        showAlert(`Erro no login: ${translatedMessage}`, 'error', 0);
       } else {
-        showAlert('Login realizado com sucesso!', 'success');
+        showAlert('Login realizado com sucesso!', 'success', 6000);
       }
     } catch (error) {
       console.error('Erro no login:', error);
-      showAlert('Erro ao realizar login. Tente novamente.');
+      showAlert('Erro ao realizar login. Tente novamente.', 'error', 0);
     } finally {
       setLoading(false);
     }
@@ -356,6 +356,7 @@ const LoginForm = ({ onShowRegister, mode = 'producer' }) => {
         show={alert.show}
         message={alert.message}
         type={alert.type}
+        duration={alert.duration}
         onClose={hideAlert}
       />
 

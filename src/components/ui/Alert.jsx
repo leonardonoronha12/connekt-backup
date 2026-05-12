@@ -9,19 +9,21 @@ const Alert = ({
 }) => {
   const [isVisible, setIsVisible] = useState(show);
   const [isAnimating, setIsAnimating] = useState(false);
+  const shouldAutoClose = Number.isFinite(Number(duration)) && Number(duration) > 0
 
   useEffect(() => {
     if (show) {
       setIsVisible(true);
       setIsAnimating(true);
-      
+
+      if (!shouldAutoClose) return
       const timer = setTimeout(() => {
         handleClose();
       }, duration);
 
       return () => clearTimeout(timer);
     }
-  }, [show, duration]);
+  }, [show, duration, shouldAutoClose]);
 
   const handleClose = () => {
     setIsAnimating(false);
@@ -208,7 +210,7 @@ const Alert = ({
           </button>
         </div>
         <div style={getProgressBarStyles()}>
-          <div style={getProgressFillStyles()}></div>
+          {shouldAutoClose ? <div style={getProgressFillStyles()}></div> : null}
         </div>
       </div>
     </>
