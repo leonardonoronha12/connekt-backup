@@ -93,6 +93,18 @@ const LoginForm = ({ onShowRegister, mode = 'producer' }) => {
     const msg = String(errorDesc || error || '').trim()
     if (!msg) return
 
+    if (String(error || '').trim() === 'session_lost') {
+      showAlert('Login não foi concluído: a sessão foi encerrada logo após autenticar. Isso costuma acontecer por bloqueio de cookies/armazenamento no navegador ou erro de refresh token. Tente em outra guia/janela ou outro navegador.', 'error')
+      try {
+        const url = new URL(window.location.href)
+        url.searchParams.delete('error')
+        url.searchParams.delete('error_description')
+        url.searchParams.delete('error_code')
+        window.history.replaceState({}, '', `${url.pathname}${url.search}`)
+      } catch (_) {}
+      return
+    }
+
     const lower = msg.toLowerCase()
     if (lower.includes('app') && (lower.includes('inactive') || lower.includes('inativo'))) {
       showAlert('Login com Facebook indisponível: o app do Facebook está inativo. Ative o app no Meta Developers (modo Live) e garanta seu usuário como Tester/Admin durante testes.')
