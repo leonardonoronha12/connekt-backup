@@ -454,6 +454,15 @@ export const AuthProvider = ({ children }) => {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, currentSession) => {
+        try {
+          const payload = {
+            event: String(event || ''),
+            at: Date.now(),
+            path: String(window.location.pathname || ''),
+            hasSession: !!currentSession?.user?.id,
+          }
+          try { sessionStorage.setItem('connekt_last_auth_event', JSON.stringify(payload)) } catch (_) { try { localStorage.setItem('connekt_last_auth_event', JSON.stringify(payload)) } catch (_) {} }
+        } catch (_) {}
         captureProducerScopeFromUrl(currentSession?.user?.id || null)
         const isRecoveryUrl = () => {
           try {

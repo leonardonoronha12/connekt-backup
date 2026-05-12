@@ -73,11 +73,13 @@ const LoginForm = ({ onShowRegister, mode = 'producer' }) => {
     let error = null
     let errorDesc = null
     let emailConfirmed = null
+    let debug = false
     try {
       const params = new URLSearchParams(window.location.search || '')
       error = params.get('error')
       errorDesc = params.get('error_description')
       emailConfirmed = params.get('email_confirmed')
+      debug = params.get('debug_auth') === '1'
     } catch (_) {}
 
     if (String(emailConfirmed || '') === 'true') {
@@ -94,7 +96,13 @@ const LoginForm = ({ onShowRegister, mode = 'producer' }) => {
     if (!msg) return
 
     if (String(error || '').trim() === 'session_lost') {
-      showAlert('Login não foi concluído: a sessão foi encerrada logo após autenticar. Isso costuma acontecer por bloqueio de cookies/armazenamento no navegador ou erro de refresh token. Tente em outra guia/janela ou outro navegador.', 'error')
+      const extra = (() => {
+        if (!debug) return ''
+        let last = ''
+        try { last = String(sessionStorage.getItem('connekt_last_auth_event') || localStorage.getItem('connekt_last_auth_event') || '') } catch (_) { last = '' }
+        return last ? ` Debug: ${last}` : ''
+      })()
+      showAlert(`Login não foi concluído: a sessão foi encerrada logo após autenticar. Isso costuma acontecer por bloqueio de cookies/armazenamento no navegador ou erro de refresh token. Tente em outra guia/janela ou outro navegador.${extra}`, 'error')
       try {
         const url = new URL(window.location.href)
         url.searchParams.delete('error')
