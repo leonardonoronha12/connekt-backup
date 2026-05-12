@@ -65,7 +65,6 @@ export default async function handler(req, res) {
     const u = new URL(req.url, appOrigin)
     const next = safeNextPath(u.searchParams.get('next') || u.searchParams.get('redirect') || '')
 
-    const state = base64url(crypto.randomBytes(16))
     const codeVerifier = base64url(crypto.randomBytes(32))
     const codeChallenge = base64url(crypto.createHash('sha256').update(codeVerifier).digest())
 
@@ -77,9 +76,8 @@ export default async function handler(req, res) {
     authorizeUrl.searchParams.set('redirect_to', callbackUrl.toString())
     authorizeUrl.searchParams.set('code_challenge', codeChallenge)
     authorizeUrl.searchParams.set('code_challenge_method', 's256')
-    authorizeUrl.searchParams.set('state', state)
 
-    const cookieName = `connekt_pkce_${state}`
+    const cookieName = 'connekt_pkce_verifier'
     const cookie = [
       `${cookieName}=${encodeURIComponent(codeVerifier)}`,
       'Path=/',
