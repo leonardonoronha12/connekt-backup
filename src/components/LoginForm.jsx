@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../contexts/SupabaseAuthContext';
+import { SUPABASE_URL } from '../lib/supabaseClient'
 import Alert from './ui/Alert';
 
 // Função para traduzir mensagens de erro do Supabase
@@ -147,7 +148,19 @@ const LoginForm = ({ onShowRegister, mode = 'producer' }) => {
 
     if (String(effectiveErrorCode || '').trim() === 'bad_oauth_state' || effectiveMsg.toLowerCase().includes('oauth state') || effectiveMsg.toLowerCase().includes('bad_oauth_state')) {
       cleanupOAuthTemp()
-      showAlert('Falha no login social: o estado do OAuth ficou inválido. Clique em "Entrar com Google/Facebook" novamente.', 'error', 0)
+      const extra = (() => {
+        const pieces = []
+        try {
+          const p = String(sessionStorage.getItem('connekt_last_oauth_provider') || localStorage.getItem('connekt_last_oauth_provider') || '').trim()
+          if (p) pieces.push(`Provedor: ${p}`)
+        } catch (_) {}
+        try {
+          const host = SUPABASE_URL ? new URL(String(SUPABASE_URL)).host : ''
+          if (host) pieces.push(`Supabase: ${host}`)
+        } catch (_) {}
+        return pieces.length ? ` (${pieces.join(' | ')})` : ''
+      })()
+      showAlert(`Falha no login social: o estado do OAuth ficou inválido. Clique em "Entrar com Google/Facebook" novamente.${extra}`, 'error', 0)
       return
     }
 
