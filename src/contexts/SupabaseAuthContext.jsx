@@ -626,6 +626,23 @@ export const AuthProvider = ({ children }) => {
             setDeviceLock(null)
           }
 
+          try {
+            const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+            let stable = false
+            for (let i = 0; i < 6; i += 1) {
+              const sess = (await withTimeout(supabase.auth.getSession(), 12000).catch(() => ({ data: { session: null } })))?.data?.session || null
+              if (sess?.user?.id) { stable = true; break }
+              await sleep(250)
+            }
+            if (!stable) {
+              try { sessionStorage.setItem('connekt_last_login_error', 'session_lost') } catch (_) { try { localStorage.setItem('connekt_last_login_error', 'session_lost') } catch (_) {} }
+              handleSession(null)
+              window.history.replaceState({}, '', '/login?error=session_lost')
+              window.dispatchEvent(new PopStateEvent('popstate'))
+              return
+            }
+          } catch (_) {}
+
           const params = new URLSearchParams(window.location.search);
           const hasEmailConfirmedParam = params.get('email_confirmed') === 'true';
           const arrivedFromRoot = pathname === '/' || pathname === '/index.html';
@@ -845,6 +862,22 @@ export const AuthProvider = ({ children }) => {
 
   const signIn = useCallback(async (email, password) => {
     if (!SUPABASE_ENV_OK) return { error: { message: SUPABASE_ENV_ERROR } }
+    try {
+      const clean = (storage) => {
+        if (!storage) return
+        try {
+          const keys = Object.keys(storage || {})
+          keys
+            .filter((k) => String(k || '').startsWith('sb-') && String(k || '').endsWith('-auth-token'))
+            .forEach((k) => {
+              try { storage.removeItem(k) } catch (_) {}
+            })
+          try { storage.removeItem('supabase.auth.token') } catch (_) {}
+        } catch (_) {}
+      }
+      clean(localStorage)
+      clean(sessionStorage)
+    } catch (_) {}
     let data = null
     let error = null
     try {
