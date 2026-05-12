@@ -1179,11 +1179,27 @@ export const AuthProvider = ({ children }) => {
     const providerKeyStr = String(providerKey || '').trim().toLowerCase()
     if (providerKeyStr === 'google') {
       try {
+        try { sessionStorage.setItem('connekt_last_oauth_provider', 'google') } catch (_) { try { localStorage.setItem('connekt_last_oauth_provider', 'google') } catch (_) {} }
         const origin = getAuthRedirectOrigin()
         const rawPath = String(redirectPath || '/login')
         const safePath = rawPath.startsWith('/') ? rawPath : `/${String(rawPath || 'login')}`
         const nextUrl = new URL(`${origin}${safePath}`)
         const startUrl = new URL('/api/oauth/google/start', origin)
+        startUrl.searchParams.set('next', `${nextUrl.pathname}${nextUrl.search}`)
+        window.location.assign(startUrl.toString())
+        return { data: { url: startUrl.toString() }, error: null }
+      } catch (e) {
+        return { data: null, error: { message: e?.message || String(e) } }
+      }
+    }
+    if (providerKeyStr === 'facebook') {
+      try {
+        try { sessionStorage.setItem('connekt_last_oauth_provider', 'facebook') } catch (_) { try { localStorage.setItem('connekt_last_oauth_provider', 'facebook') } catch (_) {} }
+        const origin = getAuthRedirectOrigin()
+        const rawPath = String(redirectPath || '/login')
+        const safePath = rawPath.startsWith('/') ? rawPath : `/${String(rawPath || 'login')}`
+        const nextUrl = new URL(`${origin}${safePath}`)
+        const startUrl = new URL('/api/oauth/facebook/start', origin)
         startUrl.searchParams.set('next', `${nextUrl.pathname}${nextUrl.search}`)
         window.location.assign(startUrl.toString())
         return { data: { url: startUrl.toString() }, error: null }
