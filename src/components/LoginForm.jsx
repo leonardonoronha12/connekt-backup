@@ -72,12 +72,14 @@ const LoginForm = ({ onShowRegister, mode = 'producer' }) => {
   React.useEffect(() => {
     let error = null
     let errorDesc = null
+    let errorCode = null
     let emailConfirmed = null
     let debug = false
     try {
       const params = new URLSearchParams(window.location.search || '')
       error = params.get('error')
       errorDesc = params.get('error_description')
+      errorCode = params.get('error_code')
       emailConfirmed = params.get('email_confirmed')
       debug = params.get('debug_auth') === '1'
     } catch (_) {}
@@ -94,6 +96,38 @@ const LoginForm = ({ onShowRegister, mode = 'producer' }) => {
 
     const msg = String(errorDesc || error || '').trim()
     if (!msg) return
+
+    const cleanupOAuthTemp = () => {
+      const clean = (storage) => {
+        if (!storage) return
+        try {
+          for (let i = storage.length - 1; i >= 0; i -= 1) {
+            const k = storage.key(i)
+            const ks = String(k || '')
+            if (!ks.startsWith('sb-')) continue
+            const lower = ks.toLowerCase()
+            if (lower.includes('code-verifier') || lower.includes('code_verifier') || lower.includes('pkce') || lower.includes('oauth') || lower.includes('state')) {
+              try { storage.removeItem(ks) } catch (_) {}
+            }
+          }
+        } catch (_) {}
+      }
+      try { clean(localStorage) } catch (_) {}
+      try { clean(sessionStorage) } catch (_) {}
+    }
+
+    if (String(errorCode || '').trim() === 'bad_oauth_state' || msg.toLowerCase().includes('oauth state') || msg.toLowerCase().includes('bad_oauth_state')) {
+      cleanupOAuthTemp()
+      showAlert('Falha no login social: o estado do OAuth ficou inválido. Clique em "Entrar com Google/Facebook" novamente.', 'error')
+      try {
+        const url = new URL(window.location.href)
+        url.searchParams.delete('error')
+        url.searchParams.delete('error_description')
+        url.searchParams.delete('error_code')
+        window.history.replaceState({}, '', `${url.pathname}${url.search}`)
+      } catch (_) {}
+      return
+    }
 
     if (String(error || '').trim() === 'session_lost') {
       const extra = (() => {

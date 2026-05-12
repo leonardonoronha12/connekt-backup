@@ -1118,6 +1118,24 @@ export const AuthProvider = ({ children }) => {
 
   const signInWithOAuth = useCallback(async (provider, redirectPath = '/login') => {
     if (!SUPABASE_ENV_OK) return { data: null, error: { message: SUPABASE_ENV_ERROR } }
+    try {
+      const clean = (storage) => {
+        if (!storage) return
+        try {
+          for (let i = storage.length - 1; i >= 0; i -= 1) {
+            const k = storage.key(i)
+            const ks = String(k || '')
+            if (!ks.startsWith('sb-')) continue
+            const lower = ks.toLowerCase()
+            if (lower.includes('code-verifier') || lower.includes('code_verifier') || lower.includes('pkce') || lower.includes('oauth') || lower.includes('state')) {
+              try { storage.removeItem(ks) } catch (_) {}
+            }
+          }
+        } catch (_) {}
+      }
+      clean(localStorage)
+      clean(sessionStorage)
+    } catch (_) {}
     const currentHost = String(window.location.hostname || '').toLowerCase()
     const isWhitelabelHost = currentHost.endsWith('.app.connektco.com') && currentHost !== 'app.connektco.com'
     const currentOrigin = (() => {
