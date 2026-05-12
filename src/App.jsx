@@ -104,6 +104,17 @@ try {
   }
 } catch (_) {}
 
+try {
+  const params = new URLSearchParams(window.location.search || '')
+  const err = String(params.get('error') || '').trim()
+  const errCode = String(params.get('error_code') || '').trim()
+  const errDesc = String(params.get('error_description') || '').trim()
+  if (err || errCode || errDesc) {
+    const payload = JSON.stringify({ error: err, error_code: errCode, error_description: errDesc, at: Date.now() })
+    try { sessionStorage.setItem('connekt_pending_login_error', payload) } catch (_) { try { localStorage.setItem('connekt_pending_login_error', payload) } catch (_) {} }
+  }
+} catch (_) {}
+
 // Deriva a view inicial com base na URL para evitar montar o layout global
 // desnecessariamente e prevenir logs de requisições abortadas ao trocar de rota.
 const getViewFromLocation = () => {
