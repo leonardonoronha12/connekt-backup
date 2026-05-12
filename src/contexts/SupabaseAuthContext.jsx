@@ -584,6 +584,10 @@ export const AuthProvider = ({ children }) => {
           } catch (_) {}
         }
         if (event === 'SIGNED_IN') {
+          try {
+            const at = String(Date.now())
+            try { sessionStorage.setItem('connekt_last_signed_in_at', at) } catch (_) { try { localStorage.setItem('connekt_last_signed_in_at', at) } catch (_) {} }
+          } catch (_) {}
           let isLocked = false
           let bypassDeviceLock = false
           try {
@@ -750,6 +754,17 @@ export const AuthProvider = ({ children }) => {
           const host = String(window.location.hostname || '').toLowerCase()
           const isWhitelabelHost = host.endsWith('.app.connektco.com') && host !== 'app.connektco.com'
           const target = isAlunoFlow ? (isWhitelabelHost ? '/login-aluno-wl' : '/login-aluno') : '/login'
+          try {
+            const tsRaw = String(sessionStorage.getItem('connekt_last_signed_in_at') || localStorage.getItem('connekt_last_signed_in_at') || '').trim()
+            const ts = Number(tsRaw || 0)
+            if (!isAlunoFlow && Number.isFinite(ts) && ts > 0 && Date.now() - ts < 15000) {
+              try { sessionStorage.setItem('connekt_last_login_error', 'signed_out_after_signin') } catch (_) { try { localStorage.setItem('connekt_last_login_error', 'signed_out_after_signin') } catch (_) {} }
+              window.history.replaceState({}, '', '/login?error=signed_out_after_signin')
+              window.dispatchEvent(new PopStateEvent('popstate'))
+              handleSession(null)
+              return
+            }
+          } catch (_) {}
           window.history.replaceState({}, '', target);
           window.dispatchEvent(new PopStateEvent('popstate'));
         }

@@ -113,6 +113,24 @@ const LoginForm = ({ onShowRegister, mode = 'producer' }) => {
       return
     }
 
+    if (String(error || '').trim() === 'signed_out_after_signin') {
+      const extra = (() => {
+        if (!debug) return ''
+        let last = ''
+        try { last = String(sessionStorage.getItem('connekt_last_auth_event') || localStorage.getItem('connekt_last_auth_event') || '') } catch (_) { last = '' }
+        return last ? ` Debug: ${last}` : ''
+      })()
+      showAlert(`Login não foi concluído: o usuário foi deslogado logo após entrar. Isso costuma indicar refresh token inválido/expirado, sessão sendo invalidada pelo Supabase ou bloqueios do navegador.${extra}`, 'error')
+      try {
+        const url = new URL(window.location.href)
+        url.searchParams.delete('error')
+        url.searchParams.delete('error_description')
+        url.searchParams.delete('error_code')
+        window.history.replaceState({}, '', `${url.pathname}${url.search}`)
+      } catch (_) {}
+      return
+    }
+
     const lower = msg.toLowerCase()
     if (lower.includes('app') && (lower.includes('inactive') || lower.includes('inativo'))) {
       showAlert('Login com Facebook indisponível: o app do Facebook está inativo. Ative o app no Meta Developers (modo Live) e garanta seu usuário como Tester/Admin durante testes.')
