@@ -339,7 +339,19 @@ const LoginForm = ({ onShowRegister, mode = 'producer' }) => {
       try { sessionStorage.setItem('connekt_login_intent', intent) } catch (_) {}
       try { sessionStorage.setItem('connekt_login_mode', intent) } catch (_) { try { localStorage.setItem('connekt_login_mode', intent) } catch (_) {} }
       setOauthLoading(p)
-      const currentRedirect = `${window.location.pathname}${window.location.search}`
+      const currentRedirect = (() => {
+        try {
+          const u = new URL(window.location.href)
+          u.searchParams.delete('error')
+          u.searchParams.delete('error_code')
+          u.searchParams.delete('error_description')
+          u.searchParams.delete('code')
+          u.searchParams.delete('state')
+          return `${u.pathname}${u.search}`
+        } catch (_) {
+          return `${window.location.pathname}`
+        }
+      })()
       const { error } = await signInWithOAuth(p, currentRedirect);
       if (error) {
         const msg = String(error?.message || error?.error_description || String(error) || '')
