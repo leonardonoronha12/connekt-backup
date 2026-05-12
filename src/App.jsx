@@ -123,6 +123,9 @@ const getViewFromLocation = () => {
   if (searchParams.get('view') === ADMIN_VIEW_PARAM) {
     return 'admin';
   } else if (path === '/') {
+    const errorCode = String(searchParams.get('error_code') || '').trim()
+    const error = String(searchParams.get('error') || '').trim()
+    if (errorCode || error) return 'login'
     return 'dashboard';
   } else if (path === '/test-mygateway') {
     return 'testMyGateway';
