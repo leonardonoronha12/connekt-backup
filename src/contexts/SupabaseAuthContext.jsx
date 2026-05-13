@@ -475,6 +475,14 @@ export const AuthProvider = ({ children }) => {
           handleSession(null)
           return
         }
+        try {
+          const h = String(window.location.hash || '').toLowerCase()
+          const hasHashTokens = h.includes('sb_at=') || h.includes('sb_rt=') || h.includes('access_token=') || h.includes('refresh_token=')
+          const isHashInProgress = (() => {
+            try { return sessionStorage.getItem('connekt_setting_session_from_hash') === '1' } catch (_) { return false }
+          })()
+          if (hasHashTokens || isHashInProgress) return
+        } catch (_) {}
         const { data: { session: currentSession } } = await withTimeout(supabase.auth.getSession(), 12000);
         handleSession(currentSession);
       } catch (e) {
@@ -708,23 +716,6 @@ export const AuthProvider = ({ children }) => {
           } else {
             setDeviceLock(null)
           }
-
-          try {
-            const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
-            let stable = false
-            for (let i = 0; i < 6; i += 1) {
-              const sess = (await withTimeout(supabase.auth.getSession(), 12000).catch(() => ({ data: { session: null } })))?.data?.session || null
-              if (sess?.user?.id) { stable = true; break }
-              await sleep(250)
-            }
-            if (!stable) {
-              try { sessionStorage.setItem('connekt_last_login_error', 'session_lost') } catch (_) { try { localStorage.setItem('connekt_last_login_error', 'session_lost') } catch (_) {} }
-              handleSession(null)
-              window.history.replaceState({}, '', '/login?error=session_lost')
-              window.dispatchEvent(new PopStateEvent('popstate'))
-              return
-            }
-          } catch (_) {}
 
           const params = new URLSearchParams(window.location.search);
           const hasEmailConfirmedParam = params.get('email_confirmed') === 'true';
