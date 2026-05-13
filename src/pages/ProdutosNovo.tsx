@@ -44,7 +44,7 @@ export default function NovoCursoPage() {
   const [title, setTitle] = useState("")
   const [description, setDescription] = useState("")
   const [hiddenAdvanceButtons, setHiddenAdvanceButtons] = useState<string[]>([])
-  const [modules, setModules] = useState<{ id: string; name: string; description: string; lessonsCount: number; lessons: Lesson[]; cover_image_url?: string | null; cover_image_path?: string | null; visibility?: 'Gratuita' | 'Paga' | 'Gratuita para alunos do curso'; priceCents?: number; freeCourseIds?: string[] }[]>([])
+  const [modules, setModules] = useState<{ id: string; name: string; description: string; lessonsCount: number; lessons: Lesson[]; materials?: LessonMaterial[]; cover_image_url?: string | null; cover_image_path?: string | null; visibility?: 'Gratuita' | 'Paga' | 'Gratuita para alunos do curso'; priceCents?: number; freeCourseIds?: string[] }[]>([])
   const [showChatBot, setShowChatBot] = useState(false)
   const [expandedModules, setExpandedModules] = useState<string[]>([])
 
@@ -79,6 +79,19 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
   }
   const [isSelectSimuladoOpen, setIsSelectSimuladoOpen] = useState(false)
   const [selectedSimulados, setSelectedSimulados] = useState<SimuladoRef[]>([])
+  const [courseMaterials, setCourseMaterials] = useState<LessonMaterial[]>([])
+  const [courseMaterialFilesById, setCourseMaterialFilesById] = useState<Record<string, File>>({})
+  const [moduleMaterialFilesById, setModuleMaterialFilesById] = useState<Record<string, File>>({})
+  const [resourceLibrary, setResourceLibrary] = useState<Array<LessonMaterial & { sourceCourseId?: string; sourceCourseTitle?: string }>>([])
+  const [resourceLibraryLoading, setResourceLibraryLoading] = useState(false)
+  const [resourceLibraryQuery, setResourceLibraryQuery] = useState('')
+  const [isResourceLibraryOpen, setIsResourceLibraryOpen] = useState(false)
+  const [resourceLibraryTarget, setResourceLibraryTarget] = useState<{ scope: 'curso' | 'modulo' | 'aula'; moduleId?: string | null; lessonId?: string | null } | null>(null)
+  const extraMaterialFileInputRef = useRef<HTMLInputElement | null>(null)
+  const [pendingExtraMaterialTarget, setPendingExtraMaterialTarget] = useState<{ scope: 'curso' | 'modulo' | 'aula'; moduleId?: string | null; lessonId?: string | null; type: LessonMaterial['type'] } | null>(null)
+  const [isExtraLinkOpen, setIsExtraLinkOpen] = useState(false)
+  const [extraLinkUrl, setExtraLinkUrl] = useState('')
+  const [extraLinkTarget, setExtraLinkTarget] = useState<{ scope: 'curso' | 'modulo' | 'aula'; moduleId?: string | null; lessonId?: string | null } | null>(null)
   
   const [simuladosCatalog, setSimuladosCatalog] = useState<SimuladoRef[]>([])
   const [isLoadingSimulados, setIsLoadingSimulados] = useState(false)
@@ -123,6 +136,122 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
     }
     fetchSimulados()
   }, [user, toast])
+
+  useEffect(() => {
+    if (!user) return
+    let active = true
+    const run = async () => {
+      setResourceLibraryLoading(true)
+      try {
+        const pid = String(user.id || '').trim()
+        if (!pid) return
+        const token = String(
+          session?.access_token ||
+          (await supabase.auth.getSession().catch(() => ({ data: null })))?.data?.session?.access_token ||
+          ''
+        ).trim()
+        if (!token) return
+        const qs = new URLSearchParams({ type: 'courses', producerId: pid })
+        const r = await fetch(`/api/producer?${qs.toString()}`, { headers: { Authorization: `Bearer ${token}` } })
+        const body = await r.json().catch(() => ({} as any))
+        const courses = Array.isArray(body?.data) ? body.data : []
+
+        const parseJsonMaybe = (value: any) => {
+          if (!value) return null
+          if (typeof value === 'object') return value
+          if (typeof value !== 'string') return null
+          try { return JSON.parse(value) } catch (_) { return null }
+        }
+        const getCourseModules = (row: any) => {
+          const parsed = parseJsonMaybe(row?.modules)
+          if (Array.isArray(parsed)) return parsed
+          if (parsed && typeof parsed === 'object') {
+            if (Array.isArray((parsed as any).modules)) return (parsed as any).modules
+            if (Array.isArray((parsed as any).items)) return (parsed as any).items
+          }
+          const fromData = parseJsonMaybe(row?.data)
+          if (fromData && typeof fromData === 'object' && Array.isArray((fromData as any).modules)) return (fromData as any).modules
+          return []
+        }
+        const getModuleLessons = (mod: any) => {
+          if (!mod) return []
+          if (Array.isArray(mod.lessons)) return mod.lessons
+          if (Array.isArray(mod.aulas)) return mod.aulas
+          if (Array.isArray(mod.items)) return mod.items
+          if (mod && typeof mod === 'object' && Array.isArray(mod.module_lessons)) return mod.module_lessons
+          return []
+        }
+        const getCourseMeta = (row: any) => {
+          const fromData = parseJsonMaybe(row?.data) || null
+          const parsedModules = parseJsonMaybe(row?.modules) || null
+          const fromModulesMeta = parsedModules && typeof parsedModules === 'object' ? ((parsedModules as any).meta || null) : null
+          return { ...(fromModulesMeta || {}), ...(fromData || {}) }
+        }
+
+        const seen = new Set<string>()
+        const out: Array<LessonMaterial & { sourceCourseId?: string; sourceCourseTitle?: string }> = []
+
+        for (const c of courses) {
+          const courseId = String(c?.id || '').trim()
+          const courseTitle = String(c?.title || '').trim()
+          const meta = getCourseMeta(c) || {}
+          const courseMats =
+            (Array.isArray((meta as any).course_materials) ? (meta as any).course_materials : null) ||
+            (Array.isArray((meta as any).courseMaterials) ? (meta as any).courseMaterials : null) ||
+            (Array.isArray((meta as any).materials) ? (meta as any).materials : null) ||
+            []
+          for (const m of Array.isArray(courseMats) ? courseMats : []) {
+            const name = String(m?.name || '').trim()
+            const path = String(m?.path || '').trim()
+            const url = String(m?.url || '').trim()
+            const type = String(m?.type || '').trim().toLowerCase() || inferMaterialType(name || url)
+            const key = `${type}:${path || url || name}`
+            if (!key || seen.has(key)) continue
+            seen.add(key)
+            out.push({ id: String(m?.id || key), name: name || url || 'Recurso', sizeLabel: String(m?.sizeLabel || ''), type: type as any, path: path || null, url: url || null, sourceCourseId: courseId || undefined, sourceCourseTitle: courseTitle || undefined })
+          }
+
+          const mods = getCourseModules(c)
+          for (const mod of Array.isArray(mods) ? mods : []) {
+            const moduleMats = Array.isArray((mod as any)?.materials) ? (mod as any).materials : []
+            for (const m of Array.isArray(moduleMats) ? moduleMats : []) {
+              const name = String(m?.name || '').trim()
+              const path = String(m?.path || '').trim()
+              const url = String(m?.url || '').trim()
+              const type = String(m?.type || '').trim().toLowerCase() || inferMaterialType(name || url)
+              const key = `${type}:${path || url || name}`
+              if (!key || seen.has(key)) continue
+              seen.add(key)
+              out.push({ id: String(m?.id || key), name: name || url || 'Recurso', sizeLabel: String(m?.sizeLabel || ''), type: type as any, path: path || null, url: url || null, sourceCourseId: courseId || undefined, sourceCourseTitle: courseTitle || undefined })
+            }
+
+            const lessons = getModuleLessons(mod)
+            for (const les of Array.isArray(lessons) ? lessons : []) {
+              const mats = Array.isArray((les as any)?.materials) ? (les as any).materials : []
+              for (const m of Array.isArray(mats) ? mats : []) {
+                const name = String(m?.name || '').trim()
+                const path = String(m?.path || '').trim()
+                const url = String(m?.url || '').trim()
+                const type = String(m?.type || '').trim().toLowerCase() || inferMaterialType(name || url)
+                const key = `${type}:${path || url || name}`
+                if (!key || seen.has(key)) continue
+                seen.add(key)
+                out.push({ id: String(m?.id || key), name: name || url || 'Recurso', sizeLabel: String(m?.sizeLabel || ''), type: type as any, path: path || null, url: url || null, sourceCourseId: courseId || undefined, sourceCourseTitle: courseTitle || undefined })
+              }
+            }
+          }
+        }
+
+        if (active) setResourceLibrary(out)
+      } catch (_) {
+        if (active) setResourceLibrary([])
+      } finally {
+        if (active) setResourceLibraryLoading(false)
+      }
+    }
+    run()
+    return () => { active = false }
+  }, [user, session?.access_token])
   const [simuladoConnectScope, setSimuladoConnectScope] = useState<'curso' | 'modulo' | 'aula'>('curso')
   const [simuladoConnectModuleId, setSimuladoConnectModuleId] = useState<string | null>(null)
   const [simuladoConnectLessonId, setSimuladoConnectLessonId] = useState<string | null>(null)
@@ -142,6 +271,92 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
     setIsSelectSimuladoOpen(true)
   }
 
+  const acceptForMaterialType = (type: LessonMaterial['type']) => {
+    switch (type) {
+      case 'pdf': return '.pdf,application/pdf'
+      case 'doc': return '.doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      case 'ppt': return '.ppt,.pptx,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation'
+      case 'xls': return '.xls,.xlsx,.csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv'
+      default: return '*/*'
+    }
+  }
+
+  const openResourceLibrary = (target: { scope: 'curso' | 'modulo' | 'aula'; moduleId?: string | null; lessonId?: string | null }) => {
+    setResourceLibraryTarget(target)
+    setResourceLibraryQuery('')
+    setIsResourceLibraryOpen(true)
+  }
+
+  const openExtraMaterialUploader = (target: { scope: 'curso' | 'modulo' | 'aula'; moduleId?: string | null; lessonId?: string | null }, type: LessonMaterial['type']) => {
+    if (type === 'link') {
+      setExtraLinkTarget(target)
+      setExtraLinkUrl('')
+      setIsExtraLinkOpen(true)
+      return
+    }
+    setPendingExtraMaterialTarget({ ...target, type })
+    const input = extraMaterialFileInputRef.current
+    if (input) {
+      input.value = ''
+      input.accept = acceptForMaterialType(type)
+      input.click()
+    }
+  }
+
+  const attachMaterialTo = (target: { scope: 'curso' | 'modulo' | 'aula'; moduleId?: string | null; lessonId?: string | null }, item: LessonMaterial, file?: File | null) => {
+    const scope = target.scope
+    const newItem: LessonMaterial = { ...item, id: generateLocalId() }
+    if (scope === 'curso') {
+      setCourseMaterials((prev) => ([...(Array.isArray(prev) ? prev : []), newItem]))
+      if (file && String(newItem?.type || '').toLowerCase() !== 'link') {
+        setCourseMaterialFilesById((prev) => ({ ...(prev || {}), [newItem.id]: file }))
+      }
+      return
+    }
+    if (scope === 'modulo') {
+      const mid = String(target.moduleId || '').trim()
+      if (!mid) return
+      setModules((prev) => (Array.isArray(prev) ? prev.map((m) => {
+        if (String(m?.id || '') !== mid) return m
+        const mats = Array.isArray((m as any)?.materials) ? (m as any).materials : []
+        return { ...(m as any), materials: [...mats, newItem] }
+      }) : prev))
+      if (file && String(newItem?.type || '').toLowerCase() !== 'link') {
+        setModuleMaterialFilesById((prev) => ({ ...(prev || {}), [newItem.id]: file }))
+      }
+      return
+    }
+    if (scope === 'aula') {
+      const mid = String(target.moduleId || '').trim()
+      const lid = String(target.lessonId || '').trim()
+      if (!mid || !lid) return
+      const currentMod = modules.find((m) => String(m?.id || '') === mid)
+      const lesson = currentMod?.lessons?.find((l) => String(l?.id || '') === lid) || null
+      const current = Array.isArray((lesson as any)?.materials) ? (lesson as any).materials : []
+      updateLessonField(mid, lid, 'materials', [...current, newItem] as any)
+      if (file && String(newItem?.type || '').toLowerCase() !== 'link') {
+        setLessonMaterialFilesById((prev) => ({ ...(prev || {}), [newItem.id]: file }))
+      }
+    }
+  }
+
+  const handleExtraMaterialFileSelected: React.ChangeEventHandler<HTMLInputElement> = async (e) => {
+    const file = e.target.files && e.target.files[0]
+    const target = pendingExtraMaterialTarget
+    if (!file || !target) return
+    const type = target.type
+    const newItem: LessonMaterial = {
+      id: generateLocalId(),
+      name: String(file.name || 'arquivo'),
+      sizeLabel: String(formatSize(file.size) || ''),
+      type,
+      path: null,
+      url: null,
+    }
+    attachMaterialTo(target, newItem, file)
+    setPendingExtraMaterialTarget(null)
+  }
+
   const visibleSimuladosCatalog = useMemo(() => {
     const scope = simuladoConnectScope
     const moduleId = simuladoConnectModuleId ?? null
@@ -155,9 +370,36 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
     })
   }, [simuladosCatalog, selectedSimulados, simuladoConnectScope, simuladoConnectModuleId, simuladoConnectLessonId])
 
+  const visibleResourceLibrary = useMemo(() => {
+    const q = String(resourceLibraryQuery || '').trim().toLowerCase()
+    const base = Array.isArray(resourceLibrary) ? resourceLibrary : []
+    if (!q) return base
+    return base.filter((m) => {
+      const name = String(m?.name || '').toLowerCase()
+      const type = String(m?.type || '').toLowerCase()
+      const src = String((m as any)?.sourceCourseTitle || '').toLowerCase()
+      return name.includes(q) || type.includes(q) || src.includes(q)
+    })
+  }, [resourceLibrary, resourceLibraryQuery])
+
   // Estados para visualização de recursos nas listas
   const [resourceViewModuleId, setResourceViewModuleId] = useState<string | null>(null)
   const [resourceViewLessonId, setResourceViewLessonId] = useState<string | null>(null)
+  const [courseMaterialAddType, setCourseMaterialAddType] = useState<LessonMaterial['type']>('pdf')
+  const [moduleMaterialAddType, setModuleMaterialAddType] = useState<LessonMaterial['type']>('pdf')
+  const [lessonMaterialAddType, setLessonMaterialAddType] = useState<LessonMaterial['type']>('pdf')
+  const resourceViewLessonMeta = useMemo(() => {
+    const lid = String(resourceViewLessonId || '').trim()
+    if (!lid) return null
+    for (const m of (Array.isArray(modules) ? modules : [])) {
+      for (const l of (Array.isArray(m?.lessons) ? m.lessons : [])) {
+        if (String(l?.id || '').trim() === lid) {
+          return { moduleId: String(m?.id || '').trim(), lesson: l }
+        }
+      }
+    }
+    return null
+  }, [modules, resourceViewLessonId])
 
   // Inicializa visualização de recursos se houver módulos
   useEffect(() => {
@@ -260,6 +502,14 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
                 if (Array.isArray(metaFromData.selectedSubcategories)) setSelectedSubcategories(metaFromData.selectedSubcategories)
                 if (Array.isArray(metaFromData.selectedTags)) setSelectedTags(metaFromData.selectedTags)
                 if (Array.isArray(metaFromData.selectedSimulados)) setSelectedSimulados(metaFromData.selectedSimulados)
+                {
+                  const mats =
+                    (Array.isArray(metaFromData.course_materials) ? metaFromData.course_materials : null) ||
+                    (Array.isArray(metaFromData.courseMaterials) ? metaFromData.courseMaterials : null) ||
+                    (Array.isArray(metaFromData.materials) ? metaFromData.materials : null) ||
+                    []
+                  if (Array.isArray(mats)) setCourseMaterials(mats as any)
+                }
                 if (metaFromData.theme_text_color) setThemeTextColor(String(metaFromData.theme_text_color))
                 if (metaFromData.theme_button_primary_color) setThemeButtonPrimaryColor(String(metaFromData.theme_button_primary_color))
                 if (metaFromData.theme_button_secondary_color) setThemeButtonSecondaryColor(String(metaFromData.theme_button_secondary_color))
@@ -294,6 +544,14 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
                      if (Array.isArray(meta.selectedSubcategories)) setSelectedSubcategories(meta.selectedSubcategories)
                      if (Array.isArray(meta.selectedTags)) setSelectedTags(meta.selectedTags)
                      if (Array.isArray(meta.selectedSimulados)) setSelectedSimulados(meta.selectedSimulados)
+                    {
+                      const mats =
+                        (Array.isArray(meta.course_materials) ? meta.course_materials : null) ||
+                        (Array.isArray(meta.courseMaterials) ? meta.courseMaterials : null) ||
+                        (Array.isArray(meta.materials) ? meta.materials : null) ||
+                        []
+                      if (Array.isArray(mats)) setCourseMaterials(mats as any)
+                    }
                     if (meta.module_layout_image_url) setModuleLayoutImage(String(toPublicCoursesMediaUrl(meta.module_layout_image_url) || meta.module_layout_image_url))
                     if (meta.cover_image_url) setCoverImage(String(toPublicCoursesMediaUrl(meta.cover_image_url) || meta.cover_image_url))
                     if (meta.promo_video_url) setPromoVideo(String(toPublicCoursesMediaUrl(meta.promo_video_url) || meta.promo_video_url))
@@ -338,7 +596,20 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
               const hasAnyLesson = hasModule && modulesForProgress.some((m: any) => Array.isArray(m?.lessons) && m.lessons.length > 0)
 
               const simulados = Array.isArray(mergedMeta?.selectedSimulados) ? mergedMeta.selectedSimulados : []
-              const hasRecursos = simulados.length > 0
+              const courseMats =
+                (Array.isArray(mergedMeta?.course_materials) ? mergedMeta.course_materials : null) ||
+                (Array.isArray(mergedMeta?.courseMaterials) ? mergedMeta.courseMaterials : null) ||
+                (Array.isArray(mergedMeta?.materials) ? mergedMeta.materials : null) ||
+                []
+              const hasAnyMaterials =
+                (Array.isArray(courseMats) && courseMats.length > 0)
+                || (hasModule && modulesForProgress.some((m: any) => {
+                  const mm = Array.isArray(m?.materials) ? m.materials : []
+                  if (mm.length > 0) return true
+                  const lessons = Array.isArray(m?.lessons) ? m.lessons : []
+                  return lessons.some((l: any) => Array.isArray(l?.materials) && l.materials.length > 0)
+                }))
+              const hasRecursos = simulados.length > 0 || hasAnyMaterials
 
               const visualUrl = mergedMeta?.cover_image_url || coverUrlFromRow || mergedMeta?.promo_video_url || promoUrlFromRow || mergedMeta?.module_layout_image_url || moduleLayoutUrlFromRow
               const hasVisual = Boolean(visualUrl)
@@ -686,6 +957,77 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
       default: return <FileText className={cls} />
     }
   }
+
+  const generateLocalId = () => {
+    const c = globalThis.crypto as Crypto | undefined
+    if (c && 'randomUUID' in c && typeof (c as any).randomUUID === 'function') return (c as any).randomUUID() as string
+    const bytes = new Uint8Array(16)
+    c?.getRandomValues?.(bytes)
+    bytes[6] = (bytes[6] & 0x0f) | 0x40
+    bytes[8] = (bytes[8] & 0x3f) | 0x80
+    const toHex = (n: number) => n.toString(16).padStart(2, '0')
+    const hex = Array.from(bytes, toHex).join('')
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+  }
+
+  const inferMaterialType = (nameOrUrl: string): LessonMaterial['type'] => {
+    const raw = String(nameOrUrl || '').trim().toLowerCase()
+    if (!raw) return 'pdf'
+    if (raw.startsWith('http://') || raw.startsWith('https://')) return 'link'
+    if (raw.endsWith('.pdf')) return 'pdf'
+    if (raw.endsWith('.doc') || raw.endsWith('.docx')) return 'doc'
+    if (raw.endsWith('.ppt') || raw.endsWith('.pptx')) return 'ppt'
+    if (raw.endsWith('.xls') || raw.endsWith('.xlsx') || raw.endsWith('.csv')) return 'xls'
+    return 'pdf'
+  }
+
+  const removeCourseMaterial = (materialId: string) => {
+    const id = String(materialId || '').trim()
+    if (!id) return
+    setCourseMaterials((prev) => (Array.isArray(prev) ? prev.filter((m) => String(m?.id || '') !== id) : []))
+    setCourseMaterialFilesById((prev) => {
+      if (!prev || !(id in prev)) return prev
+      const next = { ...(prev || {}) }
+      delete next[id]
+      return next
+    })
+  }
+
+  const removeModuleMaterial = (moduleId: string, materialId: string) => {
+    const mid = String(moduleId || '').trim()
+    const id = String(materialId || '').trim()
+    if (!mid || !id) return
+    setModules((prev) => (Array.isArray(prev) ? prev.map((m) => {
+      if (String(m?.id || '') !== mid) return m
+      const mats = Array.isArray((m as any)?.materials) ? (m as any).materials : []
+      return { ...(m as any), materials: mats.filter((x: any) => String(x?.id || '') !== id) }
+    }) : prev))
+    setModuleMaterialFilesById((prev) => {
+      if (!prev || !(id in prev)) return prev
+      const next = { ...(prev || {}) }
+      delete next[id]
+      return next
+    })
+  }
+
+  const removeLessonMaterialFromList = (moduleId: string, lessonId: string, materialId: string) => {
+    const mid = String(moduleId || '').trim()
+    const lid = String(lessonId || '').trim()
+    const id = String(materialId || '').trim()
+    if (!mid || !lid || !id) return
+    const mod = modules.find((m) => String(m?.id || '') === mid)
+    const lesson = mod?.lessons?.find((l) => String(l?.id || '') === lid) || null
+    const current = Array.isArray((lesson as any)?.materials) ? (lesson as any).materials : []
+    const next = current.filter((m: any) => String(m?.id || '') !== id)
+    updateLessonField(mid, lid, 'materials', next as any)
+    setLessonMaterialFilesById((prev) => {
+      if (!prev || !(id in prev)) return prev
+      const out = { ...(prev || {}) }
+      delete out[id]
+      return out
+    })
+  }
+
   const [showModuleForm, setShowModuleForm] = useState(false)
   const [newModuleTitle, setNewModuleTitle] = useState("")
   const [newModuleDescription, setNewModuleDescription] = useState("")
@@ -1229,7 +1571,60 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
         return next as any
       })()
 
-      const modulesFinal = (Array.isArray(modulesWithUploadedMaterials) ? modulesWithUploadedMaterials : []).map((m: any) => {
+      const courseMaterialsUploaded = await (async () => {
+        const base = Array.isArray(courseMaterials) ? courseMaterials : []
+        const keys = courseMaterialFilesById ? Object.keys(courseMaterialFilesById) : []
+        if (keys.length === 0) return base
+        const next = await Promise.all(base.map(async (mat: any) => {
+          const mid = String(mat?.id || '')
+          const file = mid ? courseMaterialFilesById[mid] : undefined
+          const t = String(mat?.type || '').toLowerCase()
+          if (!file || t === 'link') return mat
+          const uploaded = await uploadCourseMedia(courseId, 'materials', file)
+          return {
+            ...mat,
+            id: mid || mat?.id,
+            name: String(file.name || mat?.name || '').trim() || mat?.name,
+            sizeLabel: String(formatSize(file.size) || mat?.sizeLabel || ''),
+            path: uploaded?.path || null,
+            url: uploaded?.url || null,
+          }
+        }))
+        setCourseMaterials(next as any)
+        setCourseMaterialFilesById({})
+        return next as any
+      })()
+
+      const modulesWithUploadedModuleMaterials = await (async () => {
+        const base = Array.isArray(modulesWithUploadedMaterials) ? modulesWithUploadedMaterials : []
+        const keys = moduleMaterialFilesById ? Object.keys(moduleMaterialFilesById) : []
+        if (keys.length === 0) return base
+        const next = await Promise.all(base.map(async (m: any) => {
+          const mats = Array.isArray(m?.materials) ? m.materials : []
+          if (mats.length === 0) return m
+          const nextMats = await Promise.all(mats.map(async (mat: any) => {
+            const mid = String(mat?.id || '')
+            const file = mid ? moduleMaterialFilesById[mid] : undefined
+            const t = String(mat?.type || '').toLowerCase()
+            if (!file || t === 'link') return mat
+            const uploaded = await uploadCourseMedia(courseId, 'materials', file)
+            return {
+              ...mat,
+              id: mid || mat?.id,
+              name: String(file.name || mat?.name || '').trim() || mat?.name,
+              sizeLabel: String(formatSize(file.size) || mat?.sizeLabel || ''),
+              path: uploaded?.path || null,
+              url: uploaded?.url || null,
+            }
+          }))
+          return { ...m, materials: nextMats }
+        }))
+        setModules(next as any)
+        setModuleMaterialFilesById({})
+        return next as any
+      })()
+
+      const modulesFinal = (Array.isArray(modulesWithUploadedModuleMaterials) ? modulesWithUploadedModuleMaterials : []).map((m: any) => {
         const vis = String(m?.visibility || '').trim()
         if (vis !== 'Gratuita para alunos do curso') return { ...m, freeCourseIds: undefined }
         const raw = m?.freeCourseIds || m?.free_course_ids || []
@@ -1247,6 +1642,8 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
         selectedSubcategories,
         selectedTags,
         selectedSimulados,
+        course_materials: courseMaterialsUploaded,
+        courseMaterials: courseMaterialsUploaded,
         price,
         phase_done: phaseDone,
         theme_text_color: themeTextColor,
@@ -1629,7 +2026,60 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
         return next as any
       })()
 
-      const modulesFinal = (Array.isArray(modulesWithUploadedMaterials) ? modulesWithUploadedMaterials : []).map((m: any) => {
+      const courseMaterialsUploaded = await (async () => {
+        const base = Array.isArray(courseMaterials) ? courseMaterials : []
+        const keys = courseMaterialFilesById ? Object.keys(courseMaterialFilesById) : []
+        if (keys.length === 0) return base
+        const next = await Promise.all(base.map(async (mat: any) => {
+          const mid = String(mat?.id || '')
+          const file = mid ? courseMaterialFilesById[mid] : undefined
+          const t = String(mat?.type || '').toLowerCase()
+          if (!file || t === 'link') return mat
+          const uploaded = await uploadCourseMedia(editingCourseId, 'materials', file)
+          return {
+            ...mat,
+            id: mid || mat?.id,
+            name: String(file.name || mat?.name || '').trim() || mat?.name,
+            sizeLabel: String(formatSize(file.size) || mat?.sizeLabel || ''),
+            path: uploaded?.path || null,
+            url: uploaded?.url || null,
+          }
+        }))
+        setCourseMaterials(next as any)
+        setCourseMaterialFilesById({})
+        return next as any
+      })()
+
+      const modulesWithUploadedModuleMaterials = await (async () => {
+        const base = Array.isArray(modulesWithUploadedMaterials) ? modulesWithUploadedMaterials : []
+        const keys = moduleMaterialFilesById ? Object.keys(moduleMaterialFilesById) : []
+        if (keys.length === 0) return base
+        const next = await Promise.all(base.map(async (m: any) => {
+          const mats = Array.isArray(m?.materials) ? m.materials : []
+          if (mats.length === 0) return m
+          const nextMats = await Promise.all(mats.map(async (mat: any) => {
+            const mid = String(mat?.id || '')
+            const file = mid ? moduleMaterialFilesById[mid] : undefined
+            const t = String(mat?.type || '').toLowerCase()
+            if (!file || t === 'link') return mat
+            const uploaded = await uploadCourseMedia(editingCourseId, 'materials', file)
+            return {
+              ...mat,
+              id: mid || mat?.id,
+              name: String(file.name || mat?.name || '').trim() || mat?.name,
+              sizeLabel: String(formatSize(file.size) || mat?.sizeLabel || ''),
+              path: uploaded?.path || null,
+              url: uploaded?.url || null,
+            }
+          }))
+          return { ...m, materials: nextMats }
+        }))
+        setModules(next as any)
+        setModuleMaterialFilesById({})
+        return next as any
+      })()
+
+      const modulesFinal = (Array.isArray(modulesWithUploadedModuleMaterials) ? modulesWithUploadedModuleMaterials : []).map((m: any) => {
         const vis = String(m?.visibility || '').trim()
         if (vis !== 'Gratuita para alunos do curso') return { ...m, freeCourseIds: undefined }
         const raw = m?.freeCourseIds || m?.free_course_ids || []
@@ -1647,6 +2097,8 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
         selectedSubcategories,
         selectedTags,
         selectedSimulados,
+        course_materials: courseMaterialsUploaded,
+        courseMaterials: courseMaterialsUploaded,
         price,
         phase_done: phaseDone,
         theme_text_color: themeTextColor,
@@ -3767,6 +4219,114 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
           </div>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setIsSelectSimuladoOpen(false)}>Fechar</AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <input ref={extraMaterialFileInputRef} type="file" className="hidden" onChange={handleExtraMaterialFileSelected} />
+
+      <AlertDialog open={isExtraLinkOpen} onOpenChange={(v) => { setIsExtraLinkOpen(v); if (!v) { setExtraLinkUrl(''); setExtraLinkTarget(null) } }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Adicionar link</AlertDialogTitle>
+            <AlertDialogDescription>Informe a URL do recurso.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="mt-2 space-y-3">
+            <div>
+              <label className="text-[12px] text-[#6B7280]">URL</label>
+              <input
+                id="extra-link-input"
+                className="mt-1 w-full rounded-[8px] border border-[#E3E4E5] bg-white px-3 py-2 text-[13px]"
+                value={extraLinkUrl}
+                onChange={(e) => setExtraLinkUrl(e.target.value)}
+                placeholder="https://..."
+              />
+            </div>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => { setIsExtraLinkOpen(false); setExtraLinkUrl(''); setExtraLinkTarget(null) }}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                const url = String(extraLinkUrl || '').trim()
+                if (!url) {
+                  toast({ title: 'Informe a URL', description: 'Digite um link válido.' })
+                  return
+                }
+                const target = extraLinkTarget || { scope: 'curso' as const }
+                const item: LessonMaterial = { id: generateLocalId(), name: url, sizeLabel: '', type: 'link', url, path: null }
+                attachMaterialTo(target, item, null)
+                setIsExtraLinkOpen(false)
+                setExtraLinkUrl('')
+                setExtraLinkTarget(null)
+              }}
+            >
+              Adicionar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={isResourceLibraryOpen} onOpenChange={(v) => { setIsResourceLibraryOpen(v); if (!v) setResourceLibraryTarget(null) }}>
+        <AlertDialogContent style={{ width: '720px', height: '620px', maxWidth: '96vw', maxHeight: '86vh' }} className="flex flex-col overflow-hidden">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Biblioteca de recursos</AlertDialogTitle>
+            <AlertDialogDescription>Reutilize recursos já enviados em outros cursos, sem precisar carregar novamente.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="flex flex-col gap-3 flex-1 min-h-0 overflow-y-auto pr-1">
+            <div className="flex items-center gap-2">
+              <input
+                className="flex-1 h-9 rounded-[8px] border border-[#E3E4E5] bg-white px-3 text-[13px]"
+                value={resourceLibraryQuery}
+                onChange={(e) => setResourceLibraryQuery(e.target.value)}
+                placeholder="Buscar por nome, tipo ou curso..."
+              />
+              {resourceLibraryLoading ? (
+                <div className="text-[12px] text-[#737780]">Carregando…</div>
+              ) : null}
+            </div>
+
+            {visibleResourceLibrary.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-10 text-center border rounded-lg border-dashed border-gray-200">
+                <p className="text-sm font-medium text-gray-900">Nenhum recurso encontrado</p>
+                <p className="text-sm text-gray-500 mt-1">Envie anexos em aulas/cursos/módulos para aparecerem aqui.</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {visibleResourceLibrary.map((m, idx) => (
+                  <div key={`lib-${String(m?.id || idx)}`} className="rounded-[8px] border border-[#E3E4E5] bg-white p-3 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="h-9 w-9 rounded-[10px] border border-[#E3E4E5] bg-white flex items-center justify-center">
+                        {materialIcon(m.type)}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-[13px] font-semibold text-[#1E1B39] truncate">{m.name}</div>
+                        <div className="mt-1 flex items-center gap-2 text-[11px] text-[#737780]">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded ${materialColor(m.type)}`}>{String(m.type).toUpperCase()}</span>
+                          {(m as any)?.sourceCourseTitle ? <span className="truncate">• {(m as any).sourceCourseTitle}</span> : null}
+                        </div>
+                      </div>
+                    </div>
+                    <Button
+                      variant="outline"
+                      className="h-8 px-3"
+                      onClick={() => {
+                        const target = resourceLibraryTarget
+                        if (!target) return
+                        const { sourceCourseId, sourceCourseTitle, ...mat } = (m as any) || {}
+                        attachMaterialTo(target, mat as LessonMaterial, null)
+                        toast({ title: 'Recurso adicionado', description: 'Recurso conectado com sucesso.' })
+                        setIsResourceLibraryOpen(false)
+                        setResourceLibraryTarget(null)
+                      }}
+                    >
+                      Usar
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => { setIsResourceLibraryOpen(false); setResourceLibraryTarget(null) }}>Fechar</AlertDialogCancel>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -6242,8 +6802,25 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
 
                     <div className="space-y-6">
                       <div className="rounded-[8px] border border-[#E3E4E5] bg-white">
-                        <div className="px-4 py-3 border-b border-[#E3E4E5]"><span className="text-[13px] font-semibold">Recursos do Curso</span></div>
-                        {selectedSimulados.filter(s => !s.scope || s.scope === 'curso').length > 0 ? (
+                        <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-[#E3E4E5]">
+                          <span className="text-[13px] font-semibold">Recursos do Curso</span>
+                          <div className="flex items-center gap-2">
+                            <select
+                              className="h-8 rounded-[6px] border border-[#E3E4E5] bg-white px-2 text-[12px] outline-none focus:border-[#0047BB]"
+                              value={courseMaterialAddType}
+                              onChange={(e) => setCourseMaterialAddType(e.target.value as any)}
+                            >
+                              <option value="pdf">PDF</option>
+                              <option value="doc">DOC</option>
+                              <option value="ppt">PPT</option>
+                              <option value="xls">XLS</option>
+                              <option value="link">Link</option>
+                            </select>
+                            <Button variant="outline" className="px-3 py-2 h-8" onClick={() => openExtraMaterialUploader({ scope: 'curso' }, courseMaterialAddType)}>Adicionar</Button>
+                            <Button variant="outline" className="px-3 py-2 h-8" onClick={() => openResourceLibrary({ scope: 'curso' })}>Biblioteca</Button>
+                          </div>
+                        </div>
+                        {(selectedSimulados.filter(s => !s.scope || s.scope === 'curso').length > 0 || (Array.isArray(courseMaterials) && courseMaterials.length > 0)) ? (
                           <div className="p-4 space-y-2">
                             {selectedSimulados.filter(s => !s.scope || s.scope === 'curso').map((sim, idx) => (
                               <div key={idx} className="flex items-center justify-between rounded border border-[#E3E4E5] p-2">
@@ -6261,6 +6838,25 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                                 </Button>
                               </div>
                             ))}
+                            {Array.isArray(courseMaterials) ? courseMaterials.map((mat, idx) => (
+                              <div key={`course-mat-${String(mat?.id || idx)}`} className="flex items-center justify-between rounded border border-[#E3E4E5] p-2">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <div className="h-8 w-8 rounded bg-[#F3F4F6] flex items-center justify-center">
+                                    {materialIcon(mat.type)}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <div className="text-[12px] font-medium text-[#1E1B39] truncate">{mat.name}</div>
+                                    <div className="text-[11px] text-[#737780]">
+                                      <span className={`inline-flex items-center px-2 py-0.5 rounded ${materialColor(mat.type)}`}>{String(mat.type).toUpperCase()}</span>
+                                      {mat.sizeLabel ? <span className="ml-2">{mat.sizeLabel}</span> : null}
+                                    </div>
+                                  </div>
+                                </div>
+                                <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => removeCourseMaterial(String(mat?.id || ''))}>
+                                  <Trash2 className="h-4 w-4 text-[#EF4444]" />
+                                </Button>
+                              </div>
+                            )) : null}
                           </div>
                         ) : (
                           <div className="p-4 text-[12px] text-[#737780]">Nenhum recurso adicionado. Use os cartões acima para conectar.</div>
@@ -6269,19 +6865,51 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                       <div className="rounded-[8px] border border-[#E3E4E5] bg-white">
                         <div className="flex items-center justify-between px-4 py-3 border-b border-[#E3E4E5]">
                           <span className="text-[13px] font-semibold">Recursos por módulo</span>
-                          <select 
-                            className="h-8 rounded-[6px] border border-[#E3E4E5] bg-white px-2 text-[12px] min-w-[150px] outline-none focus:border-[#0047BB]"
-                            value={resourceViewModuleId || ''}
-                            onChange={(e) => setResourceViewModuleId(e.target.value || null)}
-                          >
-                            <option value="">Selecione o módulo</option>
-                            {modules.map(m => (
-                              <option key={m.id} value={m.id}>{m.name}</option>
-                            ))}
-                          </select>
+                          <div className="flex items-center gap-2">
+                            <select
+                              className="h-8 rounded-[6px] border border-[#E3E4E5] bg-white px-2 text-[12px] min-w-[150px] outline-none focus:border-[#0047BB]"
+                              value={resourceViewModuleId || ''}
+                              onChange={(e) => setResourceViewModuleId(e.target.value || null)}
+                            >
+                              <option value="">Selecione o módulo</option>
+                              {modules.map(m => (
+                                <option key={m.id} value={m.id}>{m.name}</option>
+                              ))}
+                            </select>
+                            <select
+                              className="h-8 rounded-[6px] border border-[#E3E4E5] bg-white px-2 text-[12px] outline-none focus:border-[#0047BB]"
+                              value={moduleMaterialAddType}
+                              onChange={(e) => setModuleMaterialAddType(e.target.value as any)}
+                              disabled={!resourceViewModuleId}
+                            >
+                              <option value="pdf">PDF</option>
+                              <option value="doc">DOC</option>
+                              <option value="ppt">PPT</option>
+                              <option value="xls">XLS</option>
+                              <option value="link">Link</option>
+                            </select>
+                            <Button
+                              variant="outline"
+                              className="px-3 py-2 h-8"
+                              disabled={!resourceViewModuleId}
+                              onClick={() => openExtraMaterialUploader({ scope: 'modulo', moduleId: resourceViewModuleId }, moduleMaterialAddType)}
+                            >
+                              Adicionar
+                            </Button>
+                            <Button
+                              variant="outline"
+                              className="px-3 py-2 h-8"
+                              disabled={!resourceViewModuleId}
+                              onClick={() => openResourceLibrary({ scope: 'modulo', moduleId: resourceViewModuleId })}
+                            >
+                              Biblioteca
+                            </Button>
+                          </div>
                         </div>
                         {resourceViewModuleId ? (
-                          selectedSimulados.filter(s => s.scope === 'modulo' && s.moduleId === resourceViewModuleId).length > 0 ? (
+                          (selectedSimulados.filter(s => s.scope === 'modulo' && s.moduleId === resourceViewModuleId).length > 0
+                            || (Array.isArray(modules.find(m => m.id === resourceViewModuleId)?.materials) && (modules.find(m => m.id === resourceViewModuleId)?.materials?.length || 0) > 0)
+                          ) ? (
                             <div className="p-4 space-y-2">
                               {selectedSimulados.filter(s => s.scope === 'modulo' && s.moduleId === resourceViewModuleId).map((sim, idx) => (
                                 <div key={idx} className="flex items-center justify-between rounded border border-[#E3E4E5] p-2">
@@ -6299,6 +6927,25 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                                   </Button>
                                 </div>
                               ))}
+                              {(modules.find(m => m.id === resourceViewModuleId)?.materials || []).map((mat: any, idx: number) => (
+                                <div key={`mod-mat-${String(mat?.id || idx)}`} className="flex items-center justify-between rounded border border-[#E3E4E5] p-2">
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <div className="h-8 w-8 rounded bg-[#F3F4F6] flex items-center justify-center">
+                                      {materialIcon(mat.type)}
+                                    </div>
+                                    <div className="min-w-0">
+                                      <div className="text-[12px] font-medium text-[#1E1B39] truncate">{mat.name}</div>
+                                      <div className="text-[11px] text-[#737780]">
+                                        <span className={`inline-flex items-center px-2 py-0.5 rounded ${materialColor(mat.type)}`}>{String(mat.type).toUpperCase()}</span>
+                                        {mat.sizeLabel ? <span className="ml-2">{mat.sizeLabel}</span> : null}
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => removeModuleMaterial(resourceViewModuleId, String(mat?.id || ''))}>
+                                    <Trash2 className="h-4 w-4 text-[#EF4444]" />
+                                  </Button>
+                                </div>
+                              ))}
                             </div>
                           ) : (
                             <div className="p-4 text-[12px] text-[#737780]">Nenhum recurso adicionado a este módulo.</div>
@@ -6310,7 +6957,39 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
 
                       <div className="rounded-[8px] border border-[#E3E4E5] bg-white">
                         <div className="flex flex-col gap-3 px-4 py-3 border-b border-[#E3E4E5]">
-                          <span className="text-[13px] font-semibold">Recursos por aula</span>
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="text-[13px] font-semibold">Recursos por aula</span>
+                            <div className="flex items-center gap-2">
+                              <select
+                                className="h-8 rounded-[6px] border border-[#E3E4E5] bg-white px-2 text-[12px] outline-none focus:border-[#0047BB]"
+                                value={lessonMaterialAddType}
+                                onChange={(e) => setLessonMaterialAddType(e.target.value as any)}
+                                disabled={!resourceViewLessonMeta}
+                              >
+                                <option value="pdf">PDF</option>
+                                <option value="doc">DOC</option>
+                                <option value="ppt">PPT</option>
+                                <option value="xls">XLS</option>
+                                <option value="link">Link</option>
+                              </select>
+                              <Button
+                                variant="outline"
+                                className="px-3 py-2 h-8"
+                                disabled={!resourceViewLessonMeta}
+                                onClick={() => openExtraMaterialUploader({ scope: 'aula', moduleId: resourceViewLessonMeta?.moduleId, lessonId: resourceViewLessonId }, lessonMaterialAddType)}
+                              >
+                                Adicionar
+                              </Button>
+                              <Button
+                                variant="outline"
+                                className="px-3 py-2 h-8"
+                                disabled={!resourceViewLessonMeta}
+                                onClick={() => openResourceLibrary({ scope: 'aula', moduleId: resourceViewLessonMeta?.moduleId, lessonId: resourceViewLessonId })}
+                              >
+                                Biblioteca
+                              </Button>
+                            </div>
+                          </div>
                           <div className="flex gap-2">
                             <select 
                               className="flex-1 h-8 rounded-[6px] border border-[#E3E4E5] bg-white px-2 text-[12px] outline-none focus:border-[#0047BB]"
@@ -6325,7 +7004,9 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                           </div>
                         </div>
                         {resourceViewLessonId ? (
-                          selectedSimulados.filter(s => s.scope === 'aula' && s.lessonId === resourceViewLessonId).length > 0 ? (
+                          (selectedSimulados.filter(s => s.scope === 'aula' && s.lessonId === resourceViewLessonId).length > 0
+                            || (Array.isArray(resourceViewLessonMeta?.lesson?.materials) && (resourceViewLessonMeta?.lesson?.materials?.length || 0) > 0)
+                          ) ? (
                             <div className="p-4 space-y-2">
                               {selectedSimulados.filter(s => s.scope === 'aula' && s.lessonId === resourceViewLessonId).map((sim, idx) => (
                                 <div key={idx} className="flex items-center justify-between rounded border border-[#E3E4E5] p-2">
@@ -6339,6 +7020,30 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                                     </div>
                                   </div>
                                   <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => setSelectedSimulados(prev => prev.filter(s => s !== sim))}>
+                                    <Trash2 className="h-4 w-4 text-[#EF4444]" />
+                                  </Button>
+                                </div>
+                              ))}
+                              {(resourceViewLessonMeta?.lesson?.materials || []).map((mat: any, idx: number) => (
+                                <div key={`lesson-mat-${String(mat?.id || idx)}`} className="flex items-center justify-between rounded border border-[#E3E4E5] p-2">
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <div className="h-8 w-8 rounded bg-[#F3F4F6] flex items-center justify-center">
+                                      {materialIcon(mat.type)}
+                                    </div>
+                                    <div className="min-w-0">
+                                      <div className="text-[12px] font-medium text-[#1E1B39] truncate">{mat.name}</div>
+                                      <div className="text-[11px] text-[#737780]">
+                                        <span className={`inline-flex items-center px-2 py-0.5 rounded ${materialColor(mat.type)}`}>{String(mat.type).toUpperCase()}</span>
+                                        {mat.sizeLabel ? <span className="ml-2">{mat.sizeLabel}</span> : null}
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 w-7 p-0"
+                                    onClick={() => removeLessonMaterialFromList(String(resourceViewLessonMeta?.moduleId || ''), String(resourceViewLessonId || ''), String(mat?.id || ''))}
+                                  >
                                     <Trash2 className="h-4 w-4 text-[#EF4444]" />
                                   </Button>
                                 </div>
@@ -7690,8 +8395,25 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
               </div>
               <div className="space-y-6">
                 <div className="rounded-[8px] border border-[#E3E4E5] bg-white">
-                  <div className="px-4 py-3 border-b border-[#E3E4E5]"><span className="text-[13px] font-semibold">Recursos do Curso</span></div>
-                  {selectedSimulados.filter(s => !s.scope || s.scope === 'curso').length > 0 ? (
+                  <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-[#E3E4E5]">
+                    <span className="text-[13px] font-semibold">Recursos do Curso</span>
+                    <div className="flex items-center gap-2">
+                      <select
+                        className="h-8 rounded-[6px] border border-[#E3E4E5] bg-white px-2 text-[12px] outline-none focus:border-[#0047BB]"
+                        value={courseMaterialAddType}
+                        onChange={(e) => setCourseMaterialAddType(e.target.value as any)}
+                      >
+                        <option value="pdf">PDF</option>
+                        <option value="doc">DOC</option>
+                        <option value="ppt">PPT</option>
+                        <option value="xls">XLS</option>
+                        <option value="link">Link</option>
+                      </select>
+                      <Button variant="outline" className="px-3 py-2 h-8" onClick={() => openExtraMaterialUploader({ scope: 'curso' }, courseMaterialAddType)}>Adicionar</Button>
+                      <Button variant="outline" className="px-3 py-2 h-8" onClick={() => openResourceLibrary({ scope: 'curso' })}>Biblioteca</Button>
+                    </div>
+                  </div>
+                  {(selectedSimulados.filter(s => !s.scope || s.scope === 'curso').length > 0 || (Array.isArray(courseMaterials) && courseMaterials.length > 0)) ? (
                     <div className="p-4 space-y-2">
                       {selectedSimulados.filter(s => !s.scope || s.scope === 'curso').map((sim, idx) => (
                         <div key={idx} className="flex items-center justify-between rounded border border-[#E3E4E5] p-2">
@@ -7709,6 +8431,25 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                           </Button>
                         </div>
                       ))}
+                      {Array.isArray(courseMaterials) ? courseMaterials.map((mat, idx) => (
+                        <div key={`course-mat-${String(mat?.id || idx)}`} className="flex items-center justify-between rounded border border-[#E3E4E5] p-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <div className="h-8 w-8 rounded bg-[#F3F4F6] flex items-center justify-center">
+                              {materialIcon(mat.type)}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="text-[12px] font-medium text-[#1E1B39] truncate">{mat.name}</div>
+                              <div className="text-[11px] text-[#737780]">
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded ${materialColor(mat.type)}`}>{String(mat.type).toUpperCase()}</span>
+                                {mat.sizeLabel ? <span className="ml-2">{mat.sizeLabel}</span> : null}
+                              </div>
+                            </div>
+                          </div>
+                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => removeCourseMaterial(String(mat?.id || ''))}>
+                            <Trash2 className="h-4 w-4 text-[#EF4444]" />
+                          </Button>
+                        </div>
+                      )) : null}
                     </div>
                   ) : (
                     <div className="p-4 text-[12px] text-[#737780]">Nenhum recurso adicionado. Use os cartões acima para conectar.</div>
@@ -7717,19 +8458,51 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                 <div className="rounded-[8px] border border-[#E3E4E5] bg-white">
                   <div className="flex items-center justify-between px-4 py-3 border-b border-[#E3E4E5]">
                     <span className="text-[13px] font-semibold">Recursos por módulo</span>
-                    <select
-                      className="h-8 rounded-[6px] border border-[#E3E4E5] bg-white px-2 text-[12px] min-w-[150px] outline-none focus:border-[#0047BB]"
-                      value={resourceViewModuleId || ''}
-                      onChange={(e) => setResourceViewModuleId(e.target.value || null)}
-                    >
-                      <option value="">Selecione o módulo</option>
-                      {modules.map(m => (
-                        <option key={m.id} value={m.id}>{m.name}</option>
-                      ))}
-                    </select>
+                    <div className="flex items-center gap-2">
+                      <select
+                        className="h-8 rounded-[6px] border border-[#E3E4E5] bg-white px-2 text-[12px] min-w-[150px] outline-none focus:border-[#0047BB]"
+                        value={resourceViewModuleId || ''}
+                        onChange={(e) => setResourceViewModuleId(e.target.value || null)}
+                      >
+                        <option value="">Selecione o módulo</option>
+                        {modules.map(m => (
+                          <option key={m.id} value={m.id}>{m.name}</option>
+                        ))}
+                      </select>
+                      <select
+                        className="h-8 rounded-[6px] border border-[#E3E4E5] bg-white px-2 text-[12px] outline-none focus:border-[#0047BB]"
+                        value={moduleMaterialAddType}
+                        onChange={(e) => setModuleMaterialAddType(e.target.value as any)}
+                        disabled={!resourceViewModuleId}
+                      >
+                        <option value="pdf">PDF</option>
+                        <option value="doc">DOC</option>
+                        <option value="ppt">PPT</option>
+                        <option value="xls">XLS</option>
+                        <option value="link">Link</option>
+                      </select>
+                      <Button
+                        variant="outline"
+                        className="px-3 py-2 h-8"
+                        disabled={!resourceViewModuleId}
+                        onClick={() => openExtraMaterialUploader({ scope: 'modulo', moduleId: resourceViewModuleId }, moduleMaterialAddType)}
+                      >
+                        Adicionar
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="px-3 py-2 h-8"
+                        disabled={!resourceViewModuleId}
+                        onClick={() => openResourceLibrary({ scope: 'modulo', moduleId: resourceViewModuleId })}
+                      >
+                        Biblioteca
+                      </Button>
+                    </div>
                   </div>
                   {resourceViewModuleId ? (
-                    selectedSimulados.filter(s => s.scope === 'modulo' && s.moduleId === resourceViewModuleId).length > 0 ? (
+                    (selectedSimulados.filter(s => s.scope === 'modulo' && s.moduleId === resourceViewModuleId).length > 0
+                      || (Array.isArray(modules.find(m => m.id === resourceViewModuleId)?.materials) && (modules.find(m => m.id === resourceViewModuleId)?.materials?.length || 0) > 0)
+                    ) ? (
                       <div className="p-4 space-y-2">
                         {selectedSimulados.filter(s => s.scope === 'modulo' && s.moduleId === resourceViewModuleId).map((sim, idx) => (
                           <div key={idx} className="flex items-center justify-between rounded border border-[#E3E4E5] p-2">
@@ -7747,6 +8520,25 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                             </Button>
                           </div>
                         ))}
+                        {(modules.find(m => m.id === resourceViewModuleId)?.materials || []).map((mat: any, idx: number) => (
+                          <div key={`mod-mat-${String(mat?.id || idx)}`} className="flex items-center justify-between rounded border border-[#E3E4E5] p-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <div className="h-8 w-8 rounded bg-[#F3F4F6] flex items-center justify-center">
+                                {materialIcon(mat.type)}
+                              </div>
+                              <div className="min-w-0">
+                                <div className="text-[12px] font-medium text-[#1E1B39] truncate">{mat.name}</div>
+                                <div className="text-[11px] text-[#737780]">
+                                  <span className={`inline-flex items-center px-2 py-0.5 rounded ${materialColor(mat.type)}`}>{String(mat.type).toUpperCase()}</span>
+                                  {mat.sizeLabel ? <span className="ml-2">{mat.sizeLabel}</span> : null}
+                                </div>
+                              </div>
+                            </div>
+                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => removeModuleMaterial(resourceViewModuleId, String(mat?.id || ''))}>
+                              <Trash2 className="h-4 w-4 text-[#EF4444]" />
+                            </Button>
+                          </div>
+                        ))}
                       </div>
                     ) : (
                       <div className="p-4 text-[12px] text-[#737780]">Nenhum recurso adicionado a este módulo.</div>
@@ -7757,7 +8549,39 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                 </div>
                 <div className="rounded-[8px] border border-[#E3E4E5] bg-white">
                   <div className="flex flex-col gap-3 px-4 py-3 border-b border-[#E3E4E5]">
-                    <span className="text-[13px] font-semibold">Recursos por aula</span>
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-[13px] font-semibold">Recursos por aula</span>
+                      <div className="flex items-center gap-2">
+                        <select
+                          className="h-8 rounded-[6px] border border-[#E3E4E5] bg-white px-2 text-[12px] outline-none focus:border-[#0047BB]"
+                          value={lessonMaterialAddType}
+                          onChange={(e) => setLessonMaterialAddType(e.target.value as any)}
+                          disabled={!resourceViewLessonMeta}
+                        >
+                          <option value="pdf">PDF</option>
+                          <option value="doc">DOC</option>
+                          <option value="ppt">PPT</option>
+                          <option value="xls">XLS</option>
+                          <option value="link">Link</option>
+                        </select>
+                        <Button
+                          variant="outline"
+                          className="px-3 py-2 h-8"
+                          disabled={!resourceViewLessonMeta}
+                          onClick={() => openExtraMaterialUploader({ scope: 'aula', moduleId: resourceViewLessonMeta?.moduleId, lessonId: resourceViewLessonId }, lessonMaterialAddType)}
+                        >
+                          Adicionar
+                        </Button>
+                        <Button
+                          variant="outline"
+                          className="px-3 py-2 h-8"
+                          disabled={!resourceViewLessonMeta}
+                          onClick={() => openResourceLibrary({ scope: 'aula', moduleId: resourceViewLessonMeta?.moduleId, lessonId: resourceViewLessonId })}
+                        >
+                          Biblioteca
+                        </Button>
+                      </div>
+                    </div>
                     <div className="flex gap-2">
                       <select
                         className="flex-1 h-8 rounded-[6px] border border-[#E3E4E5] bg-white px-2 text-[12px] outline-none focus:border-[#0047BB]"
@@ -7772,7 +8596,9 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                     </div>
                   </div>
                   {resourceViewLessonId ? (
-                    selectedSimulados.filter(s => s.scope === 'aula' && s.lessonId === resourceViewLessonId).length > 0 ? (
+                    (selectedSimulados.filter(s => s.scope === 'aula' && s.lessonId === resourceViewLessonId).length > 0
+                      || (Array.isArray(resourceViewLessonMeta?.lesson?.materials) && (resourceViewLessonMeta?.lesson?.materials?.length || 0) > 0)
+                    ) ? (
                       <div className="p-4 space-y-2">
                         {selectedSimulados.filter(s => s.scope === 'aula' && s.lessonId === resourceViewLessonId).map((sim, idx) => (
                           <div key={idx} className="flex items-center justify-between rounded border border-[#E3E4E5] p-2">
@@ -7786,6 +8612,30 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                               </div>
                             </div>
                             <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => setSelectedSimulados(prev => prev.filter(s => s !== sim))}>
+                              <Trash2 className="h-4 w-4 text-[#EF4444]" />
+                            </Button>
+                          </div>
+                        ))}
+                        {(resourceViewLessonMeta?.lesson?.materials || []).map((mat: any, idx: number) => (
+                          <div key={`lesson-mat-${String(mat?.id || idx)}`} className="flex items-center justify-between rounded border border-[#E3E4E5] p-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <div className="h-8 w-8 rounded bg-[#F3F4F6] flex items-center justify-center">
+                                {materialIcon(mat.type)}
+                              </div>
+                              <div className="min-w-0">
+                                <div className="text-[12px] font-medium text-[#1E1B39] truncate">{mat.name}</div>
+                                <div className="text-[11px] text-[#737780]">
+                                  <span className={`inline-flex items-center px-2 py-0.5 rounded ${materialColor(mat.type)}`}>{String(mat.type).toUpperCase()}</span>
+                                  {mat.sizeLabel ? <span className="ml-2">{mat.sizeLabel}</span> : null}
+                                </div>
+                              </div>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 p-0"
+                              onClick={() => removeLessonMaterialFromList(String(resourceViewLessonMeta?.moduleId || ''), String(resourceViewLessonId || ''), String(mat?.id || ''))}
+                            >
                               <Trash2 className="h-4 w-4 text-[#EF4444]" />
                             </Button>
                           </div>
