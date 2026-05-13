@@ -623,7 +623,15 @@ function AttachmentsPanel({ courseId, moduleId, lessonId, lessonKey, demo }) {
         const mod = (Array.isArray(mods) ? mods : []).find((m) => String(m?.id || '') === String(moduleId || '')) || mods[0] || null
         const lessons = Array.isArray(mod?.lessons) ? mod.lessons : []
         const lesson = lessons.find((l) => String(l?.id || '') === String(lessonId || '')) || lessons[0] || null
-        const materials = Array.isArray(lesson?.materials) ? lesson.materials : []
+        const meta = getCourseMeta(data) || {}
+        const courseMaterials =
+          (Array.isArray(meta?.course_materials) ? meta.course_materials : null)
+          || (Array.isArray(meta?.courseMaterials) ? meta.courseMaterials : null)
+          || (Array.isArray(meta?.materials) ? meta.materials : null)
+          || []
+        const moduleMaterials = Array.isArray(mod?.materials) ? mod.materials : []
+        const lessonMaterials = Array.isArray(lesson?.materials) ? lesson.materials : []
+        const materials = [...(Array.isArray(courseMaterials) ? courseMaterials : []), ...(Array.isArray(moduleMaterials) ? moduleMaterials : []), ...(Array.isArray(lessonMaterials) ? lessonMaterials : [])]
         const pid = String(data?.user_id || '').trim()
         if (active) setProducerId(pid)
         const mapped = await Promise.all(materials.map(async (m, idx) => {
