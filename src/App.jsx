@@ -4,49 +4,57 @@ import { HelmetProvider } from 'react-helmet-async';
 import { AuthProvider, useAuth } from '@/contexts/SupabaseAuthContext';
 import { TaxonomyProvider } from '@/contexts/TaxonomyContext';
 import MainLayout from '@/components/MainLayout';
-import InboxPage from '@/pages/InboxPage';
-import CategoriasPage from '@/pages/CategoriasPage';
-import QuestionBankPage from '@/pages/QuestionBankPage';
-import CursosPage from '@/pages/CursosPage';
-import AlunosPage from '@/pages/AlunosPage';
-import SimuladosPage from '@/pages/SimuladosPage';
-import DimuladosPage from '@/pages/DimuladosPage';
-import SimuladosAproveitamentoPage from '@/pages/SimuladosAproveitamentoPage';
-import SimuladoAcessoPage from '@/pages/SimuladoAcessoPage.jsx';
-import SimuladosNovo from '@/pages/SimuladosNovo';
-import ProdutosNovo from '@/pages/ProdutosNovo.tsx';
-import CursoPreviewAlunoPage from '@/pages/CursoPreviewAlunoPage';
-import VendasPage from '@/pages/VendasPage';
-import DashboardPage from '@/pages/DashboardPage';
-import LoginPage from '@/pages/LoginPage';
-import HeroPage from '@/pages/HeroPage';
-import EmailVerificationPage from '@/pages/EmailVerificationPage';
-import ResetPasswordPage from '@/pages/ResetPasswordPage.jsx';
-import TermosPrivacidadePage from '@/pages/TermosPrivacidadePage.jsx';
-import DeviceLockPage from '@/pages/DeviceLockPage.jsx';
-import LoginAlunoPage from '@/pages/LoginAlunoPage.jsx';
-import LoginAlunoWhitelabelPage from '@/pages/LoginAlunoWhitelabelPage.jsx';
-import AlunoDashboardPage from '@/pages/AlunoDashboardPage.jsx';
-import AlunoAulaPage from '@/pages/AlunoAulaPage.jsx';
-import AlunoSimuladoAcessoPage from '@/pages/AlunoSimuladoAcessoPage.jsx';
-import AlunoSimuladosPage from '@/pages/AlunoSimuladosPage.jsx';
-import AlunoConfiguracoesPage from '@/pages/AlunoConfiguracoesPage.jsx';
-import AlunoCursoPage from '@/pages/AlunoCursoPage.jsx';
-import AlunoBancoDeQuestoesPage from '@/pages/AlunoBancoDeQuestoesPage.jsx';
-import AlunoQuestoesPage from '@/pages/AlunoQuestoesPage.jsx';
-import PlatformAdminLoginPage from '@/pages/PlatformAdminLoginPage.jsx';
-import PlatformAdminPanelPage from '@/pages/PlatformAdminPanelPage.jsx';
-import PlatformAdminDeployPage from '@/pages/PlatformAdminDeployPage.jsx';
-import PlatformAdminWithdrawRequestsPage from '@/pages/PlatformAdminWithdrawRequestsPage.jsx';
-import QuestoesPage from '@/pages/QuestoesPage';
-import RepostaCorretaSimuladoPage from '@/pages/RepostaCorretaSimuladoPage';
-import ConfiguracoesPage from '@/pages/ConfiguracoesPage';
 import { Toaster } from '@/components/ui/toaster';
 import DeviceAccessRequestModal from '@/components/DeviceAccessRequestModal.jsx'
 import { supabase } from '@/lib/supabaseClient'
 import { toast } from '@/components/ui/use-toast';
 import { isUploadInProgress, subscribeUploadGuard, getActiveUploadCount } from '@/services/uploadGuard';
 import { setActiveProducerUserId } from '@/services/producerScope'
+
+const InboxPage = React.lazy(() => import('@/pages/InboxPage'))
+const CategoriasPage = React.lazy(() => import('@/pages/CategoriasPage'))
+const QuestionBankPage = React.lazy(() => import('@/pages/QuestionBankPage'))
+const CursosPage = React.lazy(() => import('@/pages/CursosPage'))
+const AlunosPage = React.lazy(() => import('@/pages/AlunosPage'))
+const SimuladosPage = React.lazy(() => import('@/pages/SimuladosPage'))
+const DimuladosPage = React.lazy(() => import('@/pages/DimuladosPage'))
+const SimuladosAproveitamentoPage = React.lazy(() => import('@/pages/SimuladosAproveitamentoPage'))
+const SimuladoAcessoPage = React.lazy(() => import('@/pages/SimuladoAcessoPage.jsx'))
+const SimuladosNovo = React.lazy(() => import('@/pages/SimuladosNovo'))
+const ProdutosNovo = React.lazy(() => import('@/pages/ProdutosNovo.tsx'))
+const CursoPreviewAlunoPage = React.lazy(() => import('@/pages/CursoPreviewAlunoPage'))
+const VendasPage = React.lazy(() => import('@/pages/VendasPage'))
+const DashboardPage = React.lazy(() => import('@/pages/DashboardPage'))
+const LoginPage = React.lazy(() => import('@/pages/LoginPage'))
+const HeroPage = React.lazy(() => import('@/pages/HeroPage'))
+const EmailVerificationPage = React.lazy(() => import('@/pages/EmailVerificationPage'))
+const ResetPasswordPage = React.lazy(() => import('@/pages/ResetPasswordPage.jsx'))
+const TermosPrivacidadePage = React.lazy(() => import('@/pages/TermosPrivacidadePage.jsx'))
+const DeviceLockPage = React.lazy(() => import('@/pages/DeviceLockPage.jsx'))
+const LoginAlunoPage = React.lazy(() => import('@/pages/LoginAlunoPage.jsx'))
+const LoginAlunoWhitelabelPage = React.lazy(() => import('@/pages/LoginAlunoWhitelabelPage.jsx'))
+const AlunoDashboardPage = React.lazy(() => import('@/pages/AlunoDashboardPage.jsx'))
+const AlunoAulaPage = React.lazy(() => import('@/pages/AlunoAulaPage.jsx'))
+const AlunoSimuladoAcessoPage = React.lazy(() => import('@/pages/AlunoSimuladoAcessoPage.jsx'))
+const AlunoSimuladosPage = React.lazy(() => import('@/pages/AlunoSimuladosPage.jsx'))
+const AlunoConfiguracoesPage = React.lazy(() => import('@/pages/AlunoConfiguracoesPage.jsx'))
+const AlunoCursoPage = React.lazy(() => import('@/pages/AlunoCursoPage.jsx'))
+const AlunoBancoDeQuestoesPage = React.lazy(() => import('@/pages/AlunoBancoDeQuestoesPage.jsx'))
+const AlunoQuestoesPage = React.lazy(() => import('@/pages/AlunoQuestoesPage.jsx'))
+const PlatformAdminLoginPage = React.lazy(() => import('@/pages/PlatformAdminLoginPage.jsx'))
+const PlatformAdminPanelPage = React.lazy(() => import('@/pages/PlatformAdminPanelPage.jsx'))
+const PlatformAdminDeployPage = React.lazy(() => import('@/pages/PlatformAdminDeployPage.jsx'))
+const PlatformAdminWithdrawRequestsPage = React.lazy(() => import('@/pages/PlatformAdminWithdrawRequestsPage.jsx'))
+const QuestoesPage = React.lazy(() => import('@/pages/QuestoesPage'))
+const RepostaCorretaSimuladoPage = React.lazy(() => import('@/pages/RepostaCorretaSimuladoPage'))
+const ConfiguracoesPage = React.lazy(() => import('@/pages/ConfiguracoesPage'))
+const AdminPage = React.lazy(() => import('@/pages/AdminPage'))
+const VimeoCallback = React.lazy(() => import('@/pages/VimeoCallback'))
+const AlunoSimuladoResultadoPage = React.lazy(() => import('@/pages/AlunoSimuladoResultadoPage'))
+const AlunoBancoQuestoesResultadoPage = React.lazy(() => import('@/pages/AlunoBancoQuestoesResultadoPage'))
+const PlanosPage = React.lazy(() => import('@/pages/PlanosPage'))
+const PlanosCallback = React.lazy(() => import('@/pages/PlanosCallback'))
+const TestMyGateway = React.lazy(() => import('@/pages/TestMyGateway'))
 
 const ADMIN_VIEW_PARAM = 'dev-admin';
 const QUESTION_BANK_PATH = '/banco-de-questoes';
@@ -724,133 +732,148 @@ function AppContent() {
   }, []);
 
   const renderContent = () => {
+    let node = null
     switch (currentView) {
       case 'platformAdminLogin':
-        return <PlatformAdminLoginPage />;
+        node = <PlatformAdminLoginPage />
+        break
       case 'platformAdminPanel':
-        return <PlatformAdminPanelPage />;
+        node = <PlatformAdminPanelPage />
+        break
       case 'platformAdminDeploy':
-        return <PlatformAdminDeployPage />;
+        node = <PlatformAdminDeployPage />
+        break
       case 'platformAdminWithdraws':
-        return <PlatformAdminWithdrawRequestsPage />;
+        node = <PlatformAdminWithdrawRequestsPage />
+        break
       case 'admin':
-        const AdminPage = React.lazy(() => import('@/pages/AdminPage'));
-        return (
-          <Suspense fallback={<div>Loading Admin...</div>}>
-            <AdminPage />
-          </Suspense>
-        );
+        node = <AdminPage />
+        break
       case 'questionBank':
-        return <QuestionBankPage />;
+        node = <QuestionBankPage />
+        break
       case 'questoes':
-        // Remonta a página quando search (ex.: ?bankId=...) muda
-        return <QuestoesPage key={locationKey} />;
+        node = <QuestoesPage key={locationKey} />
+        break
       case 'cursos':
-        return <CursosPage />;
+        node = <CursosPage />
+        break
       case 'gerenciarAlunos':
-        return <AlunosPage />;
+        node = <AlunosPage />
+        break
       case 'simulados':
-        return <SimuladosPage />;
+        node = <SimuladosPage />
+        break
       case 'simuladosAcesso':
-        return <SimuladoAcessoPage />;
+        node = <SimuladoAcessoPage />
+        break
       case 'dimulados':
-        return <DimuladosPage />;
+        node = <DimuladosPage />
+        break
       case 'simuladosNovo':
-        return <SimuladosNovo />;
+        node = <SimuladosNovo />
+        break
       case 'produtosNovo':
-        return <ProdutosNovo />;
+        node = <ProdutosNovo />
+        break
       case 'cursoPreviewAluno':
-        return <CursoPreviewAlunoPage />;
+        node = <CursoPreviewAlunoPage />
+        break
       case 'simuladosAproveitamento':
-        return <SimuladosAproveitamentoPage />;
+        node = <SimuladosAproveitamentoPage />
+        break
       case 'vendas':
-        return <VendasPage />;
+        node = <VendasPage />
+        break
       case 'dashboard':
-        return <DashboardPage />;
+        node = <DashboardPage />
+        break
       case 'login':
-        return <LoginPage />;
+        node = <LoginPage />
+        break
       case 'loginAluno':
-        return <LoginAlunoPage />;
+        node = <LoginAlunoPage />
+        break
       case 'loginAlunoWhitelabel':
-        return <LoginAlunoWhitelabelPage />;
+        node = <LoginAlunoWhitelabelPage />
+        break
       case 'alunoDashboard':
-        return <AlunoDashboardPage />;
+        node = <AlunoDashboardPage />
+        break
       case 'alunoAula':
-        return <AlunoAulaPage />;
+        node = <AlunoAulaPage />
+        break
       case 'alunoCurso':
-        return <AlunoCursoPage />;
+        node = <AlunoCursoPage />
+        break
       case 'alunoSimuladoAcesso':
-        return <AlunoSimuladoAcessoPage />;
+        node = <AlunoSimuladoAcessoPage />
+        break
       case 'alunoSimulados':
-        return <AlunoSimuladosPage />;
+        node = <AlunoSimuladosPage />
+        break
       case 'alunoSimuladoResultado':
-        const AlunoSimuladoResultadoPage = React.lazy(() => import('@/pages/AlunoSimuladoResultadoPage'));
-        return (
-          <Suspense fallback={<div>Carregando resultado...</div>}>
-            <AlunoSimuladoResultadoPage />
-          </Suspense>
-        );
+        node = <AlunoSimuladoResultadoPage />
+        break
       case 'alunoConfiguracoes':
-        return <AlunoConfiguracoesPage />;
+        node = <AlunoConfiguracoesPage />
+        break
       case 'alunoBancoQuestoes':
-        return <AlunoBancoDeQuestoesPage />;
+        node = <AlunoBancoDeQuestoesPage />
+        break
       case 'alunoBancoQuestoesResultado':
-        const AlunoBancoQuestoesResultadoPage = React.lazy(() => import('@/pages/AlunoBancoQuestoesResultadoPage'));
-        return (
-          <Suspense fallback={<div>Carregando resultado...</div>}>
-            <AlunoBancoQuestoesResultadoPage key={locationKey} />
-          </Suspense>
-        );
+        node = <AlunoBancoQuestoesResultadoPage key={locationKey} />
+        break
       case 'alunoQuestoes':
-        return <AlunoQuestoesPage key={locationKey} />;
+        node = <AlunoQuestoesPage key={locationKey} />
+        break
       case 'verifyEmail':
-        return <EmailVerificationPage />;
+        node = <EmailVerificationPage />
+        break
       case 'resetPassword':
-        return <ResetPasswordPage />;
+        node = <ResetPasswordPage />
+        break
       case 'termos':
-        return <TermosPrivacidadePage />;
+        node = <TermosPrivacidadePage />
+        break
       case 'vimeoCallback':
-        const VimeoCallback = React.lazy(() => import('@/pages/VimeoCallback'));
-        return (
-          <Suspense fallback={<div>Conectando com Vimeo...</div>}>
-            <VimeoCallback />
-          </Suspense>
-        );
+        node = <VimeoCallback />
+        break
       case 'hero':
-        return <HeroPage />;
+        node = <HeroPage />
+        break
       case 'repostaCorretaSimulado':
-        return <RepostaCorretaSimuladoPage />;
+        node = <RepostaCorretaSimuladoPage />
+        break
       case 'alunoRepostaCorretaSimulado':
-        return <RepostaCorretaSimuladoPage />;
+        node = <RepostaCorretaSimuladoPage />
+        break
       case 'planos':
-        const PlanosPage = React.lazy(() => import('@/pages/PlanosPage'));
-        return (
-          <Suspense fallback={<div>Loading Planos...</div>}>
-            <PlanosPage />
-          </Suspense>
-        );
+        node = <PlanosPage />
+        break
       case 'planosCallback':
-        const PlanosCallback = React.lazy(() => import('@/pages/PlanosCallback'));
-        return (
-          <Suspense fallback={<div>Processando plano...</div>}>
-            <PlanosCallback />
-          </Suspense>
-        );
+        node = <PlanosCallback />
+        break
       case 'categorias':
-        return <CategoriasPage />;
+        node = <CategoriasPage />
+        break
       case 'configuracoes':
-        return <ConfiguracoesPage />;
+        node = <ConfiguracoesPage />
+        break
       case 'testMyGateway':
-        const TestMyGateway = React.lazy(() => import('@/pages/TestMyGateway'));
-        return (
-          <Suspense fallback={<div>Carregando teste...</div>}>
-            <TestMyGateway />
-          </Suspense>
-        );
+        node = <TestMyGateway />
+        break
       case 'inbox':
       default:
-        return <InboxPage />;
+        node = <InboxPage />
+        break
     }
+
+    return (
+      <Suspense fallback={<div>Carregando...</div>}>
+        {node}
+      </Suspense>
+    )
   };
 
   const isPublicView = useMemo(() => (forceResetPassword || currentView === 'login' || currentView === 'loginAluno' || currentView === 'loginAlunoWhitelabel' || currentView === 'verifyEmail' || currentView === 'resetPassword' || currentView === 'termos' || currentView === 'platformAdminLogin'), [currentView, forceResetPassword]);
