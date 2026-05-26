@@ -540,7 +540,14 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
 
   const localLessonLibrary = useMemo(() => {
     const courseTitle = (String(title || '').trim() || 'Este curso')
-    const courseId = String(editingCourseId || '').trim() || 'current'
+    const courseId = (() => {
+      try {
+        const m = String(window.location.pathname || '').match(/\/produtos\/editar\/(.+)/)
+        return String(m?.[1] || '').trim() || 'current'
+      } catch (_) {
+        return 'current'
+      }
+    })()
     const out: Array<{ id: string; title: string; provider: string; durationMin: number; courseId: string; courseTitle: string; moduleId: string; moduleTitle: string; lesson: any }> = []
     const modulesList = Array.isArray(modules) ? modules : []
     for (let mi = 0; mi < modulesList.length; mi += 1) {
@@ -564,7 +571,7 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
       }
     }
     return out
-  }, [modules, title, editingCourseId])
+  }, [modules, title])
 
   const visibleLessonLibrary = useMemo(() => {
     const q = String(lessonLibraryQuery || '').trim().toLowerCase()
