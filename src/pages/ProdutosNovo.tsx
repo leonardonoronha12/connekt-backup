@@ -8463,6 +8463,17 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                   <Button
                     variant="outline"
                     onClick={() => {
+                      const selectedId = editingModuleId ?? modules[0]?.id
+                      if (!selectedId) return
+                      openLessonLibrary(selectedId)
+                      toast({ title: "Biblioteca de aulas", description: "Selecione uma aula existente para reutilizar." })
+                    }}
+                  >
+                    Usar Aula Existente
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
                       setEditingLessonId(null)
                       if (!editingModuleId && modules[0]?.id) setEditingModuleId(modules[0].id)
                       setIsAddLessonModalOpen(true)
