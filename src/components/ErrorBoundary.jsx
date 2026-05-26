@@ -3,19 +3,21 @@ import React from 'react'
 export default class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props)
-    this.state = { hasError: false, message: '' }
+    this.state = { hasError: false, message: '', stack: '', componentStack: '' }
   }
 
   static getDerivedStateFromError() {
     return { hasError: true }
   }
 
-  componentDidCatch(error) {
+  componentDidCatch(error, info) {
     try {
       const msg = error && typeof error === 'object' && 'message' in error ? String(error.message || '') : String(error || '')
-      this.setState({ message: msg })
+      const stack = error && typeof error === 'object' && 'stack' in error ? String(error.stack || '') : ''
+      const componentStack = info && typeof info === 'object' && 'componentStack' in info ? String(info.componentStack || '') : ''
+      this.setState({ message: msg, stack, componentStack })
       try { console.error('[ErrorBoundary]', error) } catch (_) {}
-      try { window.__CONNEKT_LAST_ERROR__ = msg } catch (_) {}
+      try { window.__CONNEKT_LAST_ERROR__ = { message: msg, stack, componentStack } } catch (_) {}
     } catch (_) {}
   }
 
@@ -32,6 +34,11 @@ export default class ErrorBoundary extends React.Component {
             <div style={{ marginTop: 10, fontSize: 12, color: '#111827', lineHeight: 1.4, wordBreak: 'break-word' }}>
               {this.state.message}
             </div>
+          ) : null}
+          {this.state.stack ? (
+            <pre style={{ marginTop: 10, padding: 10, borderRadius: 10, border: '1px solid #E3E4E5', background: '#F8FAFC', fontSize: 11, color: '#111827', textAlign: 'left', overflow: 'auto', maxHeight: 180, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+              {this.state.stack}
+            </pre>
           ) : null}
           <div style={{ marginTop: 14, display: 'flex', justifyContent: 'center', gap: 10, flexWrap: 'wrap' }}>
             <button
