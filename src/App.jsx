@@ -4,6 +4,7 @@ import { HelmetProvider } from 'react-helmet-async';
 import { AuthProvider, useAuth } from '@/contexts/SupabaseAuthContext';
 import { TaxonomyProvider } from '@/contexts/TaxonomyContext';
 import MainLayout from '@/components/MainLayout';
+import ErrorBoundary from '@/components/ErrorBoundary';
 import { Toaster } from '@/components/ui/toaster';
 import DeviceAccessRequestModal from '@/components/DeviceAccessRequestModal.jsx'
 import { supabase } from '@/lib/supabaseClient'
@@ -871,7 +872,9 @@ function AppContent() {
 
     return (
       <Suspense fallback={<div>Carregando...</div>}>
-        {node}
+        <ErrorBoundary key={locationKey}>
+          {node}
+        </ErrorBoundary>
       </Suspense>
     )
   };
