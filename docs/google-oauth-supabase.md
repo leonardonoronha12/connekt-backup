@@ -1,5 +1,32 @@
 # Login com Google (Supabase)
 
+## 0) Trocar o “Prosseguir para <...>” do Google para seu domínio (ex: app.connekt)
+
+Na tela do Google, o texto “Prosseguir para …” usa o **domínio do Redirect URI do OAuth**.
+
+Se você está vendo algo como:
+
+- `Prosseguir para <SEU_PROJECT_REF>.supabase.co`
+
+isso acontece porque o redirect do Google está apontando para:
+
+- `https://<SEU_PROJECT_REF>.supabase.co/auth/v1/callback`
+
+Para o Google mostrar seu domínio (ex.: `app.connekt`, `app.connektco.com`), você precisa que o callback do Supabase rode em um **domínio seu**. Isso exige **Custom Domain** no Supabase (ou um proxy equivalente).
+
+Passos (com Supabase Custom Domain):
+
+1. No Supabase, configure um domínio customizado para o projeto (ex.: `auth.app.connektco.com`).
+2. Atualize o Google Cloud → OAuth client → **Authorized redirect URIs** para:
+   - `https://auth.app.connektco.com/auth/v1/callback`
+3. Atualize as variáveis de ambiente do app para usar o domínio customizado do Supabase:
+   - `VITE_SUPABASE_URL=https://auth.app.connektco.com`
+4. No Supabase → Authentication → URL Configuration:
+   - **Site URL**: `https://app.connektco.com`
+   - **Additional Redirect URLs**: inclua `https://app.connektco.com/*` (ou as rotas necessárias)
+
+Sem Custom Domain (ou proxy), **não dá** para trocar esse texto só com código no front-end.
+
 Este erro:
 
 ```json
