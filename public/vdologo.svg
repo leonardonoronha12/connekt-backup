@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="32" viewBox="0 0 128 32">
+  <rect x="0.5" y="0.5" width="127" height="31" rx="8" fill="#FFFFFF" stroke="#E5E7EB"/>
+  <rect x="10" y="8" width="16" height="16" rx="4" fill="#2563EB"/>
+  <path d="M14 12h8v8h-8z" fill="#FFFFFF" opacity="0.9"/>
+  <text x="34" y="21" font-family="Arial, Helvetica, sans-serif" font-size="14" font-weight="700" fill="#111827">VdoCipher</text>
+</svg>

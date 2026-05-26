@@ -641,7 +641,7 @@ export default async function handler(req, res) {
     }
 
     if (type === 'public_simulados') {
-      res.setHeader('Cache-Control', 'no-store')
+      res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=60, stale-while-revalidate=300')
       const producerUid = String(u.searchParams.get('producer_uid') || u.searchParams.get('producerId') || producerId || '').trim()
       const debug = String(u.searchParams.get('debug') || '').trim() === '1'
       if (!producerUid || !isUuid(producerUid)) return json(res, 400, { error: 'invalid_producer_uid' })

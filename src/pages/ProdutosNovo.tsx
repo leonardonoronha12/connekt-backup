@@ -73,6 +73,7 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
     priceLabel: string; 
     rating: number; 
     reviewsCount: number;
+    kind?: 'simulado' | 'banco';
     scope?: 'curso' | 'modulo' | 'aula';
     moduleId?: string | null;
     lessonId?: string | null;
@@ -87,6 +88,11 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
   const [resourceLibraryQuery, setResourceLibraryQuery] = useState('')
   const [isResourceLibraryOpen, setIsResourceLibraryOpen] = useState(false)
   const [resourceLibraryTarget, setResourceLibraryTarget] = useState<{ scope: 'curso' | 'modulo' | 'aula'; moduleId?: string | null; lessonId?: string | null } | null>(null)
+  const [lessonLibrary, setLessonLibrary] = useState<Array<{ id: string; title: string; provider: string; durationMin: number; courseId: string; courseTitle: string; moduleId: string; moduleTitle: string; lesson: any }>>([])
+  const [lessonLibraryLoading, setLessonLibraryLoading] = useState(false)
+  const [lessonLibraryQuery, setLessonLibraryQuery] = useState('')
+  const [isLessonLibraryOpen, setIsLessonLibraryOpen] = useState(false)
+  const [lessonLibraryTargetModuleId, setLessonLibraryTargetModuleId] = useState<string | null>(null)
   const extraMaterialFileInputRef = useRef<HTMLInputElement | null>(null)
   const [pendingExtraMaterialTarget, setPendingExtraMaterialTarget] = useState<{ scope: 'curso' | 'modulo' | 'aula'; moduleId?: string | null; lessonId?: string | null; type: LessonMaterial['type'] } | null>(null)
   const [isExtraLinkOpen, setIsExtraLinkOpen] = useState(false)
@@ -95,6 +101,8 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
   
   const [simuladosCatalog, setSimuladosCatalog] = useState<SimuladoRef[]>([])
   const [isLoadingSimulados, setIsLoadingSimulados] = useState(false)
+  const [questionBanksCatalog, setQuestionBanksCatalog] = useState<SimuladoRef[]>([])
+  const [isLoadingQuestionBanks, setIsLoadingQuestionBanks] = useState(false)
 
   useEffect(() => {
     if (!user) return
@@ -118,7 +126,8 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
             questionsCount: s.settings?.questionIds?.length || 0,
             priceLabel: s.price ? new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(s.price) : 'Grátis',
             rating: 5.0,
-            reviewsCount: 0
+            reviewsCount: 0,
+            kind: 'simulado',
           }))
           setSimuladosCatalog(mapped)
         }
@@ -139,9 +148,45 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     if (!user) return
+    const fetchQuestionBanks = async () => {
+      setIsLoadingQuestionBanks(true)
+      setQuestionBanksCatalog([])
+      try {
+        const pid = String(user.id || '').trim()
+        if (!pid) return
+        const { data, error } = await supabase
+          .from('question_banks')
+          .select('id,name,question_count,created_at,producer_external_id')
+          .eq('producer_external_id', pid)
+          .order('created_at', { ascending: false })
+          .limit(200)
+        if (error) throw error
+        const mapped: SimuladoRef[] = (Array.isArray(data) ? data : []).map((b: any) => ({
+          id: String(b?.id || '').trim(),
+          title: String(b?.name || 'Banco de questões').trim() || 'Banco de questões',
+          questionsCount: Number(b?.question_count || 0) || 0,
+          priceLabel: 'Grátis',
+          rating: 5.0,
+          reviewsCount: 0,
+          kind: 'banco',
+        })).filter((x) => x.id)
+        setQuestionBanksCatalog(mapped)
+      } catch (err) {
+        console.error("Erro ao buscar bancos de questões:", err)
+        setQuestionBanksCatalog([])
+      } finally {
+        setIsLoadingQuestionBanks(false)
+      }
+    }
+    fetchQuestionBanks()
+  }, [user])
+
+  useEffect(() => {
+    if (!user) return
     let active = true
     const run = async () => {
       setResourceLibraryLoading(true)
+      setLessonLibraryLoading(true)
       try {
         const pid = String(user.id || '').trim()
         if (!pid) return
@@ -190,6 +235,22 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
 
         const seen = new Set<string>()
         const out: Array<LessonMaterial & { sourceCourseId?: string; sourceCourseTitle?: string }> = []
+        const lessonOut: Array<{ id: string; title: string; provider: string; durationMin: number; courseId: string; courseTitle: string; moduleId: string; moduleTitle: string; lesson: any }> = []
+        const lessonSeen = new Set<string>()
+        const normalizeProvider = (value: any) => {
+          const raw = String(value || '').trim().toLowerCase()
+          if (raw === 'vimeo' || raw === 'vdocipher' || raw === 'upload') return raw
+          if (!raw) return ''
+          return raw
+        }
+        const inferProviderFromUrl = (value: any) => {
+          const raw = String(value || '').toLowerCase()
+          if (!raw) return ''
+          if (raw.includes('vimeo.com')) return 'vimeo'
+          if (raw.includes('vdocipher')) return 'vdocipher'
+          if (raw.includes('/storage/v1/object/')) return 'upload'
+          return ''
+        }
 
         for (const c of courses) {
           const courseId = String(c?.id || '').trim()
@@ -213,6 +274,8 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
 
           const mods = getCourseModules(c)
           for (const mod of Array.isArray(mods) ? mods : []) {
+            const moduleId = String(mod?.id || mod?.module_id || mod?.moduleId || '').trim()
+            const moduleTitle = String(mod?.name || mod?.title || mod?.module_title || 'Módulo').trim() || 'Módulo'
             const moduleMats = Array.isArray((mod as any)?.materials) ? (mod as any).materials : []
             for (const m of Array.isArray(moduleMats) ? moduleMats : []) {
               const name = String(m?.name || '').trim()
@@ -226,7 +289,25 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
             }
 
             const lessons = getModuleLessons(mod)
-            for (const les of Array.isArray(lessons) ? lessons : []) {
+            const lessonsList = Array.isArray(lessons) ? lessons : []
+            for (let i = 0; i < lessonsList.length; i += 1) {
+              const les = lessonsList[i]
+              const lessonTitle = String(les?.title || les?.name || 'Aula').trim() || 'Aula'
+              const lid = String(les?.id || les?.lesson_id || les?.lessonId || '').trim()
+              const dur = Number(les?.durationMin ?? les?.duration_min ?? les?.duration_minutes ?? 0) || 0
+              const provider =
+                normalizeProvider(les?.videoProvider || les?.video_provider || les?.provider) ||
+                inferProviderFromUrl(les?.videoUrl || les?.video_url || les?.videoPath || les?.video_path || les?.url) ||
+                ''
+              const vId = String(les?.videoId || les?.video_id || les?.vimeoId || les?.vimeo_id || '').trim()
+              const vPath = String(les?.videoPath || les?.video_path || '').trim()
+              const vUrl = String(les?.videoUrl || les?.video_url || les?.url || '').trim()
+              const dedupeKey = `${provider}:${vId || vPath || vUrl || lid || lessonTitle}`.toLowerCase()
+              if (dedupeKey && lessonSeen.has(dedupeKey)) continue
+              if (dedupeKey) lessonSeen.add(dedupeKey)
+              const entryId = `lesson:${courseId}:${moduleId || ''}:${lid || `idx:${i}`}`
+              lessonOut.push({ id: entryId, title: lessonTitle, provider, durationMin: dur, courseId, courseTitle: courseTitle || 'Curso', moduleId, moduleTitle, lesson: les })
+
               const mats = Array.isArray((les as any)?.materials) ? (les as any).materials : []
               for (const m of Array.isArray(mats) ? mats : []) {
                 const name = String(m?.name || '').trim()
@@ -243,10 +324,13 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
         }
 
         if (active) setResourceLibrary(out)
+        if (active) setLessonLibrary(lessonOut)
       } catch (_) {
         if (active) setResourceLibrary([])
+        if (active) setLessonLibrary([])
       } finally {
         if (active) setResourceLibraryLoading(false)
+        if (active) setLessonLibraryLoading(false)
       }
     }
     run()
@@ -285,6 +369,77 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
     setResourceLibraryTarget(target)
     setResourceLibraryQuery('')
     setIsResourceLibraryOpen(true)
+  }
+
+  const openLessonLibrary = (moduleId: string) => {
+    const mid = String(moduleId || '').trim()
+    if (!mid) return
+    setLessonLibraryTargetModuleId(mid)
+    setLessonLibraryQuery('')
+    setIsLessonLibraryOpen(true)
+  }
+
+  const normalizeLessonForReuse = (rawLesson: any): Lesson => {
+    const r = rawLesson && typeof rawLesson === 'object' ? rawLesson : {}
+    const title = String(r.title || r.name || 'Aula').trim() || 'Aula'
+    const description = String(r.description || r.desc || '').trim()
+    const durationMin = Number(r.durationMin ?? r.duration_min ?? r.duration_minutes ?? 0) || 0
+    const rawVisibility = String(r.visibility || '').trim()
+    const visibility = (rawVisibility === 'Gratuita' || rawVisibility === 'Paga' || rawVisibility === 'Gratuita para alunos do curso')
+      ? rawVisibility
+      : 'Gratuita'
+    const tag = String(r.tag || 'Anatomia')
+    const rawProvider = String(r.videoProvider || r.video_provider || '').trim().toLowerCase()
+    const videoUrl = (r.videoUrl ?? r.video_url ?? r.videoSrc ?? r.video_src ?? r.url ?? null)
+    const videoId = (r.videoId ?? r.video_id ?? r.vimeoId ?? r.vimeo_id ?? null)
+    const videoPath = (r.videoPath ?? r.video_path ?? null)
+    const inferredProvider = (() => {
+      if (rawProvider === 'vimeo' || rawProvider === 'vdocipher' || rawProvider === 'upload') return rawProvider
+      const u = String(videoUrl || '').toLowerCase()
+      const p = String(videoPath || '').toLowerCase()
+      if (u.includes('vimeo.com')) return 'vimeo'
+      if (u.includes('vdocipher')) return 'vdocipher'
+      if (p) return 'upload'
+      if (u.includes('/storage/v1/object/')) return 'upload'
+      return ''
+    })()
+    const difficulty = r.difficulty || r.level || undefined
+    const categories = Array.isArray(r.categories) ? r.categories : undefined
+    const subcategories = Array.isArray(r.subcategories) ? r.subcategories : undefined
+    const extraTags = Array.isArray(r.extraTags) ? r.extraTags : undefined
+    const materials = Array.isArray(r.materials) ? r.materials : undefined
+    const description_rich = r.description_rich ?? r.descriptionRich ?? undefined
+    const priceCents = Number.isFinite(Number(r.priceCents)) ? Number(r.priceCents) : undefined
+    return {
+      id: generateLocalId(),
+      title,
+      description,
+      description_rich,
+      durationMin,
+      visibility,
+      priceCents,
+      difficulty,
+      tag,
+      categories,
+      subcategories,
+      extraTags,
+      videoProvider: (inferredProvider === 'vimeo' || inferredProvider === 'vdocipher' || inferredProvider === 'upload') ? (inferredProvider as any) : undefined,
+      videoUrl: videoUrl != null ? String(videoUrl) : null,
+      videoId: videoId != null ? String(videoId) : null,
+      videoPath: videoPath != null ? String(videoPath) : null,
+      materials,
+    }
+  }
+
+  const addExistingLessonToModule = (moduleId: string, lessonItem: any) => {
+    const mid = String(moduleId || '').trim()
+    if (!mid) return
+    const cloned = normalizeLessonForReuse(lessonItem?.lesson || lessonItem)
+    setModules((prev) => (Array.isArray(prev) ? prev.map((m) => {
+      if (String(m?.id || '') !== mid) return m
+      const lessons = Array.isArray(m?.lessons) ? m.lessons : []
+      return { ...m, lessons: [...lessons, cloned], lessonsCount: Number(m?.lessonsCount || lessons.length) + 1 }
+    }) : prev))
   }
 
   const openExtraMaterialUploader = (target: { scope: 'curso' | 'modulo' | 'aula'; moduleId?: string | null; lessonId?: string | null }, type: LessonMaterial['type']) => {
@@ -357,18 +512,21 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
     setPendingExtraMaterialTarget(null)
   }
 
-  const visibleSimuladosCatalog = useMemo(() => {
+  const visibleExtrasCatalog = useMemo(() => {
     const scope = simuladoConnectScope
     const moduleId = simuladoConnectModuleId ?? null
     const lessonId = simuladoConnectLessonId ?? null
-    return simuladosCatalog.filter((s) => {
+    const base = [...(Array.isArray(simuladosCatalog) ? simuladosCatalog : []), ...(Array.isArray(questionBanksCatalog) ? questionBanksCatalog : [])]
+    return base.filter((s) => {
+      const kind = (s as any)?.kind || 'simulado'
       const exists = selectedSimulados.some((x) => {
         const xScope = x.scope || 'curso'
-        return x.id === s.id && xScope === scope && (x.moduleId ?? null) === moduleId && (x.lessonId ?? null) === lessonId
+        const xKind = (x as any)?.kind || 'simulado'
+        return x.id === s.id && xKind === kind && xScope === scope && (x.moduleId ?? null) === moduleId && (x.lessonId ?? null) === lessonId
       })
       return !exists
     })
-  }, [simuladosCatalog, selectedSimulados, simuladoConnectScope, simuladoConnectModuleId, simuladoConnectLessonId])
+  }, [simuladosCatalog, questionBanksCatalog, selectedSimulados, simuladoConnectScope, simuladoConnectModuleId, simuladoConnectLessonId])
 
   const visibleResourceLibrary = useMemo(() => {
     const q = String(resourceLibraryQuery || '').trim().toLowerCase()
@@ -381,6 +539,19 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
       return name.includes(q) || type.includes(q) || src.includes(q)
     })
   }, [resourceLibrary, resourceLibraryQuery])
+
+  const visibleLessonLibrary = useMemo(() => {
+    const q = String(lessonLibraryQuery || '').trim().toLowerCase()
+    const base = Array.isArray(lessonLibrary) ? lessonLibrary : []
+    if (!q) return base
+    return base.filter((it) => {
+      const title = String(it?.title || '').toLowerCase()
+      const provider = String(it?.provider || '').toLowerCase()
+      const courseTitle = String(it?.courseTitle || '').toLowerCase()
+      const moduleTitle = String(it?.moduleTitle || '').toLowerCase()
+      return title.includes(q) || provider.includes(q) || courseTitle.includes(q) || moduleTitle.includes(q)
+    })
+  }, [lessonLibrary, lessonLibraryQuery])
 
   // Estados para visualização de recursos nas listas
   const [resourceViewModuleId, setResourceViewModuleId] = useState<string | null>(null)
@@ -4071,15 +4242,15 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      {/* Modal de seleção de Simulados */}
+      {/* Modal de seleção de recursos extras */}
       <AlertDialog open={isSelectSimuladoOpen} onOpenChange={setIsSelectSimuladoOpen}>
         <AlertDialogContent
           style={{ width: '560px', height: '560px', maxWidth: '92vw', maxHeight: '82vh' }}
           className="flex flex-col overflow-hidden"
         >
           <AlertDialogHeader>
-            <AlertDialogTitle>Selecionar simulado</AlertDialogTitle>
-            <AlertDialogDescription>Escolha um simulado para conectar ao curso.</AlertDialogDescription>
+            <AlertDialogTitle>Selecionar recurso</AlertDialogTitle>
+            <AlertDialogDescription>Escolha um simulado ou banco de questões para conectar ao curso.</AlertDialogDescription>
           </AlertDialogHeader>
           <div className="flex flex-col gap-4 flex-1 min-h-0 overflow-y-auto pr-1">
             <div className="rounded-[8px] border border-[#E3E4E5] bg-white p-4">
@@ -4134,42 +4305,45 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
               </div>
             </div>
             
-            <div className="text-[13px] font-semibold text-[#1E1B39]">Selecione um simulado</div>
+            <div className="text-[13px] font-semibold text-[#1E1B39]">Selecione um recurso</div>
 
             <div className="space-y-3">
-              {isLoadingSimulados && (
+              {(isLoadingSimulados || isLoadingQuestionBanks) && (
                 <div className="flex items-center justify-center py-8 text-sm text-gray-500">
-                  Carregando simulados...
+                  Carregando recursos...
                 </div>
               )}
 
-              {!isLoadingSimulados && visibleSimuladosCatalog.length === 0 && (
+              {!(isLoadingSimulados || isLoadingQuestionBanks) && visibleExtrasCatalog.length === 0 && (
                 <div className="flex flex-col items-center justify-center py-8 text-center border rounded-lg border-dashed border-gray-200">
-                  {simuladosCatalog.length === 0 ? (
+                  {(simuladosCatalog.length === 0 && questionBanksCatalog.length === 0) ? (
                     <>
-                      <p className="text-sm font-medium text-gray-900">Nenhum simulado encontrado</p>
-                      <p className="text-sm text-gray-500 mt-1">Você ainda não criou nenhum simulado.</p>
+                      <p className="text-sm font-medium text-gray-900">Nenhum recurso encontrado</p>
+                      <p className="text-sm text-gray-500 mt-1">Crie um simulado ou banco de questões para aparecer aqui.</p>
                     </>
                   ) : (
                     <>
-                      <p className="text-sm font-medium text-gray-900">Nenhum simulado disponível</p>
-                      <p className="text-sm text-gray-500 mt-1">Todos os simulados já foram adicionados para este destino.</p>
+                      <p className="text-sm font-medium text-gray-900">Nenhum recurso disponível</p>
+                      <p className="text-sm text-gray-500 mt-1">Todos os recursos já foram adicionados para este destino.</p>
                     </>
                   )}
                 </div>
               )}
 
-              {!isLoadingSimulados && visibleSimuladosCatalog.map((s) => (
-                <div key={s.id} className="rounded-[8px] border border-[#E3E4E5] bg-white p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              {!(isLoadingSimulados || isLoadingQuestionBanks) && visibleExtrasCatalog.map((s) => (
+                <div key={`${String((s as any)?.kind || 'simulado')}:${s.id}`} className="rounded-[8px] border border-[#E3E4E5] bg-white p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                   <div className="flex items-start sm:items-center gap-3 min-w-0">
                     <div className="h-10 w-10 rounded-[8px] bg-[#F3F4F6] flex items-center justify-center overflow-hidden">
-                      <img src="/simulado-cover.svg" alt="Capa do simulado" className="h-6 w-6" />
+                      {(s as any)?.kind === 'banco'
+                        ? <BookOpen className="h-5 w-5 text-[#0047BB]" />
+                        : <Layers className="h-5 w-5 text-[#0047BB]" />
+                      }
                     </div>
                     <div className="min-w-0">
-                      <div className="text-[13px] font-semibold text-[#1E1B39] truncate">Simulado: {s.title}</div>
+                      <div className="text-[13px] font-semibold text-[#1E1B39] truncate">{(s as any)?.kind === 'banco' ? 'Banco: ' : 'Simulado: '}{s.title}</div>
                       <div className="text-[12px] text-[#737780]">{s.questionsCount} questões</div>
                       <div className="mt-1 flex items-center gap-2">
-                        <span className="inline-flex items-center rounded-full bg-[#F3F4F6] px-2.5 py-1 text-[11px] text-[#737780]">Simulados</span>
+                        <span className="inline-flex items-center rounded-full bg-[#F3F4F6] px-2.5 py-1 text-[11px] text-[#737780]">{(s as any)?.kind === 'banco' ? 'Banco de Questões' : 'Simulado'}</span>
                         <span className="inline-flex items-center rounded-full bg-[#FEF9C3] px-2.5 py-1 text-[11px] text-[#92400E]">{s.priceLabel}</span>
                       </div>
                       <div className="mt-1 text-[12px] text-[#737780]">⭐ {s.rating} ({s.reviewsCount} avaliações)</div>
@@ -4196,6 +4370,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                           }
                           const exists = prev.some(x => 
                             x.id === s.id && 
+                            ((x as any)?.kind || 'simulado') === (((s as any)?.kind) || 'simulado') &&
                             x.scope === simuladoConnectScope && 
                             x.moduleId === simuladoConnectModuleId && 
                             x.lessonId === simuladoConnectLessonId
@@ -4207,7 +4382,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                           : simuladoConnectScope === 'modulo'
                             ? `ao módulo ${(modules.find(m => m.id === simuladoConnectModuleId)?.name) || ''}`
                             : `à aula ${(modules.find(m => m.id === simuladoConnectModuleId)?.lessons.find(l => l.id === simuladoConnectLessonId)?.title) || ''}`
-                        toast({ title: 'Simulado selecionado', description: `${s.title} conectado ${scopeLabel}.` })
+                        toast({ title: 'Recurso selecionado', description: `${s.title} conectado ${scopeLabel}.` })
                       }}
                     >
                       Selecionar
@@ -4327,6 +4502,76 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
           </div>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => { setIsResourceLibraryOpen(false); setResourceLibraryTarget(null) }}>Fechar</AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={isLessonLibraryOpen} onOpenChange={(v) => { setIsLessonLibraryOpen(v); if (!v) setLessonLibraryTargetModuleId(null) }}>
+        <AlertDialogContent style={{ width: '820px', height: '620px', maxWidth: '96vw', maxHeight: '86vh' }} className="flex flex-col overflow-hidden">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Biblioteca de aulas</AlertDialogTitle>
+            <AlertDialogDescription>Reutilize aulas já configuradas em outros cursos (Upload/Vimeo/VdoCipher), sem precisar reenviar.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="flex flex-col gap-3 flex-1 min-h-0 overflow-y-auto pr-1">
+            <div className="flex items-center gap-2">
+              <input
+                className="flex-1 h-9 rounded-[8px] border border-[#E3E4E5] bg-white px-3 text-[13px]"
+                value={lessonLibraryQuery}
+                onChange={(e) => setLessonLibraryQuery(e.target.value)}
+                placeholder="Buscar por aula, curso, módulo ou provedor..."
+              />
+              {lessonLibraryLoading ? (
+                <div className="text-[12px] text-[#737780]">Carregando…</div>
+              ) : null}
+            </div>
+
+            {visibleLessonLibrary.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-10 text-center border rounded-lg border-dashed border-gray-200">
+                <p className="text-sm font-medium text-gray-900">Nenhuma aula encontrada</p>
+                <p className="text-sm text-gray-500 mt-1">Crie aulas em outros cursos para aparecerem aqui.</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {visibleLessonLibrary.map((it, idx) => (
+                  <div key={String(it?.id || idx)} className="rounded-[8px] border border-[#E3E4E5] bg-white p-3 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="h-9 w-9 rounded-[10px] border border-[#E3E4E5] bg-white flex items-center justify-center">
+                        <Play className="h-4 w-4 text-[#0047BB]" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-[13px] font-semibold text-[#1E1B39] truncate">{String(it?.title || 'Aula')}</div>
+                        <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-[#737780]">
+                          <span className="inline-flex items-center gap-1">
+                            <Timer className="h-3.5 w-3.5 text-[#6B7280]" /> {Number(it?.durationMin || 0)} min
+                          </span>
+                          <span className="inline-flex items-center px-2 py-0.5 rounded bg-[#F3F4F6] text-[#374151]">
+                            {String(it?.provider || 'video').toUpperCase()}
+                          </span>
+                          <span className="truncate">• {String(it?.courseTitle || 'Curso')} • {String(it?.moduleTitle || 'Módulo')}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <Button
+                      variant="outline"
+                      className="h-8 px-3"
+                      onClick={() => {
+                        const mid = String(lessonLibraryTargetModuleId || '').trim()
+                        if (!mid) return
+                        addExistingLessonToModule(mid, it)
+                        toast({ title: 'Aula adicionada', description: 'Aula reutilizada com sucesso.' })
+                        setIsLessonLibraryOpen(false)
+                        setLessonLibraryTargetModuleId(null)
+                      }}
+                    >
+                      Usar
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => { setIsLessonLibraryOpen(false); setLessonLibraryTargetModuleId(null) }}>Fechar</AlertDialogCancel>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -4734,7 +4979,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                 <div className={`rounded-[8px] border ${defaultVideoProvider === 'vdocipher' ? 'border-[#0047BB]' : 'border-[#E3E4E5]'} bg-white p-3`}>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <img src="/vdologo.png" alt="VdoCipher" className="h-5" />
+                      <img src="/vdologo.svg" alt="VdoCipher" className="h-5" />
                       <span className="text-[12px]">VdoCipher</span>
                     </div>
                     <input type="radio" name="provider" checked={defaultVideoProvider === 'vdocipher'} onChange={() => setDefaultVideoProvider('vdocipher')} />
@@ -5899,17 +6144,29 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                                        </li>
                                      ))}
                                   </ul>
-                                  <Button
-                                    type="button"
-                                    className="mt-3 w-full bg-[#0047BB] hover:bg-[#003a99]"
-                                    onClick={() => {
-                                      setEditingModuleId(m.id);
-                                      setIsAddLessonModalOpen(true);
-                                      toast({ title: "Nova aula", description: "Abrindo modal de criação de aula." })
-                                    }}
-                                  >
-                                    Adicionar Aula
-                                  </Button>
+                                  <div className="mt-3 grid grid-cols-2 gap-2">
+                                    <Button
+                                      type="button"
+                                      className="bg-[#0047BB] hover:bg-[#003a99]"
+                                      onClick={() => {
+                                        setEditingModuleId(m.id);
+                                        setIsAddLessonModalOpen(true);
+                                        toast({ title: "Nova aula", description: "Abrindo modal de criação de aula." })
+                                      }}
+                                    >
+                                      Adicionar Aula
+                                    </Button>
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      onClick={() => {
+                                        openLessonLibrary(m.id)
+                                        toast({ title: "Biblioteca de aulas", description: "Selecione uma aula existente para reutilizar." })
+                                      }}
+                                    >
+                                      Usar Aula Existente
+                                    </Button>
+                                  </div>
                                 </>
                               )}
                             </div>
@@ -6498,7 +6755,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                                   <div className={`rounded-[8px] border ${defaultVideoProvider === 'vdocipher' ? 'border-[#0047BB]' : 'border-[#E3E4E5]'} bg-white p-3`}>
                                     <div className="flex items-center justify-between">
                                       <div className="flex items-center gap-2">
-                                        <img src="/vdologo.png" alt="VdoCipher" className="h-5" />
+                                        <img src="/vdologo.svg" alt="VdoCipher" className="h-5" />
                                         <span className="text-[12px]">VdoCipher</span>
                                       </div>
                                       <input type="radio" name="provider" checked={defaultVideoProvider === 'vdocipher'} onChange={() => setDefaultVideoProvider('vdocipher')} />
@@ -6776,7 +7033,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                     <div className="rounded-[8px] bg-gradient-to-br from-[#F8FAFF] to-[#EEF2FF] border border-[#C7D2FE] p-4 mb-4">
                       <div className="text-[13px] font-semibold text-[#1E1B39] mb-1">O que fazer nesta etapa</div>
                       <ul className="list-disc pl-5 text-[12px] text-[#737780] space-y-1">
-                        <li>Conecte simulados.</li>
+                        <li>Conecte simulados e bancos de questões.</li>
                         <li>Adicione recursos globais do curso ou específicos por módulo/aula.</li>
                         <li>Revise os recursos conectados na lista abaixo.</li>
                       </ul>
@@ -6785,7 +7042,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                     <div className="flex items-center justify-between mb-4">
                       <div>
                         <h2 className="text-[16px] font-bold text-[#1E1B39]">Recursos e Anexos</h2>
-                        <p className="text-[12px] text-[#737780]">Conecte simulados ao seu curso</p>
+                        <p className="text-[12px] text-[#737780]">Conecte simulados e bancos de questões ao seu curso</p>
                       </div>
                     </div>
 
@@ -6796,7 +7053,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                         </div>
                         <div className="mt-2 text-[13px] font-semibold text-[#1E1B39]">Simulados</div>
                         <div className="text-[12px] text-[#737780]">Bancos de questões e simulados</div>
-                        <Button variant="outline" className="px-4 py-2 mt-3 h-8" onClick={() => openSimuladoSelector('curso')}>Adicionar simulados</Button>
+                        <Button variant="outline" className="px-4 py-2 mt-3 h-8" onClick={() => openSimuladoSelector('curso')}>Adicionar recursos</Button>
                       </div>
                     </div>
 
@@ -7482,7 +7739,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                       aria-pressed={defaultVideoProvider==='vdocipher'}
                       onClick={() => setDefaultVideoProvider('vdocipher')}
                     >
-                      <img src="/vdologo.png" alt="VdoCipher" className="h-3.5 w-auto" /> VdoCipher
+                      <img src="/vdologo.svg" alt="VdoCipher" className="h-3.5 w-auto" /> VdoCipher
                     </button>
                     <button
                       type="button"
@@ -7524,7 +7781,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
                           <span className="inline-flex items-center justify-center rounded bg-[#FFF1F2] ring-1 ring-[#FECACA] px-2 h-9">
-                            <img src="/vdologo.png" alt="VdoCipher" className="h-5 w-auto" />
+                            <img src="/vdologo.svg" alt="VdoCipher" className="h-5 w-auto" />
                           </span>
                           <div>
                             <div className="text-[14px] font-semibold text-[#1E1B39]">VdoCipher</div>
@@ -8366,7 +8623,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
               <div className="rounded-[8px] bg-gradient-to-br from-[#F8FAFF] to-[#EEF2FF] border border-[#C7D2FE] p-4 mb-4">
                 <div className="text-[13px] font-semibold text-[#1E1B39] mb-1">O que fazer nesta etapa</div>
                 <ul className="list-disc pl-5 text-[12px] text-[#737780] space-y-1">
-                  <li>Conecte simulados.</li>
+                  <li>Conecte simulados e bancos de questões.</li>
                   <li>Adicione recursos globais do curso ou específicos por módulo/aula.</li>
                   <li>Revise os recursos conectados na lista abaixo.</li>
                 </ul>
@@ -8374,7 +8631,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <h2 className="text-[16px] font-bold text-[#1E1B39]">Recursos e Anexos</h2>
-                  <p className="text-[12px] text-[#737780]">Conecte simulados ao seu curso</p>
+                  <p className="text-[12px] text-[#737780]">Conecte simulados e bancos de questões ao seu curso</p>
                 </div>
               </div>
               <div className="flex flex-wrap justify-center gap-4 mb-6">
@@ -8388,7 +8645,7 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                       className="mt-3 h-8 w-full justify-center"
                       onClick={() => { if (c.title === 'Simulados') openSimuladoSelector('curso') }}
                     >
-                      Adicionar {c.title.toLowerCase()}
+                      Adicionar recursos
                     </Button>
                   </div>
                 ))}
@@ -8419,14 +8676,28 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                         <div key={idx} className="flex items-center justify-between rounded border border-[#E3E4E5] p-2">
                           <div className="flex items-center gap-2">
                             <div className="h-8 w-8 rounded bg-[#F3F4F6] flex items-center justify-center">
-                              <img src="/simulado-cover.svg" alt="" className="h-4 w-4" />
+                              {(sim as any)?.kind === 'banco'
+                                ? <BookOpen className="h-4 w-4 text-[#0047BB]" />
+                                : <Layers className="h-4 w-4 text-[#0047BB]" />
+                              }
                             </div>
                             <div>
                               <div className="text-[12px] font-medium text-[#1E1B39]">{sim.title}</div>
-                              <div className="text-[11px] text-[#737780]">{sim.questionsCount} questões • <span className="text-[#0047BB] font-medium">{sim.priceLabel}</span></div>
+                              <div className="text-[11px] text-[#737780]">{(sim as any)?.kind === 'banco' ? 'Banco de Questões' : 'Simulado'} • {sim.questionsCount} questões • <span className="text-[#0047BB] font-medium">{sim.priceLabel}</span></div>
                             </div>
                           </div>
-                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => setSelectedSimulados(prev => prev.filter(s => s !== sim))}>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 w-7 p-0"
+                            onClick={() => setSelectedSimulados(prev => prev.filter((x) => !(
+                              x.id === sim.id &&
+                              ((x as any)?.kind || 'simulado') === (((sim as any)?.kind) || 'simulado') &&
+                              (x.scope || 'curso') === (sim.scope || 'curso') &&
+                              (x.moduleId ?? null) === (sim.moduleId ?? null) &&
+                              (x.lessonId ?? null) === (sim.lessonId ?? null)
+                            )))}
+                          >
                             <Trash2 className="h-4 w-4 text-[#EF4444]" />
                           </Button>
                         </div>
@@ -8508,14 +8779,28 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                           <div key={idx} className="flex items-center justify-between rounded border border-[#E3E4E5] p-2">
                             <div className="flex items-center gap-2">
                               <div className="h-8 w-8 rounded bg-[#F3F4F6] flex items-center justify-center">
-                                <img src="/simulado-cover.svg" alt="" className="h-4 w-4" />
+                                {(sim as any)?.kind === 'banco'
+                                  ? <BookOpen className="h-4 w-4 text-[#0047BB]" />
+                                  : <Layers className="h-4 w-4 text-[#0047BB]" />
+                                }
                               </div>
                               <div>
                                 <div className="text-[12px] font-medium text-[#1E1B39]">{sim.title}</div>
-                                <div className="text-[11px] text-[#737780]">Módulo: {modules.find(m => m.id === sim.moduleId)?.name || 'N/A'} • <span className="text-[#0047BB] font-medium">{sim.priceLabel}</span></div>
+                                <div className="text-[11px] text-[#737780]">{(sim as any)?.kind === 'banco' ? 'Banco de Questões' : 'Simulado'} • {sim.questionsCount} questões • Módulo: {modules.find(m => m.id === sim.moduleId)?.name || 'N/A'} • <span className="text-[#0047BB] font-medium">{sim.priceLabel}</span></div>
                               </div>
                             </div>
-                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => setSelectedSimulados(prev => prev.filter(s => s !== sim))}>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 p-0"
+                              onClick={() => setSelectedSimulados(prev => prev.filter((x) => !(
+                                x.id === sim.id &&
+                                ((x as any)?.kind || 'simulado') === (((sim as any)?.kind) || 'simulado') &&
+                                (x.scope || 'curso') === (sim.scope || 'curso') &&
+                                (x.moduleId ?? null) === (sim.moduleId ?? null) &&
+                                (x.lessonId ?? null) === (sim.lessonId ?? null)
+                              )))}
+                            >
                               <Trash2 className="h-4 w-4 text-[#EF4444]" />
                             </Button>
                           </div>
@@ -8604,14 +8889,28 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                           <div key={idx} className="flex items-center justify-between rounded border border-[#E3E4E5] p-2">
                             <div className="flex items-center gap-2">
                               <div className="h-8 w-8 rounded bg-[#F3F4F6] flex items-center justify-center">
-                                <img src="/simulado-cover.svg" alt="" className="h-4 w-4" />
+                                {(sim as any)?.kind === 'banco'
+                                  ? <BookOpen className="h-4 w-4 text-[#0047BB]" />
+                                  : <Layers className="h-4 w-4 text-[#0047BB]" />
+                                }
                               </div>
                               <div>
                                 <div className="text-[12px] font-medium text-[#1E1B39]">{sim.title}</div>
-                                <div className="text-[11px] text-[#737780]">Aula: {modules.find(m => m.id === sim.moduleId)?.lessons.find(l => l.id === sim.lessonId)?.title || 'N/A'} • <span className="text-[#0047BB] font-medium">{sim.priceLabel}</span></div>
+                                <div className="text-[11px] text-[#737780]">{(sim as any)?.kind === 'banco' ? 'Banco de Questões' : 'Simulado'} • {sim.questionsCount} questões • Aula: {modules.find(m => m.id === sim.moduleId)?.lessons.find(l => l.id === sim.lessonId)?.title || 'N/A'} • <span className="text-[#0047BB] font-medium">{sim.priceLabel}</span></div>
                               </div>
                             </div>
-                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => setSelectedSimulados(prev => prev.filter(s => s !== sim))}>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 w-7 p-0"
+                              onClick={() => setSelectedSimulados(prev => prev.filter((x) => !(
+                                x.id === sim.id &&
+                                ((x as any)?.kind || 'simulado') === (((sim as any)?.kind) || 'simulado') &&
+                                (x.scope || 'curso') === (sim.scope || 'curso') &&
+                                (x.moduleId ?? null) === (sim.moduleId ?? null) &&
+                                (x.lessonId ?? null) === (sim.lessonId ?? null)
+                              )))}
+                            >
                               <Trash2 className="h-4 w-4 text-[#EF4444]" />
                             </Button>
                           </div>

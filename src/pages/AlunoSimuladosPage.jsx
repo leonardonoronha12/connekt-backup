@@ -438,6 +438,20 @@ export default function AlunoSimuladosPage() {
         return
       }
       const pid = String(producerUidFromUrl || '').trim()
+      const cacheKey = `connekt_public_simulados_cache:${pid}`
+      let hasCachedList = false
+      try {
+        const cachedRaw = localStorage.getItem(cacheKey)
+        const cached = cachedRaw ? JSON.parse(cachedRaw) : null
+        const ts = Number(cached?.ts || 0) || 0
+        const list = Array.isArray(cached?.data) ? cached.data : null
+        const isFresh = ts > 0 && (Date.now() - ts) < (3 * 60 * 1000)
+        if (isFresh && list) {
+          setSimulados(list)
+          setSimuladosError('')
+          hasCachedList = true
+        }
+      } catch (_) {}
       setSimuladosLoading(true)
       try {
         if (!pid || !isValidUuid(pid)) {
@@ -447,11 +461,7 @@ export default function AlunoSimuladosPage() {
           setSimuladosDebugMeta(null)
           return
         }
-        if (active) {
-          setSimulados([])
-          setSimuladosError('')
-          setSimuladosDebugMeta(null)
-        }
+        if (active) setSimuladosDebugMeta(null)
         const debug = (() => {
           try {
             const sp = new URLSearchParams(locationSearch || '')
@@ -463,11 +473,13 @@ export default function AlunoSimuladosPage() {
         if (debug) {
           try { console.debug('[aluno/simulados] producer_uid:', pid) } catch (_) {}
         }
-        const r = await fetch(`/api/producer?type=public_simulados&producer_uid=${encodeURIComponent(pid)}${debug ? '&debug=1' : ''}`)
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 15000)
+        const r = await fetch(`/api/producer?type=public_simulados&producer_uid=${encodeURIComponent(pid)}${debug ? '&debug=1' : ''}`, { signal: controller.signal })
+          .finally(() => clearTimeout(timeoutId))
         const body = await r.json().catch(() => ({}))
         if (!active) return
         if (!r.ok) {
-          setSimulados([])
           setSimuladosError(String(body?.error || 'Não foi possível carregar os simulados do produtor.'))
           setSimuladosDebugMeta(debug ? (body?.meta || null) : null)
           return
@@ -480,10 +492,10 @@ export default function AlunoSimuladosPage() {
         setSimulados(list)
         setSimuladosError('')
         setSimuladosDebugMeta(debug ? (body?.meta || null) : null)
+        try { localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), data: list })) } catch (_) {}
       } catch (_) {
         if (!active) return
-        setSimulados([])
-        setSimuladosError('Não foi possível carregar os simulados do produtor.')
+        if (!hasCachedList) setSimuladosError('Não foi possível carregar os simulados do produtor.')
         setSimuladosDebugMeta(null)
       } finally {
         if (active) setSimuladosLoading(false)
