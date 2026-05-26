@@ -190,16 +190,14 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
       try {
         const pid = String(user.id || '').trim()
         if (!pid) return
-        const token = String(
-          session?.access_token ||
-          (await supabase.auth.getSession().catch(() => ({ data: null })))?.data?.session?.access_token ||
-          ''
-        ).trim()
-        if (!token) return
-        const qs = new URLSearchParams({ type: 'courses', producerId: pid })
-        const r = await fetch(`/api/producer?${qs.toString()}`, { headers: { Authorization: `Bearer ${token}` } })
-        const body = await r.json().catch(() => ({} as any))
-        const courses = Array.isArray(body?.data) ? body.data : []
+        const { data: rows, error } = await supabase
+          .from('courses')
+          .select('id,title,modules,data,user_id,created_at')
+          .eq('user_id', pid)
+          .order('created_at', { ascending: false })
+          .limit(200)
+        if (error) throw error
+        const courses = Array.isArray(rows) ? rows : []
 
         const parseJsonMaybe = (value: any) => {
           if (!value) return null
@@ -540,18 +538,63 @@ const extrasSectionRef = useRef<HTMLDivElement | null>(null)
     })
   }, [resourceLibrary, resourceLibraryQuery])
 
+  const localLessonLibrary = useMemo(() => {
+    const courseTitle = (String(title || '').trim() || 'Este curso')
+    const courseId = String(editingCourseId || '').trim() || 'current'
+    const out: Array<{ id: string; title: string; provider: string; durationMin: number; courseId: string; courseTitle: string; moduleId: string; moduleTitle: string; lesson: any }> = []
+    const modulesList = Array.isArray(modules) ? modules : []
+    for (let mi = 0; mi < modulesList.length; mi += 1) {
+      const mod: any = modulesList[mi]
+      const moduleId = String(mod?.id || mod?.module_id || mod?.moduleId || `mod-${mi}`).trim()
+      const moduleTitle = String(mod?.name || mod?.title || 'Módulo').trim() || 'Módulo'
+      const lessonsList = Array.isArray(mod?.lessons) ? mod.lessons : []
+      for (let li = 0; li < lessonsList.length; li += 1) {
+        const les: any = lessonsList[li]
+        const lessonTitle = String(les?.title || les?.name || 'Aula').trim() || 'Aula'
+        const lid = String(les?.id || les?.lesson_id || les?.lessonId || `idx-${li}`).trim()
+        const dur = Number(les?.durationMin ?? les?.duration_min ?? les?.duration_minutes ?? 0) || 0
+        const rawProvider = String(les?.videoProvider || les?.video_provider || '').trim().toLowerCase()
+        const rawUrl = String(les?.videoUrl || les?.video_url || les?.url || '').trim().toLowerCase()
+        const rawPath = String(les?.videoPath || les?.video_path || '').trim().toLowerCase()
+        const provider =
+          (rawProvider === 'vimeo' || rawProvider === 'vdocipher' || rawProvider === 'upload')
+            ? rawProvider
+            : (rawUrl.includes('vimeo.com') ? 'vimeo' : (rawUrl.includes('vdocipher') ? 'vdocipher' : (rawPath || rawUrl.includes('/storage/v1/object/') ? 'upload' : '')))
+        out.push({ id: `local:${courseId}:${moduleId}:${lid}`, title: lessonTitle, provider, durationMin: dur, courseId, courseTitle, moduleId, moduleTitle, lesson: les })
+      }
+    }
+    return out
+  }, [modules, title, editingCourseId])
+
   const visibleLessonLibrary = useMemo(() => {
     const q = String(lessonLibraryQuery || '').trim().toLowerCase()
-    const base = Array.isArray(lessonLibrary) ? lessonLibrary : []
-    if (!q) return base
-    return base.filter((it) => {
-      const title = String(it?.title || '').toLowerCase()
-      const provider = String(it?.provider || '').toLowerCase()
-      const courseTitle = String(it?.courseTitle || '').toLowerCase()
-      const moduleTitle = String(it?.moduleTitle || '').toLowerCase()
+    const merged = [
+      ...(Array.isArray(lessonLibrary) ? lessonLibrary : []),
+      ...localLessonLibrary,
+    ]
+    const seen = new Set<string>()
+    const deduped: typeof merged = []
+    for (const it of merged) {
+      const provider = String((it as any)?.provider || '').trim().toLowerCase()
+      const les = (it as any)?.lesson || {}
+      const vId = String(les?.videoId || les?.video_id || les?.vimeoId || les?.vimeo_id || '').trim()
+      const vPath = String(les?.videoPath || les?.video_path || '').trim()
+      const vUrl = String(les?.videoUrl || les?.video_url || les?.url || '').trim()
+      const t = String((it as any)?.title || '').trim()
+      const key = `${provider}:${vId || vPath || vUrl || t}`.toLowerCase()
+      if (key && seen.has(key)) continue
+      if (key) seen.add(key)
+      deduped.push(it)
+    }
+    if (!q) return deduped
+    return deduped.filter((it) => {
+      const title = String((it as any)?.title || '').toLowerCase()
+      const provider = String((it as any)?.provider || '').toLowerCase()
+      const courseTitle = String((it as any)?.courseTitle || '').toLowerCase()
+      const moduleTitle = String((it as any)?.moduleTitle || '').toLowerCase()
       return title.includes(q) || provider.includes(q) || courseTitle.includes(q) || moduleTitle.includes(q)
     })
-  }, [lessonLibrary, lessonLibraryQuery])
+  }, [lessonLibrary, localLessonLibrary, lessonLibraryQuery])
 
   // Estados para visualização de recursos nas listas
   const [resourceViewModuleId, setResourceViewModuleId] = useState<string | null>(null)
