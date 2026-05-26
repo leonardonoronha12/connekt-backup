@@ -3,14 +3,21 @@ import React from 'react'
 export default class ErrorBoundary extends React.Component {
   constructor(props) {
     super(props)
-    this.state = { hasError: false }
+    this.state = { hasError: false, message: '' }
   }
 
   static getDerivedStateFromError() {
     return { hasError: true }
   }
 
-  componentDidCatch() {}
+  componentDidCatch(error) {
+    try {
+      const msg = error && typeof error === 'object' && 'message' in error ? String(error.message || '') : String(error || '')
+      this.setState({ message: msg })
+      try { console.error('[ErrorBoundary]', error) } catch (_) {}
+      try { window.__CONNEKT_LAST_ERROR__ = msg } catch (_) {}
+    } catch (_) {}
+  }
 
   render() {
     if (!this.state.hasError) return this.props.children
@@ -21,6 +28,11 @@ export default class ErrorBoundary extends React.Component {
         <div style={{ width: '100%', maxWidth: 520, background: '#ffffff', border: '1px solid #E3E4E5', borderRadius: 16, padding: 20, textAlign: 'center' }}>
           <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 6 }}>Ocorreu um erro</div>
           <div style={{ fontSize: 12, color: '#6B7280', lineHeight: 1.4 }}>Recarregue a página (Ctrl+F5). Se persistir, tente sair e entrar novamente.</div>
+          {this.state.message ? (
+            <div style={{ marginTop: 10, fontSize: 12, color: '#111827', lineHeight: 1.4, wordBreak: 'break-word' }}>
+              {this.state.message}
+            </div>
+          ) : null}
           <div style={{ marginTop: 14, display: 'flex', justifyContent: 'center', gap: 10, flexWrap: 'wrap' }}>
             <button
               type="button"
@@ -42,4 +54,3 @@ export default class ErrorBoundary extends React.Component {
     )
   }
 }
-
