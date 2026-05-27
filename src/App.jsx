@@ -1,5 +1,5 @@
 import React, { useState, useEffect, Suspense, useMemo, useRef } from 'react';
-import { HelmetProvider } from 'react-helmet-async';
+import AnalyticsHead from '@/components/AnalyticsHead';
 // import { SpeedInsights } from '@vercel/speed-insights/react';
 import { AuthProvider, useAuth } from '@/contexts/SupabaseAuthContext';
 import { TaxonomyProvider } from '@/contexts/TaxonomyContext';
@@ -11,6 +11,7 @@ import { supabase } from '@/lib/supabaseClient'
 import { toast } from '@/components/ui/use-toast';
 import { isUploadInProgress, subscribeUploadGuard, getActiveUploadCount } from '@/services/uploadGuard';
 import { setActiveProducerUserId } from '@/services/producerScope'
+import { initAnalytics, trackPageView } from '@/services/analytics'
 
 const InboxPage = React.lazy(() => import('@/pages/InboxPage'))
 const CategoriasPage = React.lazy(() => import('@/pages/CategoriasPage'))
@@ -257,6 +258,16 @@ function AppContent() {
   useEffect(() => {
     loadingRef.current = !!loading
   }, [loading])
+
+  useEffect(() => {
+    initAnalytics()
+  }, [])
+
+  useEffect(() => {
+    try {
+      trackPageView({ path: `${window.location.pathname}${window.location.search}${window.location.hash || ''}`, title: document.title })
+    } catch (_) {}
+  }, [currentView, locationKey])
 
   useEffect(() => {
     let cancelled = false
@@ -1076,6 +1087,7 @@ function AppContent() {
 
   return (
     <TaxonomyProvider>
+      <AnalyticsHead />
       <DeviceAccessRequestModal />
       {(currentView === 'login' || currentView === 'loginAluno' || currentView === 'loginAlunoWhitelabel' || currentView === 'verifyEmail' || currentView === 'platformAdminLogin') ? (
         currentView === 'login'
