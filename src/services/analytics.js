@@ -9,11 +9,19 @@ const readEnv = (...keys) => {
   return ''
 }
 
+const readEnvBool = (...keys) => {
+  const v = readEnv(...keys)
+  if (!v) return false
+  const s = String(v).trim().toLowerCase()
+  return s === '1' || s === 'true' || s === 'yes' || s === 'on'
+}
+
 export function getAnalyticsConfig() {
   const gaMeasurementId = readEnv('VITE_GA_MEASUREMENT_ID', 'VITE_GA4_MEASUREMENT_ID', 'VITE_GOOGLE_ANALYTICS_ID', 'VITE_GTAG_ID')
   const metaPixelId = readEnv('VITE_META_PIXEL_ID', 'VITE_FACEBOOK_PIXEL_ID', 'VITE_FB_PIXEL_ID')
   const enabled = Boolean(gaMeasurementId || metaPixelId)
-  return { enabled, gaMeasurementId, metaPixelId }
+  const debug = readEnvBool('VITE_ANALYTICS_DEBUG')
+  return { enabled, gaMeasurementId, metaPixelId, debug }
 }
 
 export function initAnalytics() {
@@ -22,7 +30,11 @@ export function initAnalytics() {
     window.__CONNEKT_ANALYTICS_INIT__ = true
   } catch (_) {}
 
-  const { gaMeasurementId, metaPixelId } = getAnalyticsConfig()
+  const { gaMeasurementId, metaPixelId, debug } = getAnalyticsConfig()
+  if (debug) {
+    try { console.log('[analytics] init', { gaMeasurementId: gaMeasurementId || null, metaPixelId: metaPixelId || null }) } catch (_) {}
+    try { window.__CONNEKT_ANALYTICS_CFG__ = { gaMeasurementId, metaPixelId } } catch (_) {}
+  }
 
   if (gaMeasurementId) {
     try {
@@ -35,14 +47,13 @@ export function initAnalytics() {
 
   if (metaPixelId) {
     try {
-      if (typeof window.fbq !== 'function') return
-      window.fbq('init', metaPixelId)
+      if (typeof window.fbq === 'function') window.fbq('init', metaPixelId)
     } catch (_) {}
   }
 }
 
 export function trackPageView({ path, title } = {}) {
-  const { gaMeasurementId, metaPixelId } = getAnalyticsConfig()
+  const { gaMeasurementId, metaPixelId, debug } = getAnalyticsConfig()
   const p = String(path || '').trim() || (() => {
     try { return `${window.location.pathname}${window.location.search}${window.location.hash || ''}` } catch (_) { return '' }
   })()
@@ -66,5 +77,8 @@ export function trackPageView({ path, title } = {}) {
       if (typeof fn === 'function') fn('track', 'PageView')
     } catch (_) {}
   }
-}
 
+  if (debug) {
+    try { console.log('[analytics] page_view', { path: p, title: t || null, ga: !!gaMeasurementId, pixel: !!metaPixelId }) } catch (_) {}
+  }
+}
