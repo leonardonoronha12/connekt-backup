@@ -816,6 +816,16 @@ export const AuthProvider = ({ children }) => {
           const isWhitelabelHost = host.endsWith('.app.connektco.com') && host !== 'app.connektco.com'
           const target = isAlunoFlow ? (isWhitelabelHost ? '/login-aluno-wl' : '/login-aluno') : '/login'
           try {
+            const manualRaw = String(sessionStorage.getItem('connekt_manual_signout_at') || localStorage.getItem('connekt_manual_signout_at') || '').trim()
+            const manualTs = Number(manualRaw || 0)
+            if (Number.isFinite(manualTs) && manualTs > 0 && Date.now() - manualTs < 30000) {
+              try { sessionStorage.removeItem('connekt_manual_signout_at') } catch (_) {}
+              try { localStorage.removeItem('connekt_manual_signout_at') } catch (_) {}
+              window.history.replaceState({}, '', target);
+              window.dispatchEvent(new PopStateEvent('popstate'));
+              handleSession(null)
+              return
+            }
             const tsRaw = String(sessionStorage.getItem('connekt_last_signed_in_at') || localStorage.getItem('connekt_last_signed_in_at') || '').trim()
             const ts = Number(tsRaw || 0)
             if (!isAlunoFlow && Number.isFinite(ts) && ts > 0 && Date.now() - ts < 15000) {
@@ -999,6 +1009,12 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const signOut = useCallback(async () => {
+    try {
+      const now = Date.now()
+      try { sessionStorage.setItem('connekt_manual_signout_at', String(now)) } catch (_) { try { localStorage.setItem('connekt_manual_signout_at', String(now)) } catch (_) {} }
+      try { sessionStorage.removeItem('connekt_last_signed_in_at') } catch (_) {}
+      try { localStorage.removeItem('connekt_last_signed_in_at') } catch (_) {}
+    } catch (_) {}
     try {
       const userId = session?.user?.id
       if (userId) {
