@@ -10,6 +10,7 @@ import { deviceSessionService } from '@/services/deviceSessionService.js';
 import { getPublicAppOrigin } from '@/services/publicUrl.js';
 import { ALUNO_NAV_SECTIONS } from '@/constants/alunoNavSections'
 import { VDOCIPHER_LOGO_DATA_URI } from '@/assets/vdocipherLogoDataUri.js'
+import { getStaticLogoPublicUrl } from '@/services/logoAssets.js'
 
 function parseHostFromUrl(value) {
   const raw = String(value || '').trim();
@@ -2147,7 +2148,17 @@ const ConfiguracoesPage = () => {
                 {/* VdoCipher Card */}
                 <div className="border border-[#E3E4E5] rounded-[8px] p-6 flex flex-col h-full">
                   <div className="h-12 mb-4 flex items-center">
-                    <img src={VDOCIPHER_LOGO_DATA_URI} alt="VdoCipher" className="h-full object-contain" />
+                    <img
+                      src={getStaticLogoPublicUrl('providers/vdocipher') || VDOCIPHER_LOGO_DATA_URI}
+                      alt="VdoCipher"
+                      className="h-full object-contain"
+                      onError={(e) => {
+                        const img = e.currentTarget
+                        if (img?.dataset?.fallbackUsed === '1') return
+                        img.dataset.fallbackUsed = '1'
+                        img.src = VDOCIPHER_LOGO_DATA_URI
+                      }}
+                    />
                   </div>
                   <p className="text-[14px] text-[#737780] mb-6 flex-grow">
                     Vdocipher, uma plataforma segura de hospedagem de vídeos, protege seus vídeos contra downloads.
@@ -2186,7 +2197,17 @@ const ConfiguracoesPage = () => {
                 {/* Vimeo Card */}
                 <div className="border border-[#E3E4E5] rounded-[8px] p-6 flex flex-col h-full">
                   <div className="h-12 mb-4 flex items-center">
-                    <img src="/icons/vimeo-logo.svg" alt="Vimeo" className="h-full object-contain" />
+                    <img
+                      src={getStaticLogoPublicUrl('providers/vimeo') || '/icons/vimeo-logo.svg'}
+                      alt="Vimeo"
+                      className="h-full object-contain"
+                      onError={(e) => {
+                        const img = e.currentTarget
+                        if (img?.dataset?.fallbackUsed === '1') return
+                        img.dataset.fallbackUsed = '1'
+                        img.src = '/icons/vimeo-logo.svg'
+                      }}
+                    />
                   </div>
                   <p className="text-[14px] text-[#737780] mb-6 flex-grow">
                     Ferramentas simples para qualquer empresa criar, gerir e compartilhar vídeos de qualidade.
