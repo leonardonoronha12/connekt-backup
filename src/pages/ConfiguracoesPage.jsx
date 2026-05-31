@@ -9,6 +9,7 @@ import CancelSubscriptionModal from '@/components/CancelSubscriptionModal.jsx';
 import { deviceSessionService } from '@/services/deviceSessionService.js';
 import { getPublicAppOrigin } from '@/services/publicUrl.js';
 import { ALUNO_NAV_SECTIONS } from '@/constants/alunoNavSections'
+import { VDOCIPHER_LOGO_DATA_URI } from '@/assets/vdocipherLogoDataUri.js'
 
 function parseHostFromUrl(value) {
   const raw = String(value || '').trim();
@@ -2146,7 +2147,7 @@ const ConfiguracoesPage = () => {
                 {/* VdoCipher Card */}
                 <div className="border border-[#E3E4E5] rounded-[8px] p-6 flex flex-col h-full">
                   <div className="h-12 mb-4 flex items-center">
-                    <img src="/icons/vdocipher-logo.svg" alt="VdoCipher" className="h-full object-contain" />
+                    <img src={VDOCIPHER_LOGO_DATA_URI} alt="VdoCipher" className="h-full object-contain" />
                   </div>
                   <p className="text-[14px] text-[#737780] mb-6 flex-grow">
                     Vdocipher, uma plataforma segura de hospedagem de vídeos, protege seus vídeos contra downloads.
