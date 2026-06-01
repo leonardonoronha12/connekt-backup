@@ -625,6 +625,13 @@ export default function PlatformAdminPanelPage() {
               <button
                 type="button"
                 className="h-9 px-3 rounded-[10px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#1E1B39] hover:bg-[#F8FAFC]"
+                onClick={() => navigateTo('/admin/analytics')}
+              >
+                Analytics
+              </button>
+              <button
+                type="button"
+                className="h-9 px-3 rounded-[10px] border border-[#E3E4E5] bg-white text-[12px] font-semibold text-[#1E1B39] hover:bg-[#F8FAFC]"
                 onClick={() => navigateTo('/admin/deploy')}
               >
                 Publicar
