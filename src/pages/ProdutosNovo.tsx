@@ -10,6 +10,7 @@ import { useToast } from "@/hooks/use-toast"
 import { supabase, SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/supabaseClient"
 import { canUploadBytes, resolvePlanKey } from "@/services/planEntitlements"
 import { planService } from "@/services/planService.js"
+import { getStaticLogoPublicUrl } from "@/services/logoAssets"
 import { sanitizeStorageObjectPath, sanitizeStorageSegment } from "@/shared/storagePath.js"
 import ChatArea from "@/components/ChatArea"
 import { TaxonomyDropdown, type TaxonomyItem } from "@/components/TaxonomyDropdown"
@@ -41,6 +42,8 @@ type Lesson = {
 export default function NovoCursoPage() {
   const { toast } = useToast()
   const { user, session } = useAuth()
+  const vimeoLogoSrc = useMemo(() => getStaticLogoPublicUrl('providers/vimeo') || '/vimeologo.svg', [])
+  const vdocipherLogoSrc = useMemo(() => getStaticLogoPublicUrl('providers/vdocipher') || '/vdologo.svg', [])
   const [title, setTitle] = useState("")
   const [description, setDescription] = useState("")
   const [hiddenAdvanceButtons, setHiddenAdvanceButtons] = useState<string[]>([])
@@ -5000,7 +5003,17 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                 <div className={`rounded-[8px] border ${defaultVideoProvider === 'vimeo' ? 'border-[#0047BB]' : 'border-[#E3E4E5]'} bg-white p-3`}>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <img src="/vimeologo.svg" alt="Vimeo" className="h-5" />
+                      <img
+                        src={vimeoLogoSrc}
+                        alt="Vimeo"
+                        className="h-5"
+                        onError={(e) => {
+                          const img = e.currentTarget
+                          if (img?.dataset?.fallbackUsed === '1') return
+                          img.dataset.fallbackUsed = '1'
+                          img.src = '/vimeologo.svg'
+                        }}
+                      />
                       <span className="text-[12px]">Vimeo</span>
                     </div>
                     <input type="radio" name="provider" checked={defaultVideoProvider === 'vimeo'} onChange={() => setDefaultVideoProvider('vimeo')} />
@@ -5029,7 +5042,17 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                 <div className={`rounded-[8px] border ${defaultVideoProvider === 'vdocipher' ? 'border-[#0047BB]' : 'border-[#E3E4E5]'} bg-white p-3`}>
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <img src="/vdologo.svg" alt="VdoCipher" className="h-5" />
+                      <img
+                        src={vdocipherLogoSrc}
+                        alt="VdoCipher"
+                        className="h-5"
+                        onError={(e) => {
+                          const img = e.currentTarget
+                          if (img?.dataset?.fallbackUsed === '1') return
+                          img.dataset.fallbackUsed = '1'
+                          img.src = '/vdologo.svg'
+                        }}
+                      />
                       <span className="text-[12px]">VdoCipher</span>
                     </div>
                     <input type="radio" name="provider" checked={defaultVideoProvider === 'vdocipher'} onChange={() => setDefaultVideoProvider('vdocipher')} />
@@ -6776,7 +6799,17 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                                   <div className={`rounded-[8px] border ${defaultVideoProvider === 'vimeo' ? 'border-[#0047BB]' : 'border-[#E3E4E5]'} bg-white p-3`}>
                                     <div className="flex items-center justify-between">
                                       <div className="flex items-center gap-2">
-                                        <img src="/vimeologo.svg" alt="Vimeo" className="h-5" />
+                                        <img
+                                          src={vimeoLogoSrc}
+                                          alt="Vimeo"
+                                          className="h-5"
+                                          onError={(e) => {
+                                            const img = e.currentTarget
+                                            if (img?.dataset?.fallbackUsed === '1') return
+                                            img.dataset.fallbackUsed = '1'
+                                            img.src = '/vimeologo.svg'
+                                          }}
+                                        />
                                         <span className="text-[12px]">Vimeo</span>
                                       </div>
                                       <input type="radio" name="provider" checked={defaultVideoProvider === 'vimeo'} onChange={() => setDefaultVideoProvider('vimeo')} />
@@ -6805,7 +6838,17 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                                   <div className={`rounded-[8px] border ${defaultVideoProvider === 'vdocipher' ? 'border-[#0047BB]' : 'border-[#E3E4E5]'} bg-white p-3`}>
                                     <div className="flex items-center justify-between">
                                       <div className="flex items-center gap-2">
-                                        <img src="/vdologo.svg" alt="VdoCipher" className="h-5" />
+                                        <img
+                                          src={vdocipherLogoSrc}
+                                          alt="VdoCipher"
+                                          className="h-5"
+                                          onError={(e) => {
+                                            const img = e.currentTarget
+                                            if (img?.dataset?.fallbackUsed === '1') return
+                                            img.dataset.fallbackUsed = '1'
+                                            img.src = '/vdologo.svg'
+                                          }}
+                                        />
                                         <span className="text-[12px]">VdoCipher</span>
                                       </div>
                                       <input type="radio" name="provider" checked={defaultVideoProvider === 'vdocipher'} onChange={() => setDefaultVideoProvider('vdocipher')} />
@@ -7789,7 +7832,17 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                       aria-pressed={defaultVideoProvider==='vdocipher'}
                       onClick={() => setDefaultVideoProvider('vdocipher')}
                     >
-                      <img src="/vdologo.svg" alt="VdoCipher" className="h-3.5 w-auto" /> VdoCipher
+                      <img
+                        src={vdocipherLogoSrc}
+                        alt="VdoCipher"
+                        className="h-3.5 w-auto"
+                        onError={(e) => {
+                          const img = e.currentTarget
+                          if (img?.dataset?.fallbackUsed === '1') return
+                          img.dataset.fallbackUsed = '1'
+                          img.src = '/vdologo.svg'
+                        }}
+                      /> VdoCipher
                     </button>
                     <button
                       type="button"
@@ -7797,7 +7850,17 @@ const [isStudentAreaSectionExpanded, setIsStudentAreaSectionExpanded] = useState
                       aria-pressed={defaultVideoProvider==='vimeo'}
                       onClick={() => setDefaultVideoProvider('vimeo')}
                     >
-                      <img src="/vimeologo.svg" alt="Vimeo" className="h-3.5 w-auto" /> Vimeo
+                      <img
+                        src={vimeoLogoSrc}
+                        alt="Vimeo"
+                        className="h-3.5 w-auto"
+                        onError={(e) => {
+                          const img = e.currentTarget
+                          if (img?.dataset?.fallbackUsed === '1') return
+                          img.dataset.fallbackUsed = '1'
+                          img.src = '/vimeologo.svg'
+                        }}
+                      /> Vimeo
                     </button>
                     <span className="ml-2 inline-flex items-center gap-2 text-[11px] text-[#6B7280]">
                       <span className="inline-block h-2 w-2 rounded-full bg-[#6B7280]"></span> Não conectado
