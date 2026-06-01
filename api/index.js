@@ -30,6 +30,7 @@ import adminUsersBulkCreate from '../api_handlers/admin/users/bulk-create.js'
 import adminUsersFirstAccessLink from '../api_handlers/admin/users/first-access-link.js'
 import adminVercelStatus from '../api_handlers/admin/vercel/status.js'
 import adminVercelDeploy from '../api_handlers/admin/vercel/deploy.js'
+import adminVercelEnvUpsert from '../api_handlers/admin/vercel/env-upsert.js'
 import adminWithdrawRequestsList from '../api_handlers/admin/withdraw_requests/list.js'
 import adminWithdrawRequestsUpdateStatus from '../api_handlers/admin/withdraw_requests/update-status.js'
 import adminLogosUpload from '../api_handlers/admin/logos/upload.js'
@@ -82,6 +83,7 @@ export default async function handler(req, res) {
       ['/api/admin/users/first-access-link', adminUsersFirstAccessLink],
       ['/api/admin/vercel/status', adminVercelStatus],
       ['/api/admin/vercel/deploy', adminVercelDeploy],
+      ['/api/admin/vercel/env-upsert', adminVercelEnvUpsert],
       ['/api/admin/withdraw-requests/list', adminWithdrawRequestsList],
       ['/api/admin/withdraw-requests/update-status', adminWithdrawRequestsUpdateStatus],
       ['/api/admin/logos/upload', adminLogosUpload],
