@@ -48,6 +48,7 @@ const PlatformAdminPanelPage = React.lazy(() => import('@/pages/PlatformAdminPan
 const PlatformAdminDeployPage = React.lazy(() => import('@/pages/PlatformAdminDeployPage.jsx'))
 const PlatformAdminWithdrawRequestsPage = React.lazy(() => import('@/pages/PlatformAdminWithdrawRequestsPage.jsx'))
 const PlatformAdminLogosPage = React.lazy(() => import('@/pages/PlatformAdminLogosPage.jsx'))
+const PlatformAdminAnalyticsPage = React.lazy(() => import('@/pages/PlatformAdminAnalyticsPage.jsx'))
 const QuestoesPage = React.lazy(() => import('@/pages/QuestoesPage'))
 const RepostaCorretaSimuladoPage = React.lazy(() => import('@/pages/RepostaCorretaSimuladoPage'))
 const ConfiguracoesPage = React.lazy(() => import('@/pages/ConfiguracoesPage'))
@@ -104,6 +105,7 @@ const QUESTION_BANK_PATH = '/banco-de-questoes';
   platformAdminDeploy: 'Admin - Publicar',
   platformAdminWithdraws: 'Admin - Saques',
   platformAdminLogos: 'Admin - Logos',
+  platformAdminAnalytics: 'Admin - Analytics',
 };
 
 try {
@@ -140,6 +142,8 @@ const getViewFromLocation = () => {
     return 'platformAdminWithdraws'
   } else if (path === '/admin/logos') {
     return 'platformAdminLogos'
+  } else if (path === '/admin/analytics') {
+    return 'platformAdminAnalytics'
   } else if (path === '/admin/deploy') {
     return 'platformAdminDeploy'
   } else if (path === '/admin' || path.startsWith('/admin/')) {
@@ -765,6 +769,9 @@ function AppContent() {
       case 'platformAdminLogos':
         node = <PlatformAdminLogosPage />
         break
+      case 'platformAdminAnalytics':
+        node = <PlatformAdminAnalyticsPage />
+        break
       case 'admin':
         node = <AdminPage />
         break
@@ -897,7 +904,7 @@ function AppContent() {
     )
   };
 
-  const isPublicView = useMemo(() => (forceResetPassword || currentView === 'login' || currentView === 'loginAluno' || currentView === 'loginAlunoWhitelabel' || currentView === 'verifyEmail' || currentView === 'resetPassword' || currentView === 'termos' || currentView === 'platformAdminLogin' || currentView === 'platformAdminLogos'), [currentView, forceResetPassword]);
+  const isPublicView = useMemo(() => (forceResetPassword || currentView === 'login' || currentView === 'loginAluno' || currentView === 'loginAlunoWhitelabel' || currentView === 'verifyEmail' || currentView === 'resetPassword' || currentView === 'termos' || currentView === 'platformAdminLogin' || currentView === 'platformAdminLogos' || currentView === 'platformAdminAnalytics'), [currentView, forceResetPassword]);
   const isDemoStudent = useMemo(() => {
     try {
       const host = String(window.location.hostname || '').toLowerCase()
@@ -1011,6 +1018,7 @@ function AppContent() {
     }
 
     if (view === 'platformAdminLogos' || path === '/admin/logos') return
+    if (view === 'platformAdminAnalytics' || path === '/admin/analytics') return
     if (resolvedRole === 'admin') return
 
     if (isPlatformAdminView) {
@@ -1081,7 +1089,7 @@ function AppContent() {
   }
 
   if (!user && !isPublicView && !(isDemoStudent && (currentView === 'alunoDashboard' || currentView === 'alunoAula' || currentView === 'alunoCurso' || currentView === 'alunoSimulados' || currentView === 'alunoSimuladoAcesso' || currentView === 'alunoSimuladoResultado' || currentView === 'alunoConfiguracoes' || currentView === 'alunoRepostaCorretaSimulado' || currentView === 'cursoPreviewAluno'))) {
-    if (currentView === 'platformAdminPanel' || currentView === 'platformAdminDeploy' || currentView === 'platformAdminWithdraws' || currentView === 'platformAdminLogos') {
+    if (currentView === 'platformAdminPanel' || currentView === 'platformAdminDeploy' || currentView === 'platformAdminWithdraws' || currentView === 'platformAdminLogos' || currentView === 'platformAdminAnalytics') {
       return <PlatformAdminLoginPage />
     }
     const host = String(window.location.hostname || '').toLowerCase()
@@ -1111,7 +1119,7 @@ function AppContent() {
         <ResetPasswordPage />
       ) : currentView === 'termos' ? (
         <TermosPrivacidadePage />
-      ) : (currentView === 'platformAdminPanel' || currentView === 'platformAdminDeploy' || currentView === 'platformAdminWithdraws' || currentView === 'platformAdminLogos' || currentView === 'produtosNovo' || currentView === 'cursoPreviewAluno' || currentView === 'questoes' || currentView === 'alunoDashboard' || currentView === 'alunoAula' || currentView === 'alunoCurso' || currentView === 'alunoSimulados' || currentView === 'alunoSimuladoAcesso' || currentView === 'alunoSimuladoResultado' || currentView === 'alunoConfiguracoes' || currentView === 'alunoRepostaCorretaSimulado' || currentView === 'alunoBancoQuestoes' || currentView === 'alunoBancoQuestoesResultado' || currentView === 'alunoQuestoes') ? (
+      ) : (currentView === 'platformAdminPanel' || currentView === 'platformAdminDeploy' || currentView === 'platformAdminWithdraws' || currentView === 'platformAdminLogos' || currentView === 'platformAdminAnalytics' || currentView === 'produtosNovo' || currentView === 'cursoPreviewAluno' || currentView === 'questoes' || currentView === 'alunoDashboard' || currentView === 'alunoAula' || currentView === 'alunoCurso' || currentView === 'alunoSimulados' || currentView === 'alunoSimuladoAcesso' || currentView === 'alunoSimuladoResultado' || currentView === 'alunoConfiguracoes' || currentView === 'alunoRepostaCorretaSimulado' || currentView === 'alunoBancoQuestoes' || currentView === 'alunoBancoQuestoesResultado' || currentView === 'alunoQuestoes') ? (
         renderContent()
       ) : (
         <MainLayout>
