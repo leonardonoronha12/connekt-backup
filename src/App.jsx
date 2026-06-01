@@ -897,7 +897,7 @@ function AppContent() {
     )
   };
 
-  const isPublicView = useMemo(() => (forceResetPassword || currentView === 'login' || currentView === 'loginAluno' || currentView === 'loginAlunoWhitelabel' || currentView === 'verifyEmail' || currentView === 'resetPassword' || currentView === 'termos' || currentView === 'platformAdminLogin'), [currentView, forceResetPassword]);
+  const isPublicView = useMemo(() => (forceResetPassword || currentView === 'login' || currentView === 'loginAluno' || currentView === 'loginAlunoWhitelabel' || currentView === 'verifyEmail' || currentView === 'resetPassword' || currentView === 'termos' || currentView === 'platformAdminLogin' || currentView === 'platformAdminLogos'), [currentView, forceResetPassword]);
   const isDemoStudent = useMemo(() => {
     try {
       const host = String(window.location.hostname || '').toLowerCase()
@@ -991,7 +991,7 @@ function AppContent() {
       path === '/login-aluno-wl' ||
       path === '/aluno/login'
     if (isPublicView && !isLoginView) return
-    const isPlatformAdminView = view === 'platformAdminPanel' || view === 'platformAdminDeploy' || view === 'platformAdminWithdraws' || view === 'platformAdminLogos' || view === 'platformAdminLogin' || path === '/admin' || path.startsWith('/admin/')
+    const isPlatformAdminView = view === 'platformAdminPanel' || view === 'platformAdminDeploy' || view === 'platformAdminWithdraws' || view === 'platformAdminLogin' || path === '/admin' || path.startsWith('/admin/')
     const isAlunoView = view.startsWith('aluno') || path === '/aluno' || path.startsWith('/aluno/')
     const isProducerView =
       !isPlatformAdminView &&
@@ -1010,6 +1010,7 @@ function AppContent() {
       window.dispatchEvent(new PopStateEvent('popstate'))
     }
 
+    if (view === 'platformAdminLogos' || path === '/admin/logos') return
     if (resolvedRole === 'admin') return
 
     if (isPlatformAdminView) {
@@ -1029,7 +1030,7 @@ function AppContent() {
     if (loading) return;
     if (user) return;
     if (isPublicView) return;
-    if (currentView === 'platformAdminPanel' || currentView === 'platformAdminDeploy' || currentView === 'platformAdminWithdraws' || currentView === 'platformAdminLogos') {
+    if (currentView === 'platformAdminPanel' || currentView === 'platformAdminDeploy' || currentView === 'platformAdminWithdraws') {
       const target = '/admin/login'
       if (window.location.pathname !== target) {
         window.history.replaceState({}, '', target);
