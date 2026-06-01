@@ -1,7 +1,6 @@
 import React, { useMemo, useState } from 'react'
 import { Helmet } from 'react-helmet-async'
 import { ArrowLeft, Copy, ExternalLink, RefreshCcw, UploadCloud } from 'lucide-react'
-import { supabase } from '@/lib/supabaseClient'
 import { useAuth } from '@/contexts/SupabaseAuthContext'
 import { toast } from '@/hooks/use-toast.ts'
 import { getStaticLogoObjectPath, getStaticLogoPublicUrl } from '@/services/logoAssets'
@@ -56,10 +55,17 @@ export default function PlatformAdminLogosPage() {
 
     setBusyId(slotId)
     try {
-      const { error } = await supabase.storage
-        .from('images')
-        .upload(objectPath, file, { upsert: true, contentType: String(file.type || 'application/octet-stream') })
-      if (error) throw error
+      const qs = new URLSearchParams()
+      qs.set('key', slotId)
+      qs.set('filename', file.name || 'logo.png')
+      qs.set('contentType', String(file.type || 'application/octet-stream'))
+      const r = await fetch(`/api/admin/logos/upload?${qs.toString()}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': String(file.type || 'application/octet-stream') },
+        body: file,
+      })
+      const body = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(body?.error || body?.message || 'Falha ao enviar logo')
       setRefreshNonce(Date.now())
       toast({ title: 'Logo enviada', description: 'Upload concluído.', duration: 4000 })
     } catch (e) {
@@ -182,4 +188,3 @@ export default function PlatformAdminLogosPage() {
     </>
   )
 }
-
