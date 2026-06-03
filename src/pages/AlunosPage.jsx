@@ -4,6 +4,7 @@ import { Helmet } from 'react-helmet-async'
 import { Download, Loader2, Plus, Search, Users, X } from 'lucide-react'
 import { useAuth } from '@/contexts/SupabaseAuthContext'
 import { toast } from '@/hooks/use-toast.ts'
+import Skeleton from '@/components/ui/Skeleton'
 
 function parseJsonMaybe(v) {
   if (!v) return null
@@ -197,11 +198,13 @@ export default function AlunosPage() {
     return t ? { Authorization: `Bearer ${t}` } : {}
   }, [session?.access_token])
 
-  const [query, setQuery] = useState('')
+  const [queryInput, setQueryInput] = useState('')
+  const [appliedQuery, setAppliedQuery] = useState('')
 
   const [loading, setLoading] = useState(true)
   const [rows, setRows] = useState([])
   const [error, setError] = useState('')
+  const [meta, setMeta] = useState(null)
 
   const [producerCourses, setProducerCourses] = useState([])
 
@@ -220,19 +223,66 @@ export default function AlunosPage() {
   const [createSaving, setCreateSaving] = useState(false)
   const [createForm, setCreateForm] = useState({ name: '', email: '', courseId: '', expiresAt: '' })
 
+  useEffect(() => {
+    const next = String(queryInput || '').trim()
+    const t = setTimeout(() => setAppliedQuery(next), next ? 450 : 150)
+    return () => clearTimeout(t)
+  }, [queryInput])
+
+  const producerMetaRef = useRef({ loaded: false, loading: false })
+  const ensureProducerMetaLoaded = useCallback(async () => {
+    const producerId = String(user?.id || '').trim()
+    if (!producerId) return
+    if (producerMetaRef.current.loaded || producerMetaRef.current.loading) return
+    producerMetaRef.current.loading = true
+    try {
+      const qsS = new URLSearchParams()
+      qsS.set('type', 'simulados')
+      qsS.set('producerId', producerId)
+      const qsC = new URLSearchParams()
+      qsC.set('type', 'courses')
+      qsC.set('producerId', producerId)
+      const [rS, rC] = await Promise.all([
+        fetch(`/api/producer?${qsS.toString()}`, { headers: authHeaders }),
+        fetch(`/api/producer?${qsC.toString()}`, { headers: authHeaders }),
+      ])
+      const bS = await rS.json().catch(() => ({}))
+      const bC = await rC.json().catch(() => ({}))
+      if (rS.ok) {
+        const list = Array.isArray(bS?.data) ? bS.data : []
+        const opts = list
+          .map((s) => ({ id: String(s?.id || '').trim(), title: String(s?.title || '').trim() }))
+          .filter((s) => s.id && s.title)
+        opts.sort((a, b) => a.title.localeCompare(b.title, 'pt-BR'))
+        setEditSimuladosOptions(opts)
+      }
+      if (rC.ok) setProducerCourses(Array.isArray(bC?.data) ? bC.data : [])
+      producerMetaRef.current.loaded = true
+    } catch (_) {
+    } finally {
+      producerMetaRef.current.loading = false
+    }
+  }, [authHeaders, ensureProducerMetaLoaded, user?.id])
+
+  useEffect(() => {
+    if (createOpen) ensureProducerMetaLoaded()
+  }, [createOpen, ensureProducerMetaLoaded])
+
   const fetchStudents = useCallback(async () => {
     const producerId = String(user?.id || '').trim()
     if (!producerId) return { ok: true, students: [], courses: [] }
     const qs = new URLSearchParams()
     qs.set('type', 'students_manage_list')
     qs.set('producerId', producerId)
-    if (query.trim()) qs.set('q', query.trim())
-    qs.set('per_page', '5000')
+    const q = String(appliedQuery || '').trim()
+    if (q) qs.set('q', q)
+    qs.set('mode', q ? 'full' : 'fast')
+    qs.set('per_page', q ? '2000' : '500')
     const r = await fetch(`/api/producer?${qs.toString()}`, { headers: authHeaders })
     const body = await r.json().catch(() => ({}))
     if (!r.ok) throw new Error(body?.error || 'Falha ao carregar alunos')
     return body || {}
-  }, [authHeaders, query, user?.id])
+  }, [appliedQuery, authHeaders, user?.id])
 
   const submitCreate = useCallback(async () => {
     const producerId = String(user?.id || '').trim()
@@ -286,6 +336,7 @@ export default function AlunosPage() {
   const openEdit = useCallback(async (row) => {
     const r = row && typeof row === 'object' ? row : null
     if (!r?.id) return
+    ensureProducerMetaLoaded()
     setEditRow(r)
     setEditForm({ name: String(r?.name || '').trim(), phone: String(r?.phone || '').trim() })
     setEditPurchasedProducts([])
@@ -478,38 +529,14 @@ export default function AlunosPage() {
         const body = await fetchStudents()
         if (!active) return
         setRows(Array.isArray(body?.students) ? body.students : [])
+        setMeta(body?.meta && typeof body.meta === 'object' ? body.meta : null)
         if (!active) return
-        try {
-          const producerId = String(user?.id || '').trim()
-          if (producerId) {
-            const qsS = new URLSearchParams()
-            qsS.set('type', 'simulados')
-            qsS.set('producerId', producerId)
-            const qsC = new URLSearchParams()
-            qsC.set('type', 'courses')
-            qsC.set('producerId', producerId)
-            const [rS, rC] = await Promise.all([
-              fetch(`/api/producer?${qsS.toString()}`, { headers: authHeaders }),
-              fetch(`/api/producer?${qsC.toString()}`, { headers: authHeaders }),
-            ])
-            const bS = await rS.json().catch(() => ({}))
-            const bC = await rC.json().catch(() => ({}))
-            if (active && rS.ok) {
-              const list = Array.isArray(bS?.data) ? bS.data : []
-              const opts = list
-                .map((s) => ({ id: String(s?.id || '').trim(), title: String(s?.title || '').trim() }))
-                .filter((s) => s.id && s.title)
-              opts.sort((a, b) => a.title.localeCompare(b.title, 'pt-BR'))
-              setEditSimuladosOptions(opts)
-            }
-            if (active && rC.ok) setProducerCourses(Array.isArray(bC?.data) ? bC.data : [])
-          }
-        } catch (_) {}
       } catch (e) {
         if (!active) return
         const msg = String(e?.message || 'Erro ao carregar alunos')
         setRows([])
         setError(msg)
+        setMeta(null)
         toast({ title: 'Erro', description: msg, variant: 'destructive' })
       } finally {
         if (active) setLoading(false)
@@ -562,7 +589,19 @@ export default function AlunosPage() {
 
   const exportXlsx = useCallback(async () => {
     try {
-      const students = Array.isArray(rows) ? rows : []
+      const producerId = String(user?.id || '').trim()
+      if (!producerId) return
+      const q = String(appliedQuery || '').trim()
+      const qs = new URLSearchParams()
+      qs.set('type', 'students_manage_list')
+      qs.set('producerId', producerId)
+      if (q) qs.set('q', q)
+      qs.set('mode', 'full')
+      qs.set('per_page', '5000')
+      const r = await fetch(`/api/producer?${qs.toString()}`, { headers: authHeaders })
+      const body = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(body?.error || 'Falha ao exportar')
+      const students = Array.isArray(body?.students) ? body.students : []
       const XLSX = await import('xlsx')
       const sheetRows = students.map((s) => ({
         nome: String(s?.name || ''),
@@ -586,7 +625,7 @@ export default function AlunosPage() {
     } catch (e) {
       toast({ title: 'Erro', description: e?.message || 'Erro ao exportar', variant: 'destructive' })
     }
-  }, [rows])
+  }, [appliedQuery, authHeaders, user?.id])
 
   const editModal = editOpen ? (
     <div className="fixed inset-0 z-[99999] bg-black/40 overflow-y-auto" onMouseDown={() => { if (!editSaving) setEditOpen(false) }}>
@@ -869,16 +908,16 @@ export default function AlunosPage() {
             <div className="relative w-full sm:w-[380px]">
               <Search className="w-4 h-4 text-[#9291A5] absolute left-3 top-1/2 -translate-y-1/2" />
               <input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                value={queryInput}
+                onChange={(e) => setQueryInput(e.target.value)}
                 placeholder="Filtrar por nome, email ou telefone"
                 className="w-full h-[40px] rounded-[10px] border border-[#E3E4E5] pl-10 pr-9 text-[13px] outline-none focus:border-[#0047BB]"
               />
-              {query ? (
+              {queryInput ? (
                 <button
                   type="button"
                   className="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-[8px] hover:bg-[#F3F4F6] flex items-center justify-center"
-                  onClick={() => setQuery('')}
+                  onClick={() => setQueryInput('')}
                 >
                   <X className="w-4 h-4 text-[#737780]" />
                 </button>
@@ -901,12 +940,15 @@ export default function AlunosPage() {
               </thead>
               <tbody className="divide-y divide-[#EDEEF0]">
                 {loading ? (
-                  <tr>
-                    <td colSpan={5} className="px-6 py-8 text-center text-[14px] text-[#737780]">
-                      <Loader2 className="w-4 h-4 inline-block mr-2 animate-spin" />
-                      Carregando…
-                    </td>
-                  </tr>
+                  Array.from({ length: 7 }).map((_, idx) => (
+                    <tr key={`skeleton_${idx}`}>
+                      <td className="px-6 py-4"><Skeleton className="h-4 w-[160px]" /></td>
+                      <td className="px-6 py-4"><Skeleton className="h-4 w-[220px]" /></td>
+                      <td className="px-6 py-4"><Skeleton className="h-4 w-[140px]" /></td>
+                      <td className="px-6 py-4"><Skeleton className="h-4 w-[220px]" /></td>
+                      <td className="px-6 py-4 text-right"><Skeleton className="h-8 w-[84px] inline-block" /></td>
+                    </tr>
+                  ))
                 ) : error ? (
                   <tr>
                     <td colSpan={5} className="px-6 py-8 text-center text-[14px] text-[#737780]">{error}</td>
@@ -916,7 +958,7 @@ export default function AlunosPage() {
                     <td colSpan={5} className="px-6 py-8 text-center text-[14px] text-[#737780]">Nenhum aluno encontrado.</td>
                   </tr>
                 ) : (
-                  rows.slice(0, 500).map((s) => (
+                  rows.map((s) => (
                     <tr key={String(s?.id || Math.random())}>
                       <td className="px-6 py-4 text-[13px] text-[#1E1B39]">{String(s?.name || '').trim() || 'Aluno'}</td>
                       <td className="px-6 py-4 text-[13px] text-[#1E1B39]">{String(s?.email || '').trim() || '—'}</td>
@@ -937,6 +979,11 @@ export default function AlunosPage() {
               </tbody>
             </table>
           </div>
+          {meta?.truncated ? (
+            <div className="px-6 py-3 border-t border-[#EDEEF0] text-[12px] text-[#737780]">
+              Mostrando os primeiros {Number(meta?.limit) || rows.length} alunos. Use a busca para encontrar outros.
+            </div>
+          ) : null}
         </div>
       </div>
 

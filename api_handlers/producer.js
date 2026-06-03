@@ -2368,7 +2368,9 @@ export default async function handler(req, res) {
 
       const q = String(u.searchParams.get('q') || '').trim().toLowerCase()
       const courseId = String(u.searchParams.get('course_id') || u.searchParams.get('courseId') || '').trim()
+      const mode = String(u.searchParams.get('mode') || '').trim().toLowerCase()
       const perPage = Math.max(1, Math.min(5000, Number(u.searchParams.get('per_page') || 500)))
+      const fastMode = !q && (mode === 'fast' || mode === 'lite')
 
       const producerRowId = await resolveProducerRowIdFromUserId(producerUserId)
       const producerKeys = Array.from(new Set([producerUserId, producerRowId].map((v) => String(v || '').trim()).filter(Boolean)))
@@ -2437,9 +2439,27 @@ export default async function handler(req, res) {
         ]
         for (const sel of selectAttempts) {
           try {
-            const { data, error } = await admin.from('student_courses').select(sel).in(col, val).limit(10000)
+            const limit = fastMode ? Math.max(600, Math.min(20000, perPage * 80)) : 10000
+            const base = admin.from('student_courses').select(sel).in(col, val).limit(limit)
+            const withOrder = fastMode ? base.order('created_at', { ascending: false }) : base
+            const { data, error } = await withOrder
             if (error) {
               if (isMissingColumn(error, col)) return []
+              if (fastMode && isMissingColumn(error, 'created_at')) {
+                try {
+                  const { data: d2, error: e2 } = await admin.from('student_courses').select(sel).in(col, val).limit(limit)
+                  if (e2) {
+                    if (isMissingColumn(e2, col)) return []
+                    continue
+                  }
+                  const rows = Array.isArray(d2) ? d2 : []
+                  if (rows.length === 0) continue
+                  return rows
+                } catch (e) {
+                  if (isMissingColumn(e, col)) return []
+                  continue
+                }
+              }
               continue
             }
             const rows = Array.isArray(data) ? data : []
@@ -2479,9 +2499,15 @@ export default async function handler(req, res) {
 
       const studentUserIds = new Set()
       const courseRowsByStudentUserId = new Map()
+      let didTruncate = false
       for (const row of Array.isArray(studentCourseRows) ? studentCourseRows : []) {
         const uid = resolveStudentUserId(row)
         if (!uid) continue
+        const isNew = !studentUserIds.has(uid)
+        if (fastMode && isNew && studentUserIds.size >= perPage) {
+          didTruncate = true
+          continue
+        }
         studentUserIds.add(uid)
         const list = courseRowsByStudentUserId.get(uid) || []
         list.push(row)
@@ -2580,7 +2606,7 @@ export default async function handler(req, res) {
         return out
       }
 
-      if (!courseFilterId) {
+      if (!courseFilterId && !fastMode) {
         const notifRows = await fetchBuyerIdsFromNotifications()
         for (const n of Array.isArray(notifRows) ? notifRows : []) {
           const data = parseJsonMaybe(n?.data) || (n?.data && typeof n.data === 'object' ? n.data : null) || {}
@@ -2743,8 +2769,8 @@ export default async function handler(req, res) {
           const n = String(c?.course_name || '').trim()
           if (n) productNames.add(n)
         }
-        const buyerMeta = productsByBuyerId.get(userId) || null
-        if (buyerMeta?.names && typeof buyerMeta.names?.forEach === 'function') {
+        const buyerMeta = fastMode ? null : (productsByBuyerId.get(userId) || null)
+        if (!fastMode && buyerMeta?.names && typeof buyerMeta.names?.forEach === 'function') {
           buyerMeta.names.forEach((n) => {
             const v = String(n || '').trim()
             if (v) productNames.add(v)
@@ -2770,7 +2796,12 @@ export default async function handler(req, res) {
       }
 
       out.sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || ''), 'pt-BR'))
-      return json(res, 200, { ok: true, students: out, courses: courses.map((c) => ({ id: String(c?.id || '').trim(), title: String(c?.title || '').trim() })).filter((c) => c.id), meta: { count: out.length, limit: perPage } })
+      return json(res, 200, {
+        ok: true,
+        students: out,
+        courses: courses.map((c) => ({ id: String(c?.id || '').trim(), title: String(c?.title || '').trim() })).filter((c) => c.id),
+        meta: { count: out.length, limit: perPage, mode: fastMode ? 'fast' : 'full', truncated: !!didTruncate },
+      })
     }
 
     if (type === 'student_create') {
@@ -3776,6 +3807,7 @@ export default async function handler(req, res) {
     }
 
     if (type === 'courses') {
+      res.setHeader('Cache-Control', 'public, max-age=30, s-maxage=60, stale-while-revalidate=300')
       const isMissingColumn = (err, col) => {
         const msg = String(err?.message || err?.details || err || '').toLowerCase()
         const code = String(err?.code || '').toUpperCase()
@@ -3806,7 +3838,10 @@ export default async function handler(req, res) {
       } catch (_) {}
       const producerKeys = Array.from(producerKeysSet).map((v) => String(v || '').trim()).filter(Boolean)
 
-      const select = 'id,title,cover_image_url,promo_video_url,module_layout_image_url,modules,data,user_id,created_at,status'
+      const lite = String(u.searchParams.get('lite') || '').trim() === '1'
+      const select = lite
+        ? 'id,title,cover_image_url,module_layout_image_url,data,user_id,created_at,status'
+        : 'id,title,cover_image_url,promo_video_url,module_layout_image_url,modules,data,user_id,created_at,status'
       const fetchByColumn = async (col) => {
         try {
           const { data, error } = await admin
