@@ -91,6 +91,25 @@ function readStoredLoginMode() {
   return ''
 }
 
+function inferIsStudentFlow() {
+  try {
+    const pathname = String(window.location.pathname || '')
+    const host = String(window.location.hostname || '').toLowerCase()
+    const isWhitelabelHost = host.endsWith('.app.connektco.com') && host !== 'app.connektco.com'
+    const intent = readStoredLoginIntent()
+    const mode = readStoredLoginMode()
+    const isStudentPath =
+      pathname === '/login-aluno' ||
+      pathname === '/login-aluno-wl' ||
+      pathname === '/aluno/login' ||
+      pathname === '/aluno' ||
+      pathname.startsWith('/aluno/')
+    return isWhitelabelHost ? true : (isStudentPath || intent === 'aluno' || mode === 'aluno')
+  } catch (_) {
+    return false
+  }
+}
+
 function readWlHandoffTarget() {
   try {
     const host = String(window.location.hostname || '').toLowerCase()
@@ -694,7 +713,7 @@ export const AuthProvider = ({ children }) => {
             pathname.startsWith('/aluno/')
           const isStudentFlow = isWhitelabelHost ? true : (isStudentPath || intent === 'aluno' || mode === 'aluno')
 
-          if (!bypassDeviceLock && shouldEnforceDeviceLock) {
+          if (isStudentFlow && !bypassDeviceLock && shouldEnforceDeviceLock) {
             try {
               const userId = currentSession?.user?.id
               if (userId) {
@@ -849,6 +868,10 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     if (!shouldEnforceDeviceLock) return
     if (!user?.id) return
+    if (!inferIsStudentFlow()) {
+      if (deviceLock) setDeviceLock(null)
+      return
+    }
     if (deviceLock) return
     let cancelled = false
     const userId = user.id
@@ -891,6 +914,10 @@ export const AuthProvider = ({ children }) => {
     if (!shouldEnforceDeviceLock) return
     if (!user?.id) return
     if (!deviceLock) return
+    if (!inferIsStudentFlow()) {
+      setDeviceLock(null)
+      return
+    }
     let cancelled = false
     const userId = user.id
     const tick = async () => {
