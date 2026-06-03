@@ -214,10 +214,9 @@ export default async function handler(req, res) {
       const token = await getGatewayAuthToken()
       const basicFromEnv = (GATEWAY_AUTH && GATEWAY_AUTH.startsWith('Basic ')) ? GATEWAY_AUTH : (GATEWAY_AUTHDATA ? `Basic ${GATEWAY_AUTHDATA}` : null)
       const envAuthFallback = (!token && !basicFromEnv && GATEWAY_AUTH) ? GATEWAY_AUTH : null
-      const authModes = []
-      if (token) authModes.push({ mode: 'auth_token', value: String(token) })
-      if (basicFromEnv) authModes.push({ mode: 'basic', value: basicFromEnv })
-      if (envAuthFallback) authModes.push({ mode: envAuthFallback.startsWith('Bearer ') ? 'env_bearer' : 'env_basic', value: envAuthFallback })
+      const authHeader = token
+        ? `Bearer ${String(token)}`
+        : (basicFromEnv || (envAuthFallback ? String(envAuthFallback) : null))
 
       const acceptedTypesRaw = String(process.env.VITE_ACCEPTED_PAYMENTS_TYPE || 'ALL')
       const acceptedTypesList = acceptedTypesRaw.split(',').map((s) => s.trim()).filter(Boolean)
@@ -244,17 +243,17 @@ export default async function handler(req, res) {
 
       let r = null
       let payload = null
-      for (let i = 0; i < Math.max(1, authModes.length); i++) {
-        const selected = authModes[i] || { value: undefined }
+      try {
         const headers = {
           'Content-Type': 'application/json',
           Accept: 'application/json',
           'x-api-key': GATEWAY_API_KEY,
-          ...(selected.value ? { Authorization: selected.value } : {}),
+          ...(authHeader ? { Authorization: String(authHeader) } : {}),
         }
-        r = await fetchWithTimeout(requestUrl, { method: 'POST', headers, body: JSON.stringify(requestBody) })
+        r = await fetchWithTimeout(requestUrl, { method: 'POST', headers, body: JSON.stringify(requestBody) }, 15000)
         payload = await r.json().catch(() => ({}))
-        if (r.ok) break
+      } catch (e) {
+        return json(res, 504, { error: 'gateway_timeout', message: 'Checkout indisponível: o gateway demorou para responder.' })
       }
 
       if (!r || !r.ok) {
@@ -309,10 +308,9 @@ export default async function handler(req, res) {
       const token = await getGatewayAuthToken()
       const basicFromEnv = (GATEWAY_AUTH && GATEWAY_AUTH.startsWith('Basic ')) ? GATEWAY_AUTH : (GATEWAY_AUTHDATA ? `Basic ${GATEWAY_AUTHDATA}` : null)
       const envAuthFallback = (!token && !basicFromEnv && GATEWAY_AUTH) ? GATEWAY_AUTH : null
-      const authModes = []
-      if (token) authModes.push({ mode: 'auth_token', value: String(token) })
-      if (basicFromEnv) authModes.push({ mode: 'basic', value: basicFromEnv })
-      if (envAuthFallback) authModes.push({ mode: envAuthFallback.startsWith('Bearer ') ? 'env_bearer' : 'env_basic', value: envAuthFallback })
+      const authHeader = token
+        ? `Bearer ${String(token)}`
+        : (basicFromEnv || (envAuthFallback ? String(envAuthFallback) : null))
 
       const acceptedTypesRaw = String(process.env.VITE_ACCEPTED_PAYMENTS_TYPE || 'ALL')
       const acceptedTypesList = acceptedTypesRaw.split(',').map((s) => s.trim()).filter(Boolean)
@@ -340,17 +338,17 @@ export default async function handler(req, res) {
 
       let r = null
       let payload = null
-      for (let i = 0; i < Math.max(1, authModes.length); i++) {
-        const selected = authModes[i] || { value: undefined }
+      try {
         const headers = {
           'Content-Type': 'application/json',
           Accept: 'application/json',
           'x-api-key': GATEWAY_API_KEY,
-          ...(selected.value ? { Authorization: selected.value } : {}),
+          ...(authHeader ? { Authorization: String(authHeader) } : {}),
         }
-        r = await fetchWithTimeout(requestUrl, { method: 'POST', headers, body: JSON.stringify(requestBody) })
+        r = await fetchWithTimeout(requestUrl, { method: 'POST', headers, body: JSON.stringify(requestBody) }, 15000)
         payload = await r.json().catch(() => ({}))
-        if (r.ok) break
+      } catch (e) {
+        return json(res, 504, { error: 'gateway_timeout', message: 'Checkout indisponível: o gateway demorou para responder.' })
       }
 
       if (!r || !r.ok) {
@@ -410,10 +408,9 @@ export default async function handler(req, res) {
       const token = await getGatewayAuthToken()
       const basicFromEnv = (GATEWAY_AUTH && GATEWAY_AUTH.startsWith('Basic ')) ? GATEWAY_AUTH : (GATEWAY_AUTHDATA ? `Basic ${GATEWAY_AUTHDATA}` : null)
       const envAuthFallback = (!token && !basicFromEnv && GATEWAY_AUTH) ? GATEWAY_AUTH : null
-      const authModes = []
-      if (token) authModes.push({ mode: 'auth_token', value: String(token) })
-      if (basicFromEnv) authModes.push({ mode: 'basic', value: basicFromEnv })
-      if (envAuthFallback) authModes.push({ mode: envAuthFallback.startsWith('Bearer ') ? 'env_bearer' : 'env_basic', value: envAuthFallback })
+      const authHeader = token
+        ? `Bearer ${String(token)}`
+        : (basicFromEnv || (envAuthFallback ? String(envAuthFallback) : null))
 
       const acceptedTypesRaw = String(process.env.VITE_ACCEPTED_PAYMENTS_TYPE || 'ALL')
       const acceptedTypesList = acceptedTypesRaw.split(',').map((s) => s.trim()).filter(Boolean)
@@ -442,17 +439,17 @@ export default async function handler(req, res) {
 
       let r = null
       let payload = null
-      for (let i = 0; i < Math.max(1, authModes.length); i++) {
-        const selected = authModes[i] || { value: undefined }
+      try {
         const headers = {
           'Content-Type': 'application/json',
           Accept: 'application/json',
           'x-api-key': GATEWAY_API_KEY,
-          ...(selected.value ? { Authorization: selected.value } : {}),
+          ...(authHeader ? { Authorization: String(authHeader) } : {}),
         }
-        r = await fetchWithTimeout(requestUrl, { method: 'POST', headers, body: JSON.stringify(requestBody) })
+        r = await fetchWithTimeout(requestUrl, { method: 'POST', headers, body: JSON.stringify(requestBody) }, 15000)
         payload = await r.json().catch(() => ({}))
-        if (r.ok) break
+      } catch (e) {
+        return json(res, 504, { error: 'gateway_timeout', message: 'Checkout indisponível: o gateway demorou para responder.' })
       }
 
       if (!r || !r.ok) {
@@ -512,10 +509,9 @@ export default async function handler(req, res) {
     const token = await getGatewayAuthToken()
     const basicFromEnv = (GATEWAY_AUTH && GATEWAY_AUTH.startsWith('Basic ')) ? GATEWAY_AUTH : (GATEWAY_AUTHDATA ? `Basic ${GATEWAY_AUTHDATA}` : null)
     const envAuthFallback = (!token && !basicFromEnv && GATEWAY_AUTH) ? GATEWAY_AUTH : null
-    const authModes = []
-    if (token) authModes.push({ mode: 'auth_token', value: String(token) })
-    if (basicFromEnv) authModes.push({ mode: 'basic', value: basicFromEnv })
-    if (envAuthFallback) authModes.push({ mode: envAuthFallback.startsWith('Bearer ') ? 'env_bearer' : 'env_basic', value: envAuthFallback })
+    const authHeader = token
+      ? `Bearer ${String(token)}`
+      : (basicFromEnv || (envAuthFallback ? String(envAuthFallback) : null))
 
     const acceptedTypesRaw = String(process.env.VITE_ACCEPTED_PAYMENTS_TYPE || 'ALL')
     const acceptedTypesList = acceptedTypesRaw.split(',').map((s) => s.trim()).filter(Boolean)
@@ -541,17 +537,17 @@ export default async function handler(req, res) {
 
     let r = null
     let payload = null
-    for (let i = 0; i < Math.max(1, authModes.length); i++) {
-      const selected = authModes[i] || { value: undefined }
+    try {
       const headers = {
         'Content-Type': 'application/json',
         Accept: 'application/json',
         'x-api-key': GATEWAY_API_KEY,
-        ...(selected.value ? { Authorization: selected.value } : {}),
+        ...(authHeader ? { Authorization: String(authHeader) } : {}),
       }
-      r = await fetchWithTimeout(requestUrl, { method: 'POST', headers, body: JSON.stringify(requestBody) })
+      r = await fetchWithTimeout(requestUrl, { method: 'POST', headers, body: JSON.stringify(requestBody) }, 15000)
       payload = await r.json().catch(() => ({}))
-      if (r.ok) break
+    } catch (e) {
+      return json(res, 504, { error: 'gateway_timeout', message: 'Checkout indisponível: o gateway demorou para responder.' })
     }
 
     if (!r || !r.ok) {
