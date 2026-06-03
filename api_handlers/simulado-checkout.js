@@ -50,7 +50,7 @@ function formatValidUntil(dt) {
   return `${yyyy}-${mm}-${dd} ${hh}:${mi}`
 }
 
-async function fetchWithTimeout(url, init, timeoutMs = 25000) {
+async function fetchWithTimeout(url, init, timeoutMs = 35000) {
   const controller = new AbortController()
   const t = setTimeout(() => {
     try { controller.abort() } catch (_) {}
@@ -59,6 +59,41 @@ async function fetchWithTimeout(url, init, timeoutMs = 25000) {
     return await fetch(url, { ...(init || {}), signal: controller.signal })
   } finally {
     clearTimeout(t)
+  }
+}
+
+function getGatewayMeta(requestUrl) {
+  try {
+    const u = new URL(String(requestUrl || ''))
+    return { gateway_host: String(u.host || ''), gateway_origin: String(u.origin || ''), gateway_path: String(u.pathname || '') }
+  } catch (_) {
+    return { gateway_host: '', gateway_origin: '', gateway_path: '' }
+  }
+}
+
+function gatewayErrorPayload(e, requestUrl) {
+  const name = String(e?.name || '').toLowerCase()
+  const msg = String(e?.message || e || '')
+  const aborted = name.includes('abort')
+  const meta = getGatewayMeta(requestUrl)
+  if (aborted) {
+    return {
+      status: 504,
+      body: {
+        error: 'gateway_timeout',
+        message: 'Checkout indisponível: o gateway demorou para responder.',
+        ...meta,
+      },
+    }
+  }
+  return {
+    status: 502,
+    body: {
+      error: 'gateway_network_error',
+      message: 'Checkout indisponível: falha ao conectar no gateway.',
+      details: msg ? String(msg).slice(0, 300) : '',
+      ...meta,
+    },
   }
 }
 
@@ -72,7 +107,7 @@ async function getGatewayAuthToken() {
     const url = `${String(GATEWAY_URL).replace(/\/$/, '')}/authentication/v2/auth`
     const headers = { 'x-api-key': GATEWAY_API_KEY, 'Content-Type': 'application/json', Accept: 'application/json' }
     const body = { authData: GATEWAY_AUTHDATA }
-    const res = await fetchWithTimeout(url, { method: 'POST', headers, body: JSON.stringify(body) }, 15000)
+    const res = await fetchWithTimeout(url, { method: 'POST', headers, body: JSON.stringify(body) }, 20000)
     if (!res.ok) return null
     const data = await res.json().catch(() => ({}))
     const token = data?.auth_token || data?.token || data?.access_token || null
@@ -250,10 +285,11 @@ export default async function handler(req, res) {
           'x-api-key': GATEWAY_API_KEY,
           ...(authHeader ? { Authorization: String(authHeader) } : {}),
         }
-        r = await fetchWithTimeout(requestUrl, { method: 'POST', headers, body: JSON.stringify(requestBody) }, 15000)
+        r = await fetchWithTimeout(requestUrl, { method: 'POST', headers, body: JSON.stringify(requestBody) }, 35000)
         payload = await r.json().catch(() => ({}))
       } catch (e) {
-        return json(res, 504, { error: 'gateway_timeout', message: 'Checkout indisponível: o gateway demorou para responder.' })
+        const out = gatewayErrorPayload(e, requestUrl)
+        return json(res, out.status, out.body)
       }
 
       if (!r || !r.ok) {
@@ -345,10 +381,11 @@ export default async function handler(req, res) {
           'x-api-key': GATEWAY_API_KEY,
           ...(authHeader ? { Authorization: String(authHeader) } : {}),
         }
-        r = await fetchWithTimeout(requestUrl, { method: 'POST', headers, body: JSON.stringify(requestBody) }, 15000)
+        r = await fetchWithTimeout(requestUrl, { method: 'POST', headers, body: JSON.stringify(requestBody) }, 35000)
         payload = await r.json().catch(() => ({}))
       } catch (e) {
-        return json(res, 504, { error: 'gateway_timeout', message: 'Checkout indisponível: o gateway demorou para responder.' })
+        const out = gatewayErrorPayload(e, requestUrl)
+        return json(res, out.status, out.body)
       }
 
       if (!r || !r.ok) {
@@ -446,10 +483,11 @@ export default async function handler(req, res) {
           'x-api-key': GATEWAY_API_KEY,
           ...(authHeader ? { Authorization: String(authHeader) } : {}),
         }
-        r = await fetchWithTimeout(requestUrl, { method: 'POST', headers, body: JSON.stringify(requestBody) }, 15000)
+        r = await fetchWithTimeout(requestUrl, { method: 'POST', headers, body: JSON.stringify(requestBody) }, 35000)
         payload = await r.json().catch(() => ({}))
       } catch (e) {
-        return json(res, 504, { error: 'gateway_timeout', message: 'Checkout indisponível: o gateway demorou para responder.' })
+        const out = gatewayErrorPayload(e, requestUrl)
+        return json(res, out.status, out.body)
       }
 
       if (!r || !r.ok) {
@@ -544,10 +582,11 @@ export default async function handler(req, res) {
         'x-api-key': GATEWAY_API_KEY,
         ...(authHeader ? { Authorization: String(authHeader) } : {}),
       }
-      r = await fetchWithTimeout(requestUrl, { method: 'POST', headers, body: JSON.stringify(requestBody) }, 15000)
+      r = await fetchWithTimeout(requestUrl, { method: 'POST', headers, body: JSON.stringify(requestBody) }, 35000)
       payload = await r.json().catch(() => ({}))
     } catch (e) {
-      return json(res, 504, { error: 'gateway_timeout', message: 'Checkout indisponível: o gateway demorou para responder.' })
+      const out = gatewayErrorPayload(e, requestUrl)
+      return json(res, out.status, out.body)
     }
 
     if (!r || !r.ok) {
