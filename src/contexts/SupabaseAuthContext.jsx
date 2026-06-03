@@ -1506,11 +1506,43 @@ export const AuthProvider = ({ children }) => {
         const { data, error } = await supabase
           .from('notifications')
           .select('type,entity_type,entity_id,data,created_at')
+          .eq('recipient_user_id', user.id)
           .eq('type', 'purchase_confirmed')
           .order('created_at', { ascending: false })
           .limit(500)
         if (!active) return
         if (error) return
+        try {
+          const prefixes = [
+            'connekt_course_owned:',
+            'connekt_module_owned:',
+            'connekt_lesson_owned:',
+            'connekt_simulado_owned:',
+            'connekt_course_pending_link:',
+            'connekt_course_last_link:',
+            'connekt_module_pending_link:',
+            'connekt_module_last_link:',
+            'connekt_lesson_pending_link:',
+            'connekt_lesson_last_link:',
+            'connekt_simulado_pending_link:',
+            'connekt_simulado_last_link:',
+          ]
+          const clean = (storage) => {
+            if (!storage) return
+            const keys = []
+            for (let i = 0; i < storage.length; i += 1) {
+              const k = storage.key(i)
+              if (k) keys.push(k)
+            }
+            for (const k of keys) {
+              if (prefixes.some((p) => String(k).startsWith(p))) {
+                try { storage.removeItem(k) } catch (_) {}
+              }
+            }
+          }
+          clean(localStorage)
+          clean(sessionStorage)
+        } catch (_) {}
         for (const row of Array.isArray(data) ? data : []) {
           const entityType = String(row?.entity_type || '').trim().toLowerCase()
           const entityId = String(row?.entity_id || '').trim()
