@@ -97,6 +97,39 @@ function gatewayErrorPayload(e, requestUrl) {
   }
 }
 
+function normalizeBearerToken(raw) {
+  const s = String(raw || '').trim()
+  if (!s) return ''
+  if (s.toLowerCase().startsWith('bearer ') || s.toLowerCase().startsWith('basic ')) return s
+  return `Bearer ${s}`
+}
+
+function pickGatewayErrorMessage(payload, fallback = '') {
+  try {
+    if (!payload) return fallback
+    if (typeof payload === 'string') return String(payload).slice(0, 400)
+    if (typeof payload !== 'object') return fallback
+    const direct = payload.message || payload.error || payload.detail || payload.title || ''
+    if (direct) return String(direct).slice(0, 400)
+    const errors = payload.errors || payload.erros || payload.validationErrors || null
+    if (Array.isArray(errors) && errors.length) return String(errors[0]?.message || errors[0]?.error || errors[0] || '').slice(0, 400)
+    return fallback
+  } catch (_) {
+    return fallback
+  }
+}
+
+async function readJsonOrText(res) {
+  const text = await res.text().catch(() => '')
+  const trimmed = String(text || '').trim()
+  if (!trimmed) return { payload: {}, text: '' }
+  try {
+    return { payload: JSON.parse(trimmed), text: trimmed }
+  } catch (_) {
+    return { payload: {}, text: trimmed.slice(0, 800) }
+  }
+}
+
 async function getGatewayAuthToken() {
   try {
     if (cachedAuth && cachedAuth.ts > Date.now() - 55 * 60_000) return cachedAuth.token
@@ -249,9 +282,10 @@ export default async function handler(req, res) {
       const token = await getGatewayAuthToken()
       const basicFromEnv = (GATEWAY_AUTH && GATEWAY_AUTH.startsWith('Basic ')) ? GATEWAY_AUTH : (GATEWAY_AUTHDATA ? `Basic ${GATEWAY_AUTHDATA}` : null)
       const envAuthFallback = (!token && !basicFromEnv && GATEWAY_AUTH) ? GATEWAY_AUTH : null
-      const authHeader = token
-        ? `Bearer ${String(token)}`
-        : (basicFromEnv || (envAuthFallback ? String(envAuthFallback) : null))
+      const authHeaders = []
+      if (token) authHeaders.push(normalizeBearerToken(token))
+      if (basicFromEnv) authHeaders.push(String(basicFromEnv))
+      if (envAuthFallback) authHeaders.push(String(envAuthFallback))
 
       const acceptedTypesRaw = String(process.env.VITE_ACCEPTED_PAYMENTS_TYPE || 'ALL')
       const acceptedTypesList = acceptedTypesRaw.split(',').map((s) => s.trim()).filter(Boolean)
@@ -278,26 +312,38 @@ export default async function handler(req, res) {
 
       let r = null
       let payload = null
+      let lastText = ''
+      let lastStatus = 0
       try {
-        const headers = {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-          'x-api-key': GATEWAY_API_KEY,
-          ...(authHeader ? { Authorization: String(authHeader) } : {}),
+        for (const authHeader of (authHeaders.length ? authHeaders : [''])) {
+          const headers = {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            'x-api-key': GATEWAY_API_KEY,
+            ...(authHeader ? { Authorization: String(authHeader) } : {}),
+          }
+          r = await fetchWithTimeout(requestUrl, { method: 'POST', headers, body: JSON.stringify(requestBody) }, 35000)
+          lastStatus = r?.status || 0
+          const parsed = await readJsonOrText(r)
+          payload = parsed.payload || {}
+          lastText = parsed.text || ''
+          if (r.ok) break
+          if (![401, 403].includes(Number(lastStatus || 0))) break
         }
-        r = await fetchWithTimeout(requestUrl, { method: 'POST', headers, body: JSON.stringify(requestBody) }, 35000)
-        payload = await r.json().catch(() => ({}))
       } catch (e) {
         const out = gatewayErrorPayload(e, requestUrl)
         return json(res, out.status, out.body)
       }
 
       if (!r || !r.ok) {
+        const meta = getGatewayMeta(requestUrl)
         return json(res, 502, {
           error: 'create_paymentlink_failed',
           message: 'Falha ao criar o checkout no gateway.',
-          status: r?.status || 0,
-          payload,
+          status: lastStatus || r?.status || 0,
+          gateway_message: pickGatewayErrorMessage(payload, ''),
+          gateway_response: lastText ? String(lastText).slice(0, 800) : '',
+          ...meta,
         })
       }
 
@@ -344,9 +390,10 @@ export default async function handler(req, res) {
       const token = await getGatewayAuthToken()
       const basicFromEnv = (GATEWAY_AUTH && GATEWAY_AUTH.startsWith('Basic ')) ? GATEWAY_AUTH : (GATEWAY_AUTHDATA ? `Basic ${GATEWAY_AUTHDATA}` : null)
       const envAuthFallback = (!token && !basicFromEnv && GATEWAY_AUTH) ? GATEWAY_AUTH : null
-      const authHeader = token
-        ? `Bearer ${String(token)}`
-        : (basicFromEnv || (envAuthFallback ? String(envAuthFallback) : null))
+      const authHeaders = []
+      if (token) authHeaders.push(normalizeBearerToken(token))
+      if (basicFromEnv) authHeaders.push(String(basicFromEnv))
+      if (envAuthFallback) authHeaders.push(String(envAuthFallback))
 
       const acceptedTypesRaw = String(process.env.VITE_ACCEPTED_PAYMENTS_TYPE || 'ALL')
       const acceptedTypesList = acceptedTypesRaw.split(',').map((s) => s.trim()).filter(Boolean)
@@ -374,26 +421,38 @@ export default async function handler(req, res) {
 
       let r = null
       let payload = null
+      let lastText = ''
+      let lastStatus = 0
       try {
-        const headers = {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-          'x-api-key': GATEWAY_API_KEY,
-          ...(authHeader ? { Authorization: String(authHeader) } : {}),
+        for (const authHeader of (authHeaders.length ? authHeaders : [''])) {
+          const headers = {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            'x-api-key': GATEWAY_API_KEY,
+            ...(authHeader ? { Authorization: String(authHeader) } : {}),
+          }
+          r = await fetchWithTimeout(requestUrl, { method: 'POST', headers, body: JSON.stringify(requestBody) }, 35000)
+          lastStatus = r?.status || 0
+          const parsed = await readJsonOrText(r)
+          payload = parsed.payload || {}
+          lastText = parsed.text || ''
+          if (r.ok) break
+          if (![401, 403].includes(Number(lastStatus || 0))) break
         }
-        r = await fetchWithTimeout(requestUrl, { method: 'POST', headers, body: JSON.stringify(requestBody) }, 35000)
-        payload = await r.json().catch(() => ({}))
       } catch (e) {
         const out = gatewayErrorPayload(e, requestUrl)
         return json(res, out.status, out.body)
       }
 
       if (!r || !r.ok) {
+        const meta = getGatewayMeta(requestUrl)
         return json(res, 502, {
           error: 'create_paymentlink_failed',
           message: 'Falha ao criar o checkout no gateway.',
-          status: r?.status || 0,
-          payload,
+          status: lastStatus || r?.status || 0,
+          gateway_message: pickGatewayErrorMessage(payload, ''),
+          gateway_response: lastText ? String(lastText).slice(0, 800) : '',
+          ...meta,
         })
       }
 
@@ -445,9 +504,10 @@ export default async function handler(req, res) {
       const token = await getGatewayAuthToken()
       const basicFromEnv = (GATEWAY_AUTH && GATEWAY_AUTH.startsWith('Basic ')) ? GATEWAY_AUTH : (GATEWAY_AUTHDATA ? `Basic ${GATEWAY_AUTHDATA}` : null)
       const envAuthFallback = (!token && !basicFromEnv && GATEWAY_AUTH) ? GATEWAY_AUTH : null
-      const authHeader = token
-        ? `Bearer ${String(token)}`
-        : (basicFromEnv || (envAuthFallback ? String(envAuthFallback) : null))
+      const authHeaders = []
+      if (token) authHeaders.push(normalizeBearerToken(token))
+      if (basicFromEnv) authHeaders.push(String(basicFromEnv))
+      if (envAuthFallback) authHeaders.push(String(envAuthFallback))
 
       const acceptedTypesRaw = String(process.env.VITE_ACCEPTED_PAYMENTS_TYPE || 'ALL')
       const acceptedTypesList = acceptedTypesRaw.split(',').map((s) => s.trim()).filter(Boolean)
@@ -476,26 +536,38 @@ export default async function handler(req, res) {
 
       let r = null
       let payload = null
+      let lastText = ''
+      let lastStatus = 0
       try {
-        const headers = {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-          'x-api-key': GATEWAY_API_KEY,
-          ...(authHeader ? { Authorization: String(authHeader) } : {}),
+        for (const authHeader of (authHeaders.length ? authHeaders : [''])) {
+          const headers = {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+            'x-api-key': GATEWAY_API_KEY,
+            ...(authHeader ? { Authorization: String(authHeader) } : {}),
+          }
+          r = await fetchWithTimeout(requestUrl, { method: 'POST', headers, body: JSON.stringify(requestBody) }, 35000)
+          lastStatus = r?.status || 0
+          const parsed = await readJsonOrText(r)
+          payload = parsed.payload || {}
+          lastText = parsed.text || ''
+          if (r.ok) break
+          if (![401, 403].includes(Number(lastStatus || 0))) break
         }
-        r = await fetchWithTimeout(requestUrl, { method: 'POST', headers, body: JSON.stringify(requestBody) }, 35000)
-        payload = await r.json().catch(() => ({}))
       } catch (e) {
         const out = gatewayErrorPayload(e, requestUrl)
         return json(res, out.status, out.body)
       }
 
       if (!r || !r.ok) {
+        const meta = getGatewayMeta(requestUrl)
         return json(res, 502, {
           error: 'create_paymentlink_failed',
           message: 'Falha ao criar o checkout no gateway.',
-          status: r?.status || 0,
-          payload,
+          status: lastStatus || r?.status || 0,
+          gateway_message: pickGatewayErrorMessage(payload, ''),
+          gateway_response: lastText ? String(lastText).slice(0, 800) : '',
+          ...meta,
         })
       }
 
@@ -547,9 +619,10 @@ export default async function handler(req, res) {
     const token = await getGatewayAuthToken()
     const basicFromEnv = (GATEWAY_AUTH && GATEWAY_AUTH.startsWith('Basic ')) ? GATEWAY_AUTH : (GATEWAY_AUTHDATA ? `Basic ${GATEWAY_AUTHDATA}` : null)
     const envAuthFallback = (!token && !basicFromEnv && GATEWAY_AUTH) ? GATEWAY_AUTH : null
-    const authHeader = token
-      ? `Bearer ${String(token)}`
-      : (basicFromEnv || (envAuthFallback ? String(envAuthFallback) : null))
+    const authHeaders = []
+    if (token) authHeaders.push(normalizeBearerToken(token))
+    if (basicFromEnv) authHeaders.push(String(basicFromEnv))
+    if (envAuthFallback) authHeaders.push(String(envAuthFallback))
 
     const acceptedTypesRaw = String(process.env.VITE_ACCEPTED_PAYMENTS_TYPE || 'ALL')
     const acceptedTypesList = acceptedTypesRaw.split(',').map((s) => s.trim()).filter(Boolean)
@@ -575,26 +648,38 @@ export default async function handler(req, res) {
 
     let r = null
     let payload = null
+    let lastText = ''
+    let lastStatus = 0
     try {
-      const headers = {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-        'x-api-key': GATEWAY_API_KEY,
-        ...(authHeader ? { Authorization: String(authHeader) } : {}),
+      for (const authHeader of (authHeaders.length ? authHeaders : [''])) {
+        const headers = {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          'x-api-key': GATEWAY_API_KEY,
+          ...(authHeader ? { Authorization: String(authHeader) } : {}),
+        }
+        r = await fetchWithTimeout(requestUrl, { method: 'POST', headers, body: JSON.stringify(requestBody) }, 35000)
+        lastStatus = r?.status || 0
+        const parsed = await readJsonOrText(r)
+        payload = parsed.payload || {}
+        lastText = parsed.text || ''
+        if (r.ok) break
+        if (![401, 403].includes(Number(lastStatus || 0))) break
       }
-      r = await fetchWithTimeout(requestUrl, { method: 'POST', headers, body: JSON.stringify(requestBody) }, 35000)
-      payload = await r.json().catch(() => ({}))
     } catch (e) {
       const out = gatewayErrorPayload(e, requestUrl)
       return json(res, out.status, out.body)
     }
 
     if (!r || !r.ok) {
+      const meta = getGatewayMeta(requestUrl)
       return json(res, 502, {
         error: 'create_paymentlink_failed',
         message: 'Falha ao criar o checkout no gateway.',
-        status: r?.status || 0,
-        payload,
+        status: lastStatus || r?.status || 0,
+        gateway_message: pickGatewayErrorMessage(payload, ''),
+        gateway_response: lastText ? String(lastText).slice(0, 800) : '',
+        ...meta,
       })
     }
 
