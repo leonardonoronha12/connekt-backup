@@ -18,7 +18,8 @@ const translateErrorMessage = (errorMessage) => {
     'Invalid password': 'Senha inválida',
     'Network error': 'Erro de conexão',
     'Server error': 'Erro do servidor',
-    'Unsupported provider: provider is not enabled': 'Login com Google/Facebook não está habilitado no Supabase. Ative o provedor nas configurações de Authentication.'
+    'Unsupported provider: provider is not enabled': 'Login com Google/Facebook não está habilitado no Supabase. Ative o provedor nas configurações de Authentication.',
+    'timeout': 'Tempo esgotado ao conectar. Verifique sua internet e tente novamente.'
   };
   
   return translations[errorMessage] || errorMessage;
