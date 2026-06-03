@@ -35,6 +35,22 @@ const parseJsonMaybe = (value) => {
 
 const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0;
 
+const parsePriceNumber = (value) => {
+  if (typeof value === 'number') return value
+  if (typeof value === 'string') {
+    let s = String(value || '').trim()
+    if (!s) return NaN
+    s = s.replace(/\s+/g, '')
+    s = s.replace(/^R\$\s*/i, '')
+    s = s.replace(/[^\d,.-]/g, '')
+    if (s.includes(',') && s.includes('.')) s = s.replace(/\./g, '').replace(',', '.')
+    else if (s.includes(',') && !s.includes('.')) s = s.replace(',', '.')
+    const n = parseFloat(s)
+    return n
+  }
+  return Number(value)
+}
+
 const extractModules = (input, depth = 0) => {
   if (depth > 2) return [];
   const parsed = parseJsonMaybe(input);
@@ -308,8 +324,22 @@ export default function CursoPreviewAlunoPage() {
       meta?.checkout_price,
     ]
     for (const c of candidates) {
-      const n = Number(c)
+      const n = parsePriceNumber(c)
       if (Number.isFinite(n) && n > 0) return n
+    }
+    const centsCandidates = [
+      courseRow?.price_cents,
+      courseRow?.priceCents,
+      courseRow?.course_price_cents,
+      courseRow?.coursePriceCents,
+      meta?.price_cents,
+      meta?.priceCents,
+      meta?.course_price_cents,
+      meta?.coursePriceCents,
+    ]
+    for (const c of centsCandidates) {
+      const n = Number(c)
+      if (Number.isFinite(n) && n > 0) return n / 100
     }
     return 0
   }, [courseRow, meta])

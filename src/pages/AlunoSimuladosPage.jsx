@@ -530,7 +530,7 @@ export default function AlunoSimuladosPage() {
   }
 
   return (
-    <div className="min-h-screen lg:h-screen w-full bg-[#EEF2FF] flex lg:overflow-hidden">
+    <div className="min-h-screen lg:h-screen w-full bg-[#EEF2FF] flex lg:overflow-hidden connekt-fade-in">
       {mobileNavOpen ? (
         <div className="lg:hidden fixed inset-0 z-[70]">
           <button

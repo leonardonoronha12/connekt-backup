@@ -88,6 +88,21 @@ function parseJsonMaybe(value) {
   try { return JSON.parse(value) } catch (_) { return null }
 }
 
+function parsePriceNumber(value) {
+  if (typeof value === 'number') return value
+  if (typeof value === 'string') {
+    let s = String(value || '').trim()
+    if (!s) return NaN
+    s = s.replace(/\s+/g, '')
+    s = s.replace(/^R\$\s*/i, '')
+    s = s.replace(/[^\d,.-]/g, '')
+    if (s.includes(',') && s.includes('.')) s = s.replace(/\./g, '').replace(',', '.')
+    else if (s.includes(',') && !s.includes('.')) s = s.replace(',', '.')
+    return parseFloat(s)
+  }
+  return Number(value)
+}
+
 function getCourseMeta(row) {
   const fromData = parseJsonMaybe(row?.data) || null
   const parsedModules = parseJsonMaybe(row?.modules) || null
@@ -110,8 +125,22 @@ function resolveCoursePriceNumber(courseRow) {
     meta?.checkout_price,
   ]
   for (const c of candidates) {
-    const n = Number(c)
+    const n = parsePriceNumber(c)
     if (Number.isFinite(n) && n > 0) return n
+  }
+  const centsCandidates = [
+    courseRow?.price_cents,
+    courseRow?.priceCents,
+    courseRow?.course_price_cents,
+    courseRow?.coursePriceCents,
+    meta?.price_cents,
+    meta?.priceCents,
+    meta?.course_price_cents,
+    meta?.coursePriceCents,
+  ]
+  for (const c of centsCandidates) {
+    const n = Number(c)
+    if (Number.isFinite(n) && n > 0) return n / 100
   }
   return 0
 }
