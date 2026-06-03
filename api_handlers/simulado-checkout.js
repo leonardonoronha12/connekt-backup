@@ -50,6 +50,18 @@ function formatValidUntil(dt) {
   return `${yyyy}-${mm}-${dd} ${hh}:${mi}`
 }
 
+async function fetchWithTimeout(url, init, timeoutMs = 25000) {
+  const controller = new AbortController()
+  const t = setTimeout(() => {
+    try { controller.abort() } catch (_) {}
+  }, Math.max(1, Number(timeoutMs || 0)))
+  try {
+    return await fetch(url, { ...(init || {}), signal: controller.signal })
+  } finally {
+    clearTimeout(t)
+  }
+}
+
 async function getGatewayAuthToken() {
   try {
     if (cachedAuth && cachedAuth.ts > Date.now() - 55 * 60_000) return cachedAuth.token
@@ -60,7 +72,7 @@ async function getGatewayAuthToken() {
     const url = `${String(GATEWAY_URL).replace(/\/$/, '')}/authentication/v2/auth`
     const headers = { 'x-api-key': GATEWAY_API_KEY, 'Content-Type': 'application/json', Accept: 'application/json' }
     const body = { authData: GATEWAY_AUTHDATA }
-    const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) })
+    const res = await fetchWithTimeout(url, { method: 'POST', headers, body: JSON.stringify(body) }, 15000)
     if (!res.ok) return null
     const data = await res.json().catch(() => ({}))
     const token = data?.auth_token || data?.token || data?.access_token || null
@@ -240,7 +252,7 @@ export default async function handler(req, res) {
           'x-api-key': GATEWAY_API_KEY,
           ...(selected.value ? { Authorization: selected.value } : {}),
         }
-        r = await fetch(requestUrl, { method: 'POST', headers, body: JSON.stringify(requestBody) })
+        r = await fetchWithTimeout(requestUrl, { method: 'POST', headers, body: JSON.stringify(requestBody) })
         payload = await r.json().catch(() => ({}))
         if (r.ok) break
       }
@@ -336,7 +348,7 @@ export default async function handler(req, res) {
           'x-api-key': GATEWAY_API_KEY,
           ...(selected.value ? { Authorization: selected.value } : {}),
         }
-        r = await fetch(requestUrl, { method: 'POST', headers, body: JSON.stringify(requestBody) })
+        r = await fetchWithTimeout(requestUrl, { method: 'POST', headers, body: JSON.stringify(requestBody) })
         payload = await r.json().catch(() => ({}))
         if (r.ok) break
       }
@@ -438,7 +450,7 @@ export default async function handler(req, res) {
           'x-api-key': GATEWAY_API_KEY,
           ...(selected.value ? { Authorization: selected.value } : {}),
         }
-        r = await fetch(requestUrl, { method: 'POST', headers, body: JSON.stringify(requestBody) })
+        r = await fetchWithTimeout(requestUrl, { method: 'POST', headers, body: JSON.stringify(requestBody) })
         payload = await r.json().catch(() => ({}))
         if (r.ok) break
       }
@@ -537,7 +549,7 @@ export default async function handler(req, res) {
         'x-api-key': GATEWAY_API_KEY,
         ...(selected.value ? { Authorization: selected.value } : {}),
       }
-      r = await fetch(requestUrl, { method: 'POST', headers, body: JSON.stringify(requestBody) })
+      r = await fetchWithTimeout(requestUrl, { method: 'POST', headers, body: JSON.stringify(requestBody) })
       payload = await r.json().catch(() => ({}))
       if (r.ok) break
     }

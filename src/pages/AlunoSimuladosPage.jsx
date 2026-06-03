@@ -530,7 +530,7 @@ export default function AlunoSimuladosPage() {
   }
 
   return (
-    <div className="min-h-screen lg:h-screen w-full bg-[#EEF2FF] flex lg:overflow-hidden connekt-fade-in">
+    <div className="min-h-screen lg:h-screen w-full bg-[#EEF2FF] flex lg:overflow-hidden">
       {mobileNavOpen ? (
         <div className="lg:hidden fixed inset-0 z-[70]">
           <button
@@ -635,7 +635,7 @@ export default function AlunoSimuladosPage() {
         </button>
         <Header />
         <main className="flex-1 overflow-y-auto">
-          <div className="min-h-full bg-[#F5F6FA]">
+          <div className="min-h-full bg-[#F5F6FA] connekt-fade-in">
             <div className="px-[22px] pt-12 pb-10">
               <div className="max-w-[1904px] mx-auto w-full">
                 <div className="relative w-full max-w-[1076px] mx-auto">

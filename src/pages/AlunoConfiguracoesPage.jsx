@@ -52,7 +52,7 @@ export default function AlunoConfiguracoesPage() {
   }
 
   return (
-    <div className="min-h-screen lg:h-screen w-full bg-[#EEF2FF] flex lg:overflow-hidden connekt-fade-in">
+    <div className="min-h-screen lg:h-screen w-full bg-[#EEF2FF] flex lg:overflow-hidden">
       {mobileNavOpen ? (
         <div className="lg:hidden fixed inset-0 z-[70]">
           <button
@@ -156,7 +156,7 @@ export default function AlunoConfiguracoesPage() {
           <Menu className="w-5 h-5 text-[#22252B]" />
         </button>
         <Header />
-        <main className="flex-1 overflow-y-auto">
+        <main className="flex-1 overflow-y-auto connekt-fade-in">
           <ConfiguracoesPage />
         </main>
       </div>

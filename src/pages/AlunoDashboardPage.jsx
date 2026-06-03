@@ -2087,23 +2087,34 @@ export default function AlunoDashboardPage() {
                     onScroll={updateMyCoursesScrollState}
                     className="mt-3 flex gap-4 overflow-x-auto pb-2 scrollbar-hide"
                   >
-                    {myCourses.map((c) => (
-                      <CourseCard
-                        key={c.id}
-                        cover={c.cover}
-                        title={c.title}
-                        progress={c.progress}
-                        onClick={async () => {
-                          let cid = c.courseId || null
-                          if (!cid) cid = isDemoStudent ? 'demo' : await resolveCourseIdByTitle(c.title)
-                          if (!cid) return
-                          const base = `/aluno/curso/${encodeURIComponent(String(cid))}`
-                          navigateTo(isDemoStudent ? `${base}?demo=1` : base)
-                        }}
-                      />
-                    ))}
+                    {loading ? (
+                      Array.from({ length: 4 }).map((_, idx) => (
+                        <div key={`course-skel-${idx}`} className="w-[252px] flex-shrink-0">
+                          <Skeleton className="w-[252px] h-[326px] rounded-[12px]" />
+                          <div className="mt-2">
+                            <Skeleton className="h-1.5 w-full rounded-full" />
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      myCourses.map((c) => (
+                        <CourseCard
+                          key={c.id}
+                          cover={c.cover}
+                          title={c.title}
+                          progress={c.progress}
+                          onClick={async () => {
+                            let cid = c.courseId || null
+                            if (!cid) cid = isDemoStudent ? 'demo' : await resolveCourseIdByTitle(c.title)
+                            if (!cid) return
+                            const base = `/aluno/curso/${encodeURIComponent(String(cid))}`
+                            navigateTo(isDemoStudent ? `${base}?demo=1` : base)
+                          }}
+                        />
+                      ))
+                    )}
                   </div>
-                  {activeProducerUserId && myCourses.length === 0 ? (
+                  {activeProducerUserId && !loading && myCourses.length === 0 ? (
                     <div className="mt-3 text-[12px] text-[#737780]">Nenhum curso encontrado para este produtor.</div>
                   ) : null}
                 </div>
@@ -2148,22 +2159,30 @@ export default function AlunoDashboardPage() {
                     onScroll={updateFeaturedScrollState}
                     className="mt-3 flex gap-4 overflow-x-auto pb-2 scrollbar-hide"
                   >
-                    {featuredCourses.map((c) => (
-                      <CourseCard
-                        key={c.id}
-                        cover={c.cover}
-                        title={c.title}
-                        progress={c.progress}
-                        locked
-                        onClick={async () => {
-                          let cid = c.courseId || null
-                          if (!cid) cid = isDemoStudent ? 'demo' : await resolveCourseIdByTitle(c.title)
-                          if (!cid) return
-                          const base = `/aluno/curso/${encodeURIComponent(String(cid))}`
-                          navigateTo(isDemoStudent ? `${base}?demo=1` : base)
-                        }}
-                      />
-                    ))}
+                    {loading ? (
+                      Array.from({ length: 4 }).map((_, idx) => (
+                        <div key={`featured-skel-${idx}`} className="w-[252px] flex-shrink-0">
+                          <Skeleton className="w-[252px] h-[326px] rounded-[12px]" />
+                        </div>
+                      ))
+                    ) : (
+                      featuredCourses.map((c) => (
+                        <CourseCard
+                          key={c.id}
+                          cover={c.cover}
+                          title={c.title}
+                          progress={c.progress}
+                          locked
+                          onClick={async () => {
+                            let cid = c.courseId || null
+                            if (!cid) cid = isDemoStudent ? 'demo' : await resolveCourseIdByTitle(c.title)
+                            if (!cid) return
+                            const base = `/aluno/curso/${encodeURIComponent(String(cid))}`
+                            navigateTo(isDemoStudent ? `${base}?demo=1` : base)
+                          }}
+                        />
+                      ))
+                    )}
                   </div>
                 </div>
 
