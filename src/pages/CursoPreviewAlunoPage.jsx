@@ -35,6 +35,26 @@ const parseJsonMaybe = (value) => {
 
 const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0;
 
+const withTimeout = (promise, ms) => new Promise((resolve, reject) => {
+  const t = setTimeout(() => reject(new Error('timeout')), Math.max(1, Number(ms || 0)))
+  Promise.resolve(promise).then(
+    (v) => { clearTimeout(t); resolve(v) },
+    (e) => { clearTimeout(t); reject(e) },
+  )
+})
+
+const fetchWithTimeout = async (url, init, timeoutMs = 25000) => {
+  const controller = new AbortController()
+  const t = setTimeout(() => {
+    try { controller.abort() } catch (_) {}
+  }, Math.max(1, Number(timeoutMs || 0)))
+  try {
+    return await fetch(url, { ...(init || {}), signal: controller.signal })
+  } finally {
+    clearTimeout(t)
+  }
+}
+
 const parsePriceNumber = (value) => {
   if (typeof value === 'number') return value
   if (typeof value === 'string') {
@@ -137,7 +157,7 @@ export default function CursoPreviewAlunoPage() {
 
   const getAccessToken = async () => {
     try {
-      const { data } = await supabase.auth.getSession()
+      const { data } = await withTimeout(supabase.auth.getSession(), 8000)
       return data?.session?.access_token || ''
     } catch (_) {
       return ''
@@ -434,7 +454,7 @@ export default function CursoPreviewAlunoPage() {
         setCheckoutError('Faça login para comprar.')
         return
       }
-      const r = await fetch('/api/simulado-checkout', {
+      const r = await fetchWithTimeout('/api/simulado-checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ type: 'course', courseId: String(courseId) }),
@@ -458,8 +478,14 @@ export default function CursoPreviewAlunoPage() {
       }
       const w = window.open(checkoutUrl, '_blank', 'noopener')
       if (!w) setCheckoutError('Seu navegador bloqueou a abertura do checkout. Permita pop-ups e tente novamente.')
-    } catch (_) {
-      setCheckoutError('Erro ao abrir checkout.')
+    } catch (e) {
+      const name = String(e?.name || '').toLowerCase()
+      const msg = String(e?.message || e || '').toLowerCase()
+      if (name.includes('abort') || msg.includes('aborted') || msg.includes('aborterror') || msg === 'timeout') {
+        setCheckoutError('O checkout demorou para responder. Tente novamente.')
+      } else {
+        setCheckoutError('Erro ao abrir checkout.')
+      }
     } finally {
       setCheckoutLoading(false)
     }
@@ -590,7 +616,7 @@ export default function CursoPreviewAlunoPage() {
         setModuleCheckoutError('Faça login para comprar.')
         return
       }
-      const r = await fetch('/api/simulado-checkout', {
+      const r = await fetchWithTimeout('/api/simulado-checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ type: 'module', courseId: String(courseId), moduleId: id }),
@@ -615,8 +641,14 @@ export default function CursoPreviewAlunoPage() {
       }
       const w = window.open(checkoutUrl, '_blank', 'noopener')
       if (!w) setModuleCheckoutError('Seu navegador bloqueou a abertura do checkout. Permita pop-ups e tente novamente.')
-    } catch (_) {
-      setModuleCheckoutError('Erro ao abrir checkout.')
+    } catch (e) {
+      const name = String(e?.name || '').toLowerCase()
+      const msg = String(e?.message || e || '').toLowerCase()
+      if (name.includes('abort') || msg.includes('aborted') || msg.includes('aborterror') || msg === 'timeout') {
+        setModuleCheckoutError('O checkout demorou para responder. Tente novamente.')
+      } else {
+        setModuleCheckoutError('Erro ao abrir checkout.')
+      }
     } finally {
       setModuleCheckoutLoading(false)
     }
