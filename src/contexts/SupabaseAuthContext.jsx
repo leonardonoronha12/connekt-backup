@@ -1002,17 +1002,27 @@ export const AuthProvider = ({ children }) => {
     } catch (_) {}
     let data = null
     let error = null
+    const attempt = async (timeoutMs) => {
+      const r = await withTimeout(supabase.auth.signInWithPassword({ email, password }), timeoutMs)
+      return { data: r?.data || null, error: r?.error || null }
+    }
     try {
-      const r = await withTimeout(supabase.auth.signInWithPassword({
-        email,
-        password,
-      }), 45000)
-      data = r?.data || null
-      error = r?.error || null
+      const r1 = await attempt(45000)
+      data = r1.data
+      error = r1.error
+      if (error && String(error?.message || '') === 'timeout') {
+        const r2 = await attempt(90000)
+        data = r2.data
+        error = r2.error
+      }
     } catch (e) {
       error = e
     }
     if (error) return { error }
+
+    if (!data?.session) {
+      return { error: { message: 'Não foi possível finalizar o login. Tente novamente.' } }
+    }
 
     try {
       const s = data?.session || null
