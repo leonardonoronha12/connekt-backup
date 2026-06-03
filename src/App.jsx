@@ -1076,7 +1076,7 @@ function AppContent() {
     return isAlunoFlow ? (isWhitelabelHost ? <LoginAlunoWhitelabelPage /> : <LoginAlunoPage />) : <LoginPage />
   }
 
-  if (loading) {
+  if (loading && !isPublicView) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
         <div className="bg-white rounded-[16px] shadow-sm border border-[#E3E4E5] px-8 py-7 flex flex-col items-center gap-3">
