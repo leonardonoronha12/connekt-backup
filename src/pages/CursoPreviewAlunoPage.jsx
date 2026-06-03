@@ -458,7 +458,7 @@ export default function CursoPreviewAlunoPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ type: 'course', courseId: String(courseId) }),
-      })
+      }, 70000)
       const body = await r.json().catch(() => ({}))
       if (!r.ok) {
         const msg = String(body?.message || body?.error || (body && typeof body === 'object' ? JSON.stringify(body) : '') || '').trim()
@@ -624,7 +624,7 @@ export default function CursoPreviewAlunoPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ type: 'module', courseId: String(courseId), moduleId: id }),
-      })
+      }, 70000)
       const body = await r.json().catch(() => ({}))
       if (!r.ok) {
         const msg = String(body?.message || body?.error || (body && typeof body === 'object' ? JSON.stringify(body) : '') || '').trim()
