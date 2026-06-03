@@ -230,7 +230,7 @@ export default function AlunoBancoDeQuestoesPage() {
 
   return (
     <AlunoLayout>
-      <div className="px-6 py-6">
+      <div className="px-6 py-6 connekt-fade-in">
         <div className="max-w-[1180px] mx-auto w-full flex flex-col gap-6">
           <div className="bg-white border border-[#E3E4E5] rounded-[12px] p-6 sm:p-8 overflow-hidden">
             <div className="grid grid-cols-1 lg:grid-cols-[1.05fr,1.15fr] gap-10 items-center">

@@ -4,6 +4,7 @@ import Header from '@/components/Header'
 import BrandLogo from '@/components/BrandLogo'
 import CourseFooter from '@/components/CourseFooter'
 import ProgressRingIcon from '@/components/ProgressRingIcon.jsx'
+import Skeleton from '@/components/ui/Skeleton.jsx'
 import { supabase } from '@/lib/supabaseClient'
 import { captureVideoFrameDataUrl } from '@/lib/videoThumb'
 import { useAuth } from '@/contexts/SupabaseAuthContext'
@@ -35,6 +36,21 @@ function getCourseMeta(row) {
   return { ...(fromModulesMeta || {}), ...(fromData || {}) }
 }
 
+function parsePriceNumber(value) {
+  if (typeof value === 'number') return value
+  if (typeof value === 'string') {
+    let s = String(value || '').trim()
+    if (!s) return NaN
+    s = s.replace(/\s+/g, '')
+    s = s.replace(/^R\$\s*/i, '')
+    s = s.replace(/[^\d,.-]/g, '')
+    if (s.includes(',') && s.includes('.')) s = s.replace(/\./g, '').replace(',', '.')
+    else if (s.includes(',') && !s.includes('.')) s = s.replace(',', '.')
+    return parseFloat(s)
+  }
+  return Number(value)
+}
+
 function resolveCoursePriceNumber(courseRow) {
   const meta = getCourseMeta(courseRow)
   const candidates = [
@@ -56,8 +72,22 @@ function resolveCoursePriceNumber(courseRow) {
     meta?.payment_value,
   ]
   for (const c of candidates) {
-    const n = Number(c)
+    const n = parsePriceNumber(c)
     if (Number.isFinite(n) && n > 0) return n
+  }
+  const centsCandidates = [
+    courseRow?.price_cents,
+    courseRow?.priceCents,
+    courseRow?.course_price_cents,
+    courseRow?.coursePriceCents,
+    meta?.price_cents,
+    meta?.priceCents,
+    meta?.course_price_cents,
+    meta?.coursePriceCents,
+  ]
+  for (const c of centsCandidates) {
+    const n = Number(c)
+    if (Number.isFinite(n) && n > 0) return n / 100
   }
   return 0
 }
@@ -2179,23 +2209,45 @@ export default function AlunoDashboardPage() {
                     onScroll={updateSimuladosScrollState}
                     className="mt-3 flex gap-4 overflow-x-auto pb-2 scrollbar-hide"
                   >
-                    {simulados.map((s) => (
-                      <SimuladoCard
-                        key={s.id}
-                        title={s.title}
-                        progress={s.progress}
-                        isPaid={s.is_paid ?? s.isPaid}
-                        price={s.price}
-                        onClick={() => {
-                          const demoSuffix = isDemoStudent ? '&demo=1' : ''
-                          navigateTo(`/aluno/simulados/acesso?simId=${encodeURIComponent(String(s.id))}${demoSuffix}`)
-                        }}
-                      />
-                    ))}
+                    {producerSimuladosLoading ? (
+                      Array.from({ length: 4 }).map((_, idx) => (
+                        <div key={`sim-skel-${idx}`} className="w-[252px] h-[230px] flex-shrink-0 rounded-[4px] border border-[#E3E4E5] bg-white p-4">
+                          <div className="flex items-start justify-between">
+                            <Skeleton className="w-[85px] h-[85px] rounded-md" />
+                            <div className="flex flex-col items-end gap-4">
+                              <Skeleton className="w-[80px] h-[18px] rounded-[54px]" />
+                              <Skeleton className="w-[80px] h-[18px] rounded-[54px]" />
+                            </div>
+                          </div>
+                          <div className="mt-3 space-y-2">
+                            <Skeleton className="h-[14px] w-[170px] rounded" />
+                            <Skeleton className="h-[10px] w-[120px] rounded" />
+                          </div>
+                          <div className="mt-auto pt-6 flex items-center justify-between">
+                            <Skeleton className="h-[10px] w-[120px] rounded" />
+                            <Skeleton className="w-[36px] h-[36px] rounded-full" />
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      simulados.map((s) => (
+                        <SimuladoCard
+                          key={s.id}
+                          title={s.title}
+                          progress={s.progress}
+                          isPaid={s.is_paid ?? s.isPaid}
+                          price={s.price}
+                          onClick={() => {
+                            const demoSuffix = isDemoStudent ? '&demo=1' : ''
+                            navigateTo(`/aluno/simulados/acesso?simId=${encodeURIComponent(String(s.id))}${demoSuffix}`)
+                          }}
+                        />
+                      ))
+                    )}
                   </div>
                   {activeProducerUserId && simulados.length === 0 ? (
                     <div className="mt-3 text-[12px] text-[#737780]">
-                      {producerSimuladosLoading ? 'Carregando simulados…' : 'Nenhum simulado encontrado para este produtor.'}
+                      {producerSimuladosLoading ? '' : 'Nenhum simulado encontrado para este produtor.'}
                     </div>
                   ) : null}
                 </div>
