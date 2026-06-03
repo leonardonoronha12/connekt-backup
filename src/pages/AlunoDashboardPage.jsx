@@ -29,6 +29,22 @@ function safeLsGet(key) {
   try { return String(localStorage.getItem(String(key)) || '') } catch (_) { return '' }
 }
 
+function safeSsGet(key) {
+  if (!key) return ''
+  try { return String(sessionStorage.getItem(String(key)) || '') } catch (_) { return '' }
+}
+
+function safeSsSet(key, value) {
+  if (!key) return
+  try { sessionStorage.setItem(String(key), String(value)) } catch (_) {}
+}
+
+function safeSsJsonGet(key) {
+  const raw = safeSsGet(key)
+  if (!raw) return null
+  try { return JSON.parse(raw) } catch (_) { return null }
+}
+
 function getCourseMeta(row) {
   const fromData = parseJsonMaybe(row?.data) || null
   const parsedModules = parseJsonMaybe(row?.modules) || null
@@ -880,6 +896,7 @@ export default function AlunoDashboardPage() {
   const [loading, setLoading] = useState(true)
   const [student, setStudent] = useState(null)
   const [producerCourses, setProducerCourses] = useState([])
+  const [producerCoursesLoading, setProducerCoursesLoading] = useState(false)
   const [producerSimulados, setProducerSimulados] = useState([])
   const [producerSimuladosLoading, setProducerSimuladosLoading] = useState(false)
   const [ownershipTick, setOwnershipTick] = useState(0)
@@ -1001,10 +1018,16 @@ export default function AlunoDashboardPage() {
         if (active) setProducerCourses([])
         return
       }
+      const cacheKey = `connekt_producer_courses_cache:${pid}`
+      const cached = safeSsJsonGet(cacheKey)
+      const cachedList = Array.isArray(cached?.data) ? cached.data : null
+      const isFresh = Number.isFinite(Number(cached?.ts)) && (Date.now() - Number(cached.ts)) < 5 * 60 * 1000
+      if (active && cachedList && isFresh) setProducerCourses(cachedList)
+      if (active) setProducerCoursesLoading(!(cachedList && isFresh))
       try {
         const { data, error } = await supabase
           .from('courses')
-          .select('id,title,cover_image_url,promo_video_url,module_layout_image_url,modules,data,user_id,created_at,status')
+          .select('id,title,cover_image_url,module_layout_image_url,data,user_id,created_at,status')
           .eq('user_id', pid)
           .order('created_at', { ascending: false })
           .limit(200)
@@ -1014,18 +1037,20 @@ export default function AlunoDashboardPage() {
         if (list.length === 0) {
           try {
             const token = await getAccessToken()
-            const r = await fetch(`/api/producer?type=courses&producerId=${encodeURIComponent(pid)}`, {
+            const r = await fetch(`/api/producer?type=courses&lite=1&producerId=${encodeURIComponent(pid)}`, {
               headers: token ? { Authorization: `Bearer ${token}` } : {},
             })
             const body = await r.json().catch(() => ({}))
             if (!active) return
             if (r.ok && Array.isArray(body?.data) && body.data.length > 0) {
               setProducerCourses(body.data)
+              safeSsSet(cacheKey, JSON.stringify({ ts: Date.now(), data: body.data }))
               return
             }
           } catch (_) {}
         }
         setProducerCourses(list)
+        safeSsSet(cacheKey, JSON.stringify({ ts: Date.now(), data: list }))
       } catch (e) {
         if (!active) return
         if (!isBlockedRead(e)) {
@@ -1034,7 +1059,7 @@ export default function AlunoDashboardPage() {
         }
         try {
           const token = await getAccessToken()
-          const r = await fetch(`/api/producer?type=courses&producerId=${encodeURIComponent(pid)}`, {
+          const r = await fetch(`/api/producer?type=courses&lite=1&producerId=${encodeURIComponent(pid)}`, {
             headers: token ? { Authorization: `Bearer ${token}` } : {},
           })
           const body = await r.json().catch(() => ({}))
@@ -1043,11 +1068,15 @@ export default function AlunoDashboardPage() {
             setProducerCourses([])
             return
           }
-          setProducerCourses(Array.isArray(body?.data) ? body.data : [])
+          const next = Array.isArray(body?.data) ? body.data : []
+          setProducerCourses(next)
+          safeSsSet(cacheKey, JSON.stringify({ ts: Date.now(), data: next }))
         } catch (_) {
           if (!active) return
           setProducerCourses([])
         }
+      } finally {
+        if (active) setProducerCoursesLoading(false)
       }
     }
     run()
@@ -1501,40 +1530,24 @@ export default function AlunoDashboardPage() {
   }
 
   useEffect(() => {
-    let active = true
-    const run = async () => {
-      try {
-        let q = supabase
-          .from('courses')
-          .select('id,title,cover_image_url,data,modules,module_layout_image_url,user_id')
-          .limit(200)
-        if (activeProducerUserId) q = q.eq('user_id', activeProducerUserId)
-        const { data, error } = await q
-        const list = !error && Array.isArray(data) ? data : []
-        let rows = list
-        if (rows.length === 0 && activeProducerUserId) {
-          try {
-            const token = await getAccessToken()
-            const r = await fetch(`/api/producer?type=courses&producerId=${encodeURIComponent(String(activeProducerUserId))}`, {
-              headers: token ? { Authorization: `Bearer ${token}` } : {},
-            })
-            const body = await r.json().catch(() => ({}))
-            if (active && r.ok && Array.isArray(body?.data) && body.data.length > 0) rows = body.data
-          } catch (_) {}
-        }
-        const map = {}
-        for (const row of Array.isArray(rows) ? rows : []) {
-          const t = String(row?.title || '').trim().toLowerCase()
-          if (!t) continue
-          const url = deriveCourseCoverUrl(row)
-          if (url) map[t] = url
-        }
-        if (active) setProducerCoversByTitle(map)
-      } catch (_) {}
+    const map = {}
+    if (activeProducerUserId) {
+      for (const row of Array.isArray(producerCourses) ? producerCourses : []) {
+        const t = String(row?.title || '').trim().toLowerCase()
+        if (!t) continue
+        const url = deriveCourseCoverUrl(row)
+        if (url) map[t] = url
+      }
+    } else {
+      for (const c of Array.isArray(student?.courses) ? student.courses : []) {
+        const t = String(c?.course_name || '').trim().toLowerCase()
+        if (!t) continue
+        const url = toPublicCoursesMediaUrl(c?.cover_image_url) || c?.cover_image_url || null
+        if (url) map[t] = url
+      }
     }
-    run()
-    return () => { active = false }
-  }, [activeProducerUserId])
+    setProducerCoversByTitle(map)
+  }, [activeProducerUserId, producerCourses, student?.courses])
 
   const connektCourseCoverOptions = useMemo(() => {
     const svgToDataUrl = (svg) => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
@@ -1806,6 +1819,7 @@ export default function AlunoDashboardPage() {
   }, [activeProducerUserId, producerSimulados, producerSimuladosLoading])
 
   const currentPath = typeof window !== 'undefined' ? window.location.pathname : '/aluno'
+  const coursesLoading = activeProducerUserId ? producerCoursesLoading : loading
 
   useEffect(() => {
     if (!mobileNavOpen && !simuladosModalOpen && !myCoursesModalOpen && !featuredModalOpen) return
@@ -2017,30 +2031,38 @@ export default function AlunoDashboardPage() {
                     onScroll={updateContinueScrollState}
                     className="mt-3 flex gap-4 overflow-x-auto pb-2 scrollbar-hide"
                   >
-                    {continueItems.map((it) => (
-                      <ContinueCard
-                        key={it.id}
-                        cover={it.cover}
-                        category={it.category}
-                        title={it.title}
-                        progress={it.progress}
-                        lessonsDone={it.lessonsDone}
-                        lessonsTotal={it.lessonsTotal}
-                        onClick={async () => {
-                          let cid = it.courseId || null
-                          if (!cid) cid = isDemoStudent ? 'demo' : await resolveCourseIdByTitle(it.courseTitle || it.category)
-                          if (!cid) return
-                          const qs = new URLSearchParams()
-                          qs.set('courseId', String(cid))
-                          if (it.moduleId) qs.set('moduleId', String(it.moduleId))
-                          if (it.lessonId) qs.set('lessonId', String(it.lessonId))
-                          if (isDemoStudent) qs.set('demo', '1')
-                          navigateTo(`/aluno/aula?${qs.toString()}`)
-                        }}
-                      />
-                    ))}
+                    {coursesLoading ? (
+                      Array.from({ length: 3 }).map((_, idx) => (
+                        <div key={`continue-skel-${idx}`} className="w-[332px] flex-shrink-0">
+                          <Skeleton className="w-[332px] h-[204px] rounded-[14px]" />
+                        </div>
+                      ))
+                    ) : (
+                      continueItems.map((it) => (
+                        <ContinueCard
+                          key={it.id}
+                          cover={it.cover}
+                          category={it.category}
+                          title={it.title}
+                          progress={it.progress}
+                          lessonsDone={it.lessonsDone}
+                          lessonsTotal={it.lessonsTotal}
+                          onClick={async () => {
+                            let cid = it.courseId || null
+                            if (!cid) cid = isDemoStudent ? 'demo' : await resolveCourseIdByTitle(it.courseTitle || it.category)
+                            if (!cid) return
+                            const qs = new URLSearchParams()
+                            qs.set('courseId', String(cid))
+                            if (it.moduleId) qs.set('moduleId', String(it.moduleId))
+                            if (it.lessonId) qs.set('lessonId', String(it.lessonId))
+                            if (isDemoStudent) qs.set('demo', '1')
+                            navigateTo(`/aluno/aula?${qs.toString()}`)
+                          }}
+                        />
+                      ))
+                    )}
                   </div>
-                  {activeProducerUserId && continueItems.length === 0 ? (
+                  {activeProducerUserId && !coursesLoading && continueItems.length === 0 ? (
                     <div className="mt-3 text-[12px] text-[#737780]">Nenhum curso encontrado para este produtor.</div>
                   ) : null}
                 </div>
@@ -2087,7 +2109,7 @@ export default function AlunoDashboardPage() {
                     onScroll={updateMyCoursesScrollState}
                     className="mt-3 flex gap-4 overflow-x-auto pb-2 scrollbar-hide"
                   >
-                    {loading ? (
+                    {coursesLoading ? (
                       Array.from({ length: 4 }).map((_, idx) => (
                         <div key={`course-skel-${idx}`} className="w-[252px] flex-shrink-0">
                           <Skeleton className="w-[252px] h-[326px] rounded-[12px]" />
@@ -2114,7 +2136,7 @@ export default function AlunoDashboardPage() {
                       ))
                     )}
                   </div>
-                  {activeProducerUserId && !loading && myCourses.length === 0 ? (
+                  {activeProducerUserId && !coursesLoading && myCourses.length === 0 ? (
                     <div className="mt-3 text-[12px] text-[#737780]">Nenhum curso encontrado para este produtor.</div>
                   ) : null}
                 </div>
@@ -2159,7 +2181,7 @@ export default function AlunoDashboardPage() {
                     onScroll={updateFeaturedScrollState}
                     className="mt-3 flex gap-4 overflow-x-auto pb-2 scrollbar-hide"
                   >
-                    {loading ? (
+                    {coursesLoading ? (
                       Array.from({ length: 4 }).map((_, idx) => (
                         <div key={`featured-skel-${idx}`} className="w-[252px] flex-shrink-0">
                           <Skeleton className="w-[252px] h-[326px] rounded-[12px]" />
