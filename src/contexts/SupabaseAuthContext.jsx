@@ -30,6 +30,14 @@ function decodeJwtPayload(token) {
   }
 }
 
+function isJwtExpiredSoon(token, leewayMs = 60000) {
+  const payload = decodeJwtPayload(token)
+  const exp = Number(payload?.exp || 0)
+  if (!Number.isFinite(exp) || exp <= 0) return true
+  const expMs = exp * 1000
+  return Date.now() + Math.max(0, Number(leewayMs) || 0) >= expMs
+}
+
 function getAuthRedirectOrigin() {
   const readEnvUrl = () => {
     try {
@@ -217,11 +225,16 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     if (!loading) return
     const t = window.setTimeout(() => {
+      try {
+        const stored = tryReadStoredSession()
+        if (stored && stored.user && stored.access_token && !isJwtExpiredSoon(stored.access_token)) {
+          handleSession(stored)
+          return
+        }
+      } catch (_) {}
       setLoading(false)
-    }, 20000)
-    return () => {
-      window.clearTimeout(t)
-    }
+    }, 25000)
+    return () => { window.clearTimeout(t) }
   }, [loading])
 
   const tryReadStoredSession = useCallback(() => {
@@ -495,6 +508,12 @@ export const AuthProvider = ({ children }) => {
           return
         }
         try {
+          const stored = tryReadStoredSession()
+          if (stored && stored.user && stored.access_token && !isJwtExpiredSoon(stored.access_token)) {
+            handleSession(stored)
+          }
+        } catch (_) {}
+        try {
           const h = String(window.location.hash || '').toLowerCase()
           const hasHashTokens = h.includes('sb_at=') || h.includes('sb_rt=') || h.includes('access_token=') || h.includes('refresh_token=')
           const isHashInProgress = (() => {
@@ -503,7 +522,16 @@ export const AuthProvider = ({ children }) => {
           if (hasHashTokens || isHashInProgress) return
         } catch (_) {}
         const { data: { session: currentSession } } = await withTimeout(supabase.auth.getSession(), 12000);
-        handleSession(currentSession);
+        if (currentSession) {
+          handleSession(currentSession)
+          return
+        }
+        const stored = tryReadStoredSession()
+        if (stored && stored.user && stored.access_token && !isJwtExpiredSoon(stored.access_token)) {
+          handleSession(stored)
+          return
+        }
+        handleSession(null)
       } catch (e) {
         const msg = (e && (e.message || e.error_description || e.msg)) ? (e.message || e.error_description || e.msg) : String(e);
         const msgLower = String(msg || '').toLowerCase()
@@ -514,35 +542,42 @@ export const AuthProvider = ({ children }) => {
           msgLower.includes('err_network') ||
           msgLower.includes('network') ||
           msgLower.includes('timeout');
-        const isInvalidRefresh = msg.toLowerCase().includes('invalid refresh token');
+        const isInvalidRefresh =
+          msgLower.includes('invalid refresh token') ||
+          (msgLower.includes('refresh token') && (msgLower.includes('expired') || msgLower.includes('not found') || msgLower.includes('missing') || msgLower.includes('invalid_grant') || msgLower.includes('invalid grant')))
         if (isNetworkError) {
           const stored = tryReadStoredSession()
           handleSession(stored || null)
           return
         }
+        const stored = tryReadStoredSession()
+        if (stored && stored.user && stored.access_token && !isJwtExpiredSoon(stored.access_token)) {
+          handleSession(stored)
+          return
+        }
         if (!isInvalidRefresh) {
           console.error("Error getting session:", e);
-        } else {
-          console.warn("Sessão inválida: refresh token ausente/expirado. Efetuando signOut e limpando storage.");
+          handleSession(null)
+          return
         }
-        // Sessão inválida/expirada ou refresh falhou: limpar storage e garantir signOut
+        console.warn("Sessão inválida: refresh token ausente/expirado. Efetuando signOut e limpando storage.");
         try {
           const clean = (storage) => {
             if (!storage) return
             try {
-              const keys = Object.keys(storage || {});
+              const keys = Object.keys(storage || {})
               keys
                 .filter((k) => k.startsWith('sb-') && k.endsWith('-auth-token'))
                 .forEach((k) => {
-                  try { storage.removeItem(k); } catch (_) {}
-                });
-              try { storage.removeItem('supabase.auth.token'); } catch (_) {}
+                  try { storage.removeItem(k) } catch (_) {}
+                })
+              try { storage.removeItem('supabase.auth.token') } catch (_) {}
             } catch (_) {}
           }
           clean(localStorage)
           clean(sessionStorage)
         } catch (_) {}
-        handleSession(null);
+        handleSession(null)
       }
     };
 
