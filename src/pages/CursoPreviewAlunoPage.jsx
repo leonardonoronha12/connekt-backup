@@ -43,6 +43,14 @@ const withTimeout = (promise, ms) => new Promise((resolve, reject) => {
   )
 })
 
+const stringifyMaybe = (v) => {
+  if (typeof v === 'string') return v
+  if (v && typeof v === 'object') {
+    try { return JSON.stringify(v) } catch (_) { return '[object]' }
+  }
+  try { return String(v ?? '') } catch (_) { return '' }
+}
+
 const fetchWithTimeout = async (url, init, timeoutMs = 25000) => {
   const controller = new AbortController()
   const t = setTimeout(() => {
@@ -461,7 +469,7 @@ export default function CursoPreviewAlunoPage() {
       }, 70000)
       const body = await r.json().catch(() => ({}))
       if (!r.ok) {
-        const msg = String(body?.message || body?.error || (body && typeof body === 'object' ? JSON.stringify(body) : '') || '').trim()
+        const msg = String(stringifyMaybe(body?.message) || stringifyMaybe(body?.error) || (body && typeof body === 'object' ? JSON.stringify(body) : '') || '').trim()
         const host = String(body?.gateway_host || '').trim()
         const detail = String(body?.details || '').trim()
         const suffix = host ? ` (${host})` : ''
@@ -633,7 +641,7 @@ export default function CursoPreviewAlunoPage() {
       }, 70000)
       const body = await r.json().catch(() => ({}))
       if (!r.ok) {
-        const msg = String(body?.message || body?.error || (body && typeof body === 'object' ? JSON.stringify(body) : '') || '').trim()
+        const msg = String(stringifyMaybe(body?.message) || stringifyMaybe(body?.error) || (body && typeof body === 'object' ? JSON.stringify(body) : '') || '').trim()
         const host = String(body?.gateway_host || '').trim()
         const detail = String(body?.details || '').trim()
         const suffix = host ? ` (${host})` : ''

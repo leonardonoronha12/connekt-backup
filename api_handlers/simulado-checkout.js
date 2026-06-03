@@ -341,7 +341,7 @@ export default async function handler(req, res) {
           error: 'create_paymentlink_failed',
           message: 'Falha ao criar o checkout no gateway.',
           status: lastStatus || r?.status || 0,
-          gateway_message: pickGatewayErrorMessage(payload, ''),
+          gateway_message: pickGatewayErrorMessage(payload, lastText || ''),
           gateway_response: lastText ? String(lastText).slice(0, 800) : '',
           ...meta,
         })
@@ -450,7 +450,7 @@ export default async function handler(req, res) {
           error: 'create_paymentlink_failed',
           message: 'Falha ao criar o checkout no gateway.',
           status: lastStatus || r?.status || 0,
-          gateway_message: pickGatewayErrorMessage(payload, ''),
+          gateway_message: pickGatewayErrorMessage(payload, lastText || ''),
           gateway_response: lastText ? String(lastText).slice(0, 800) : '',
           ...meta,
         })
@@ -565,7 +565,7 @@ export default async function handler(req, res) {
           error: 'create_paymentlink_failed',
           message: 'Falha ao criar o checkout no gateway.',
           status: lastStatus || r?.status || 0,
-          gateway_message: pickGatewayErrorMessage(payload, ''),
+          gateway_message: pickGatewayErrorMessage(payload, lastText || ''),
           gateway_response: lastText ? String(lastText).slice(0, 800) : '',
           ...meta,
         })
@@ -677,7 +677,7 @@ export default async function handler(req, res) {
         error: 'create_paymentlink_failed',
         message: 'Falha ao criar o checkout no gateway.',
         status: lastStatus || r?.status || 0,
-        gateway_message: pickGatewayErrorMessage(payload, ''),
+        gateway_message: pickGatewayErrorMessage(payload, lastText || ''),
         gateway_response: lastText ? String(lastText).slice(0, 800) : '',
         ...meta,
       })
