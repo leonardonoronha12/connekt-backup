@@ -465,8 +465,14 @@ export default function CursoPreviewAlunoPage() {
         const host = String(body?.gateway_host || '').trim()
         const detail = String(body?.details || '').trim()
         const suffix = host ? ` (${host})` : ''
-        const extra = detail ? ` ${detail}` : ''
-        setCheckoutError((msg ? `${msg}${suffix}${extra}` : '') || 'Não foi possível abrir o checkout.')
+        const gatewayMsg = String(body?.gateway_message || '').trim()
+        const status = String(body?.status || '').trim()
+        const extra = [
+          status ? `status=${status}` : '',
+          gatewayMsg ? `gateway=${gatewayMsg}` : '',
+          detail ? detail : '',
+        ].filter(Boolean).join(' • ')
+        setCheckoutError((msg ? `${msg}${suffix}${extra ? ` (${extra})` : ''}` : '') || 'Não foi possível abrir o checkout.')
         return
       }
       const checkoutUrl = String(body?.checkout_url || '').trim()
@@ -631,8 +637,14 @@ export default function CursoPreviewAlunoPage() {
         const host = String(body?.gateway_host || '').trim()
         const detail = String(body?.details || '').trim()
         const suffix = host ? ` (${host})` : ''
-        const extra = detail ? ` ${detail}` : ''
-        setModuleCheckoutError((msg ? `${msg}${suffix}${extra}` : '') || 'Não foi possível abrir o checkout.')
+        const gatewayMsg = String(body?.gateway_message || '').trim()
+        const status = String(body?.status || '').trim()
+        const extra = [
+          status ? `status=${status}` : '',
+          gatewayMsg ? `gateway=${gatewayMsg}` : '',
+          detail ? detail : '',
+        ].filter(Boolean).join(' • ')
+        setModuleCheckoutError((msg ? `${msg}${suffix}${extra ? ` (${extra})` : ''}` : '') || 'Não foi possível abrir o checkout.')
         return
       }
       const checkoutUrl = String(body?.checkout_url || '').trim()
