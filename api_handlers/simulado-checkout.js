@@ -1,13 +1,36 @@
 import { getSupabaseAdmin, getAuthedUser, readRawBody, json, isUuid } from '../src/server/supabaseAdmin.js'
 
-const GATEWAY_URL = process.env.VITE_PLANS_GATEWAY_URL || process.env.PLANS_GATEWAY_URL || ''
+const RAW_GATEWAY_URL = process.env.VITE_PLANS_GATEWAY_URL || process.env.PLANS_GATEWAY_URL || ''
+const RAW_GATEWAY_URL_FALLBACK = process.env.VITE_PLANS_GATEWAY_URL_FALLBACK || process.env.PLANS_GATEWAY_URL_FALLBACK || ''
 const GATEWAY_API_KEY = process.env.VITE_PLANS_GATEWAY_API_KEY || process.env.PLANS_GATEWAY_API_KEY || ''
 const GATEWAY_AUTH = process.env.VITE_PLANS_GATEWAY_AUTH || process.env.PLANS_GATEWAY_AUTH || ''
 const GATEWAY_AUTHDATA = process.env.VITE_PLANS_GATEWAY_AUTHDATA || process.env.PLANS_GATEWAY_AUTHDATA || ''
 
 const APP_BASE_URL = process.env.APP_BASE_URL || process.env.VITE_APP_BASE_URL || ''
 
-let cachedAuth = null
+const normalizeGatewayBaseUrl = (raw) => {
+  const v = String(raw || '').trim()
+  if (!v) return ''
+  try {
+    const u = new URL(v)
+    const host = String(u.hostname || '').toLowerCase()
+    const p = String(u.pathname || '')
+    if (host.endsWith('mygateway.com.br') && (p === '/' || p === '')) {
+      u.pathname = '/connekt'
+    }
+    return u.toString().replace(/\/+$/, '')
+  } catch (_) {
+    return ''
+  }
+}
+
+const GATEWAY_BASE_URLS = Array.from(new Set([
+  normalizeGatewayBaseUrl(RAW_GATEWAY_URL),
+  normalizeGatewayBaseUrl(RAW_GATEWAY_URL_FALLBACK),
+  normalizeGatewayBaseUrl(process.env.MYG_BASE_URL || ''),
+])).filter(Boolean)
+
+const cachedAuth = new Map()
 
 function resolveAppBaseUrl(req) {
   const candidates = [
@@ -185,25 +208,53 @@ async function createPaymentLink({ requestUrl, requestBody, authHeaders }) {
   }
 }
 
-async function getGatewayAuthToken() {
+async function getGatewayAuthTokenForBase(gatewayBaseUrl) {
+  const base = String(gatewayBaseUrl || '').trim()
+  if (!base) return null
   try {
-    if (cachedAuth && cachedAuth.ts > Date.now() - 55 * 60_000) return cachedAuth.token
+    const prev = cachedAuth.get(base) || null
+    if (prev && prev.ts > Date.now() - 55 * 60_000) return prev.token
   } catch (_) {}
 
-  if (!GATEWAY_URL || !GATEWAY_API_KEY || !GATEWAY_AUTHDATA) return null
+  if (!GATEWAY_API_KEY || !GATEWAY_AUTHDATA) return null
   try {
-    const url = `${String(GATEWAY_URL).replace(/\/$/, '')}/authentication/v2/auth`
+    const url = `${String(base).replace(/\/$/, '')}/authentication/v2/auth`
     const headers = { 'x-api-key': GATEWAY_API_KEY, 'Content-Type': 'application/json', Accept: 'application/json' }
     const body = { authData: GATEWAY_AUTHDATA }
     const res = await fetchWithTimeout(url, { method: 'POST', headers, body: JSON.stringify(body) }, 20000)
     if (!res.ok) return null
     const data = await res.json().catch(() => ({}))
     const token = data?.auth_token || data?.token || data?.access_token || null
-    if (token) cachedAuth = { token, ts: Date.now() }
+    if (token) cachedAuth.set(base, { token, ts: Date.now() })
     return token
   } catch (_) {
     return null
   }
+}
+
+async function createPaymentLinkAcrossGateways({ requestBody }) {
+  let last = null
+  for (const baseUrl of GATEWAY_BASE_URLS) {
+    const requestUrl = `${String(baseUrl).replace(/\/$/, '')}/payments/v1/paymentlink`
+    const token = await getGatewayAuthTokenForBase(baseUrl)
+    const basicFromEnv = (GATEWAY_AUTH && GATEWAY_AUTH.startsWith('Basic ')) ? GATEWAY_AUTH : (GATEWAY_AUTHDATA ? `Basic ${GATEWAY_AUTHDATA}` : null)
+    const envAuthFallback = (!token && !basicFromEnv && GATEWAY_AUTH) ? GATEWAY_AUTH : null
+    const authHeaders = []
+    if (token) authHeaders.push(normalizeBearerToken(token))
+    if (basicFromEnv) authHeaders.push(String(basicFromEnv))
+    if (envAuthFallback) authHeaders.push(String(envAuthFallback))
+
+    const out = await createPaymentLink({ requestUrl, requestBody, authHeaders })
+    const metaUrl = requestUrl
+    const normalized = { ...(out || {}), requestUrl: metaUrl }
+    if (normalized?.ok) return normalized
+    if (normalized?.exception) {
+      last = normalized
+      continue
+    }
+    last = normalized
+  }
+  return last || { ok: false, lastStatus: 0, payload: null, lastText: '', requestUrl: '' }
 }
 
 function appendQueryParam(rawUrl, key, value) {
@@ -299,7 +350,7 @@ export default async function handler(req, res) {
   const auth = await getAuthedUser(admin, req)
   if (!auth.user) return json(res, 401, { error: auth.error || 'unauthorized', message: 'Sessão inválida ou expirada. Faça login novamente.' })
 
-  if (!GATEWAY_URL) return json(res, 501, { error: 'gateway_not_configured', message: 'Checkout indisponível: gateway não configurado (VITE_PLANS_GATEWAY_URL).' })
+  if (!GATEWAY_BASE_URLS.length) return json(res, 501, { error: 'gateway_not_configured', message: 'Checkout indisponível: gateway não configurado (VITE_PLANS_GATEWAY_URL).' })
   if (!GATEWAY_API_KEY) return json(res, 501, { error: 'gateway_not_configured', message: 'Checkout indisponível: gateway não configurado (VITE_PLANS_GATEWAY_API_KEY).' })
 
   try {
@@ -330,17 +381,8 @@ export default async function handler(req, res) {
       const amountCents = Math.round(priceNumber * 100)
       if (!amountCents || amountCents <= 0) return json(res, 400, { error: 'invalid_amount', message: 'Valor inválido do curso.' })
 
-      const requestUrl = `${String(GATEWAY_URL).replace(/\/$/, '')}/payments/v1/paymentlink`
       const validityHours = Number(process.env.VITE_PAYMENT_LINK_VALIDITY_HOURS || 48)
       const validUntilHuman = formatValidUntil(new Date(Date.now() + validityHours * 3600 * 1000))
-
-      const token = await getGatewayAuthToken()
-      const basicFromEnv = (GATEWAY_AUTH && GATEWAY_AUTH.startsWith('Basic ')) ? GATEWAY_AUTH : (GATEWAY_AUTHDATA ? `Basic ${GATEWAY_AUTHDATA}` : null)
-      const envAuthFallback = (!token && !basicFromEnv && GATEWAY_AUTH) ? GATEWAY_AUTH : null
-      const authHeaders = []
-      if (token) authHeaders.push(normalizeBearerToken(token))
-      if (basicFromEnv) authHeaders.push(String(basicFromEnv))
-      if (envAuthFallback) authHeaders.push(String(envAuthFallback))
 
       const acceptedTypesRaw = String(process.env.VITE_ACCEPTED_PAYMENTS_TYPE || 'ALL')
       const acceptedTypesList = acceptedTypesRaw.split(',').map((s) => s.trim()).filter(Boolean)
@@ -365,12 +407,12 @@ export default async function handler(req, res) {
         external_order_number: externalOrderNumber,
       }
 
-      const out = await createPaymentLink({ requestUrl, requestBody, authHeaders })
+      const out = await createPaymentLinkAcrossGateways({ requestBody })
+      const requestUrl = String(out?.requestUrl || '').trim()
       if (out?.exception) {
         const err = gatewayErrorPayload(out.exception, requestUrl)
         return json(res, err.status, err.body)
       }
-
       if (!out?.ok) {
         const meta = getGatewayMeta(requestUrl)
         return json(res, 502, {
@@ -419,17 +461,8 @@ export default async function handler(req, res) {
       const amountCents = Math.round(Number(moduleRow?.priceCents || 0))
       if (!paid || !(amountCents > 0)) return json(res, 400, { error: 'module_not_paid', message: 'Este módulo não está configurado como pago (defina visibilidade Paga ou Gratuita para alunos do curso e valor).' })
 
-      const requestUrl = `${String(GATEWAY_URL).replace(/\/$/, '')}/payments/v1/paymentlink`
       const validityHours = Number(process.env.VITE_PAYMENT_LINK_VALIDITY_HOURS || 48)
       const validUntilHuman = formatValidUntil(new Date(Date.now() + validityHours * 3600 * 1000))
-
-      const token = await getGatewayAuthToken()
-      const basicFromEnv = (GATEWAY_AUTH && GATEWAY_AUTH.startsWith('Basic ')) ? GATEWAY_AUTH : (GATEWAY_AUTHDATA ? `Basic ${GATEWAY_AUTHDATA}` : null)
-      const envAuthFallback = (!token && !basicFromEnv && GATEWAY_AUTH) ? GATEWAY_AUTH : null
-      const authHeaders = []
-      if (token) authHeaders.push(normalizeBearerToken(token))
-      if (basicFromEnv) authHeaders.push(String(basicFromEnv))
-      if (envAuthFallback) authHeaders.push(String(envAuthFallback))
 
       const acceptedTypesRaw = String(process.env.VITE_ACCEPTED_PAYMENTS_TYPE || 'ALL')
       const acceptedTypesList = acceptedTypesRaw.split(',').map((s) => s.trim()).filter(Boolean)
@@ -455,12 +488,12 @@ export default async function handler(req, res) {
         external_order_number: externalOrderNumber,
       }
 
-      const out = await createPaymentLink({ requestUrl, requestBody, authHeaders })
+      const out = await createPaymentLinkAcrossGateways({ requestBody })
+      const requestUrl = String(out?.requestUrl || '').trim()
       if (out?.exception) {
         const err = gatewayErrorPayload(out.exception, requestUrl)
         return json(res, err.status, err.body)
       }
-
       if (!out?.ok) {
         const meta = getGatewayMeta(requestUrl)
         return json(res, 502, {
@@ -514,17 +547,8 @@ export default async function handler(req, res) {
       const amountCents = Math.round(Number(lessonRow?.priceCents || 0))
       if (!paid || !(amountCents > 0)) return json(res, 400, { error: 'lesson_not_paid', message: 'Esta aula não está configurada como paga (defina visibilidade Paga ou Gratuita para alunos do curso e valor).' })
 
-      const requestUrl = `${String(GATEWAY_URL).replace(/\/$/, '')}/payments/v1/paymentlink`
       const validityHours = Number(process.env.VITE_PAYMENT_LINK_VALIDITY_HOURS || 48)
       const validUntilHuman = formatValidUntil(new Date(Date.now() + validityHours * 3600 * 1000))
-
-      const token = await getGatewayAuthToken()
-      const basicFromEnv = (GATEWAY_AUTH && GATEWAY_AUTH.startsWith('Basic ')) ? GATEWAY_AUTH : (GATEWAY_AUTHDATA ? `Basic ${GATEWAY_AUTHDATA}` : null)
-      const envAuthFallback = (!token && !basicFromEnv && GATEWAY_AUTH) ? GATEWAY_AUTH : null
-      const authHeaders = []
-      if (token) authHeaders.push(normalizeBearerToken(token))
-      if (basicFromEnv) authHeaders.push(String(basicFromEnv))
-      if (envAuthFallback) authHeaders.push(String(envAuthFallback))
 
       const acceptedTypesRaw = String(process.env.VITE_ACCEPTED_PAYMENTS_TYPE || 'ALL')
       const acceptedTypesList = acceptedTypesRaw.split(',').map((s) => s.trim()).filter(Boolean)
@@ -551,12 +575,12 @@ export default async function handler(req, res) {
         external_order_number: externalOrderNumber,
       }
 
-      const out = await createPaymentLink({ requestUrl, requestBody, authHeaders })
+      const out = await createPaymentLinkAcrossGateways({ requestBody })
+      const requestUrl = String(out?.requestUrl || '').trim()
       if (out?.exception) {
         const err = gatewayErrorPayload(out.exception, requestUrl)
         return json(res, err.status, err.body)
       }
-
       if (!out?.ok) {
         const meta = getGatewayMeta(requestUrl)
         return json(res, 502, {
@@ -610,17 +634,8 @@ export default async function handler(req, res) {
     const amountCents = Math.round(priceNumber * 100)
     if (!amountCents || amountCents <= 0) return json(res, 400, { error: 'invalid_amount', message: 'Valor inválido do simulado.' })
 
-    const requestUrl = `${String(GATEWAY_URL).replace(/\/$/, '')}/payments/v1/paymentlink`
     const validityHours = Number(process.env.VITE_PAYMENT_LINK_VALIDITY_HOURS || 48)
     const validUntilHuman = formatValidUntil(new Date(Date.now() + validityHours * 3600 * 1000))
-
-    const token = await getGatewayAuthToken()
-    const basicFromEnv = (GATEWAY_AUTH && GATEWAY_AUTH.startsWith('Basic ')) ? GATEWAY_AUTH : (GATEWAY_AUTHDATA ? `Basic ${GATEWAY_AUTHDATA}` : null)
-    const envAuthFallback = (!token && !basicFromEnv && GATEWAY_AUTH) ? GATEWAY_AUTH : null
-    const authHeaders = []
-    if (token) authHeaders.push(normalizeBearerToken(token))
-    if (basicFromEnv) authHeaders.push(String(basicFromEnv))
-    if (envAuthFallback) authHeaders.push(String(envAuthFallback))
 
     const acceptedTypesRaw = String(process.env.VITE_ACCEPTED_PAYMENTS_TYPE || 'ALL')
     const acceptedTypesList = acceptedTypesRaw.split(',').map((s) => s.trim()).filter(Boolean)
@@ -644,12 +659,12 @@ export default async function handler(req, res) {
       external_order_number: externalOrderNumber,
     }
 
-    const out = await createPaymentLink({ requestUrl, requestBody, authHeaders })
+    const out = await createPaymentLinkAcrossGateways({ requestBody })
+    const requestUrl = String(out?.requestUrl || '').trim()
     if (out?.exception) {
       const err = gatewayErrorPayload(out.exception, requestUrl)
       return json(res, err.status, err.body)
     }
-
     if (!out?.ok) {
       const meta = getGatewayMeta(requestUrl)
       return json(res, 502, {
