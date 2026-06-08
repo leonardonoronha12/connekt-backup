@@ -133,9 +133,9 @@ export default function DeviceLockPage() {
             </button>
             <button
               type="button"
-              disabled={isAwaiting || emailBusy || confirmBusy}
+              disabled={emailBusy || confirmBusy}
               onClick={async () => {
-                if (isAwaiting || emailBusy || confirmBusy) return
+                if (emailBusy || confirmBusy) return
                 setEmailBusy(true)
                 setFeedback('Enviando e-mail de confirmação…')
                 try {
@@ -148,9 +148,9 @@ export default function DeviceLockPage() {
                   setEmailBusy(false)
                 }
               }}
-              className={`w-full border border-[#E3E4E5] text-[#1E1B39] px-4 py-3 rounded-[8px] text-[14px] font-semibold hover:bg-[#F8FAFC] transition-colors ${(isAwaiting || emailBusy || confirmBusy) ? 'opacity-60 cursor-not-allowed' : ''}`}
+              className={`w-full border border-[#E3E4E5] text-[#1E1B39] px-4 py-3 rounded-[8px] text-[14px] font-semibold hover:bg-[#F8FAFC] transition-colors ${(emailBusy || confirmBusy) ? 'opacity-60 cursor-not-allowed' : ''}`}
             >
-              Enviar e-mail para confirmar
+              {isAwaiting ? 'Reenviar e-mail de confirmação' : 'Enviar e-mail para confirmar'}
             </button>
             <button
               type="button"

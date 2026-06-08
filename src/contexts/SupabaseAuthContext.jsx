@@ -1163,7 +1163,7 @@ export const AuthProvider = ({ children }) => {
     }
     try {
       if (mode === 'request') {
-        const req = await deviceSessionService.requestDeviceAccess()
+        const req = await withTimeout(deviceSessionService.requestDeviceAccess(), 15000)
         if (!req?.ok) return { ok: false, error: req?.error || 'request_failed' }
         setDeviceLock((prev) => ({
           ...(prev || {}),
@@ -1185,7 +1185,7 @@ export const AuthProvider = ({ children }) => {
     if (!userId) return { ok: false, error: 'missing_user' }
     if (!email) return { ok: false, error: 'missing_email' }
     try {
-      const requested = await deviceSessionService.requestDeviceAccessEmailApproval()
+      const requested = await withTimeout(deviceSessionService.requestDeviceAccessEmailApproval(), 15000)
       if (!requested?.ok) return { ok: false, error: requested?.error || 'request_failed' }
 
       const baseUrl = (() => {
@@ -1207,8 +1207,23 @@ export const AuthProvider = ({ children }) => {
         }
       })()
 
-      const { data } = await supabase.auth.getSession()
-      const accessToken = String(data?.session?.access_token || '').trim()
+      const accessToken = await (async () => {
+        try {
+          const direct = String(session?.access_token || '').trim()
+          if (direct && !isJwtExpiredSoon(direct)) return direct
+        } catch (_) {}
+        try {
+          const { data } = await withTimeout(supabase.auth.getSession(), 8000)
+          const t = String(data?.session?.access_token || '').trim()
+          if (t && !isJwtExpiredSoon(t)) return t
+        } catch (_) {}
+        try {
+          const stored = tryReadStoredSession()
+          const t = String(stored?.access_token || '').trim()
+          if (t && !isJwtExpiredSoon(t)) return t
+        } catch (_) {}
+        return ''
+      })()
       if (!accessToken) return { ok: false, error: 'missing_access_token' }
 
       const info = deviceSessionService.getDeviceInfo()
@@ -1217,6 +1232,8 @@ export const AuthProvider = ({ children }) => {
       const text = `Recebemos uma solicitação para acessar sua conta em ${deviceLabel}.\n\nPara confirmar este dispositivo, abra o link:\n${link}\n\nSe você não reconhece essa solicitação, ignore este e-mail.`
       const html = `<div style="font-family:Arial,sans-serif;line-height:1.5"><h2 style="margin:0 0 12px">Confirmar novo dispositivo</h2><p>Recebemos uma solicitação para acessar sua conta em <strong>${deviceLabel}</strong>.</p><p><a href="${link}" style="display:inline-block;padding:12px 16px;background:#0047BB;color:#fff;text-decoration:none;border-radius:8px;font-weight:700">Confirmar este dispositivo</a></p><p style="font-size:12px;color:#6B7280">Se você não reconhece essa solicitação, ignore este e-mail.</p></div>`
 
+      const controller = new AbortController()
+      const t = setTimeout(() => controller.abort(), 15000)
       const r = await fetch('/api/send-email', {
         method: 'POST',
         headers: {
@@ -1224,7 +1241,8 @@ export const AuthProvider = ({ children }) => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ to: email, subject, text, html }),
-      })
+        signal: controller.signal,
+      }).finally(() => clearTimeout(t))
       const body = await r.json().catch(() => ({}))
       if (!r.ok) return { ok: false, error: body?.error || body?.message || 'send_failed' }
 
@@ -1238,7 +1256,7 @@ export const AuthProvider = ({ children }) => {
     } catch (e) {
       return { ok: false, error: e?.message || String(e) }
     }
-  }, [session?.user?.id, session?.user?.email])
+  }, [session?.user?.id, session?.user?.email, session?.access_token, tryReadStoredSession])
 
   const confirmDeviceLockFromEmail = useCallback(async (token) => {
     const userId = session?.user?.id
