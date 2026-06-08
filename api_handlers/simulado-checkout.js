@@ -119,6 +119,25 @@ function pickGatewayErrorMessage(payload, fallback = '') {
   }
 }
 
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, Math.max(0, Number(ms || 0))))
+}
+
+function shouldRetryGatewayStatus(status) {
+  const s = Number(status || 0)
+  if (!Number.isFinite(s) || s <= 0) return false
+  if ([401, 403].includes(s)) return false
+  if (s >= 520 && s <= 529) return true
+  return [408, 425, 429, 500, 502, 503, 504].includes(s)
+}
+
+function gatewayFailureMessage(status) {
+  const s = Number(status || 0)
+  if (s >= 520 && s <= 529) return `Checkout indisponível: o gateway está fora do ar (Cloudflare ${s}).`
+  if (s === 504) return 'Checkout indisponível: o gateway demorou para responder.'
+  return 'Falha ao criar o checkout no gateway.'
+}
+
 async function readJsonOrText(res) {
   const text = await res.text().catch(() => '')
   const trimmed = String(text || '').trim()
@@ -127,6 +146,42 @@ async function readJsonOrText(res) {
     return { payload: JSON.parse(trimmed), text: trimmed }
   } catch (_) {
     return { payload: {}, text: trimmed.slice(0, 800) }
+  }
+}
+
+async function createPaymentLink({ requestUrl, requestBody, authHeaders }) {
+  let r = null
+  let payload = null
+  let lastText = ''
+  let lastStatus = 0
+
+  const headersBase = {
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+    'x-api-key': GATEWAY_API_KEY,
+  }
+
+  try {
+    for (const authHeader of (authHeaders.length ? authHeaders : [''])) {
+      const headers = {
+        ...headersBase,
+        ...(authHeader ? { Authorization: String(authHeader) } : {}),
+      }
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        r = await fetchWithTimeout(requestUrl, { method: 'POST', headers, body: JSON.stringify(requestBody) }, 35000)
+        lastStatus = r?.status || 0
+        const parsed = await readJsonOrText(r)
+        payload = parsed.payload || {}
+        lastText = parsed.text || ''
+        if (r.ok) return { ok: true, r, payload, lastText, lastStatus }
+        if ([401, 403].includes(Number(lastStatus || 0))) break
+        if (!shouldRetryGatewayStatus(lastStatus) || attempt === 1) break
+        await sleep(900 + Math.floor(Math.random() * 700))
+      }
+    }
+    return { ok: false, r, payload, lastText, lastStatus }
+  } catch (e) {
+    return { ok: false, exception: e, r, payload, lastText, lastStatus }
   }
 }
 
@@ -310,47 +365,28 @@ export default async function handler(req, res) {
         external_order_number: externalOrderNumber,
       }
 
-      let r = null
-      let payload = null
-      let lastText = ''
-      let lastStatus = 0
-      try {
-        for (const authHeader of (authHeaders.length ? authHeaders : [''])) {
-          const headers = {
-            'Content-Type': 'application/json',
-            Accept: 'application/json',
-            'x-api-key': GATEWAY_API_KEY,
-            ...(authHeader ? { Authorization: String(authHeader) } : {}),
-          }
-          r = await fetchWithTimeout(requestUrl, { method: 'POST', headers, body: JSON.stringify(requestBody) }, 35000)
-          lastStatus = r?.status || 0
-          const parsed = await readJsonOrText(r)
-          payload = parsed.payload || {}
-          lastText = parsed.text || ''
-          if (r.ok) break
-          if (![401, 403].includes(Number(lastStatus || 0))) break
-        }
-      } catch (e) {
-        const out = gatewayErrorPayload(e, requestUrl)
-        return json(res, out.status, out.body)
+      const out = await createPaymentLink({ requestUrl, requestBody, authHeaders })
+      if (out?.exception) {
+        const err = gatewayErrorPayload(out.exception, requestUrl)
+        return json(res, err.status, err.body)
       }
 
-      if (!r || !r.ok) {
+      if (!out?.ok) {
         const meta = getGatewayMeta(requestUrl)
         return json(res, 502, {
           error: 'create_paymentlink_failed',
-          message: 'Falha ao criar o checkout no gateway.',
-          status: lastStatus || r?.status || 0,
-          gateway_message: pickGatewayErrorMessage(payload, lastText || ''),
-          gateway_response: lastText ? String(lastText).slice(0, 800) : '',
+          message: gatewayFailureMessage(out?.lastStatus || 0),
+          status: out?.lastStatus || 0,
+          gateway_message: pickGatewayErrorMessage(out?.payload, out?.lastText || ''),
+          gateway_response: out?.lastText ? String(out.lastText).slice(0, 800) : '',
           ...meta,
         })
       }
 
-      const linkId = payload?.paymentLinkId || payload?.linkId || payload?.id || null
-      const checkoutUrl = String(payload?.link || payload?.url || payload?.checkout_url || payload?.payment_url || '').trim()
+      const linkId = out?.payload?.paymentLinkId || out?.payload?.linkId || out?.payload?.id || null
+      const checkoutUrl = String(out?.payload?.link || out?.payload?.url || out?.payload?.checkout_url || out?.payload?.payment_url || '').trim()
       if (!checkoutUrl || !linkId) {
-        return json(res, 502, { error: 'checkout_url_missing', message: 'O gateway não retornou link de checkout.', payload })
+        return json(res, 502, { error: 'checkout_url_missing', message: 'O gateway não retornou link de checkout.', payload: out?.payload || {} })
       }
 
       const baseUrl = resolveAppBaseUrl(req)
@@ -419,47 +455,28 @@ export default async function handler(req, res) {
         external_order_number: externalOrderNumber,
       }
 
-      let r = null
-      let payload = null
-      let lastText = ''
-      let lastStatus = 0
-      try {
-        for (const authHeader of (authHeaders.length ? authHeaders : [''])) {
-          const headers = {
-            'Content-Type': 'application/json',
-            Accept: 'application/json',
-            'x-api-key': GATEWAY_API_KEY,
-            ...(authHeader ? { Authorization: String(authHeader) } : {}),
-          }
-          r = await fetchWithTimeout(requestUrl, { method: 'POST', headers, body: JSON.stringify(requestBody) }, 35000)
-          lastStatus = r?.status || 0
-          const parsed = await readJsonOrText(r)
-          payload = parsed.payload || {}
-          lastText = parsed.text || ''
-          if (r.ok) break
-          if (![401, 403].includes(Number(lastStatus || 0))) break
-        }
-      } catch (e) {
-        const out = gatewayErrorPayload(e, requestUrl)
-        return json(res, out.status, out.body)
+      const out = await createPaymentLink({ requestUrl, requestBody, authHeaders })
+      if (out?.exception) {
+        const err = gatewayErrorPayload(out.exception, requestUrl)
+        return json(res, err.status, err.body)
       }
 
-      if (!r || !r.ok) {
+      if (!out?.ok) {
         const meta = getGatewayMeta(requestUrl)
         return json(res, 502, {
           error: 'create_paymentlink_failed',
-          message: 'Falha ao criar o checkout no gateway.',
-          status: lastStatus || r?.status || 0,
-          gateway_message: pickGatewayErrorMessage(payload, lastText || ''),
-          gateway_response: lastText ? String(lastText).slice(0, 800) : '',
+          message: gatewayFailureMessage(out?.lastStatus || 0),
+          status: out?.lastStatus || 0,
+          gateway_message: pickGatewayErrorMessage(out?.payload, out?.lastText || ''),
+          gateway_response: out?.lastText ? String(out.lastText).slice(0, 800) : '',
           ...meta,
         })
       }
 
-      const linkId = payload?.paymentLinkId || payload?.linkId || payload?.id || null
-      const checkoutUrl = String(payload?.link || payload?.url || payload?.checkout_url || payload?.payment_url || '').trim()
+      const linkId = out?.payload?.paymentLinkId || out?.payload?.linkId || out?.payload?.id || null
+      const checkoutUrl = String(out?.payload?.link || out?.payload?.url || out?.payload?.checkout_url || out?.payload?.payment_url || '').trim()
       if (!checkoutUrl || !linkId) {
-        return json(res, 502, { error: 'checkout_url_missing', message: 'O gateway não retornou link de checkout.', payload })
+        return json(res, 502, { error: 'checkout_url_missing', message: 'O gateway não retornou link de checkout.', payload: out?.payload || {} })
       }
 
       const baseUrl = resolveAppBaseUrl(req)
@@ -534,47 +551,28 @@ export default async function handler(req, res) {
         external_order_number: externalOrderNumber,
       }
 
-      let r = null
-      let payload = null
-      let lastText = ''
-      let lastStatus = 0
-      try {
-        for (const authHeader of (authHeaders.length ? authHeaders : [''])) {
-          const headers = {
-            'Content-Type': 'application/json',
-            Accept: 'application/json',
-            'x-api-key': GATEWAY_API_KEY,
-            ...(authHeader ? { Authorization: String(authHeader) } : {}),
-          }
-          r = await fetchWithTimeout(requestUrl, { method: 'POST', headers, body: JSON.stringify(requestBody) }, 35000)
-          lastStatus = r?.status || 0
-          const parsed = await readJsonOrText(r)
-          payload = parsed.payload || {}
-          lastText = parsed.text || ''
-          if (r.ok) break
-          if (![401, 403].includes(Number(lastStatus || 0))) break
-        }
-      } catch (e) {
-        const out = gatewayErrorPayload(e, requestUrl)
-        return json(res, out.status, out.body)
+      const out = await createPaymentLink({ requestUrl, requestBody, authHeaders })
+      if (out?.exception) {
+        const err = gatewayErrorPayload(out.exception, requestUrl)
+        return json(res, err.status, err.body)
       }
 
-      if (!r || !r.ok) {
+      if (!out?.ok) {
         const meta = getGatewayMeta(requestUrl)
         return json(res, 502, {
           error: 'create_paymentlink_failed',
-          message: 'Falha ao criar o checkout no gateway.',
-          status: lastStatus || r?.status || 0,
-          gateway_message: pickGatewayErrorMessage(payload, lastText || ''),
-          gateway_response: lastText ? String(lastText).slice(0, 800) : '',
+          message: gatewayFailureMessage(out?.lastStatus || 0),
+          status: out?.lastStatus || 0,
+          gateway_message: pickGatewayErrorMessage(out?.payload, out?.lastText || ''),
+          gateway_response: out?.lastText ? String(out.lastText).slice(0, 800) : '',
           ...meta,
         })
       }
 
-      const linkId = payload?.paymentLinkId || payload?.linkId || payload?.id || null
-      const checkoutUrl = String(payload?.link || payload?.url || payload?.checkout_url || payload?.payment_url || '').trim()
+      const linkId = out?.payload?.paymentLinkId || out?.payload?.linkId || out?.payload?.id || null
+      const checkoutUrl = String(out?.payload?.link || out?.payload?.url || out?.payload?.checkout_url || out?.payload?.payment_url || '').trim()
       if (!checkoutUrl || !linkId) {
-        return json(res, 502, { error: 'checkout_url_missing', message: 'O gateway não retornou link de checkout.', payload })
+        return json(res, 502, { error: 'checkout_url_missing', message: 'O gateway não retornou link de checkout.', payload: out?.payload || {} })
       }
 
       const baseUrl = resolveAppBaseUrl(req)
@@ -646,47 +644,28 @@ export default async function handler(req, res) {
       external_order_number: externalOrderNumber,
     }
 
-    let r = null
-    let payload = null
-    let lastText = ''
-    let lastStatus = 0
-    try {
-      for (const authHeader of (authHeaders.length ? authHeaders : [''])) {
-        const headers = {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-          'x-api-key': GATEWAY_API_KEY,
-          ...(authHeader ? { Authorization: String(authHeader) } : {}),
-        }
-        r = await fetchWithTimeout(requestUrl, { method: 'POST', headers, body: JSON.stringify(requestBody) }, 35000)
-        lastStatus = r?.status || 0
-        const parsed = await readJsonOrText(r)
-        payload = parsed.payload || {}
-        lastText = parsed.text || ''
-        if (r.ok) break
-        if (![401, 403].includes(Number(lastStatus || 0))) break
-      }
-    } catch (e) {
-      const out = gatewayErrorPayload(e, requestUrl)
-      return json(res, out.status, out.body)
+    const out = await createPaymentLink({ requestUrl, requestBody, authHeaders })
+    if (out?.exception) {
+      const err = gatewayErrorPayload(out.exception, requestUrl)
+      return json(res, err.status, err.body)
     }
 
-    if (!r || !r.ok) {
+    if (!out?.ok) {
       const meta = getGatewayMeta(requestUrl)
       return json(res, 502, {
         error: 'create_paymentlink_failed',
-        message: 'Falha ao criar o checkout no gateway.',
-        status: lastStatus || r?.status || 0,
-        gateway_message: pickGatewayErrorMessage(payload, lastText || ''),
-        gateway_response: lastText ? String(lastText).slice(0, 800) : '',
+        message: gatewayFailureMessage(out?.lastStatus || 0),
+        status: out?.lastStatus || 0,
+        gateway_message: pickGatewayErrorMessage(out?.payload, out?.lastText || ''),
+        gateway_response: out?.lastText ? String(out.lastText).slice(0, 800) : '',
         ...meta,
       })
     }
 
-    const linkId = payload?.paymentLinkId || payload?.linkId || payload?.id || null
-    const checkoutUrl = String(payload?.link || payload?.url || payload?.checkout_url || payload?.payment_url || '').trim()
+    const linkId = out?.payload?.paymentLinkId || out?.payload?.linkId || out?.payload?.id || null
+    const checkoutUrl = String(out?.payload?.link || out?.payload?.url || out?.payload?.checkout_url || out?.payload?.payment_url || '').trim()
     if (!checkoutUrl || !linkId) {
-      return json(res, 502, { error: 'checkout_url_missing', message: 'O gateway não retornou link de checkout.', payload })
+      return json(res, 502, { error: 'checkout_url_missing', message: 'O gateway não retornou link de checkout.', payload: out?.payload || {} })
     }
 
     const baseUrl = resolveAppBaseUrl(req)
