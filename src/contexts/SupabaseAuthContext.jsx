@@ -30,7 +30,7 @@ function decodeJwtPayload(token) {
   }
 }
 
-function isJwtExpiredSoon(token, leewayMs = 60000) {
+function isJwtExpiredSoon(token, leewayMs = 15000) {
   const payload = decodeJwtPayload(token)
   const exp = Number(payload?.exp || 0)
   if (!Number.isFinite(exp) || exp <= 0) return true
