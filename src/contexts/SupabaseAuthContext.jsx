@@ -1037,6 +1037,42 @@ export const AuthProvider = ({ children }) => {
     } catch (_) {}
     let data = null
     let error = null
+    const isTimeoutLike = (err) => {
+      const name = String(err?.name || '').toLowerCase()
+      const msg = String(err?.message || err?.error_description || err || '').toLowerCase()
+      return (
+        name.includes('abort') ||
+        msg === 'timeout' ||
+        msg.includes('timeout') ||
+        msg.includes('timed out') ||
+        msg.includes('aborted') ||
+        msg.includes('abort')
+      )
+    }
+    const attemptProxy = async () => {
+      const controller = new AbortController()
+      const t = setTimeout(() => controller.abort(), 60000)
+      try {
+        const r = await fetch('/api/auth/signin', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, password }),
+          signal: controller.signal,
+        })
+        const body = await r.json().catch(() => ({}))
+        if (!r.ok) return { data: null, error: { message: String(body?.error || 'signin_failed') } }
+        const at = String(body?.access_token || '').trim()
+        const rt = String(body?.refresh_token || '').trim()
+        if (!at || !rt) return { data: null, error: { message: 'missing_tokens' } }
+        try { await supabase.auth.setSession({ access_token: at, refresh_token: rt }) } catch (_) {}
+        return { data: { session: { access_token: at, refresh_token: rt } }, error: null }
+      } catch (e) {
+        const msg = String(e?.name || '').toLowerCase().includes('abort') ? 'timeout' : (e?.message || String(e))
+        return { data: null, error: { message: String(msg || 'signin_failed') } }
+      } finally {
+        clearTimeout(t)
+      }
+    }
     const attempt = async (timeoutMs) => {
       const r = await withTimeout(supabase.auth.signInWithPassword({ email, password }), timeoutMs)
       return { data: r?.data || null, error: r?.error || null }
@@ -1053,7 +1089,14 @@ export const AuthProvider = ({ children }) => {
     } catch (e) {
       error = e
     }
-    if (error) return { error }
+    if (error) {
+      if (isTimeoutLike(error)) {
+        const proxied = await attemptProxy()
+        if (!proxied.error) return { error: null }
+        return { error: proxied.error }
+      }
+      return { error }
+    }
 
     if (!data?.session) {
       return { error: { message: 'Não foi possível finalizar o login. Tente novamente.' } }
