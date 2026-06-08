@@ -66,6 +66,25 @@ function supabaseServiceRoleKey() {
   return readEnv('SUPABASE_SERVICE_ROLE_KEY', readEnv('SUPABASE_SERVICE_ROLE', ''))
 }
 
+function supabaseAnonKey() {
+  return readEnv(
+    'SUPABASE_ANON_KEY',
+    readEnv(
+      'VITE_SUPABASE_ANON_KEY',
+      readEnv(
+        'VITE_PUBLIC_SUPABASE_ANON_KEY',
+        readEnv(
+          'VITE_SUPABASE_KEY',
+          readEnv(
+            'VITE_PUBLIC_SUPABASE_KEY',
+            readEnv('VITE_SUPABASE_PUBLIC_ANON_KEY', ''),
+          ),
+        ),
+      ),
+    ),
+  )
+}
+
 async function supabaseAdminRequest({ url, body }) {
   const baseUrl = supabaseBaseUrl()
   const serviceKey = supabaseServiceRoleKey()
@@ -254,6 +273,72 @@ function buildRecoveryEmailHtml({ actionLink }) {
 </html>`
 }
 
+async function handleSignin(req, res) {
+  res.setHeader('Cache-Control', 'no-store')
+  if (req.method === 'OPTIONS') {
+    res.statusCode = 204
+    res.setHeader('Access-Control-Allow-Origin', '*')
+    res.setHeader('Access-Control-Allow-Headers', 'content-type')
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
+    res.end()
+    return
+  }
+  if (req.method !== 'POST') return json(res, 405, { error: 'method_not_allowed' })
+
+  const baseUrl = supabaseBaseUrl()
+  const anonKey = supabaseAnonKey()
+  if (!baseUrl || !anonKey) return json(res, 500, { error: 'missing_supabase_env' })
+
+  let payload = null
+  try { payload = await readJsonBody(req) } catch (_) { payload = {} }
+  const email = String(payload?.email || '').trim().toLowerCase()
+  const password = String(payload?.password || '')
+  if (!isValidEmail(email)) return json(res, 400, { error: 'invalid_email' })
+  if (!password) return json(res, 400, { error: 'missing_password' })
+
+  const url = `${baseUrl.replace(/\/+$/, '')}/auth/v1/token?grant_type=password`
+  const controller = new AbortController()
+  const t = setTimeout(() => controller.abort(), 45000)
+  try {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: anonKey,
+        Authorization: `Bearer ${anonKey}`,
+      },
+      body: JSON.stringify({ email, password }),
+      signal: controller.signal,
+    })
+    const text = await r.text().catch(() => '')
+    let data = null
+    try { data = JSON.parse(text || '{}') } catch (_) { data = null }
+    if (!r.ok) {
+      const msg =
+        String(data?.error_description || data?.message || data?.error || '').trim() ||
+        (text ? String(text).trim() : '') ||
+        'signin_failed'
+      return json(res, r.status || 400, { error: msg })
+    }
+    const accessToken = String(data?.access_token || '').trim()
+    const refreshToken = String(data?.refresh_token || '').trim()
+    if (!accessToken || !refreshToken) return json(res, 500, { error: 'missing_tokens' })
+    return json(res, 200, {
+      ok: true,
+      access_token: accessToken,
+      refresh_token: refreshToken,
+      expires_in: data?.expires_in ?? null,
+      token_type: data?.token_type ?? null,
+      user: data?.user ?? null,
+    })
+  } catch (e) {
+    const msg = String(e?.name || '').toLowerCase().includes('abort') ? 'timeout' : (e?.message || String(e))
+    return json(res, 504, { error: msg || 'signin_failed' })
+  } finally {
+    clearTimeout(t)
+  }
+}
+
 async function handleSignup(req, res) {
   if (req.method === 'OPTIONS') {
     res.statusCode = 204
@@ -416,6 +501,7 @@ export default async function handler(req, res) {
       }
     })()
 
+    if (action === 'signin') return await handleSignin(req, res)
     if (action === 'signup') return await handleSignup(req, res)
     if (action === 'password-recovery') return await handlePasswordRecovery(req, res)
     if (action === 'confirmation-email') return json(res, 410, { error: 'gone' })

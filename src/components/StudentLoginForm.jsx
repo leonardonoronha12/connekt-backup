@@ -235,6 +235,7 @@ export default function StudentLoginForm({ variant = 'normal' } = {}) {
       'User already registered': 'Usuário já cadastrado',
       'Weak password': 'Senha muito fraca',
       'Invalid password': 'Senha inválida',
+      timeout: 'A conexão demorou para responder. Tente novamente.',
       'Network error': 'Erro de conexão',
       'Server error': 'Erro do servidor',
       'Unsupported provider: provider is not enabled': 'Login com Google/Facebook não está habilitado.',
