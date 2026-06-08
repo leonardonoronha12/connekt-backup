@@ -185,6 +185,18 @@ try {
       return true
     })()
 
+    try {
+      const cachedRaw = String(localStorage.getItem('connekt_public_config') || '')
+      if (cachedRaw) {
+        const cached = JSON.parse(cachedRaw)
+        const supabaseUrl = String(cached?.supabaseUrl || '').trim()
+        const supabaseAnonKey = String(cached?.supabaseAnonKey || '').trim()
+        if (supabaseUrl && supabaseAnonKey) {
+          window.__CONNEKT_PUBLIC_CONFIG__ = { supabaseUrl, supabaseAnonKey }
+        }
+      }
+    } catch (_) {}
+
     if (shouldFetchPublicConfig) {
       try {
         const r = await fetch('/api/version', { cache: 'no-store' })
@@ -193,6 +205,9 @@ try {
         const supabaseAnonKey = String(body?.public?.supabaseAnonKey || '').trim()
         if (supabaseUrl && supabaseAnonKey) {
           window.__CONNEKT_PUBLIC_CONFIG__ = { supabaseUrl, supabaseAnonKey }
+          try {
+            localStorage.setItem('connekt_public_config', JSON.stringify({ supabaseUrl, supabaseAnonKey, at: Date.now() }))
+          } catch (_) {}
         }
       } catch (_) {}
     }
