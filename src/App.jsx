@@ -260,12 +260,79 @@ function AppContent() {
   const lastStableUrlRef = useRef(`${window.location.pathname}${window.location.search}`);
   const userIdRef = useRef(null)
   const loadingRef = useRef(true)
+  const authGraceUntilRef = useRef(Date.now() + 8000)
   useEffect(() => {
     userIdRef.current = user?.id || null
   }, [user?.id])
   useEffect(() => {
     loadingRef.current = !!loading
   }, [loading])
+
+  const decodeJwtPayload = (token) => {
+    const raw = String(token || '').trim()
+    if (!raw) return null
+    const parts = raw.split('.')
+    if (parts.length < 2) return null
+    const p = parts[1]
+    const pad = p.length % 4 ? '='.repeat(4 - (p.length % 4)) : ''
+    const b64 = (p + pad).replace(/-/g, '+').replace(/_/g, '/')
+    try {
+      const jsonText = atob(b64)
+      return JSON.parse(jsonText || '{}')
+    } catch (_) {
+      return null
+    }
+  }
+
+  const isJwtExpiredSoon = (token, leewayMs = 15000) => {
+    const payload = decodeJwtPayload(token)
+    const exp = Number(payload?.exp || 0)
+    if (!Number.isFinite(exp) || exp <= 0) return true
+    const expMs = exp * 1000
+    return Date.now() + Math.max(0, Number(leewayMs) || 0) >= expMs
+  }
+
+  const hasLikelyStoredSession = () => {
+    const listKeys = (storage) => {
+      if (!storage) return []
+      const out = new Set()
+      try {
+        const n = Number(storage.length || 0)
+        if (Number.isFinite(n) && n > 0 && typeof storage.key === 'function') {
+          for (let i = 0; i < n; i += 1) {
+            const k = storage.key(i)
+            if (k) out.add(String(k))
+          }
+        }
+      } catch (_) {}
+      try {
+        Object.keys(storage || {}).forEach((k) => {
+          if (k) out.add(String(k))
+        })
+      } catch (_) {}
+      return Array.from(out)
+    }
+    const readFrom = (storage) => {
+      if (!storage) return null
+      try {
+        const keys = listKeys(storage)
+        const candidates = keys.filter((k) => String(k || '').startsWith('sb-') && String(k || '').includes('auth-token'))
+        for (const key of candidates) {
+          const raw = storage.getItem(key)
+          if (!raw) continue
+          let parsed = null
+          try { parsed = JSON.parse(raw) } catch (_) { parsed = null }
+          if (!parsed || typeof parsed !== 'object') continue
+          const s = (parsed.currentSession && typeof parsed.currentSession === 'object') ? parsed.currentSession : parsed
+          const at = String(s?.access_token || '').trim()
+          const u = s?.user
+          if (at && u && !isJwtExpiredSoon(at)) return s
+        }
+      } catch (_) {}
+      return null
+    }
+    return readFrom(sessionStorage) || readFrom(localStorage) || null
+  }
 
   useEffect(() => {
     initAnalytics()
@@ -1038,6 +1105,8 @@ function AppContent() {
     if (loading) return;
     if (user) return;
     if (isPublicView) return;
+    const stored = hasLikelyStoredSession()
+    if (stored && Date.now() < authGraceUntilRef.current) return
     if (currentView === 'platformAdminPanel' || currentView === 'platformAdminDeploy' || currentView === 'platformAdminWithdraws') {
       const target = '/admin/login'
       if (window.location.pathname !== target) {
@@ -1089,6 +1158,18 @@ function AppContent() {
   }
 
   if (!user && !isPublicView && !(isDemoStudent && (currentView === 'alunoDashboard' || currentView === 'alunoAula' || currentView === 'alunoCurso' || currentView === 'alunoSimulados' || currentView === 'alunoSimuladoAcesso' || currentView === 'alunoSimuladoResultado' || currentView === 'alunoConfiguracoes' || currentView === 'alunoRepostaCorretaSimulado' || currentView === 'cursoPreviewAluno'))) {
+    const stored = hasLikelyStoredSession()
+    if (stored && Date.now() < authGraceUntilRef.current) {
+      return (
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center p-6">
+          <div className="bg-white rounded-[16px] shadow-sm border border-[#E3E4E5] px-8 py-7 flex flex-col items-center gap-3">
+            <div className="w-12 h-12 rounded-full border-4 border-[#E3E4E5] border-t-[#0047BB] animate-spin" />
+            <div className="text-[14px] font-semibold text-[#22252B]">Restaurando sessão…</div>
+            <div className="text-[12px] text-[#6B7280] text-center">Aguarde um instante.</div>
+          </div>
+        </div>
+      )
+    }
     if (currentView === 'platformAdminPanel' || currentView === 'platformAdminDeploy' || currentView === 'platformAdminWithdraws' || currentView === 'platformAdminLogos' || currentView === 'platformAdminAnalytics') {
       return <PlatformAdminLoginPage />
     }

@@ -233,21 +233,47 @@ export const AuthProvider = ({ children }) => {
         }
       } catch (_) {}
       setLoading(false)
-    }, 25000)
+    }, 6000)
     return () => { window.clearTimeout(t) }
   }, [loading])
 
   const tryReadStoredSession = useCallback(() => {
+    const listKeys = (storage) => {
+      if (!storage) return []
+      const out = new Set()
+      try {
+        const n = Number(storage.length || 0)
+        if (Number.isFinite(n) && n > 0 && typeof storage.key === 'function') {
+          for (let i = 0; i < n; i += 1) {
+            const k = storage.key(i)
+            if (k) out.add(String(k))
+          }
+        }
+      } catch (_) {}
+      try {
+        Object.keys(storage || {}).forEach((k) => {
+          if (k) out.add(String(k))
+        })
+      } catch (_) {}
+      return Array.from(out)
+    }
     const readFrom = (storage) => {
       if (!storage) return null
       try {
-        const keys = Object.keys(storage || {});
-        const key = keys.find((k) => k.startsWith('sb-') && k.endsWith('-auth-token'));
-        if (!key) return null
-        const raw = storage.getItem(key);
-        if (!raw) return null
-        const parsed = JSON.parse(raw);
-        if (parsed && typeof parsed === 'object') {
+        const keys = listKeys(storage)
+        const candidates = keys
+          .filter((k) => String(k || '').startsWith('sb-') && String(k || '').includes('auth-token'))
+          .sort((a, b) => {
+            const aPref = String(a).endsWith('-auth-token') ? 0 : 1
+            const bPref = String(b).endsWith('-auth-token') ? 0 : 1
+            return aPref - bPref
+          })
+        for (const key of candidates) {
+          const raw = storage.getItem(key)
+          if (!raw) continue
+          let parsed = null
+          try { parsed = JSON.parse(raw) } catch (_) { parsed = null }
+          if (!parsed || typeof parsed !== 'object') continue
           if (parsed.currentSession && typeof parsed.currentSession === 'object') return parsed.currentSession
           if (parsed.access_token && parsed.refresh_token) return parsed
         }
