@@ -190,6 +190,7 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [deviceLock, setDeviceLock] = useState(null);
   const [pendingDeviceRequest, setPendingDeviceRequest] = useState(null)
+  const authBootstrapAtRef = useRef(Date.now())
   const isDeviceLockBypassed = useMemo(() => {
     try {
       const raw =
@@ -233,7 +234,7 @@ export const AuthProvider = ({ children }) => {
         }
       } catch (_) {}
       setLoading(false)
-    }, 6000)
+    }, 12000)
     return () => { window.clearTimeout(t) }
   }, [loading])
 
@@ -892,6 +893,18 @@ export const AuthProvider = ({ children }) => {
           let mode = ''
           try { mode = String(sessionStorage.getItem('connekt_login_mode') || localStorage.getItem('connekt_login_mode') || '') } catch (_) { mode = '' }
           const isAlunoFlow = mode === 'aluno' || path === '/aluno' || path.startsWith('/aluno/') || path === '/login-aluno' || path === '/login-aluno-wl' || path === '/aluno/login'
+          try {
+            const age = Date.now() - Number(authBootstrapAtRef.current || 0)
+            if (isAlunoFlow && Number.isFinite(age) && age >= 0 && age < 20000) {
+              const stored = tryReadStoredSession()
+              const at = String(stored?.access_token || '').trim()
+              if (stored?.user && at && !isJwtExpiredSoon(at)) {
+                handleSession(stored)
+                return
+              }
+              return
+            }
+          } catch (_) {}
           const host = String(window.location.hostname || '').toLowerCase()
           const isWhitelabelHost = host.endsWith('.app.connektco.com') && host !== 'app.connektco.com'
           const target = isAlunoFlow ? (isWhitelabelHost ? '/login-aluno-wl' : '/login-aluno') : '/login'

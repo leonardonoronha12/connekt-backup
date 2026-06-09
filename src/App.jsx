@@ -260,7 +260,7 @@ function AppContent() {
   const lastStableUrlRef = useRef(`${window.location.pathname}${window.location.search}`);
   const userIdRef = useRef(null)
   const loadingRef = useRef(true)
-  const authGraceUntilRef = useRef(Date.now() + 8000)
+  const authGraceUntilRef = useRef(Date.now() + 20000)
   useEffect(() => {
     userIdRef.current = user?.id || null
   }, [user?.id])
