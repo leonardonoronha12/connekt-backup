@@ -84,7 +84,6 @@ function renderBootLoading(message) {
   const root = document.getElementById('root')
   if (!root) return
   const safeMessage = String(message || 'Carregando…').slice(0, 2000)
-  while (root.firstChild) root.removeChild(root.firstChild)
 
   const outer = document.createElement('div')
   outer.style.minHeight = '100vh'
@@ -128,7 +127,12 @@ function renderBootLoading(message) {
   card.appendChild(text)
   outer.appendChild(style)
   outer.appendChild(card)
-  root.appendChild(outer)
+  try {
+    while (root.firstChild) root.removeChild(root.firstChild)
+    root.appendChild(outer)
+  } catch (_) {
+    try { root.appendChild(outer) } catch (_) {}
+  }
 }
 
 function sleep(ms) {
@@ -227,6 +231,9 @@ try {
 try {
   const el = document.getElementById('root')
   if (!el) throw new Error('root_not_found')
+  try {
+    window.__CONNEKT_BOOT__ = { at: Date.now(), step: 'start' }
+  } catch (_) {}
   const hasSupabaseEnv = (() => {
     try {
       const url = import.meta?.env?.VITE_SUPABASE_URL || import.meta?.env?.VITE_PUBLIC_SUPABASE_URL || ''
@@ -245,6 +252,17 @@ try {
 
   ;(async () => {
     renderBootLoading('Carregando…')
+    const watchdogId = window.setTimeout(() => {
+      try {
+        const root = document.getElementById('root')
+        const hasContent = !!(root && (root.childNodes?.length || 0) > 0)
+        if (!hasContent) renderFatal('A página não carregou corretamente.', 'Tente recarregar (Ctrl+F5).')
+      } catch (_) {}
+    }, 12000)
+    const stopWatchdog = () => {
+      try { window.clearTimeout(watchdogId) } catch (_) {}
+    }
+    try { window.__CONNEKT_BOOT__.step = 'pre_config' } catch (_) {}
 
     const shouldFetchPublicConfig = (() => {
       try {
@@ -279,6 +297,7 @@ try {
 
     if (shouldFetchPublicConfig) {
       try {
+        try { window.__CONNEKT_BOOT__.step = 'fetch_version' } catch (_) {}
         let fetched = null
         for (let attempt = 0; attempt < 2; attempt += 1) {
           fetched = await fetchJsonWithTimeout('/api/version', { cache: 'no-store' }, attempt === 0 ? 7000 : 10000).catch(() => null)
@@ -302,6 +321,7 @@ try {
       } catch (_) {}
     }
 
+    try { window.__CONNEKT_BOOT__.step = 'import_app' } catch (_) {}
     const [{ default: App }, branding] = await Promise.all([
       import('@/App'),
       import('@/contexts/BrandingContext'),
@@ -323,6 +343,8 @@ try {
       )
 
     ReactDOM.createRoot(el).render(tree)
+    stopWatchdog()
+    try { window.__CONNEKT_BOOT__.step = 'rendered' } catch (_) {}
   })().catch((e) => {
     renderFatal('Falha ao inicializar o app.', e?.message || String(e))
   })
