@@ -902,6 +902,7 @@ export const AuthProvider = ({ children }) => {
                 handleSession(stored)
                 return
               }
+              handleSession(null)
               return
             }
           } catch (_) {}
