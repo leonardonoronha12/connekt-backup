@@ -140,8 +140,22 @@ export default function DeviceLockPage() {
                 setFeedback('Enviando e-mail de confirmação…')
                 try {
                   const r = await sendDeviceLockEmail()
-                  if (r?.ok) setFeedback('E-mail enviado. Abra o link para confirmar este dispositivo.')
-                  else setFeedback('Não foi possível enviar o e-mail. Tente novamente.')
+                  if (r?.ok) {
+                    setFeedback('E-mail enviado. Abra o link para confirmar este dispositivo.')
+                  } else {
+                    const code = String(r?.error || '').trim()
+                    const msg = (() => {
+                      if (code === 'missing_access_token') return 'Sessão expirou. Saia e entre novamente.'
+                      if (code === 'missing_supabase_url' || code === 'missing_supabase_key' || code === 'missing_supabase_admin') return 'E-mail indisponível: backend não configurado.'
+                      if (code === 'missing_sendgrid_key') return 'E-mail indisponível: serviço de e-mail não configurado.'
+                      if (code === 'invalid_token') return 'Sessão inválida. Saia e entre novamente.'
+                      if (code === 'to_not_allowed') return 'O e-mail de confirmação só pode ser enviado para o e-mail da sua conta.'
+                      if (code === 'timeout') return 'Tempo esgotado ao enviar o e-mail. Tente novamente.'
+                      if (code) return `Não foi possível enviar o e-mail. (${code})`
+                      return 'Não foi possível enviar o e-mail. Tente novamente.'
+                    })()
+                    setFeedback(msg)
+                  }
                 } catch (_) {
                   setFeedback('Não foi possível enviar o e-mail. Tente novamente.')
                 } finally {

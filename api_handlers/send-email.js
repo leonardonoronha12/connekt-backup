@@ -35,8 +35,17 @@ function supabaseBaseUrl() {
   return readEnv('SUPABASE_URL', readEnv('VITE_SUPABASE_URL', ''))
 }
 
-function supabaseServiceRoleKey() {
-  return readEnv('SUPABASE_SERVICE_ROLE_KEY', readEnv('SUPABASE_SERVICE_ROLE', ''))
+function supabaseApiKey() {
+  return (
+    readEnv('SUPABASE_SERVICE_ROLE_KEY', '') ||
+    readEnv('SUPABASE_SERVICE_ROLE', '') ||
+    readEnv('SUPABASE_ANON_KEY', '') ||
+    readEnv('VITE_SUPABASE_ANON_KEY', '') ||
+    readEnv('VITE_PUBLIC_SUPABASE_ANON_KEY', '') ||
+    readEnv('VITE_SUPABASE_KEY', '') ||
+    readEnv('VITE_PUBLIC_SUPABASE_KEY', '') ||
+    ''
+  )
 }
 
 function getBearerToken(req) {
@@ -48,10 +57,11 @@ function getBearerToken(req) {
 
 async function getUserEmailFromToken(req) {
   const baseUrl = supabaseBaseUrl()
-  const apiKey = supabaseServiceRoleKey()
+  const apiKey = supabaseApiKey()
   const token = getBearerToken(req)
   if (!token) return { ok: false, error: 'missing_token' }
-  if (!baseUrl || !apiKey) return { ok: false, error: 'missing_supabase_admin' }
+  if (!baseUrl) return { ok: false, error: 'missing_supabase_url' }
+  if (!apiKey) return { ok: false, error: 'missing_supabase_key' }
 
   const url = `${baseUrl.replace(/\/+$/, '')}/auth/v1/user`
   const r = await fetch(url, {
@@ -114,7 +124,10 @@ export default async function handler(req, res) {
     if (req.method !== 'POST') return json(res, 405, { error: 'method_not_allowed' })
 
     const auth = await getUserEmailFromToken(req)
-    if (!auth.ok) return json(res, 401, { error: auth.error, details: auth.details || null })
+    if (!auth.ok) {
+      const isConfigMissing = auth.error === 'missing_supabase_url' || auth.error === 'missing_supabase_key'
+      return json(res, isConfigMissing ? 501 : 401, { error: auth.error, details: auth.details || null })
+    }
 
     const fromEmail = normalizeFromEmail(readEnv('SENDGRID_FROM_EMAIL', readEnv('SMTP_FROM_EMAIL')))
     const fromName = readEnv('SENDGRID_FROM_NAME', 'Connekt')
