@@ -5,6 +5,22 @@ import '@/index.css';
 
 // Logs de diagnóstico removidos após validação de ambiente
 
+try {
+  const runSwCleanup = () => {
+    if (typeof window === 'undefined') return
+    if (!('serviceWorker' in navigator)) return
+    const key = 'connekt_sw_cleanup_ts'
+    const now = Date.now()
+    const last = Number(sessionStorage.getItem(key) || 0)
+    if (Number.isFinite(last) && last > 0 && (now - last) < 60_000) return
+    sessionStorage.setItem(key, String(now))
+    navigator.serviceWorker.getRegistrations()
+      .then((regs) => Promise.all((regs || []).map((r) => r.unregister().catch(() => false))))
+      .catch(() => null)
+  }
+  runSwCleanup()
+} catch (_) {}
+
 function renderFatal(message, detail) {
   const root = document.getElementById('root')
   if (!root) return
