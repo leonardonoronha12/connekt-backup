@@ -5,6 +5,7 @@ import producer from '../api_handlers/producer.js'
 import resetPassword from '../api_handlers/reset-password.js'
 import resolveCourseMedia from '../api_handlers/resolve-course-media.js'
 import sendEmail from '../api_handlers/send-email.js'
+import clearSiteData from '../api_handlers/clear-site-data.js'
 import simuladoCheckout from '../api_handlers/simulado-checkout.js'
 import simuladoCheckoutVerify from '../api_handlers/simulado-checkout-verify.js'
 import updateQuestion from '../api_handlers/update-question.js'
@@ -52,6 +53,7 @@ export default async function handler(req, res) {
     const pathname = String(rawPath || '').split('?')[0]
 
     const routes = new Map([
+      ['/api/clear-site-data', clearSiteData],
       ['/api/media', media],
       ['/api/producer', producer],
       ['/api/reset-password', resetPassword],
