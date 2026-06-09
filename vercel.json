@@ -5,6 +5,7 @@
   "outputDirectory": "dist",
   "routes": [
     { "src": "/sw-reset", "dest": "/sw-reset.html" },
+    { "src": "/boot-probe.js", "headers": { "Cache-Control": "no-store" }, "continue": true },
     {
       "src": "/api$",
       "headers": {
