@@ -31,6 +31,17 @@
 		<link rel="preconnect" href="https://fonts.googleapis.com" />
 		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 		<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+		<script>
+			(function () {
+				try {
+					if (typeof window.global === 'undefined') window.global = window
+					if (typeof window.process === 'undefined') window.process = { env: { NODE_ENV: 'production' } }
+					if (!window.process) window.process = { env: { NODE_ENV: 'production' } }
+					if (!window.process.env) window.process.env = { NODE_ENV: 'production' }
+					if (!window.process.env.NODE_ENV) window.process.env.NODE_ENV = 'production'
+				} catch (e) {}
+			})()
+		</script>
 		<script defer src="/boot-probe.js"></script>
 		<script>
 			(function () {
