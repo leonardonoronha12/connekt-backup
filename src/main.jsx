@@ -80,6 +80,73 @@ function renderFatal(message, detail) {
   root.appendChild(outer)
 }
 
+function renderBootLoading(message) {
+  const root = document.getElementById('root')
+  if (!root) return
+  const safeMessage = String(message || 'Carregando…').slice(0, 2000)
+  while (root.firstChild) root.removeChild(root.firstChild)
+
+  const outer = document.createElement('div')
+  outer.style.minHeight = '100vh'
+  outer.style.display = 'flex'
+  outer.style.alignItems = 'center'
+  outer.style.justifyContent = 'center'
+  outer.style.padding = '24px'
+  outer.style.background = '#f8fafc'
+  outer.style.color = '#111827'
+  outer.style.fontFamily = 'Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif'
+
+  const card = document.createElement('div')
+  card.style.width = '100%'
+  card.style.maxWidth = '420px'
+  card.style.background = '#ffffff'
+  card.style.border = '1px solid #E3E4E5'
+  card.style.borderRadius = '16px'
+  card.style.padding = '20px'
+  card.style.display = 'flex'
+  card.style.alignItems = 'center'
+  card.style.gap = '12px'
+
+  const spinner = document.createElement('div')
+  spinner.style.width = '18px'
+  spinner.style.height = '18px'
+  spinner.style.borderRadius = '999px'
+  spinner.style.border = '3px solid #E3E4E5'
+  spinner.style.borderTopColor = '#0047BB'
+  spinner.style.animation = 'connektSpin 1s linear infinite'
+
+  const text = document.createElement('div')
+  text.style.fontSize = '13px'
+  text.style.fontWeight = '700'
+  text.style.color = '#1E1B39'
+  text.textContent = safeMessage
+
+  const style = document.createElement('style')
+  style.textContent = '@keyframes connektSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}'
+
+  card.appendChild(spinner)
+  card.appendChild(text)
+  outer.appendChild(style)
+  outer.appendChild(card)
+  root.appendChild(outer)
+}
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, Math.max(0, Number(ms || 0))))
+}
+
+async function fetchJsonWithTimeout(url, init = {}, timeoutMs = 8000) {
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
+  const t = controller ? setTimeout(() => controller.abort(), Math.max(0, Number(timeoutMs || 0) || 0)) : null
+  try {
+    const res = await fetch(url, { ...(init || {}), signal: controller ? controller.signal : init?.signal })
+    const body = await res.json().catch(() => ({}))
+    return { ok: !!res.ok, status: res.status || 0, body }
+  } finally {
+    try { if (t) clearTimeout(t) } catch (_) {}
+  }
+}
+
 try {
   const shouldReloadForChunkError = (err) => {
     const name = String(err?.name || '').toLowerCase()
@@ -177,6 +244,8 @@ try {
   })()
 
   ;(async () => {
+    renderBootLoading('Carregando…')
+
     const shouldFetchPublicConfig = (() => {
       try {
         const host = String(window.location.hostname || '').toLowerCase()
@@ -184,6 +253,17 @@ try {
       } catch (_) {}
       return true
     })()
+
+    const hasInjectedSupabaseConfig = () => {
+      try {
+        const o = window.__CONNEKT__ || window.__CONNEKT_PUBLIC_CONFIG__ || {}
+        const supabaseUrl = o?.supabaseUrl ? String(o.supabaseUrl).trim() : ''
+        const supabaseAnonKey = o?.supabaseAnonKey ? String(o.supabaseAnonKey).trim() : ''
+        return !!(supabaseUrl && supabaseAnonKey)
+      } catch (_) {
+        return false
+      }
+    }
 
     try {
       const cachedRaw = String(localStorage.getItem('connekt_public_config') || '')
@@ -199,15 +279,25 @@ try {
 
     if (shouldFetchPublicConfig) {
       try {
-        const r = await fetch('/api/version', { cache: 'no-store' })
-        const body = await r.json().catch(() => ({}))
+        let fetched = null
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          fetched = await fetchJsonWithTimeout('/api/version', { cache: 'no-store' }, attempt === 0 ? 7000 : 10000).catch(() => null)
+          if (fetched && fetched.ok) break
+          await sleep(250 + attempt * 350)
+        }
+        const body = fetched?.body || {}
         const supabaseUrl = String(body?.public?.supabaseUrl || '').trim()
         const supabaseAnonKey = String(body?.public?.supabaseAnonKey || '').trim()
         if (supabaseUrl && supabaseAnonKey) {
           window.__CONNEKT_PUBLIC_CONFIG__ = { supabaseUrl, supabaseAnonKey }
-          try {
-            localStorage.setItem('connekt_public_config', JSON.stringify({ supabaseUrl, supabaseAnonKey, at: Date.now() }))
-          } catch (_) {}
+          try { localStorage.setItem('connekt_public_config', JSON.stringify({ supabaseUrl, supabaseAnonKey, at: Date.now() })) } catch (_) {}
+        } else {
+          const okNow = hasSupabaseEnv || hasInjectedSupabaseConfig()
+          if (!okNow) {
+            const code = fetched?.status ? `status=${String(fetched.status)}` : 'sem resposta'
+            renderFatal('Não foi possível carregar a configuração do site.', `Falha ao buscar /api/version (${code}).`)
+            return
+          }
         }
       } catch (_) {}
     }
