@@ -362,8 +362,28 @@ try {
     stopWatchdog()
     try { window.__CONNEKT_BOOT__.step = 'rendered' } catch (_) {}
   })().catch((e) => {
-    renderFatal('Falha ao inicializar o app.', e?.message || String(e))
+    const detail = (() => {
+      try {
+        const name = e?.name ? String(e.name) : ''
+        const msg = e?.message ? String(e.message) : String(e || '')
+        const stack = e?.stack ? String(e.stack) : ''
+        return [name, msg, stack].filter(Boolean).join('\n')
+      } catch (_) {
+        return String(e?.message || e || '')
+      }
+    })()
+    renderFatal('Falha ao inicializar o app.', detail)
   })
 } catch (e) {
-  renderFatal('Falha ao inicializar o app.', e?.message || String(e))
+  const detail = (() => {
+    try {
+      const name = e?.name ? String(e.name) : ''
+      const msg = e?.message ? String(e.message) : String(e || '')
+      const stack = e?.stack ? String(e.stack) : ''
+      return [name, msg, stack].filter(Boolean).join('\n')
+    } catch (_) {
+      return String(e?.message || e || '')
+    }
+  })()
+  renderFatal('Falha ao inicializar o app.', detail)
 }
