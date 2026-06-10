@@ -21,11 +21,44 @@ try {
   runSwCleanup()
 } catch (_) {}
 
+function escapeHtml(input) {
+  return String(input ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function setRootHtml(html) {
+  try {
+    const root = document.getElementById('root')
+    if (!root) return false
+    root.innerHTML = String(html || '')
+    return true
+  } catch (_) {
+    return false
+  }
+}
+
 function renderFatal(message, detail) {
   const root = document.getElementById('root')
   if (!root) return
   const safeMessage = String(message || 'Erro ao carregar').slice(0, 5000)
   const safeDetail = String(detail || '').slice(0, 12000)
+
+  const ok = setRootHtml(`
+    <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:#f8fafc;color:#111827;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif">
+      <div style="width:100%;max-width:560px;background:#ffffff;border:1px solid #E3E4E5;border-radius:16px;padding:20px">
+        <div style="font-weight:800;font-size:16px;margin-bottom:8px">Connekt</div>
+        <div style="font-weight:700;font-size:14px;margin-bottom:6px">Não foi possível carregar a página</div>
+        <div style="font-size:12px;color:#6B7280;line-height:1.5;margin-bottom:12px">${escapeHtml(safeMessage)}</div>
+        ${safeDetail ? `<pre style="white-space:pre-wrap;word-break:break-word;background:#F9FAFB;border:1px solid #E3E4E5;border-radius:12px;padding:12px;font-size:12px;color:#111827;margin:0">${escapeHtml(safeDetail)}</pre>` : ''}
+        <div style="margin-top:14px;font-size:12px;color:#6B7280">Tente recarregar (Ctrl+F5). Se persistir, limpe o cache do site e tente novamente.</div>
+      </div>
+    </div>
+  `)
+  if (ok) return
 
   while (root.firstChild) root.removeChild(root.firstChild)
 
@@ -100,6 +133,17 @@ function renderBootLoading(message) {
   const root = document.getElementById('root')
   if (!root) return
   const safeMessage = String(message || 'Carregando…').slice(0, 2000)
+
+  const ok = setRootHtml(`
+    <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:#f8fafc;color:#111827;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif">
+      <div style="width:100%;max-width:420px;background:#ffffff;border:1px solid #E3E4E5;border-radius:16px;padding:20px;display:flex;align-items:center;gap:12px">
+        <div style="width:18px;height:18px;border-radius:999px;border:3px solid #E3E4E5;border-top-color:#0047BB;animation:connektSpin 1s linear infinite"></div>
+        <div style="font-size:13px;font-weight:700;color:#1E1B39">${escapeHtml(safeMessage)}</div>
+      </div>
+      <style>@keyframes connektSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}</style>
+    </div>
+  `)
+  if (ok) return
 
   const outer = document.createElement('div')
   outer.style.minHeight = '100vh'
