@@ -31,6 +31,18 @@
     const root = getRoot()
     if (!root) return
     if (hasVisibleRootContent()) return
+    try {
+      root.innerHTML = [
+        '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:#f8fafc;color:#111827;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif">',
+        '<div style="width:100%;max-width:420px;background:#ffffff;border:1px solid #E3E4E5;border-radius:16px;padding:20px;display:flex;align-items:center;gap:12px">',
+        '<div style="width:18px;height:18px;border-radius:999px;border:3px solid #E3E4E5;border-top-color:#0047BB;animation:connektSpin 1s linear infinite"></div>',
+        '<div style="font-size:13px;font-weight:700;color:#1E1B39">Carregando…</div>',
+        '</div>',
+        '<style>@keyframes connektSpin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}</style>',
+        '</div>',
+      ].join('')
+      return
+    } catch (_) {}
     const outer = el('div')
     outer.style.minHeight = '100vh'
     outer.style.display = 'flex'
