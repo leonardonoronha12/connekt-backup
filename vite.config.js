@@ -346,9 +346,6 @@ export default defineConfig(({ mode }) => {
         define: {
             __BUILD_SHA__: JSON.stringify(buildSha),
             __BUILD_TIME__: JSON.stringify(buildTime),
-            'process.env.NODE_ENV': JSON.stringify(mode === 'production' ? 'production' : 'development'),
-            'process.env': {},
-            global: 'globalThis',
         },
         plugins: [
             ...(isDev ? [inlineEditPlugin(), editModeDevPlugin(), iframeRouteRestorationPlugin(), uploadProxyPlugin()] : []),
