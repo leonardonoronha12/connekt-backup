@@ -56,31 +56,33 @@
       return null
     }
 
+    var attemptKey = 'connekt_preload_aluno_redirect:' + producerUid + ':' + path + ':' + search
+    try {
+      var now = Date.now()
+      var last = Number((sessionStorage.getItem(attemptKey) || localStorage.getItem(attemptKey) || '0') || 0)
+      if (Number.isFinite(last) && last > 0 && (now - last) < 30000) return
+      try { sessionStorage.setItem(attemptKey, String(now)) } catch (_) {}
+      try { localStorage.setItem(attemptKey, String(now)) } catch (_) {}
+    } catch (_) {}
+
     var tokens = readTokens()
-    if (tokens && typeof fetch === 'function') {
-      fetch('/api/producer?type=public_branding&producerId=' + encodeURIComponent(producerUid))
-        .then(function (r) { return r.json().catch(function () { return {} }) })
-        .then(function (body) {
-          try {
-            var memberUrl = String(body && body.member_area_url ? body.member_area_url : '').trim()
-            if (!memberUrl) throw new Error('missing_member_url')
-            var dest = new URL(memberUrl)
+    if (typeof fetch !== 'function') return
+    fetch('/api/producer?type=public_branding&producerId=' + encodeURIComponent(producerUid), { cache: 'no-store' })
+      .then(function (r) { return r.json().catch(function () { return {} }) })
+      .then(function (body) {
+        try {
+          var memberUrl = String(body && body.member_area_url ? body.member_area_url : '').trim()
+          if (!memberUrl) return
+          var dest = new URL(memberUrl)
+          if (!dest.origin || dest.origin === window.location.origin) return
+          if (tokens) {
             var to = dest.origin + path + search + '#sb_at=' + encodeURIComponent(tokens.at) + '&sb_rt=' + encodeURIComponent(tokens.rt)
             window.location.replace(to)
-          } catch (_) {
-            var target = '/api/producer?type=aluno_redirect&producer_uid=' + encodeURIComponent(producerUid) + '&p=' + encodeURIComponent(path) + '&q=' + encodeURIComponent(search)
-            window.location.replace(target)
+            return
           }
-        })
-        .catch(function () {
-          var target = '/api/producer?type=aluno_redirect&producer_uid=' + encodeURIComponent(producerUid) + '&p=' + encodeURIComponent(path) + '&q=' + encodeURIComponent(search)
-          window.location.replace(target)
-        })
-      return
-    }
-
-    var fallbackTarget = '/api/producer?type=aluno_redirect&producer_uid=' + encodeURIComponent(producerUid) + '&p=' + encodeURIComponent(path) + '&q=' + encodeURIComponent(search)
-    window.location.replace(fallbackTarget)
+          window.location.replace(dest.origin + path + search)
+        } catch (_) {}
+      })
+      .catch(function () {})
   } catch (_) {}
 })()
-
