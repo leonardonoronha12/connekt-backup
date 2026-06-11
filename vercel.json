@@ -44,6 +44,7 @@
     { "handle": "filesystem" },
     { "src": "/reset-password", "dest": "/api/index.js?__path=/api/reset-password" },
     { "src": "/reset-password/(.*)", "dest": "/api/index.js?__path=/api/reset-password" },
+    { "src": "/assets/(.*)", "status": 404, "dest": "/404.html" },
     { "src": "/(.*)", "dest": "/index.html" }
   ]
 }
