@@ -199,6 +199,45 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, Math.max(0, Number(ms || 0))))
 }
 
+function isChunkLikeBootError(err) {
+  try {
+    const name = String(err?.name || '').toLowerCase()
+    const msg = String(err?.message || err?.error_description || err || '').toLowerCase()
+    return (
+      name.includes('chunkloaderror') ||
+      msg.includes('chunkloaderror') ||
+      msg.includes('failed to fetch dynamically imported module') ||
+      msg.includes('importing a module script failed') ||
+      msg.includes('dynamically imported module') ||
+      (msg.includes('unexpected token') && msg.includes('html')) ||
+      (msg.includes('mime type') && msg.includes('text/html'))
+    )
+  } catch (_) {
+    return false
+  }
+}
+
+function tryReloadBootOnce(reason) {
+  try {
+    const key = 'connekt_boot_reload_ts'
+    const last = Number(sessionStorage.getItem(key) || 0)
+    const now = Date.now()
+    if (Number.isFinite(last) && last > 0 && (now - last) < 30_000) return false
+    sessionStorage.setItem(key, String(now))
+    const url = new URL(window.location.href)
+    url.searchParams.set('__boot_reload', String(now))
+    if (reason) url.searchParams.set('__boot_reason', String(reason).slice(0, 60))
+    window.location.replace(url.toString())
+    return true
+  } catch (_) {
+    try {
+      window.location.reload()
+      return true
+    } catch (_) {}
+    return false
+  }
+}
+
 async function fetchJsonWithTimeout(url, init = {}, timeoutMs = 8000) {
   const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
   const t = controller ? setTimeout(() => controller.abort(), Math.max(0, Number(timeoutMs || 0) || 0)) : null
@@ -382,12 +421,14 @@ try {
     }
 
     try { window.__CONNEKT_BOOT__.step = 'import_app' } catch (_) {}
-    const [{ default: App }, branding] = await Promise.all([
-      import('@/App'),
-      import('@/contexts/BrandingContext'),
-    ])
-
-    const BrandingProvider = branding?.BrandingProvider
+    const { default: App } = await import('@/App')
+    let BrandingProvider = null
+    try {
+      const branding = await import('@/contexts/BrandingContext')
+      BrandingProvider = branding?.BrandingProvider || null
+    } catch (_) {
+      BrandingProvider = null
+    }
     const tree = BrandingProvider
       ? (
         <HelmetProvider>
@@ -416,6 +457,10 @@ try {
         return String(e?.message || e || '')
       }
     })()
+    if (isChunkLikeBootError(e)) {
+      const did = tryReloadBootOnce('chunk')
+      if (did) return
+    }
     renderFatal('Falha ao inicializar o app.', detail)
   })
 } catch (e) {
@@ -429,5 +474,9 @@ try {
       return String(e?.message || e || '')
     }
   })()
+  if (isChunkLikeBootError(e)) {
+    const did = tryReloadBootOnce('chunk_outer')
+    if (did) {}
+  }
   renderFatal('Falha ao inicializar o app.', detail)
 }
