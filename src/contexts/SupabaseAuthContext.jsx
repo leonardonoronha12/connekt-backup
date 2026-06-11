@@ -915,8 +915,15 @@ export const AuthProvider = ({ children }) => {
             if (Number.isFinite(manualTs) && manualTs > 0 && Date.now() - manualTs < 30000) {
               try { sessionStorage.removeItem('connekt_manual_signout_at') } catch (_) {}
               try { localStorage.removeItem('connekt_manual_signout_at') } catch (_) {}
-              window.history.replaceState({}, '', target);
-              window.dispatchEvent(new PopStateEvent('popstate'));
+              try {
+                const u = new URL(window.location.href)
+                u.pathname = target
+                u.searchParams.set('__logout', String(Date.now()))
+                u.hash = ''
+                window.location.replace(u.toString())
+              } catch (_) {
+                window.location.replace(`${target}?__logout=${encodeURIComponent(String(Date.now()))}`)
+              }
               handleSession(null)
               return
             }
