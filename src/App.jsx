@@ -1105,11 +1105,33 @@ function AppContent() {
     if (loading) return;
     if (user) return;
     if (isPublicView) return;
+    const recentManualSignOut = (() => {
+      try {
+        const now = Date.now()
+        const raw = (() => {
+          try { return sessionStorage.getItem('connekt_manual_signout_at') } catch (_) {}
+          try { return localStorage.getItem('connekt_manual_signout_at') } catch (_) {}
+          return ''
+        })()
+        const ts = Number(raw || 0)
+        return Number.isFinite(ts) && ts > 0 && (now - ts) < 15_000
+      } catch (_) {
+        return false
+      }
+    })()
     const stored = hasLikelyStoredSession()
     if (stored && Date.now() < authGraceUntilRef.current) return
     if (currentView === 'platformAdminPanel' || currentView === 'platformAdminDeploy' || currentView === 'platformAdminWithdraws') {
       const target = '/admin/login'
       if (window.location.pathname !== target) {
+        if (recentManualSignOut) {
+          const u = new URL(window.location.href)
+          u.pathname = target
+          u.searchParams.set('__logout', String(Date.now()))
+          u.hash = ''
+          window.location.replace(u.toString())
+          return
+        }
         window.history.replaceState({}, '', target);
         window.dispatchEvent(new PopStateEvent('popstate'));
       } else {
@@ -1123,6 +1145,14 @@ function AppContent() {
     const isWhitelabelHost = host.endsWith('.app.connektco.com') && host !== 'app.connektco.com'
     const target = isAlunoPath ? (isWhitelabelHost ? '/login-aluno-wl' : '/login-aluno') : '/login'
     if (window.location.pathname !== target) {
+      if (recentManualSignOut) {
+        const u = new URL(window.location.href)
+        u.pathname = target
+        u.searchParams.set('__logout', String(Date.now()))
+        u.hash = ''
+        window.location.replace(u.toString())
+        return
+      }
       window.history.replaceState({}, '', target);
       window.dispatchEvent(new PopStateEvent('popstate'));
     } else {
