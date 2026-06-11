@@ -814,7 +814,7 @@ export default async function handler(req, res) {
       const q = String(u.searchParams.get('q') || '').trim()
       if (!producerUid || !isUuid(producerUid)) {
         res.statusCode = 302
-        res.setHeader('Location', '/aluno')
+        res.setHeader('Location', '/login-aluno')
         res.end('')
         return
       }
@@ -827,7 +827,7 @@ export default async function handler(req, res) {
       }
       if (!memberAreaUrl) {
         res.statusCode = 302
-        res.setHeader('Location', `/aluno?producer_uid=${encodeURIComponent(producerUid)}`)
+        res.setHeader('Location', `/login-aluno?producer_uid=${encodeURIComponent(producerUid)}`)
         res.end('')
         return
       }
