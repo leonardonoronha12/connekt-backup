@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { supabase, supabasePkce, supabaseImplicit, SUPABASE_ENV_OK, SUPABASE_ENV_ERROR } from '@/lib/supabaseClient';
 import { deviceSessionService } from '@/services/deviceSessionService';
 import { getActiveProducerUserId, setActiveProducerUserId } from '@/services/producerScope'
