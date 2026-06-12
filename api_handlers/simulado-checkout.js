@@ -14,6 +14,9 @@ const normalizeGatewayBaseUrl = (raw) => {
   try {
     const u = new URL(v)
     const host = String(u.hostname || '').toLowerCase()
+    if (host === 'api.mygateway.com.br') {
+      u.hostname = 'api.whitelabel.mygateway.com.br'
+    }
     const p = String(u.pathname || '')
     if (host.endsWith('mygateway.com.br') && (p === '/' || p === '')) {
       u.pathname = '/connekt'
@@ -27,19 +30,7 @@ const normalizeGatewayBaseUrl = (raw) => {
 const expandGatewayBaseVariants = (raw) => {
   const base = normalizeGatewayBaseUrl(raw)
   if (!base) return []
-  const out = [base]
-  try {
-    const u = new URL(base)
-    const host = String(u.hostname || '').toLowerCase()
-    const altHost = host === 'api.whitelabel.mygateway.com.br'
-      ? 'api.mygateway.com.br'
-      : (host === 'api.mygateway.com.br' ? 'api.whitelabel.mygateway.com.br' : '')
-    if (altHost) {
-      u.hostname = altHost
-      out.push(u.toString().replace(/\/+$/, ''))
-    }
-  } catch (_) {}
-  return out
+  return [base]
 }
 
 const GATEWAY_BASE_URLS = Array.from(new Set([
@@ -112,9 +103,25 @@ function getGatewayMeta(requestUrl) {
   }
 }
 
+function redactGatewayText(input) {
+  try {
+    let s = String(input || '')
+    if (!s) return ''
+    s = s.replace(/Authorization\s*[:=]\s*[^)\s,]+/gi, 'Authorization=[redacted]')
+    s = s.replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi, '$1 [redacted]')
+    s = s.replace(/x-api-key\s*[:=]\s*[^)\s,]+/gi, 'x-api-key=[redacted]')
+    s = s.replace(/authData\s*[:=]\s*[^)\s,]+/gi, 'authData=[redacted]')
+    s = s.replace(/access_token\s*[:=]\s*[^)\s,]+/gi, 'access_token=[redacted]')
+    s = s.replace(/refresh_token\s*[:=]\s*[^)\s,]+/gi, 'refresh_token=[redacted]')
+    return s.slice(0, 900)
+  } catch (_) {
+    return ''
+  }
+}
+
 function gatewayErrorPayload(e, requestUrl) {
   const name = String(e?.name || '').toLowerCase()
-  const msg = String(e?.message || e || '')
+  const msg = redactGatewayText(e?.message || e || '')
   const aborted = name.includes('abort')
   const meta = getGatewayMeta(requestUrl)
   const attempted = Array.isArray(GATEWAY_BASE_URLS) ? GATEWAY_BASE_URLS : []
@@ -195,6 +202,7 @@ function shouldRetryGatewayStatus(status) {
 
 function gatewayFailureMessage(status) {
   const s = Number(status || 0)
+  if (s === 401 || s === 403) return 'Checkout indisponível: autenticação no gateway falhou.'
   if (s >= 520 && s <= 529) return `Checkout indisponível: o gateway está fora do ar (Cloudflare ${s}).`
   if (s === 504) return 'Checkout indisponível: o gateway demorou para responder.'
   return 'Falha ao criar o checkout no gateway.'
@@ -459,8 +467,8 @@ export default async function handler(req, res) {
           error: 'create_paymentlink_failed',
           message: gatewayFailureMessage(out?.lastStatus || 0),
           status: out?.lastStatus || 0,
-          gateway_message: pickGatewayErrorMessage(out?.payload, out?.lastText || ''),
-          gateway_response: out?.lastText ? String(out.lastText).slice(0, 800) : '',
+          gateway_message: redactGatewayText(pickGatewayErrorMessage(out?.payload, out?.lastText || '')),
+          gateway_response: out?.lastText ? redactGatewayText(String(out.lastText).slice(0, 800)) : '',
           ...meta,
         })
       }
@@ -544,8 +552,8 @@ export default async function handler(req, res) {
           error: 'create_paymentlink_failed',
           message: gatewayFailureMessage(out?.lastStatus || 0),
           status: out?.lastStatus || 0,
-          gateway_message: pickGatewayErrorMessage(out?.payload, out?.lastText || ''),
-          gateway_response: out?.lastText ? String(out.lastText).slice(0, 800) : '',
+          gateway_message: redactGatewayText(pickGatewayErrorMessage(out?.payload, out?.lastText || '')),
+          gateway_response: out?.lastText ? redactGatewayText(String(out.lastText).slice(0, 800)) : '',
           ...meta,
         })
       }
@@ -635,8 +643,8 @@ export default async function handler(req, res) {
           error: 'create_paymentlink_failed',
           message: gatewayFailureMessage(out?.lastStatus || 0),
           status: out?.lastStatus || 0,
-          gateway_message: pickGatewayErrorMessage(out?.payload, out?.lastText || ''),
-          gateway_response: out?.lastText ? String(out.lastText).slice(0, 800) : '',
+          gateway_message: redactGatewayText(pickGatewayErrorMessage(out?.payload, out?.lastText || '')),
+          gateway_response: out?.lastText ? redactGatewayText(String(out.lastText).slice(0, 800)) : '',
           ...meta,
         })
       }
@@ -723,8 +731,8 @@ export default async function handler(req, res) {
         error: 'create_paymentlink_failed',
         message: gatewayFailureMessage(out?.lastStatus || 0),
         status: out?.lastStatus || 0,
-        gateway_message: pickGatewayErrorMessage(out?.payload, out?.lastText || ''),
-        gateway_response: out?.lastText ? String(out.lastText).slice(0, 800) : '',
+        gateway_message: redactGatewayText(pickGatewayErrorMessage(out?.payload, out?.lastText || '')),
+        gateway_response: out?.lastText ? redactGatewayText(String(out.lastText).slice(0, 800)) : '',
         ...meta,
       })
     }
