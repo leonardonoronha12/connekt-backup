@@ -332,6 +332,43 @@ export default function CursoPreviewAlunoPage() {
   const safeLsRemove = (key) => {
     try { localStorage.removeItem(String(key || '')) } catch (_) {}
   }
+  const safeLsGetJson = (key) => {
+    try {
+      const raw = safeLsGet(key)
+      if (!raw) return null
+      const parsed = JSON.parse(raw)
+      return parsed && typeof parsed === 'object' ? parsed : null
+    } catch (_) {
+      return null
+    }
+  }
+  const safeLsSetJson = (key, value) => {
+    try { safeLsSet(key, JSON.stringify(value || {})) } catch (_) {}
+  }
+  const checkoutCacheKeyCourse = useMemo(() => (courseId ? `connekt_checkout_cache:course:${String(courseId)}` : ''), [courseId])
+  const checkoutCacheKeyModule = useMemo(() => (courseId ? `connekt_checkout_cache:module:${String(courseId)}` : ''), [courseId])
+  const getCachedCheckoutUrl = (key, extraMatch = null) => {
+    try {
+      if (!key) return ''
+      const c = safeLsGetJson(key)
+      if (!c) return ''
+      const ts = Number(c.ts || 0)
+      const url = String(c.url || '').trim()
+      if (!url) return ''
+      if (extraMatch && typeof extraMatch === 'object') {
+        for (const [k, v] of Object.entries(extraMatch)) {
+          if (String(c[k] || '') !== String(v || '')) return ''
+        }
+      }
+      const maxAgeMs = 48 * 60 * 60 * 1000
+      if (!Number.isFinite(ts) || ts <= 0 || (Date.now() - ts) > maxAgeMs) return ''
+      return url
+    } catch (_) {
+      return ''
+    }
+  }
+  const cachedCourseCheckoutUrl = useMemo(() => getCachedCheckoutUrl(checkoutCacheKeyCourse), [checkoutCacheKeyCourse, ownershipTick])
+  const cachedModuleCheckoutUrl = useMemo(() => getCachedCheckoutUrl(checkoutCacheKeyModule, selectedModule ? { moduleId: String(selectedModule?.id || selectedModule?.module_id || selectedModule?.moduleId || '') } : null), [checkoutCacheKeyModule, selectedModule?.id, selectedModule?.module_id, selectedModule?.moduleId, ownershipTick])
   const formatCentsBRL = (cents) => {
     const n = Number(cents || 0)
     const v = Number.isFinite(n) ? n / 100 : 0
@@ -494,6 +531,7 @@ export default function CursoPreviewAlunoPage() {
         setCheckoutError('Checkout indisponível.')
         return
       }
+      if (checkoutCacheKeyCourse) safeLsSetJson(checkoutCacheKeyCourse, { url: checkoutUrl, linkId, ts: Date.now() })
       const w = window.open(checkoutUrl, '_blank', 'noopener')
       if (!w) setCheckoutError('Seu navegador bloqueou a abertura do checkout. Permita pop-ups e tente novamente.')
     } catch (e) {
@@ -667,6 +705,7 @@ export default function CursoPreviewAlunoPage() {
         setModuleCheckoutError('Checkout indisponível.')
         return
       }
+      if (checkoutCacheKeyModule) safeLsSetJson(checkoutCacheKeyModule, { url: checkoutUrl, linkId, moduleId: id, ts: Date.now() })
       const w = window.open(checkoutUrl, '_blank', 'noopener')
       if (!w) setModuleCheckoutError('Seu navegador bloqueou a abertura do checkout. Permita pop-ups e tente novamente.')
     } catch (e) {
@@ -874,6 +913,19 @@ export default function CursoPreviewAlunoPage() {
                       {checkoutError ? (
                         <div className="mt-2 text-[12px] text-[#B91C1C]">
                           {checkoutError}
+                          {cachedCourseCheckoutUrl ? (
+                            <div className="mt-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  try { window.open(cachedCourseCheckoutUrl, '_blank', 'noopener') } catch (_) {}
+                                }}
+                                className="underline"
+                              >
+                                Abrir último checkout
+                              </button>
+                            </div>
+                          ) : null}
                         </div>
                       ) : null}
                     </div>
@@ -1154,7 +1206,22 @@ export default function CursoPreviewAlunoPage() {
                 </div>
               </div>
               {moduleCheckoutError ? (
-                <div className="mt-3 text-[12px] text-[#B91C1C]">{moduleCheckoutError}</div>
+                <div className="mt-3 text-[12px] text-[#B91C1C]">
+                  {moduleCheckoutError}
+                  {cachedModuleCheckoutUrl ? (
+                    <div className="mt-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          try { window.open(cachedModuleCheckoutUrl, '_blank', 'noopener') } catch (_) {}
+                        }}
+                        className="underline"
+                      >
+                        Abrir último checkout
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
               ) : null}
               <div className="mt-4 flex items-center justify-end gap-2">
                 <Button
