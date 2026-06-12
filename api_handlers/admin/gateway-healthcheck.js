@@ -30,6 +30,17 @@ function redactText(input) {
     .replace(/(bearer|basic)\s+[A-Za-z0-9\-._~+/]+=*/gi, '$1 [redacted]')
 }
 
+function isAbortError(e) {
+  const name = String(e?.name || '').toLowerCase()
+  const msg = String(e?.message || e || '').toLowerCase()
+  if (name.includes('abort')) return true
+  if (msg.includes('aborted')) return true
+  if (msg.includes('abort')) return true
+  if (msg.includes('timeout')) return true
+  if (msg === 'hard_timeout') return true
+  return false
+}
+
 async function fetchWithTimeout(url, init = {}, timeoutMs = 10_000) {
   const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
   const t = controller ? setTimeout(() => controller.abort(), Math.max(1, Number(timeoutMs || 0))) : null
@@ -49,6 +60,11 @@ async function safeReadText(res) {
 }
 
 export default async function handler(req, res) {
+  const startedAt = Date.now()
+  let step = ''
+  let baseUrl = ''
+  let authUrl = ''
+  let paymentUrl = ''
   try {
     if (req.method !== 'GET') return json(res, 405, { error: 'method_not_allowed' })
     const auth = await requireAdmin(req, res)
@@ -60,17 +76,16 @@ export default async function handler(req, res) {
       readEnv('VITE_PLANS_GATEWAY_URL', '') ||
       ''
     )
-    const baseUrl = normalizeGatewayBaseUrl(rawBase)
+    baseUrl = normalizeGatewayBaseUrl(rawBase)
     const apiKey = readEnv('PLANS_GATEWAY_API_KEY', readEnv('MYG_API_KEY', readEnv('VITE_PLANS_GATEWAY_API_KEY', '')))
     const authData = readEnv('PLANS_GATEWAY_AUTHDATA', readEnv('MYG_AUTHDATA', readEnv('VITE_PLANS_GATEWAY_AUTHDATA', '')))
 
     if (!baseUrl) return json(res, 500, { ok: false, error: 'missing_gateway_base' })
     if (!apiKey || !authData) return json(res, 500, { ok: false, error: 'missing_gateway_env' })
 
-    const authUrl = `${baseUrl.replace(/\/$/, '')}/authentication/v2/auth`
-    const paymentUrl = `${baseUrl.replace(/\/$/, '')}/payments/v1/paymentlink`
+    authUrl = `${baseUrl.replace(/\/$/, '')}/authentication/v2/auth`
+    paymentUrl = `${baseUrl.replace(/\/$/, '')}/payments/v1/paymentlink`
 
-    const startedAt = Date.now()
     const out = {
       ok: false,
       now: new Date().toISOString(),
@@ -91,6 +106,7 @@ export default async function handler(req, res) {
     }
 
     const authStart = Date.now()
+    step = 'auth'
     const authRes = await fetchWithTimeout(authUrl, {
       method: 'POST',
       headers: headersBase,
@@ -135,6 +151,7 @@ export default async function handler(req, res) {
     }
 
     const payStart = Date.now()
+    step = 'paymentlink'
     const payRes = await fetchWithTimeout(paymentUrl, {
       method: 'POST',
       headers: { ...headersBase, Authorization: `Bearer ${token}` },
@@ -155,7 +172,27 @@ export default async function handler(req, res) {
     out.took_ms = Date.now() - startedAt
     return json(res, 200, out)
   } catch (e) {
-    return json(res, 500, { ok: false, error: 'internal_error', message: e?.message || String(e) })
+    const tookMs = Date.now() - startedAt
+    if (isAbortError(e)) {
+      return json(res, 504, {
+        ok: false,
+        error: 'gateway_timeout',
+        message: 'O servidor tentou falar com o gateway, mas ele não respondeu a tempo.',
+        step: step || '',
+        base_url: baseUrl || '',
+        endpoints: { auth: authUrl || '', paymentlink: paymentUrl || '' },
+        took_ms: tookMs,
+      })
+    }
+    return json(res, 502, {
+      ok: false,
+      error: 'gateway_network_error',
+      message: 'Falha ao conectar no gateway.',
+      details: redactText(String(e?.message || e || '')).slice(0, 300),
+      step: step || '',
+      base_url: baseUrl || '',
+      endpoints: { auth: authUrl || '', paymentlink: paymentUrl || '' },
+      took_ms: tookMs,
+    })
   }
 }
-
