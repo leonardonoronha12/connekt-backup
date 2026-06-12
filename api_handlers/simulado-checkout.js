@@ -117,12 +117,14 @@ function gatewayErrorPayload(e, requestUrl) {
   const msg = String(e?.message || e || '')
   const aborted = name.includes('abort')
   const meta = getGatewayMeta(requestUrl)
+  const attempted = Array.isArray(GATEWAY_BASE_URLS) ? GATEWAY_BASE_URLS : []
   if (aborted) {
     return {
       status: 504,
       body: {
         error: 'gateway_timeout',
         message: 'Checkout indisponível: o gateway demorou para responder.',
+        attempted_bases: attempted,
         ...meta,
       },
     }
@@ -133,6 +135,7 @@ function gatewayErrorPayload(e, requestUrl) {
       error: 'gateway_network_error',
       message: 'Checkout indisponível: falha ao conectar no gateway.',
       details: msg ? String(msg).slice(0, 300) : '',
+      attempted_bases: attempted,
       ...meta,
     },
   }
@@ -443,7 +446,11 @@ export default async function handler(req, res) {
         external_order_number: externalOrderNumber,
       }
 
-      const out = await withHardTimeout(createPaymentLinkAcrossGateways({ requestBody }), 25_000).catch((e) => ({ ok: false, exception: e, requestUrl: '' }))
+      const out = await withHardTimeout(createPaymentLinkAcrossGateways({ requestBody }), 25_000).catch((e) => ({
+        ok: false,
+        exception: e,
+        requestUrl: (GATEWAY_BASE_URLS[0] ? `${String(GATEWAY_BASE_URLS[0]).replace(/\/$/, '')}/payments/v1/paymentlink` : ''),
+      }))
       const requestUrl = String(out?.requestUrl || '').trim()
       if (out?.exception) {
         const err = gatewayErrorPayload(out.exception, requestUrl)
@@ -524,7 +531,11 @@ export default async function handler(req, res) {
         external_order_number: externalOrderNumber,
       }
 
-      const out = await withHardTimeout(createPaymentLinkAcrossGateways({ requestBody }), 25_000).catch((e) => ({ ok: false, exception: e, requestUrl: '' }))
+      const out = await withHardTimeout(createPaymentLinkAcrossGateways({ requestBody }), 25_000).catch((e) => ({
+        ok: false,
+        exception: e,
+        requestUrl: (GATEWAY_BASE_URLS[0] ? `${String(GATEWAY_BASE_URLS[0]).replace(/\/$/, '')}/payments/v1/paymentlink` : ''),
+      }))
       const requestUrl = String(out?.requestUrl || '').trim()
       if (out?.exception) {
         const err = gatewayErrorPayload(out.exception, requestUrl)
@@ -611,7 +622,11 @@ export default async function handler(req, res) {
         external_order_number: externalOrderNumber,
       }
 
-      const out = await withHardTimeout(createPaymentLinkAcrossGateways({ requestBody }), 25_000).catch((e) => ({ ok: false, exception: e, requestUrl: '' }))
+      const out = await withHardTimeout(createPaymentLinkAcrossGateways({ requestBody }), 25_000).catch((e) => ({
+        ok: false,
+        exception: e,
+        requestUrl: (GATEWAY_BASE_URLS[0] ? `${String(GATEWAY_BASE_URLS[0]).replace(/\/$/, '')}/payments/v1/paymentlink` : ''),
+      }))
       const requestUrl = String(out?.requestUrl || '').trim()
       if (out?.exception) {
         const err = gatewayErrorPayload(out.exception, requestUrl)
@@ -695,7 +710,11 @@ export default async function handler(req, res) {
       external_order_number: externalOrderNumber,
     }
 
-    const out = await withHardTimeout(createPaymentLinkAcrossGateways({ requestBody }), 25_000).catch((e) => ({ ok: false, exception: e, requestUrl: '' }))
+    const out = await withHardTimeout(createPaymentLinkAcrossGateways({ requestBody }), 25_000).catch((e) => ({
+      ok: false,
+      exception: e,
+      requestUrl: (GATEWAY_BASE_URLS[0] ? `${String(GATEWAY_BASE_URLS[0]).replace(/\/$/, '')}/payments/v1/paymentlink` : ''),
+    }))
     const requestUrl = String(out?.requestUrl || '').trim()
     if (out?.exception) {
       const err = gatewayErrorPayload(out.exception, requestUrl)
