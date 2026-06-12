@@ -24,10 +24,28 @@ const normalizeGatewayBaseUrl = (raw) => {
   }
 }
 
+const expandGatewayBaseVariants = (raw) => {
+  const base = normalizeGatewayBaseUrl(raw)
+  if (!base) return []
+  const out = [base]
+  try {
+    const u = new URL(base)
+    const host = String(u.hostname || '').toLowerCase()
+    const altHost = host === 'api.whitelabel.mygateway.com.br'
+      ? 'api.mygateway.com.br'
+      : (host === 'api.mygateway.com.br' ? 'api.whitelabel.mygateway.com.br' : '')
+    if (altHost) {
+      u.hostname = altHost
+      out.push(u.toString().replace(/\/+$/, ''))
+    }
+  } catch (_) {}
+  return out
+}
+
 const GATEWAY_BASE_URLS = Array.from(new Set([
-  normalizeGatewayBaseUrl(RAW_GATEWAY_URL),
-  normalizeGatewayBaseUrl(RAW_GATEWAY_URL_FALLBACK),
-  normalizeGatewayBaseUrl(process.env.MYG_BASE_URL || ''),
+  ...expandGatewayBaseVariants(RAW_GATEWAY_URL),
+  ...expandGatewayBaseVariants(RAW_GATEWAY_URL_FALLBACK),
+  ...expandGatewayBaseVariants(process.env.MYG_BASE_URL || ''),
 ])).filter(Boolean)
 
 const cachedAuth = new Map()
@@ -190,16 +208,17 @@ async function createPaymentLink({ requestUrl, requestBody, authHeaders }) {
         ...headersBase,
         ...(authHeader ? { Authorization: String(authHeader) } : {}),
       }
-      for (let attempt = 0; attempt < 2; attempt += 1) {
-        r = await fetchWithTimeout(requestUrl, { method: 'POST', headers, body: JSON.stringify(requestBody) }, 35000)
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        r = await fetchWithTimeout(requestUrl, { method: 'POST', headers, body: JSON.stringify(requestBody) }, 45000)
         lastStatus = r?.status || 0
         const parsed = await readJsonOrText(r)
         payload = parsed.payload || {}
         lastText = parsed.text || ''
         if (r.ok) return { ok: true, r, payload, lastText, lastStatus }
         if ([401, 403].includes(Number(lastStatus || 0))) break
-        if (!shouldRetryGatewayStatus(lastStatus) || attempt === 1) break
-        await sleep(900 + Math.floor(Math.random() * 700))
+        if (!shouldRetryGatewayStatus(lastStatus) || attempt === 2) break
+        const base = 1200 + attempt * 900
+        await sleep(base + Math.floor(Math.random() * 900))
       }
     }
     return { ok: false, r, payload, lastText, lastStatus }
