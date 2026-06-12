@@ -9,6 +9,33 @@ export default function TestMyGateway() {
   const [envConfig, setEnvConfig] = useState({});
   const [healthLoading, setHealthLoading] = useState(false);
 
+  const explainHealthcheck = (httpStatus, body) => {
+    const status = Number(httpStatus || 0)
+    const error = String(body?.error || '').trim()
+    const step = String(body?.step || '').trim()
+    if (status === 401 || error === 'unauthorized') {
+      return 'Você precisa estar logado e autorizado como admin para rodar este teste.'
+    }
+    if (status === 403 || error === 'forbidden') {
+      return 'Seu usuário não tem permissão de admin para rodar este teste.'
+    }
+    if (error === 'missing_gateway_env' || error === 'missing_gateway_base') {
+      return 'O servidor não encontrou as credenciais/URL do gateway nas variáveis de ambiente. Isso é configuração interna, não é um erro do aluno.'
+    }
+    if (status === 504 || error === 'gateway_timeout') {
+      if (step === 'auth') return 'O servidor tentou autenticar no gateway, mas o gateway não respondeu a tempo. Normalmente é instabilidade/queda do gateway ou bloqueio de rede.'
+      if (step === 'paymentlink') return 'O servidor conseguiu autenticar, mas o gateway não respondeu a tempo ao criar o checkout. Normalmente é instabilidade/queda do gateway ou bloqueio de rede.'
+      return 'O servidor tentou falar com o gateway, mas o gateway não respondeu a tempo. Normalmente é instabilidade/queda do gateway ou bloqueio de rede.'
+    }
+    if (status >= 500 && status <= 599) {
+      return 'O servidor não conseguiu concluir a conversa com o gateway. Em geral é problema de conectividade/instabilidade do gateway (ou bloqueio).'
+    }
+    if (status >= 400 && status <= 499) {
+      return 'O gateway respondeu, mas recusou a requisição. Em geral é credencial inválida, permissão ou formato do pedido.'
+    }
+    return ''
+  }
+
   useEffect(() => {
     // Carrega config (mascarando segredos)
     // Nota: Variáveis sem VITE_ não são expostas ao frontend, o que é correto para segredos.
@@ -74,9 +101,13 @@ export default function TestMyGateway() {
       const body = await r.json().catch(() => ({}));
       if (!r.ok) {
         addLog({ type: 'error', msg: `Healthcheck falhou (HTTP ${r.status})`, data: body });
+        const reason = explainHealthcheck(r.status, body)
+        if (reason) addLog({ type: 'info', msg: `Explicação: ${reason}` })
         return;
       }
       addLog({ type: body?.ok ? 'success' : 'error', msg: `Healthcheck concluído (ok=${String(!!body?.ok)})`, data: body });
+      const reason = explainHealthcheck(200, body)
+      if (reason) addLog({ type: body?.ok ? 'info' : 'info', msg: `Explicação: ${reason}` })
     } catch (e) {
       addLog({ type: 'error', msg: `Exceção no healthcheck: ${e?.message || String(e)}` });
     } finally {
@@ -87,6 +118,19 @@ export default function TestMyGateway() {
   return (
     <div className="p-8 max-w-4xl mx-auto space-y-8">
       <h1 className="text-2xl font-bold">Teste de Integração MyGateway</h1>
+
+      <div className="bg-white border rounded-lg p-4 space-y-2">
+        <div className="font-semibold">Como interpretar (explicação para leigos)</div>
+        <div className="text-sm text-slate-700 leading-relaxed">
+          O seu site precisa “conversar” com o MyGateway para criar um link de checkout. Esse healthcheck simula exatamente essa conversa pelo servidor.
+          Se aparecer “demorou para responder” ou HTTP 504, significa que o servidor tentou falar com o MyGateway e ele não respondeu a tempo (instabilidade/queda/bloqueio).
+          Se aparecer HTTP 4xx, significa que o MyGateway respondeu, mas recusou (credenciais/permissão/formato).
+        </div>
+        <div className="text-sm text-slate-700 leading-relaxed">
+          A caixa “Configuração de Ambiente” mostra apenas variáveis que começam com <span className="font-mono">VITE_</span>.
+          As credenciais reais do gateway ficam no servidor e por segurança não aparecem no navegador, então é normal ver “(vazio)” ali.
+        </div>
+      </div>
       
       {/* Configurações */}
       <div className="bg-slate-100 p-4 rounded-lg border">
