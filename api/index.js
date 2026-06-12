@@ -35,6 +35,7 @@ import adminVercelEnvUpsert from '../api_handlers/admin/vercel/env-upsert.js'
 import adminWithdrawRequestsList from '../api_handlers/admin/withdraw_requests/list.js'
 import adminWithdrawRequestsUpdateStatus from '../api_handlers/admin/withdraw_requests/update-status.js'
 import adminLogosUpload from '../api_handlers/admin/logos/upload.js'
+import adminGatewayHealthcheck from '../api_handlers/admin/gateway-healthcheck.js'
 
 function getPathFromRequest(req) {
   try {
@@ -89,6 +90,7 @@ export default async function handler(req, res) {
       ['/api/admin/withdraw-requests/list', adminWithdrawRequestsList],
       ['/api/admin/withdraw-requests/update-status', adminWithdrawRequestsUpdateStatus],
       ['/api/admin/logos/upload', adminLogosUpload],
+      ['/api/admin/gateway-healthcheck', adminGatewayHealthcheck],
     ])
 
     const direct = routes.get(pathname)

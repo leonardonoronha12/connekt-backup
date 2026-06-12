@@ -3,10 +3,11 @@ import { planService } from '@/services/planService';
 import { useAuth } from '@/contexts/SupabaseAuthContext';
 
 export default function TestMyGateway() {
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(false);
   const [envConfig, setEnvConfig] = useState({});
+  const [healthLoading, setHealthLoading] = useState(false);
 
   useEffect(() => {
     // Carrega config (mascarando segredos)
@@ -55,6 +56,34 @@ export default function TestMyGateway() {
     }
   };
 
+  const handleGatewayHealthcheck = async () => {
+    if (healthLoading) return;
+    setHealthLoading(true);
+    addLog({ type: 'info', msg: 'Rodando healthcheck do gateway (server-side)...' });
+    try {
+      const token = String(session?.access_token || '').trim();
+      if (!token) {
+        addLog({ type: 'error', msg: 'Você precisa estar logado como admin para rodar o healthcheck.' });
+        return;
+      }
+      const r = await fetch('/api/admin/gateway-healthcheck', {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${token}` },
+        cache: 'no-store',
+      });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        addLog({ type: 'error', msg: `Healthcheck falhou (HTTP ${r.status})`, data: body });
+        return;
+      }
+      addLog({ type: body?.ok ? 'success' : 'error', msg: `Healthcheck concluído (ok=${String(!!body?.ok)})`, data: body });
+    } catch (e) {
+      addLog({ type: 'error', msg: `Exceção no healthcheck: ${e?.message || String(e)}` });
+    } finally {
+      setHealthLoading(false);
+    }
+  };
+
   return (
     <div className="p-8 max-w-4xl mx-auto space-y-8">
       <h1 className="text-2xl font-bold">Teste de Integração MyGateway</h1>
@@ -69,6 +98,23 @@ export default function TestMyGateway() {
               <div className="font-bold text-slate-700">{v}</div>
             </React.Fragment>
           ))}
+        </div>
+      </div>
+
+      <div className="border p-4 rounded-lg space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="font-semibold">Healthcheck do Gateway (server-side)</h2>
+          <button
+            onClick={handleGatewayHealthcheck}
+            disabled={healthLoading}
+            className="px-3 py-2 bg-emerald-600 text-white rounded hover:bg-emerald-700 disabled:opacity-50 text-sm"
+          >
+            {healthLoading ? 'Testando...' : 'Rodar healthcheck'}
+          </button>
+        </div>
+        <div className="text-sm text-slate-600">
+          Esse teste chama <span className="font-mono">/api/admin/gateway-healthcheck</span> e tenta autenticar e criar um paymentlink no MyGateway,
+          sem expor segredos no frontend.
         </div>
       </div>
 
