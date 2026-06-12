@@ -510,6 +510,11 @@ export default function CursoPreviewAlunoPage() {
         const host = String(body?.gateway_host || '').trim()
         const detail = String(body?.details || '').trim()
         const suffix = host ? ` (${host})` : ''
+        const attemptedBases = Array.isArray(body?.attempted_bases) ? body.attempted_bases : []
+        const attemptedHosts = attemptedBases.map((b) => {
+          try { return new URL(String(b || '')).host } catch (_) { return String(b || '') }
+        }).map((s) => String(s || '').trim()).filter(Boolean)
+        const attemptedSuffix = attemptedHosts.length ? ` (tentou: ${attemptedHosts.join(', ')})` : ''
         const gatewayMsg = String(body?.gateway_message || '').trim()
         const status = String(body?.status || '').trim()
         const extra = [
@@ -517,7 +522,7 @@ export default function CursoPreviewAlunoPage() {
           gatewayMsg ? `gateway=${gatewayMsg}` : '',
           detail ? detail : '',
         ].filter(Boolean).join(' • ')
-        setCheckoutError((msg ? `${msg}${suffix}${extra ? ` (${extra})` : ''}` : '') || 'Não foi possível abrir o checkout.')
+        setCheckoutError((msg ? `${msg}${suffix}${attemptedSuffix}${extra ? ` (${extra})` : ''}` : '') || 'Não foi possível abrir o checkout.')
         return
       }
       const checkoutUrl = String(body?.checkout_url || '').trim()
@@ -683,6 +688,11 @@ export default function CursoPreviewAlunoPage() {
         const host = String(body?.gateway_host || '').trim()
         const detail = String(body?.details || '').trim()
         const suffix = host ? ` (${host})` : ''
+        const attemptedBases = Array.isArray(body?.attempted_bases) ? body.attempted_bases : []
+        const attemptedHosts = attemptedBases.map((b) => {
+          try { return new URL(String(b || '')).host } catch (_) { return String(b || '') }
+        }).map((s) => String(s || '').trim()).filter(Boolean)
+        const attemptedSuffix = attemptedHosts.length ? ` (tentou: ${attemptedHosts.join(', ')})` : ''
         const gatewayMsg = String(body?.gateway_message || '').trim()
         const status = String(body?.status || '').trim()
         const extra = [
@@ -690,7 +700,7 @@ export default function CursoPreviewAlunoPage() {
           gatewayMsg ? `gateway=${gatewayMsg}` : '',
           detail ? detail : '',
         ].filter(Boolean).join(' • ')
-        setModuleCheckoutError((msg ? `${msg}${suffix}${extra ? ` (${extra})` : ''}` : '') || 'Não foi possível abrir o checkout.')
+        setModuleCheckoutError((msg ? `${msg}${suffix}${attemptedSuffix}${extra ? ` (${extra})` : ''}` : '') || 'Não foi possível abrir o checkout.')
         return
       }
       const checkoutUrl = String(body?.checkout_url || '').trim()
