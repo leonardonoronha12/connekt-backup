@@ -229,17 +229,13 @@ async function createPaymentLink({ requestUrl, requestBody, authHeaders }) {
         ...headersBase,
         ...(authHeader ? { Authorization: String(authHeader) } : {}),
       }
-      for (let attempt = 0; attempt < 2; attempt += 1) {
-        r = await fetchWithTimeout(requestUrl, { method: 'POST', headers, body: JSON.stringify(requestBody) }, 18000)
-        lastStatus = r?.status || 0
-        const parsed = await readJsonOrText(r)
-        payload = parsed.payload || {}
-        lastText = parsed.text || ''
-        if (r.ok) return { ok: true, r, payload, lastText, lastStatus }
-        if ([401, 403].includes(Number(lastStatus || 0))) break
-        if (!shouldRetryGatewayStatus(lastStatus) || attempt === 1) break
-        await sleep(900 + Math.floor(Math.random() * 900))
-      }
+      r = await fetchWithTimeout(requestUrl, { method: 'POST', headers, body: JSON.stringify(requestBody) }, 9000)
+      lastStatus = r?.status || 0
+      const parsed = await readJsonOrText(r)
+      payload = parsed.payload || {}
+      lastText = parsed.text || ''
+      if (r.ok) return { ok: true, r, payload, lastText, lastStatus }
+      if ([401, 403].includes(Number(lastStatus || 0))) break
     }
     return { ok: false, r, payload, lastText, lastStatus }
   } catch (e) {
@@ -260,7 +256,7 @@ async function getGatewayAuthTokenForBase(gatewayBaseUrl) {
     const url = `${String(base).replace(/\/$/, '')}/authentication/v2/auth`
     const headers = { 'x-api-key': GATEWAY_API_KEY, 'Content-Type': 'application/json', Accept: 'application/json' }
     const body = { authData: GATEWAY_AUTHDATA }
-    const res = await fetchWithTimeout(url, { method: 'POST', headers, body: JSON.stringify(body) }, 12000)
+    const res = await fetchWithTimeout(url, { method: 'POST', headers, body: JSON.stringify(body) }, 5000)
     if (!res.ok) return null
     const data = await res.json().catch(() => ({}))
     const token = data?.auth_token || data?.token || data?.access_token || null
@@ -275,8 +271,9 @@ async function createPaymentLinkAcrossGateways({ requestBody }) {
   let last = null
   for (const baseUrl of GATEWAY_BASE_URLS) {
     const requestUrl = `${String(baseUrl).replace(/\/$/, '')}/payments/v1/paymentlink`
-    const token = await getGatewayAuthTokenForBase(baseUrl)
     const basicFromEnv = (GATEWAY_AUTH && GATEWAY_AUTH.startsWith('Basic ')) ? GATEWAY_AUTH : (GATEWAY_AUTHDATA ? `Basic ${GATEWAY_AUTHDATA}` : null)
+    const shouldFetchToken = !GATEWAY_AUTH && !!GATEWAY_AUTHDATA
+    const token = shouldFetchToken ? await getGatewayAuthTokenForBase(baseUrl) : null
     const envAuthFallback = (!token && !basicFromEnv && GATEWAY_AUTH) ? GATEWAY_AUTH : null
     const authHeaders = []
     if (token) authHeaders.push(normalizeBearerToken(token))
