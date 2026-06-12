@@ -229,6 +229,40 @@ export default function CursoPreviewAlunoPage() {
     };
   }, [meta]);
 
+  const openCheckoutUrl = (url) => {
+    const u = String(url || '').trim()
+    if (!u) return false
+    try {
+      const w = window.open(u, '_blank', 'noopener')
+      if (!w) {
+        setCheckoutError('Seu navegador bloqueou a abertura do checkout. Permita pop-ups e tente novamente.')
+        return false
+      }
+      return true
+    } catch (_) {
+      return false
+    }
+  }
+
+  const resolveCheckoutOverrideUrl = (ctx) => {
+    try {
+      if (!ctx || typeof ctx !== 'object') return ''
+      const candidates = [
+        ctx.checkout_url,
+        ctx.checkoutUrl,
+        ctx.payment_link,
+        ctx.paymentLink,
+        ctx.gateway_checkout_url,
+        ctx.gatewayCheckoutUrl,
+      ]
+      for (const c of candidates) {
+        const s = String(c || '').trim()
+        if (s) return s
+      }
+    } catch (_) {}
+    return ''
+  }
+
   useEffect(() => {
     let active = true;
     const run = async () => {
@@ -499,6 +533,12 @@ export default function CursoPreviewAlunoPage() {
         setCheckoutError('Faça login para comprar.')
         return
       }
+      const overrideUrl = resolveCheckoutOverrideUrl(meta)
+      if (overrideUrl) {
+        const ok = openCheckoutUrl(overrideUrl)
+        if (!ok) setCheckoutError('Não foi possível abrir o checkout.')
+        return
+      }
       const r = await fetchWithTimeout('/api/simulado-checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -537,8 +577,7 @@ export default function CursoPreviewAlunoPage() {
         return
       }
       if (checkoutCacheKeyCourse) safeLsSetJson(checkoutCacheKeyCourse, { url: checkoutUrl, linkId, ts: Date.now() })
-      const w = window.open(checkoutUrl, '_blank', 'noopener')
-      if (!w) setCheckoutError('Seu navegador bloqueou a abertura do checkout. Permita pop-ups e tente novamente.')
+      openCheckoutUrl(checkoutUrl)
     } catch (e) {
       const name = String(e?.name || '').toLowerCase()
       const msg = String(e?.message || e || '').toLowerCase()
@@ -677,6 +716,20 @@ export default function CursoPreviewAlunoPage() {
         setModuleCheckoutError('Faça login para comprar.')
         return
       }
+      const m = findModuleById(id)
+      const overrideUrl = resolveCheckoutOverrideUrl(m)
+      if (overrideUrl) {
+        const u = String(overrideUrl || '').trim()
+        if (u) {
+          try {
+            const w = window.open(u, '_blank', 'noopener')
+            if (!w) setModuleCheckoutError('Seu navegador bloqueou a abertura do checkout. Permita pop-ups e tente novamente.')
+          } catch (_) {
+            setModuleCheckoutError('Não foi possível abrir o checkout.')
+          }
+          return
+        }
+      }
       const r = await fetchWithTimeout('/api/simulado-checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -716,8 +769,12 @@ export default function CursoPreviewAlunoPage() {
         return
       }
       if (checkoutCacheKeyModule) safeLsSetJson(checkoutCacheKeyModule, { url: checkoutUrl, linkId, moduleId: id, ts: Date.now() })
-      const w = window.open(checkoutUrl, '_blank', 'noopener')
-      if (!w) setModuleCheckoutError('Seu navegador bloqueou a abertura do checkout. Permita pop-ups e tente novamente.')
+      try {
+        const w = window.open(checkoutUrl, '_blank', 'noopener')
+        if (!w) setModuleCheckoutError('Seu navegador bloqueou a abertura do checkout. Permita pop-ups e tente novamente.')
+      } catch (_) {
+        setModuleCheckoutError('Não foi possível abrir o checkout.')
+      }
     } catch (e) {
       const name = String(e?.name || '').toLowerCase()
       const msg = String(e?.message || e || '').toLowerCase()
