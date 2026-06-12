@@ -164,6 +164,24 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, Math.max(0, Number(ms || 0))))
 }
 
+async function withHardTimeout(promise, timeoutMs) {
+  let t = null
+  try {
+    return await Promise.race([
+      Promise.resolve(promise),
+      new Promise((_, reject) => {
+        t = setTimeout(() => {
+          const e = new Error('hard_timeout')
+          e.name = 'AbortError'
+          reject(e)
+        }, Math.max(1, Number(timeoutMs || 0)))
+      }),
+    ])
+  } finally {
+    if (t) clearTimeout(t)
+  }
+}
+
 function shouldRetryGatewayStatus(status) {
   const s = Number(status || 0)
   if (!Number.isFinite(s) || s <= 0) return false
@@ -208,17 +226,16 @@ async function createPaymentLink({ requestUrl, requestBody, authHeaders }) {
         ...headersBase,
         ...(authHeader ? { Authorization: String(authHeader) } : {}),
       }
-      for (let attempt = 0; attempt < 3; attempt += 1) {
-        r = await fetchWithTimeout(requestUrl, { method: 'POST', headers, body: JSON.stringify(requestBody) }, 45000)
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        r = await fetchWithTimeout(requestUrl, { method: 'POST', headers, body: JSON.stringify(requestBody) }, 18000)
         lastStatus = r?.status || 0
         const parsed = await readJsonOrText(r)
         payload = parsed.payload || {}
         lastText = parsed.text || ''
         if (r.ok) return { ok: true, r, payload, lastText, lastStatus }
         if ([401, 403].includes(Number(lastStatus || 0))) break
-        if (!shouldRetryGatewayStatus(lastStatus) || attempt === 2) break
-        const base = 1200 + attempt * 900
-        await sleep(base + Math.floor(Math.random() * 900))
+        if (!shouldRetryGatewayStatus(lastStatus) || attempt === 1) break
+        await sleep(900 + Math.floor(Math.random() * 900))
       }
     }
     return { ok: false, r, payload, lastText, lastStatus }
@@ -240,7 +257,7 @@ async function getGatewayAuthTokenForBase(gatewayBaseUrl) {
     const url = `${String(base).replace(/\/$/, '')}/authentication/v2/auth`
     const headers = { 'x-api-key': GATEWAY_API_KEY, 'Content-Type': 'application/json', Accept: 'application/json' }
     const body = { authData: GATEWAY_AUTHDATA }
-    const res = await fetchWithTimeout(url, { method: 'POST', headers, body: JSON.stringify(body) }, 20000)
+    const res = await fetchWithTimeout(url, { method: 'POST', headers, body: JSON.stringify(body) }, 12000)
     if (!res.ok) return null
     const data = await res.json().catch(() => ({}))
     const token = data?.auth_token || data?.token || data?.access_token || null
@@ -426,7 +443,7 @@ export default async function handler(req, res) {
         external_order_number: externalOrderNumber,
       }
 
-      const out = await createPaymentLinkAcrossGateways({ requestBody })
+      const out = await withHardTimeout(createPaymentLinkAcrossGateways({ requestBody }), 25_000).catch((e) => ({ ok: false, exception: e, requestUrl: '' }))
       const requestUrl = String(out?.requestUrl || '').trim()
       if (out?.exception) {
         const err = gatewayErrorPayload(out.exception, requestUrl)
@@ -507,7 +524,7 @@ export default async function handler(req, res) {
         external_order_number: externalOrderNumber,
       }
 
-      const out = await createPaymentLinkAcrossGateways({ requestBody })
+      const out = await withHardTimeout(createPaymentLinkAcrossGateways({ requestBody }), 25_000).catch((e) => ({ ok: false, exception: e, requestUrl: '' }))
       const requestUrl = String(out?.requestUrl || '').trim()
       if (out?.exception) {
         const err = gatewayErrorPayload(out.exception, requestUrl)
@@ -594,7 +611,7 @@ export default async function handler(req, res) {
         external_order_number: externalOrderNumber,
       }
 
-      const out = await createPaymentLinkAcrossGateways({ requestBody })
+      const out = await withHardTimeout(createPaymentLinkAcrossGateways({ requestBody }), 25_000).catch((e) => ({ ok: false, exception: e, requestUrl: '' }))
       const requestUrl = String(out?.requestUrl || '').trim()
       if (out?.exception) {
         const err = gatewayErrorPayload(out.exception, requestUrl)
@@ -678,7 +695,7 @@ export default async function handler(req, res) {
       external_order_number: externalOrderNumber,
     }
 
-    const out = await createPaymentLinkAcrossGateways({ requestBody })
+    const out = await withHardTimeout(createPaymentLinkAcrossGateways({ requestBody }), 25_000).catch((e) => ({ ok: false, exception: e, requestUrl: '' }))
     const requestUrl = String(out?.requestUrl || '').trim()
     if (out?.exception) {
       const err = gatewayErrorPayload(out.exception, requestUrl)
