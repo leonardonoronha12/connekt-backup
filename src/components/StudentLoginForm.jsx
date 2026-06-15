@@ -3,6 +3,7 @@ import { ArrowLeft, Eye, EyeOff } from 'lucide-react'
 import { useAuth } from '@/contexts/SupabaseAuthContext'
 import { useBranding } from '@/contexts/BrandingContext'
 import BrandLogo from '@/components/BrandLogo'
+import AnimatedLoginBackground from '@/components/AnimatedLoginBackground'
 import { clearActiveProducerUserId, getActiveProducerUserId, setActiveProducerUserId } from '@/services/producerScope'
 import { getPublicAppOrigin } from '@/services/publicUrl'
 
@@ -851,7 +852,7 @@ export default function StudentLoginForm({ variant = 'normal' } = {}) {
       </div>
 
       <div className="hidden lg:flex flex-1 relative items-center justify-center overflow-hidden">
-        <img src="/login-background.svg" alt="" className="absolute inset-0 w-full h-full object-cover" />
+        <AnimatedLoginBackground className="absolute inset-0 w-full h-full connekt-login-bg-animate" />
         <BrandLogo variant="sidebar" className="relative h-12 w-auto" alt={brand?.name || 'Logo'} />
       </div>
     </div>
