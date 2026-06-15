@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../contexts/SupabaseAuthContext';
 import Alert from './ui/Alert';
+import AnimatedLoginBackground from './AnimatedLoginBackground'
 
 // Função para traduzir mensagens de erro do Supabase
 const translateErrorMessage = (errorMessage) => {
@@ -205,14 +206,7 @@ const RegisterForm = ({ onBackToLogin, onShowLogin }) => {
         onClose={hideAlert}
       />
       <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden" style={{ maxWidth: '590px' }}>
-        <img 
-          src="/Imagemesquerda.svg" 
-          alt="Background" 
-          className="absolute inset-0 h-full object-cover"
-          style={{
-            width: '590px'
-          }}
-        />
+        <AnimatedLoginBackground className="absolute inset-0 w-full h-full connekt-login-bg-animate" />
         
         {/* Logo integrada com a imagem de fundo */}
         <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2 z-10" style={{ width: '590px', paddingBottom: '70px' }}>
