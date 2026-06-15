@@ -36,14 +36,6 @@ export default function StudentLoginForm({ variant = 'normal' } = {}) {
   const [showRegisterPasswordRequirements, setShowRegisterPasswordRequirements] = useState(false)
 
   const cleanEmail = useMemo(() => String(email || '').trim(), [email])
-  const isDemoAllowed = useMemo(() => {
-    try {
-      const host = String(window.location.hostname || '').toLowerCase()
-      return host === 'localhost' || host === '127.0.0.1'
-    } catch (_) {
-      return false
-    }
-  }, [])
 
   useEffect(() => {
     let cancelled = false
@@ -281,16 +273,6 @@ export default function StudentLoginForm({ variant = 'normal' } = {}) {
     } finally {
       setLoading(false)
     }
-  }
-
-  const handleDemoLogin = async () => {
-    if (!isDemoAllowed) return
-    try {
-      localStorage.setItem('connekt_demo_student', '1')
-    } catch (_) {}
-    try { sessionStorage.setItem('connekt_login_mode', 'aluno') } catch (_) { try { localStorage.setItem('connekt_login_mode', 'aluno') } catch (_) {} }
-    window.history.pushState({}, '', '/aluno?demo=1')
-    window.dispatchEvent(new PopStateEvent('popstate'))
   }
 
   const handleOAuth = async (provider) => {
@@ -785,16 +767,6 @@ export default function StudentLoginForm({ variant = 'normal' } = {}) {
                     {loading ? 'Entrando…' : 'Entrar'}
                   </button>
                 </form>
-
-                {isDemoAllowed ? (
-                  <button
-                    type="button"
-                    className="mt-3 w-full h-10 rounded-[4px] border border-[#E3E4E5] bg-white text-[#22252B] text-[13px] font-semibold"
-                    onClick={handleDemoLogin}
-                  >
-                    Entrar como demo
-                  </button>
-                ) : null}
 
                 <div className="my-6 flex items-center gap-3">
                   <div className="h-px flex-1 bg-[#E3E4E5]" />
