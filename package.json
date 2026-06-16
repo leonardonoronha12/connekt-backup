@@ -1,15 +1,17 @@
 {
-  "name": "web-app",
+  "name": "connekt",
   "type": "module",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "engines": {
     "node": "20.x"
   },
   "scripts": {
     "dev": "vite --host :: --port 3000",
+    "dev:api": "node scripts/api-dev-server.js",
     "build": "node tools/build.js",
     "preview": "vite preview --host :: --port 3000",
+    "test:backend": "node scripts/backend-smoke-test.js",
     "migrate:profiles": "node scripts/apply-profiles-migration.js",
     "migrate:courses-media": "node scripts/apply-courses-media-migration.js",
     "migrate:notifications": "node scripts/apply-notifications-migration.js",
