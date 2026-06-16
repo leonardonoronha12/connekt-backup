@@ -1,6 +1,5 @@
 Copyright (c) Connekt
 
-All rights reserved.
+Todos os direitos reservados.
 
-This source code is proprietary and confidential. Unauthorized copying, distribution, modification, or use of this code, via any medium, is strictly prohibited without prior written permission.
-
+Este código-fonte é proprietário e confidencial. A cópia, distribuição, modificação ou uso deste código, por qualquer meio, é estritamente proibido sem autorização prévia por escrito.
