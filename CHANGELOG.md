@@ -1,6 +1,6 @@
 # Changelog
 
-Todas as mudanças relevantes nesta versão do AppCódigo.
+Todas as mudanças relevantes nesta versão do Connekt.
 
 ## 2025-11-14
 

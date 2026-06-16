@@ -13,12 +13,17 @@ dist
 backups/*.zip
 backups/*.7z
 supabase/.temp/
+vite.config.js.timestamp-*.mjs
 
 # MCP (local tools config)
 mcp.json
 .mcp.json
 .cursor/mcp.json
 .vscode/mcp.json
+
+# OS / tooling
+.DS_Store
+Thumbs.db
 
 # TestSprite (generated artifacts)
 testsprite_tests/
