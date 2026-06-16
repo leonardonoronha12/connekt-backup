@@ -21,6 +21,11 @@ No painel da Vercel (Project → Settings → Environment Variables), configure:
 Necessário para rotas `/api/*` que usam Supabase Admin:
 - `SUPABASE_SERVICE_ROLE_KEY`
 
+Integrações (quando habilitadas):
+
+- Gateway de pagamentos: `PLANS_GATEWAY_*` / `MYG_*`
+- E-mail: ver `docs/sendgrid-api.md` e `docs/supabase-sendgrid-smtp.md`
+
 ## 3) Ajustes no Supabase para produção
 
 Supabase → Authentication → URL Configuration:
@@ -75,3 +80,17 @@ Opção B — via CLI:
 npx vercel
 npx vercel --prod
 ```
+
+## 6) CI/CD (GitHub Actions)
+
+Este repositório inclui workflow de deploy em `.github/workflows/vercel-production.yml`.
+
+Para habilitar:
+
+- GitHub → Settings → Secrets and variables → Actions
+- Configure os secrets:
+  - `VERCEL_TOKEN`
+  - `VERCEL_ORG_ID`
+  - `VERCEL_PROJECT_ID`
+  - (opcional) `VERCEL_SCOPE`
+  - (opcional) `VERCEL_PRODUCTION_DOMAIN` (default: `app.connektco.com`)
