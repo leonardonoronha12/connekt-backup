@@ -1,4 +1,4 @@
-name: Vercel Production Deploy
+name: Deploy Produção (Vercel)
 
 on:
   push:
@@ -21,15 +21,15 @@ jobs:
         with:
           node-version: 20
           cache: npm
-      - name: Check Vercel secrets
+      - name: Verificar secrets da Vercel
         run: |
           if [ -z "${{ secrets.VERCEL_TOKEN }}" ]; then
-            echo "Missing secret: VERCEL_TOKEN"
+            echo "Secret ausente: VERCEL_TOKEN"
             exit 1
           fi
           if [ -z "${{ secrets.VERCEL_ORG_ID }}" ] || [ -z "${{ secrets.VERCEL_PROJECT_ID }}" ]; then
-            echo "Missing secrets: VERCEL_ORG_ID and/or VERCEL_PROJECT_ID"
-            echo "Add them in GitHub: Settings → Secrets and variables → Actions"
+            echo "Secrets ausentes: VERCEL_ORG_ID e/ou VERCEL_PROJECT_ID"
+            echo "Adicione em GitHub: Settings → Secrets and variables → Actions"
             exit 1
           fi
       - run: npm ci
@@ -38,28 +38,28 @@ jobs:
           if [ -n "${{ secrets.VERCEL_SCOPE }}" ]; then
             SCOPE_ARG="--scope=${{ secrets.VERCEL_SCOPE }}"
           fi
-          echo "Vercel CLI version:"
+          echo "Versão do Vercel CLI:"
           npx vercel --version
-          echo "Using scope arg: ${SCOPE_ARG:-<none>}"
-          echo "Checking required Vercel env vars (Production):"
+          echo "Scope: ${SCOPE_ARG:-<nenhum>}"
+          echo "Checando variáveis obrigatórias na Vercel (Produção):"
           ENVS="$(npx vercel env ls production --token=${{ secrets.VERCEL_TOKEN }} $SCOPE_ARG || true)"
           echo "${ENVS}"
-          echo "${ENVS}" | grep -Eq "VITE_SUPABASE_URL|VITE_PUBLIC_SUPABASE_URL" || { echo "Missing Vercel env: VITE_SUPABASE_URL (Production)"; exit 1; }
-          echo "${ENVS}" | grep -Eq "VITE_SUPABASE_ANON_KEY|VITE_PUBLIC_SUPABASE_ANON_KEY|VITE_SUPABASE_KEY|VITE_PUBLIC_SUPABASE_KEY" || { echo "Missing Vercel env: VITE_SUPABASE_ANON_KEY (Production)"; exit 1; }
+          echo "${ENVS}" | grep -Eq "VITE_SUPABASE_URL|VITE_PUBLIC_SUPABASE_URL" || { echo "Variável ausente na Vercel: VITE_SUPABASE_URL (Produção)"; exit 1; }
+          echo "${ENVS}" | grep -Eq "VITE_SUPABASE_ANON_KEY|VITE_PUBLIC_SUPABASE_ANON_KEY|VITE_SUPABASE_KEY|VITE_PUBLIC_SUPABASE_KEY" || { echo "Variável ausente na Vercel: VITE_SUPABASE_ANON_KEY (Produção)"; exit 1; }
           npx vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }} $SCOPE_ARG
           if [ -f .vercel/project.json ]; then
             echo ".vercel/project.json:"
             cat .vercel/project.json
           else
-            echo "Warning: .vercel/project.json not found after vercel pull"
+            echo "Aviso: .vercel/project.json não encontrado após vercel pull"
           fi
           npx vercel build --prod --token=${{ secrets.VERCEL_TOKEN }} $SCOPE_ARG
           DEPLOY_URL="$(npx vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }} $SCOPE_ARG | tail -n 1)"
-          echo "Deployed: ${DEPLOY_URL}"
+          echo "Deploy concluído: ${DEPLOY_URL}"
           DOMAIN="${{ secrets.VERCEL_PRODUCTION_DOMAIN }}"
           if [ -z "${DOMAIN}" ]; then
             DOMAIN="app.connektco.com"
           fi
           if [ -n "${DOMAIN}" ]; then
-            npx vercel alias set "${DEPLOY_URL}" "${DOMAIN}" --token=${{ secrets.VERCEL_TOKEN }} $SCOPE_ARG || echo "Warning: vercel alias failed for domain ${DOMAIN}. Check domain ownership/verification or set VERCEL_PRODUCTION_DOMAIN."
+            npx vercel alias set "${DEPLOY_URL}" "${DOMAIN}" --token=${{ secrets.VERCEL_TOKEN }} $SCOPE_ARG || echo "Aviso: falha ao criar alias para ${DOMAIN}. Verifique propriedade/validação do domínio ou defina VERCEL_PRODUCTION_DOMAIN."
           fi
