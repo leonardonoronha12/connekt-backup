@@ -2,13 +2,18 @@
 
 Plataforma web para criação, gestão e venda de cursos (foco em Medicina), com área do produtor e área do aluno, incluindo simulados e banco de questões.
 
-## Componentes
+## Arquitetura
 
 - **Frontend (SPA)**: Vite + React em `src/`.
 - **API (Serverless na Vercel)**: roteamento em `api/index.js` com handlers em `api_handlers/`.
-- **Supabase**: Auth + Postgres + Storage + Edge Functions em `supabase/`.
+- **Banco e Auth**: Supabase (Postgres + Auth + Storage + Edge Functions) em `supabase/`.
 
-## Quickstart
+## Pré-requisitos
+
+- Node.js 20 (ver `package.json` → `engines`)
+- npm (recomendado: `npm ci` para instalar)
+
+## Setup local
 
 1) Instalar dependências:
 
@@ -16,75 +21,53 @@ Plataforma web para criação, gestão e venda de cursos (foco em Medicina), com
 npm ci
 ```
 
-2) Criar variáveis locais:
+2) Criar `.env.local`:
 
 ```bash
 copy .env.production.example .env.local
 ```
 
-Preencha no `.env.local`:
+3) Preencher no `.env.local`:
 
 - `VITE_SUPABASE_URL`
 - `VITE_SUPABASE_ANON_KEY`
 - `VITE_APP_BASE_URL` (ex.: `http://localhost:3000`)
 
-3) Subir o app:
+4) Subir o app:
 
 ```bash
 npm run dev
 ```
 
-## Variáveis de ambiente (importante)
+## Variáveis de ambiente
 
-- Variáveis `VITE_*` vão para o navegador (não colocar segredos).
-- Segredos e chaves de admin devem existir apenas no ambiente server-side (Vercel).
+- `VITE_*` é exposto no navegador (não colocar segredos).
+- Segredos (ex.: `SUPABASE_SERVICE_ROLE_KEY`, tokens, chaves de gateway) devem existir somente no server-side (Vercel).
 
 ## Documentação
 
 - Produto: `docs/PRD.md`
 - Deploy Vercel: `docs/vercel-deploy.md`
 - OAuth (Supabase): `docs/google-oauth-supabase.md` e `docs/facebook-oauth-supabase.md`
+- Integrações: `docs/integrations/`
 
-## Scripts úteis
+## Scripts
 
+- `npm run dev`: frontend (Vite)
+- `npm run dev:api`: API local (porta 3001 por padrão)
 - `npm run build`: build de produção
-- `node scripts/api-dev-server.js`: sobe a API localmente (porta 3001 por padrão)
-- `node scripts/backend-smoke-test.js`: valida endpoints básicos da API local
+- `npm run test:backend`: smoke test da API local
 
-## Renomear repositório no GitHub
+## Deploy
 
-Para trocar o nome do repositório de `appcodigo` para `connekt` no GitHub:
+- O projeto possui `vercel.json` com SPA rewrite, headers e rota `/api/*`.
+- Em produção, configure as variáveis de ambiente no projeto da Vercel.
+- Detalhes e checklist: `docs/vercel-deploy.md`.
 
-- GitHub → Settings → General → Repository name → `connekt`
+## Licença
 
-git remote add origin <URL-do-repositorio.git>
-git push -u origin main
-```
+Código proprietário. Veja `LICENSE.md`.
 
-### O que mudou nesta versão
-- Botão selecionado com largura 220px, altura 36px, raio 4px, gap 12, paddings 8/16 e cor `#F9FAFB`.
-- `span` das bolinhas de status igual ao tamanho das imagens (16.25px), imagens ocupam todo o `span`.
-- Tipografia do texto "Questão N": Inter 500, 14px, line-height 16px, tracking 0, cor `#22252B`.
-- Desativação do `SpeedInsights` em localhost.
+## Suporte
 
-Para detalhes, consulte `CHANGELOG.md`.
-
-## 🤝 Contribuição
-
-1. Faça um fork do projeto
-2. Crie uma branch para sua feature (`git checkout -b feature/AmazingFeature`)
-3. Commit suas mudanças (`git commit -m 'Add some AmazingFeature'`)
-4. Push para a branch (`git push origin feature/AmazingFeature`)
-5. Abra um Pull Request
-
-## 📄 Licença
-
-Este projeto é privado e proprietário.
-
-## 🆘 Suporte
-
-Para suporte, entre em contato com a equipe de desenvolvimento.
-
----
-
-**Desenvolvido com ❤️ pela equipe AppCódigo**
+Para contribuir: `CONTRIBUTING.md`. Para reporte de vulnerabilidades: `SECURITY.md`.
