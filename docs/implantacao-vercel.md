@@ -1,4 +1,4 @@
-# Deploy na Vercel (modo Live)
+# Implantação na Vercel (produção)
 
 Este projeto é um SPA React + Vite (build em `dist/`) e precisa de rewrite para `index.html` para rotas como `/login`, `/dashboard`, `/termos`, etc.
 
@@ -30,7 +30,7 @@ Integrações (quando habilitadas):
 
 Supabase → Authentication → URL Configuration:
 - **Site URL**: `https://SEU_DOMINIO_DA_VERCEL`
-- **Additional Redirect URLs**:
+- **URLs adicionais de redirecionamento**:
   - `https://SEU_DOMINIO_DA_VERCEL/login`
   - `https://SEU_DOMINIO_DA_VERCEL/reset-password`
   - (opcional) `https://SEU_DOMINIO_DA_VERCEL/`
@@ -45,7 +45,7 @@ Atalho:
 npm run migrate:question-images
 ```
 
-## 3.1) Google Login (OAuth)
+## 3.1) Login com Google (OAuth)
 
 Se você usar login com Google, habilite o provedor em:
 - Supabase → Authentication → Providers → Google
@@ -70,10 +70,10 @@ Para troubleshooting do erro “Aplicativo inativo”, veja:
 Opção A — via painel (recomendado):
 1. Import Project (GitHub/GitLab/Bitbucket)
 2. Framework preset: Vite
-3. Build command: `npm run build`
+3. Comando de build: `npm run build`
 4. Output directory: `dist`
 5. Adicionar variáveis de ambiente
-6. Deploy
+6. Implantação
 
 Opção B — via CLI:
 ```bash
@@ -83,7 +83,7 @@ npx vercel --prod
 
 ## 6) CI/CD (GitHub Actions)
 
-Este repositório inclui workflow de deploy em `.github/workflows/vercel-production.yml`.
+Este repositório inclui workflow de implantação em `.github/workflows/vercel-production.yml`.
 
 Para habilitar:
 
