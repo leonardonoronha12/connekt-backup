@@ -1,7 +1,7 @@
 # PRD — Connekt (Plataforma de Cursos e Simulados)
 
 ## 1. Resumo
-Connekt é uma plataforma web para **produtores** criarem e venderem cursos (foco em Medicina) e para **alunos** consumirem aulas, materiais e simulados. A solução usa **Supabase** (Auth + Postgres + Storage) como backend e executa como aplicação web (SPA) com deploy em produção (Vercel).
+Connekt é uma plataforma web para **produtores** criarem e venderem cursos (foco em Medicina) e para **alunos** consumirem aulas, materiais e simulados. A solução usa **Supabase** (Auth + Postgres + Storage) como back-end e executa como aplicação web (SPA) com implantação em produção (Vercel).
 
 Este PRD descreve o produto “como um todo”: objetivos, escopo, requisitos funcionais, integrações, regras, segurança, métricas e critérios de aceite.
 
@@ -13,7 +13,7 @@ Produtores precisam de um sistema completo para:
 - Operar em formato white label, com identidade visual por produtor.
 
 Alunos precisam de um sistema para:
-- Entrar de forma simples (email/senha e social login).
+- Entrar de forma simples (email/senha e login social).
 - Acessar cursos/aulas conforme plano e pagamento.
 - Realizar simulados e acompanhar desempenho.
 
@@ -27,7 +27,7 @@ Alunos precisam de um sistema para:
 - Separar claramente fluxos de **produtor** e **aluno**, incluindo login e rotas.
 - Garantir upload seguro e rastreável de mídias e materiais.
 - Suportar simulados completos (execução, resultado, correção).
-- Fornecer painel admin para operações internas e deploy.
+- Fornecer painel admin para operações internas e implantação.
 
 ### 3.3 Não-Objetivos (fora de escopo imediato)
 - App mobile nativo.
@@ -38,7 +38,7 @@ Alunos precisam de um sistema para:
 ### 4.1 Personas
 - **Aluno**: consome conteúdo, realiza simulados, consulta progresso.
 - **Produtor**: cria/edita cursos, aulas, materiais, questões, simulados; acompanha alunos e vendas; configura integrações e branding.
-- **Admin da Plataforma**: gerenciamento interno de usuários, deploy/status, solicitações e manutenção operacional.
+- **Admin da Plataforma**: gerenciamento interno de usuários, implantação/status, solicitações e manutenção operacional.
 
 ### 4.2 Permissões (alto nível)
 - Aluno: leitura do conteúdo liberado para seu usuário.
@@ -73,7 +73,7 @@ Alunos precisam de um sistema para:
 
 ### 5.5 Pagamentos e Liberação de Acesso
 - Gateway chama webhook(s) com Authorization.
-- Backend valida segredo e atualiza payments/entitlements.
+- Back-end valida segredo e atualiza pagamentos/permissões (payments/entitlements).
 - Aluno passa a ter acesso ao conteúdo/plano.
 
 ## 6. Escopo Funcional (Requisitos)
@@ -85,7 +85,7 @@ Alunos precisam de um sistema para:
 **RF-005**: Rotas públicas e privadas claramente separadas.
 
 ### 6.2 Área do Produtor
-**RF-010**: Dashboard com navegação para principais módulos.  
+**RF-010**: Painel com navegação para principais módulos.  
 **RF-011**: Gestão de cursos (CRUD).  
 **RF-012**: Gestão de módulos e aulas.  
 **RF-013**: Upload e associação de vídeos e materiais às aulas/curso.  
@@ -134,7 +134,7 @@ Alunos precisam de um sistema para:
 **RF-070**: Login e painel admin.  
 **RF-071**: Gestão de usuários (criar, atualizar, listar, habilitar/desabilitar, bulk).  
 **RF-072**: Geração de link de primeiro acesso.  
-**RF-073**: Gestão de deploy (acionar deploy, acompanhar status) e páginas de status.  
+**RF-073**: Gestão de implantação (acionar implantação, acompanhar status) e páginas de status.  
 **RF-074**: Gestão de solicitações de saque (withdraw requests).  
 
 ### 6.9 White Label
@@ -149,7 +149,7 @@ Alunos precisam de um sistema para:
 ### 7.1 Segurança
 - Segredos apenas via variáveis de ambiente / secrets (Supabase/Vercel).
 - Nunca logar `Authorization` e tokens sensíveis.
-- Sanitização e validação de inputs em rotas server-side, especialmente em operações de Storage.
+- Sanitização e validação de entradas em rotas do lado do servidor, especialmente em operações de Storage.
 - Webhooks devem exigir Authorization válido.
 - Histórico do git não deve conter segredos (tokens, keys, JWTs).
 
@@ -183,7 +183,7 @@ Alunos precisam de um sistema para:
 ## 9. APIs e Endpoints (alto nível)
 ### 9.1 API (server)
 - Endpoints de upload e resolução de mídia (curso/questão).
-- Endpoints de admin (usuários, deploy, withdraw requests).
+- Endpoints de admin (usuários, implantação, withdraw requests).
 
 ### 9.2 Edge Functions (Supabase)
 - Webhooks de pagamento e sincronização (planos/pagamentos).
@@ -201,10 +201,10 @@ Alunos precisam de um sistema para:
 - Incidentes de segurança (ex.: tentativas de path traversal bloqueadas).
 
 ## 11. Critérios de Aceite (exemplos)
-- Aluno que acessa `/login-aluno?producer_uid=...` é direcionado para área do aluno, não para dashboard do produtor.
+- Aluno que acessa `/login-aluno?producer_uid=...` é direcionado para área do aluno, não para o painel do produtor.
 - Uploads e Signed URL refresh não aceitam `..`, `%2f`, `\` e não escapam do prefixo/bucket permitido.
 - Webhooks rejeitam chamadas sem Authorization válido (401) e não registram segredos em logs.
-- Build em produção passa e `npm audit --omit=dev` não acusa vulnerabilidades de runtime.
+- Build em produção passa e `npm audit --omit=dev` não acusa vulnerabilidades em tempo de execução.
 
 ## 12. Riscos e Mitigações
 - **Risco**: Segredos expostos em repositório/histórico.  
@@ -215,7 +215,6 @@ Alunos precisam de um sistema para:
   **Mitigação**: regras explícitas de roteamento por fluxo + testes E2E.
 
 ## 13. Plano de Entrega (alto nível)
-- Manter CI com build e auditoria.
+- Manter integração contínua com build e auditoria.
 - Automatizar testes E2E de login e fluxos críticos (aluno/produtor, upload, webhook).
 - Rollout incremental em produção com monitoração de erros e métricas.
-

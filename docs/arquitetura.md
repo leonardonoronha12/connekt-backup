@@ -2,10 +2,10 @@
 
 ## Visão geral
 
-O Connekt é um SPA (React) com backend orientado a:
+O Connekt é um SPA (React) com back-end orientado a:
 
-- API serverless na Vercel (Node) para integrações e rotinas que exigem credenciais server-side.
-- Supabase para Auth, Postgres, Storage e Edge Functions.
+- API serverless na Vercel (Node) para integrações e rotinas que exigem credenciais do lado do servidor.
+- Supabase para autenticação, Postgres, Storage e Edge Functions.
 
 ## Componentes e responsabilidades
 
@@ -17,7 +17,7 @@ O Connekt é um SPA (React) com backend orientado a:
 
 ### API (Vercel)
 
-- Entry point: `api/index.js`
+- Ponto de entrada: `api/index.js`
 - Handlers: `api_handlers/**`
 
 Padrão:
@@ -27,15 +27,15 @@ Padrão:
 
 ### Supabase
 
-- Migrations SQL em `supabase/migrations/`.
+- Migrações SQL em `supabase/migrations/`.
 - Edge Functions em `supabase/functions/` (webhooks, sincronizações e utilitários).
 - Templates de e-mail em `supabase/templates/`.
 
 ## Segurança e isolamento
 
-- `VITE_*` é público (bundle). Apenas `anon key` e URLs públicas ficam no frontend.
+- `VITE_*` é público (bundle). Apenas `anon key` e URLs públicas ficam no front-end.
 - Operações que exigem `service_role` (admin) são executadas na API serverless.
-- Regras de acesso no banco devem ser aplicadas via RLS e policies (ver migrations).
+- Regras de acesso no banco devem ser aplicadas via RLS e policies (ver migrações).
 
 ## Multi-tenant / White label
 
@@ -44,7 +44,6 @@ Padrão:
 
 ## Pagamentos (alto nível)
 
-- Autenticação e criação de payment link via gateway (MyGateway/whitelabel).
+- Autenticação e criação de link de pagamento via gateway (MyGateway/whitelabel).
 - Validação e liberação de acesso via webhooks/Edge Functions.
-- Diagnóstico via endpoint admin de healthcheck do gateway (server-side).
-
+- Diagnóstico via endpoint admin de healthcheck do gateway (lado do servidor).

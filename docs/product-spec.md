@@ -1,11 +1,11 @@
-# Connekt — Product Specification (PRD)
+# Connekt — Especificação do Produto (PRD)
 
 ## 1. Visão Geral
 Connekt é uma plataforma web para venda e consumo de cursos (foco em Medicina), com dois fluxos principais:
 - **Produtor**: cria e gerencia cursos, aulas, materiais, banco de questões e simulados; acompanha vendas e alunos; configura integrações (Vimeo/VdoCipher) e white label.
 - **Aluno**: acessa cursos e aulas, consome materiais, realiza simulados e acompanha desempenho.
 
-O sistema usa **Supabase** como backend (Auth, Postgres, Storage) e executa como aplicação web (SPA) com rotas dedicadas para produtor e aluno, incluindo suporte a white label.
+O sistema usa **Supabase** como back-end (autenticação, Postgres e Storage) e executa como aplicação web (SPA) com rotas dedicadas para produtor e aluno, incluindo suporte a white label.
 
 ## 2. Objetivos
 - Permitir que produtores publiquem cursos e conteúdos com diferentes formatos (vídeo e materiais).
@@ -18,12 +18,12 @@ O sistema usa **Supabase** como backend (Auth, Postgres, Storage) e executa como
 ### 3.1 Papéis
 - **Aluno**: consome cursos, aulas, materiais e simulados.
 - **Produtor**: gerencia cursos/conteúdo, alunos, vendas e configurações.
-- **Admin da plataforma**: operações internas (painel admin, criação/gestão de usuários, deploy).
+- **Admin da plataforma**: operações internas (painel admin, criação/gestão de usuários, implantação).
 
 ### 3.2 Identidade e autenticação
 - Autenticação via **Supabase Auth**.
 - Suporte a login por email/senha e login social (Google).
-- Persistência e recuperação de sessão no frontend.
+- Persistência e recuperação de sessão no front-end.
 
 ## 4. Escopo Funcional
 ### 4.1 Onboarding e Login
@@ -73,7 +73,7 @@ O sistema usa **Supabase** como backend (Auth, Postgres, Storage) e executa como
   - `imagens-logs` (logs e auditoria de uploads)
 - Upload pode ocorrer:
   - Diretamente do cliente (com RLS e limites)
-  - Via proxy/endpoint server-side quando necessário (ex.: dev ou casos específicos)
+  - Via proxy/endpoint do lado do servidor quando necessário (ex.: desenvolvimento ou casos específicos)
 
 Requisitos de segurança:
 - Sanitização de paths do Storage (prevenir path traversal).
@@ -115,9 +115,9 @@ Requisitos de segurança:
 - Tokens sensíveis nunca devem ser logados.
 
 ### 5.2 Performance e Confiabilidade
-- Upload de arquivos grandes deve preferir método resumable quando aplicável.
-- Retry/backoff em chamadas críticas onde faça sentido.
-- Build e deploy automatizados com pipeline.
+- Upload de arquivos grandes deve preferir método resumível quando aplicável.
+- Retentativas (com backoff) em chamadas críticas quando fizer sentido.
+- Build e implantação automatizados com pipeline.
 
 ### 5.3 Observabilidade
 - Logs de upload em bucket dedicado (imagens-logs) e/ou tabela.
@@ -146,19 +146,18 @@ Requisitos de segurança:
 - Um aluno que loga via `/login-aluno?producer_uid=...` entra na área do aluno e não é redirecionado para dashboard do produtor.
 - Upload de mídia não permite `..`, `%2f`, `\` ou qualquer escape para fora do prefixo permitido.
 - Webhooks rejeitam chamadas sem Authorization válido.
-- Nenhum segredo (tokens, API keys, service role) está presente no git history.
+- Nenhum segredo (tokens, chaves de API, service role) está presente no histórico do git.
 
 ## 8. Fora de Escopo (por agora)
 - App mobile nativo.
 - Marketplace público de cursos.
-- Recursos avançados de autoria (certificados, DRM avançado além do provider).
+- Recursos avançados de autoria (certificados, DRM avançado além do provedor).
 
 ## 9. Ambientes e Configuração (alto nível)
-- Frontend: Vite/React (SPA)
-- Backend: Supabase (Auth + DB + Storage) + Edge Functions
-- Deploy: Vercel (produção)
+- Front-end: Vite/React (SPA)
+- Back-end: Supabase (Auth + DB + Storage) + Edge Functions
+- Implantação: Vercel (produção)
 - Variáveis de ambiente:
   - Supabase URL/Anon Key (cliente)
-  - Supabase Service Role (server/edge)
+  - Supabase Service Role (servidor/edge)
   - Tokens de gateway/webhook (edge)
-
