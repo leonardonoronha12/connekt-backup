@@ -6,6 +6,7 @@ import { X, Play, ChevronLeft, ChevronRight, ArrowLeft, Lock } from 'lucide-reac
 import { Button } from '@/components/ui/button';
 import CourseFooter from '@/components/CourseFooter'
 import BrandLogo from '@/components/BrandLogo'
+import CheckoutPopup from '@/components/CheckoutPopup.jsx'
 
 const DEMO_DESCRIPTION = 'Aprenda na prática com módulos organizados, aulas objetivas e conteúdos atualizados para o dia a dia no consultório.';
 const DEMO_PROMO_VIDEO_URL = 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4';
@@ -202,6 +203,8 @@ export default function CursoPreviewAlunoPage() {
   const [moduleVerifyLoading, setModuleVerifyLoading] = useState(false)
   const [moduleBuyOpen, setModuleBuyOpen] = useState(false)
   const [selectedModule, setSelectedModule] = useState(null)
+  const [checkoutPopupOpen, setCheckoutPopupOpen] = useState(false)
+  const [checkoutPopupUrl, setCheckoutPopupUrl] = useState('')
 
   const modulesScrollRef = useRef(null);
   const verifyPollCleanupRef = useRef(null)
@@ -232,12 +235,14 @@ export default function CursoPreviewAlunoPage() {
   const openCheckoutUrl = (url) => {
     const u = String(url || '').trim()
     if (!u) return false
-    try {
-      const w = window.open(u, '_blank', 'noopener')
-      return !!w
-    } catch (_) {
-      return false
-    }
+    setCheckoutPopupUrl(u)
+    setCheckoutPopupOpen(true)
+    return true
+  }
+
+  const closeCheckoutPopup = () => {
+    setCheckoutPopupOpen(false)
+    try { window.setTimeout(() => setCheckoutPopupUrl(''), 150) } catch (_) { setCheckoutPopupUrl('') }
   }
 
   const resolveCheckoutOverrideUrl = (ctx) => {
@@ -481,7 +486,7 @@ export default function CursoPreviewAlunoPage() {
     }
   }
 
-  const startVerifyPolling = ({ type, courseId, moduleId, lessonId, linkId, ownedStorageKey }) => {
+  const startVerifyPolling = ({ type, courseId, moduleId, lessonId, linkId, ownedStorageKey, onPaid }) => {
     if (verifyPollCleanupRef.current) {
       try { verifyPollCleanupRef.current() } catch (_) {}
     }
@@ -501,6 +506,7 @@ export default function CursoPreviewAlunoPage() {
           safeLsSet(ownedStorageKey, '1')
           setOwnershipTick((v) => v + 1)
           window.clearInterval(interval)
+          try { onPaid && onPaid() } catch (_) {}
         }
       } catch (_) {}
     }, 6_000)
@@ -523,27 +529,15 @@ export default function CursoPreviewAlunoPage() {
     if (!courseId) return
     setCheckoutError('')
     setCheckoutLoading(true)
-    const preOpened = (() => {
-      try { return window.open('about:blank', '_blank', 'noopener') } catch (_) { return null }
-    })()
     try {
       const token = await getAccessToken()
       if (!token) {
-        try { preOpened && preOpened.close && preOpened.close() } catch (_) {}
         setCheckoutError('Faça login para comprar.')
         return
       }
       const overrideUrl = resolveCheckoutOverrideUrl(meta)
       if (overrideUrl) {
-        if (preOpened && typeof preOpened.location !== 'undefined') {
-          try { preOpened.location.href = String(overrideUrl) } catch (_) {}
-          return
-        }
-        const ok = openCheckoutUrl(overrideUrl)
-        if (!ok) {
-          try { await navigator.clipboard.writeText(String(overrideUrl)) } catch (_) {}
-          setCheckoutError('Seu navegador bloqueou a abertura do checkout. Permita pop-ups e tente novamente.')
-        }
+        openCheckoutUrl(overrideUrl)
         return
       }
       const r = await fetchWithTimeout('/api/simulado-checkout', {
@@ -553,7 +547,6 @@ export default function CursoPreviewAlunoPage() {
       }, 70000)
       const body = await r.json().catch(() => ({}))
       if (!r.ok) {
-        try { preOpened && preOpened.close && preOpened.close() } catch (_) {}
         const msg = String(stringifyMaybe(body?.message) || stringifyMaybe(body?.error) || '').trim()
         const host = String(body?.gateway_host || '').trim()
         const detail = String(body?.details || '').trim()
@@ -584,25 +577,15 @@ export default function CursoPreviewAlunoPage() {
       if (linkId) safeLsSet(`connekt_course_pending_link:${String(courseId)}`, linkId)
       if (linkId) {
         safeLsSet(`connekt_course_last_link:${String(courseId)}`, linkId)
-        startVerifyPolling({ type: 'course', courseId: String(courseId), linkId, ownedStorageKey: ownedKey })
+        startVerifyPolling({ type: 'course', courseId: String(courseId), linkId, ownedStorageKey: ownedKey, onPaid: closeCheckoutPopup })
       }
       if (!checkoutUrl) {
-        try { preOpened && preOpened.close && preOpened.close() } catch (_) {}
         setCheckoutError('Checkout indisponível.')
         return
       }
       if (checkoutCacheKeyCourse) safeLsSetJson(checkoutCacheKeyCourse, { url: checkoutUrl, linkId, ts: Date.now() })
-      if (preOpened && typeof preOpened.location !== 'undefined') {
-        try { preOpened.location.href = checkoutUrl } catch (_) {}
-        return
-      }
-      const ok = openCheckoutUrl(checkoutUrl)
-      if (!ok) {
-        try { await navigator.clipboard.writeText(checkoutUrl) } catch (_) {}
-        setCheckoutError('Seu navegador bloqueou a abertura do checkout. Permita pop-ups e tente novamente.')
-      }
+      openCheckoutUrl(checkoutUrl)
     } catch (e) {
-      try { preOpened && preOpened.close && preOpened.close() } catch (_) {}
       const name = String(e?.name || '').toLowerCase()
       const msg = String(e?.message || e || '').toLowerCase()
       if (name.includes('abort') || msg.includes('aborted') || msg.includes('aborterror') || msg === 'timeout') {
@@ -643,6 +626,7 @@ export default function CursoPreviewAlunoPage() {
           safeLsRemove(`connekt_course_pending_link:${String(courseId)}`)
           setOwnershipTick((v) => v + 1)
           setCheckoutError('')
+          closeCheckoutPopup()
         }
       } catch (_) {
       } finally {
@@ -652,6 +636,11 @@ export default function CursoPreviewAlunoPage() {
     run()
     return () => { active = false }
   }, [isAlunoView, isDemoAluno, courseId, isPaidCourse, isOwnedCourse])
+
+  useEffect(() => {
+    if (!checkoutPopupOpen) return
+    if (isOwnedCourse) closeCheckoutPopup()
+  }, [checkoutPopupOpen, isOwnedCourse])
 
   useEffect(() => {
     const onStorage = (e) => {
@@ -745,12 +734,7 @@ export default function CursoPreviewAlunoPage() {
       if (overrideUrl) {
         const u = String(overrideUrl || '').trim()
         if (u) {
-          try {
-            const w = window.open(u, '_blank', 'noopener')
-            if (!w) setModuleCheckoutError('Seu navegador bloqueou a abertura do checkout. Permita pop-ups e tente novamente.')
-          } catch (_) {
-            setModuleCheckoutError('Não foi possível abrir o checkout.')
-          }
+          openCheckoutUrl(u)
           return
         }
       }
@@ -786,19 +770,14 @@ export default function CursoPreviewAlunoPage() {
       if (linkId) {
         safeLsSet(`connekt_module_last_link:${String(courseId)}:${id}`, linkId)
         const ownedKey = moduleOwnedKey(id)
-        if (ownedKey) startVerifyPolling({ type: 'module', courseId: String(courseId), moduleId: id, linkId, ownedStorageKey: ownedKey })
+        if (ownedKey) startVerifyPolling({ type: 'module', courseId: String(courseId), moduleId: id, linkId, ownedStorageKey: ownedKey, onPaid: closeCheckoutPopup })
       }
       if (!checkoutUrl) {
         setModuleCheckoutError('Checkout indisponível.')
         return
       }
       if (checkoutCacheKeyModule) safeLsSetJson(checkoutCacheKeyModule, { url: checkoutUrl, linkId, moduleId: id, ts: Date.now() })
-      try {
-        const w = window.open(checkoutUrl, '_blank', 'noopener')
-        if (!w) setModuleCheckoutError('Seu navegador bloqueou a abertura do checkout. Permita pop-ups e tente novamente.')
-      } catch (_) {
-        setModuleCheckoutError('Não foi possível abrir o checkout.')
-      }
+      openCheckoutUrl(checkoutUrl)
     } catch (e) {
       const name = String(e?.name || '').toLowerCase()
       const msg = String(e?.message || e || '').toLowerCase()
@@ -841,6 +820,7 @@ export default function CursoPreviewAlunoPage() {
           safeLsRemove(`connekt_module_pending_link:${String(courseId)}:${mid}`)
           setOwnershipTick((v) => v + 1)
           setModuleCheckoutError('')
+          closeCheckoutPopup()
           setModuleBuyOpen(false)
           setSelectedModule(null)
         }
@@ -1009,7 +989,7 @@ export default function CursoPreviewAlunoPage() {
                               <button
                                 type="button"
                                 onClick={() => {
-                                  try { window.open(cachedCourseCheckoutUrl, '_blank', 'noopener') } catch (_) {}
+                                  openCheckoutUrl(cachedCourseCheckoutUrl)
                                 }}
                                 className="underline"
                               >
@@ -1304,7 +1284,7 @@ export default function CursoPreviewAlunoPage() {
                       <button
                         type="button"
                         onClick={() => {
-                          try { window.open(cachedModuleCheckoutUrl, '_blank', 'noopener') } catch (_) {}
+                          openCheckoutUrl(cachedModuleCheckoutUrl)
                         }}
                         className="underline"
                       >
@@ -1336,6 +1316,14 @@ export default function CursoPreviewAlunoPage() {
           </div>
         </div>
       ) : null}
+
+      <CheckoutPopup
+        open={checkoutPopupOpen}
+        url={checkoutPopupUrl}
+        title="Pagamento"
+        footerText="Após o pagamento, aguarde a confirmação automática."
+        onClose={closeCheckoutPopup}
+      />
     </div>
   );
 }

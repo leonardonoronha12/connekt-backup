@@ -5,6 +5,7 @@ import Header from '@/components/Header'
 import BrandLogo from '@/components/BrandLogo'
 import CourseFooter from '@/components/CourseFooter'
 import AlunoInboxThread from '@/components/AlunoInboxThread'
+import CheckoutPopup from '@/components/CheckoutPopup.jsx'
 import { supabase } from '@/lib/supabaseClient'
 import { useAuth } from '@/contexts/SupabaseAuthContext'
 import { useActiveProducerUserId } from '@/hooks/useActiveProducerUserId'
@@ -378,6 +379,8 @@ export default function AlunoSimuladoAcessoPage() {
   const [ownershipTick, setOwnershipTick] = useState(0)
   const [checkoutLoading, setCheckoutLoading] = useState(false)
   const [checkoutError, setCheckoutError] = useState('')
+  const [checkoutPopupOpen, setCheckoutPopupOpen] = useState(false)
+  const [checkoutPopupUrl, setCheckoutPopupUrl] = useState('')
   const [verifyLoading, setVerifyLoading] = useState(false)
   const progressValue = useMemo(() => {
     const n = Number(safeLsGet(progressKey) || 0)
@@ -529,6 +532,19 @@ export default function AlunoSimuladoAcessoPage() {
   const currentPath = typeof window !== 'undefined' ? window.location.pathname : '/aluno/simulados/acesso'
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
 
+  const openCheckoutUrl = (url) => {
+    const u = String(url || '').trim()
+    if (!u) return false
+    setCheckoutPopupUrl(u)
+    setCheckoutPopupOpen(true)
+    return true
+  }
+
+  const closeCheckoutPopup = () => {
+    setCheckoutPopupOpen(false)
+    try { window.setTimeout(() => setCheckoutPopupUrl(''), 150) } catch (_) { setCheckoutPopupUrl('') }
+  }
+
   const startSimuladoCheckout = async () => {
     if (!currentSimId) return
     setCheckoutError('')
@@ -541,13 +557,9 @@ export default function AlunoSimuladoAcessoPage() {
       return
     }
     setCheckoutLoading(true)
-    const preOpened = (() => {
-      try { return window.open('about:blank', '_blank', 'noopener') } catch (_) { return null }
-    })()
     try {
       const token = (await supabase.auth.getSession().catch(() => ({ data: null })))?.data?.session?.access_token || ''
       if (!token) {
-        try { preOpened && preOpened.close && preOpened.close() } catch (_) {}
         setCheckoutError('Faça login para comprar.')
         return
       }
@@ -568,22 +580,11 @@ export default function AlunoSimuladoAcessoPage() {
       const linkId = String(body?.link_id || '').trim()
       if (linkId) safeLsSet(`connekt_simulado_pending_link:${currentSimId}`, linkId)
       if (!checkoutUrl) {
-        try { preOpened && preOpened.close && preOpened.close() } catch (_) {}
         setCheckoutError('Checkout indisponível.')
         return
       }
-      if (preOpened && typeof preOpened.location !== 'undefined') {
-        try { preOpened.location.href = checkoutUrl } catch (_) {}
-        return
-      }
-      let w = null
-      try { w = window.open(checkoutUrl, '_blank', 'noopener') } catch (_) { w = null }
-      if (!w) {
-        try { await navigator.clipboard.writeText(checkoutUrl) } catch (_) {}
-        setCheckoutError('Seu navegador bloqueou a abertura do checkout. Permita pop-ups e tente novamente.')
-      }
+      openCheckoutUrl(checkoutUrl)
     } catch (_) {
-      try { preOpened && preOpened.close && preOpened.close() } catch (_) {}
       setCheckoutError('Erro ao abrir checkout.')
     } finally {
       setCheckoutLoading(false)
@@ -615,6 +616,8 @@ export default function AlunoSimuladoAcessoPage() {
           safeLsSet(ownedKey, '1')
           safeLsSet(`connekt_simulado_pending_link:${currentSimId}`, '')
           setOwnershipTick((v) => v + 1)
+          setCheckoutError('')
+          closeCheckoutPopup()
           try {
             const u = new URL(window.location.href)
             u.searchParams.delete('linkId')
@@ -631,6 +634,11 @@ export default function AlunoSimuladoAcessoPage() {
     run()
     return () => { active = false }
   }, [params.demo, params.linkId, user?.id, currentSimId, isOwnedSimulado, ownedKey])
+
+  useEffect(() => {
+    if (!checkoutPopupOpen) return
+    if (isOwnedSimulado) closeCheckoutPopup()
+  }, [checkoutPopupOpen, isOwnedSimulado])
 
   const demoCards = useMemo(() => ([
     { id: 's1', title: 'Nome do simulado', subtitle: 'Simulado para testar seus conhecimentos.', categories: [], status: 'Publicado', approval: 60, is_paid: false, price: 0, imageUrl: '/icone img simulado.png' },
@@ -1012,6 +1020,14 @@ export default function AlunoSimuladoAcessoPage() {
           <div className="mt-10">
             <CourseFooter />
           </div>
+
+          <CheckoutPopup
+            open={checkoutPopupOpen}
+            url={checkoutPopupUrl}
+            title="Pagamento"
+            footerText="Após o pagamento, aguarde a confirmação automática."
+            onClose={closeCheckoutPopup}
+          />
         </main>
       </div>
     </div>
