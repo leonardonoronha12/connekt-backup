@@ -300,29 +300,36 @@ async function getGatewayAuthTokenForBase(gatewayBaseUrl) {
 }
 
 async function createPaymentLinkAcrossGateways({ requestBody }) {
-  let last = null
+  let best = null
+  const scoreAttempt = (out) => {
+    try {
+      if (!out) return 0
+      if (out.exception) return 5
+      const s = Number(out.lastStatus || 0)
+      if (!Number.isFinite(s) || s <= 0) return 0
+      if (s === 504) return 5
+      if (s >= 500 && s <= 599) return 4
+      if (s === 401 || s === 403) return 1
+      if (s >= 400 && s <= 499) return 2
+      return 1
+    } catch (_) {
+      return 0
+    }
+  }
   for (const baseUrl of GATEWAY_BASE_URLS) {
     const requestUrl = `${String(baseUrl).replace(/\/$/, '')}/payments/v1/paymentlink`
-    const basicFromEnv = (GATEWAY_AUTH && GATEWAY_AUTH.startsWith('Basic ')) ? GATEWAY_AUTH : (GATEWAY_AUTHDATA ? `Basic ${GATEWAY_AUTHDATA}` : null)
-    const shouldFetchToken = !GATEWAY_AUTH && !!GATEWAY_AUTHDATA
-    const token = shouldFetchToken ? await getGatewayAuthTokenForBase(baseUrl) : null
-    const envAuthFallback = (!token && !basicFromEnv && GATEWAY_AUTH) ? GATEWAY_AUTH : null
     const authHeaders = []
+    const token = await getGatewayAuthTokenForBase(baseUrl)
     if (token) authHeaders.push(normalizeBearerToken(token))
-    if (basicFromEnv) authHeaders.push(String(basicFromEnv))
-    if (envAuthFallback) authHeaders.push(String(envAuthFallback))
+    if (GATEWAY_AUTH) authHeaders.push(normalizeBearerToken(GATEWAY_AUTH))
 
     const out = await createPaymentLink({ requestUrl, requestBody, authHeaders })
     const metaUrl = requestUrl
     const normalized = { ...(out || {}), requestUrl: metaUrl }
     if (normalized?.ok) return normalized
-    if (normalized?.exception) {
-      last = normalized
-      continue
-    }
-    last = normalized
+    if (!best || scoreAttempt(normalized) > scoreAttempt(best)) best = normalized
   }
-  return last || { ok: false, lastStatus: 0, payload: null, lastText: '', requestUrl: '' }
+  return best || { ok: false, lastStatus: 0, payload: null, lastText: '', requestUrl: '' }
 }
 
 function appendQueryParam(rawUrl, key, value) {
