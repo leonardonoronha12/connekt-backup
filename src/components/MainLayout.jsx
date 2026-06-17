@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import CollapsibleSidebar from './CollapsibleSidebar';
 import Header from './Header';
+import PlanExpiredBanner from '@/components/PlanExpiredBanner.jsx'
 
 const MainLayout = ({ children }) => {
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
@@ -38,6 +39,7 @@ const MainLayout = ({ children }) => {
   const isSimuladoResposta = currentPath === '/reposta-correta-simulado';
   const isSimuladosNovo = currentPath === '/simulados/novo' || currentPath === '/produtos/novo';
   const isFullWidthPage = currentPath === '/dashboard' || currentPath === '/banco-de-questoes' || currentPath === '/vendas';
+  const isAlunoPath = String(currentPath || '').startsWith('/aluno')
 
   return (
     <div className="flex bg-[#F5F6FA]" style={{ height: '100dvh', minHeight: '100vh' }}>
@@ -48,6 +50,7 @@ const MainLayout = ({ children }) => {
       <div className="flex-1 flex flex-col" style={{ height: '100%' }}>
         {/* Header - altura fixa, não rola */}
         {!isSimuladosNovo && <Header className="flex-shrink-0" />}
+        {!isSimuladosNovo && !isAlunoPath ? <PlanExpiredBanner /> : null}
         
         {/* Main content - área rolável */}
         {isSimuladosNovo ? (

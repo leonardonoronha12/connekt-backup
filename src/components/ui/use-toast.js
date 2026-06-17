@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react"
+import React, { useState, useEffect } from "react"
+import { ToastAction } from "@/components/ui/toast"
 
 const TOAST_LIMIT = 1
 
@@ -7,6 +8,8 @@ function generateId() {
   count = (count + 1) % Number.MAX_VALUE
   return count.toString()
 }
+
+let lastPlanExpiredEventAt = 0
 
 const toastStore = {
   state: {
@@ -35,6 +38,46 @@ const toastStore = {
 }
 
 export const toast = ({ ...props }) => {
+  const normalized = (() => {
+    const t = props && typeof props === 'object' ? { ...props } : {}
+    const titleRaw = String(t.title || '').trim()
+    const descRaw = t.description == null ? '' : String(t.description)
+    const text = `${titleRaw} ${descRaw}`.trim().toLowerCase()
+    const isPlanExpired = text === 'plan_expired' || text.includes('plan_expired')
+    if (!isPlanExpired) return t
+
+    const now = Date.now()
+    if (typeof window !== 'undefined' && (now - lastPlanExpiredEventAt) > 1200) {
+      lastPlanExpiredEventAt = now
+      try {
+        window.dispatchEvent(new CustomEvent('connekt:plan-expired', { detail: { source: 'toast', ts: now } }))
+      } catch (_) {}
+    }
+
+    return {
+      ...t,
+      title: 'Plano expirado',
+      description: 'Seu plano expirou. Faça o upgrade para continuar usando as ferramentas do produtor.',
+      variant: 'destructive',
+      duration: Number.isFinite(Number(t.duration)) ? t.duration : 8000,
+      action: t.action || React.createElement(
+        ToastAction,
+        {
+          altText: 'Ver planos',
+          onClick: () => {
+            try {
+              window.history.pushState({}, '', '/configuracoes?tab=plano')
+              window.dispatchEvent(new PopStateEvent('popstate'))
+            } catch (_) {
+              try { window.location.assign('/configuracoes?tab=plano') } catch (_) {}
+            }
+          },
+        },
+        'Ver planos',
+      ),
+    }
+  })()
+
   const id = generateId()
 
   const update = (props) =>
@@ -53,7 +96,7 @@ export const toast = ({ ...props }) => {
   toastStore.setState((state) => ({
     ...state,
     toasts: [
-      { ...props, id, dismiss },
+      { ...normalized, id, dismiss },
       ...state.toasts,
     ].slice(0, TOAST_LIMIT),
   }))

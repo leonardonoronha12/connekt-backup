@@ -6,6 +6,7 @@ import { TaxonomyProvider } from '@/contexts/TaxonomyContext';
 import MainLayout from '@/components/MainLayout';
 import ErrorBoundary from '@/components/ErrorBoundary';
 import { Toaster } from '@/components/ui/toaster';
+import PlanExpiredOverlay from '@/components/PlanExpiredOverlay.jsx'
 import DeviceAccessRequestModal from '@/components/DeviceAccessRequestModal.jsx'
 import { supabase } from '@/lib/supabaseClient'
 import { toast } from '@/components/ui/use-toast';
@@ -1265,6 +1266,7 @@ function App() {
   return (
     <AuthProvider>
       <AppContent />
+      <PlanExpiredOverlay />
       {activeUploadCount > 0 ? (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40">
           <div className="bg-white rounded-[16px] shadow-xl border border-[#E3E4E5] px-8 py-7 flex flex-col items-center gap-3">
