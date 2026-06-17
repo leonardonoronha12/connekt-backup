@@ -320,8 +320,14 @@ async function createPaymentLinkAcrossGateways({ requestBody }) {
     const requestUrl = `${String(baseUrl).replace(/\/$/, '')}/payments/v1/paymentlink`
     const authHeaders = []
     const token = await getGatewayAuthTokenForBase(baseUrl)
-    if (token) authHeaders.push(normalizeBearerToken(token))
-    if (GATEWAY_AUTH) authHeaders.push(normalizeBearerToken(GATEWAY_AUTH))
+    if (token) {
+      authHeaders.push(String(token))
+      authHeaders.push(normalizeBearerToken(token))
+    }
+    if (GATEWAY_AUTH) {
+      authHeaders.push(String(GATEWAY_AUTH))
+      authHeaders.push(normalizeBearerToken(GATEWAY_AUTH))
+    }
 
     const out = await createPaymentLink({ requestUrl, requestBody, authHeaders })
     const metaUrl = requestUrl

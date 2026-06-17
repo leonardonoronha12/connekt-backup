@@ -169,18 +169,28 @@ export default async function handler(req, res) {
 
           const payStart = Date.now()
           step = 'paymentlink'
-          const payRes = await fetchWithTimeout(paymentUrl, {
-            method: 'POST',
-            headers: { ...headersBase, Authorization: `Bearer ${token}` },
-            body: JSON.stringify(requestBody),
-          }, 12_000)
-          const payText = await safeReadText(payRes)
+          const authCandidates = [String(token), `Bearer ${String(token)}`]
+          let payRes = null
+          let payText = ''
+          let payAuthMode = ''
+          for (const authHeader of authCandidates) {
+            payAuthMode = authHeader.startsWith('Bearer ') ? 'bearer' : 'token_raw'
+            payRes = await fetchWithTimeout(paymentUrl, {
+              method: 'POST',
+              headers: { ...headersBase, Authorization: authHeader },
+              body: JSON.stringify(requestBody),
+            }, 12_000)
+            payText = await safeReadText(payRes)
+            if (payRes.ok) break
+            if ([401, 403].includes(Number(payRes.status || 0))) break
+          }
           const payMs = Date.now() - payStart
           attempt.steps.paymentlink = {
-            ok: payRes.ok,
-            status: payRes.status,
+            ok: !!payRes?.ok,
+            status: payRes?.status || 0,
             took_ms: payMs,
-            content_type: String(payRes.headers?.get?.('content-type') || ''),
+            auth_mode: payAuthMode,
+            content_type: String(payRes?.headers?.get?.('content-type') || ''),
             response_snippet: redactText(String(payText || '').slice(0, 800)),
           }
         }
