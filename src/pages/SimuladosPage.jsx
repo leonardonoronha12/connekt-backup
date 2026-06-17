@@ -5,6 +5,7 @@ import { questionBankService } from '@/services/questionBankService';
 import { supabase } from '@/lib/supabaseClient';
 import { useAuth } from '@/contexts/SupabaseAuthContext.jsx';
 import ProgressRingIcon from '@/components/ProgressRingIcon.jsx';
+import Skeleton from '@/components/ui/Skeleton.jsx'
 
 // Lista real de simulados do usuário autenticado
 // RLS garante que apenas os simulados do usuário atual sejam retornados
@@ -582,9 +583,24 @@ const SimuladosPage = ({ titleText = 'Simulados', subtitleText = 'Crie e gerenci
 
           {/* Grid */}
           <div className="mt-6 w-full max-w-[1076px] mx-auto px-6 grid auto-rows-fr grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-[22px]">
-            {listLoading && (
-              <div className="col-span-full text-center text-[14px] text-[#737780]">Carregando seus simulados...</div>
-            )}
+            {listLoading ? (
+              Array.from({ length: 8 }).map((_, idx) => (
+                <div key={`simulados-skel-${idx}`} className="bg-white border border-[#E3E4E5] rounded-[4px] p-4 w-full h-[222.17px] flex flex-col overflow-hidden connekt-fade-in">
+                  <div className="flex items-start justify-between">
+                    <Skeleton className="w-[85px] h-[85px] rounded-md" />
+                    <Skeleton className="w-8 h-8 rounded" />
+                  </div>
+                  <div className="mt-4 space-y-2">
+                    <Skeleton className="h-[12px] w-[82%] rounded" />
+                    <Skeleton className="h-[10px] w-[62%] rounded" />
+                  </div>
+                  <div className="mt-auto flex items-center justify-between pt-4">
+                    <Skeleton className="h-[22px] w-[96px] rounded-full" />
+                    <Skeleton className="h-[22px] w-[64px] rounded-full" />
+                  </div>
+                </div>
+              ))
+            ) : null}
             {!listLoading && simulados.length === 0 && (
               <div 
                 onClick={() => navigateTo(createPath)}
