@@ -1,4 +1,5 @@
 import { getSupabaseAdmin, getAuthedUser, readRawBody, json, isUuid } from '../src/server/supabaseAdmin.js'
+import crypto from 'node:crypto'
 
 const RAW_GATEWAY_URL = process.env.VITE_PLANS_GATEWAY_URL || process.env.PLANS_GATEWAY_URL || ''
 const RAW_GATEWAY_URL_FALLBACK = process.env.VITE_PLANS_GATEWAY_URL_FALLBACK || process.env.PLANS_GATEWAY_URL_FALLBACK || ''
@@ -130,7 +131,7 @@ function isHtmlLikeText(input) {
   return false
 }
 
-function gatewayErrorPayload(e, requestUrl) {
+function gatewayErrorPayload(e, requestUrl, traceId) {
   const name = String(e?.name || '').toLowerCase()
   const msg = redactGatewayText(e?.message || e || '')
   const aborted = name.includes('abort')
@@ -142,6 +143,7 @@ function gatewayErrorPayload(e, requestUrl) {
       body: {
         error: 'gateway_timeout',
         message: 'Checkout indisponível: o gateway demorou para responder.',
+        trace_id: traceId || '',
         attempted_bases: attempted,
         ...meta,
       },
@@ -153,6 +155,7 @@ function gatewayErrorPayload(e, requestUrl) {
       error: 'gateway_network_error',
       message: 'Checkout indisponível: falha ao conectar no gateway.',
       details: msg ? String(msg).slice(0, 300) : '',
+      trace_id: traceId || '',
       attempted_bases: attempted,
       ...meta,
     },
@@ -398,16 +401,24 @@ function getCourseModules(row) {
 }
 
 export default async function handler(req, res) {
+  const traceId = (() => {
+    try {
+      if (crypto?.randomUUID) return crypto.randomUUID()
+      return crypto.randomBytes(16).toString('hex')
+    } catch (_) {
+      return String(Date.now())
+    }
+  })()
   if (req.method !== 'POST') return json(res, 405, { error: 'method_not_allowed' })
 
   const admin = getSupabaseAdmin()
-  if (!admin) return json(res, 501, { error: 'proxy_disabled', message: 'Backend não configurado.', hint: 'Configure SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY na Vercel.' })
+  if (!admin) return json(res, 501, { error: 'proxy_disabled', message: 'Backend não configurado.', hint: 'Configure SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY na Vercel.', trace_id: traceId })
 
   const auth = await getAuthedUser(admin, req)
-  if (!auth.user) return json(res, 401, { error: auth.error || 'unauthorized', message: 'Sessão inválida ou expirada. Faça login novamente.' })
+  if (!auth.user) return json(res, 401, { error: auth.error || 'unauthorized', message: 'Sessão inválida ou expirada. Faça login novamente.', trace_id: traceId })
 
-  if (!GATEWAY_BASE_URLS.length) return json(res, 501, { error: 'gateway_not_configured', message: 'Checkout indisponível: gateway não configurado (VITE_PLANS_GATEWAY_URL).' })
-  if (!GATEWAY_API_KEY) return json(res, 501, { error: 'gateway_not_configured', message: 'Checkout indisponível: gateway não configurado (VITE_PLANS_GATEWAY_API_KEY).' })
+  if (!GATEWAY_BASE_URLS.length) return json(res, 501, { error: 'gateway_not_configured', message: 'Checkout indisponível: gateway não configurado (VITE_PLANS_GATEWAY_URL).', trace_id: traceId })
+  if (!GATEWAY_API_KEY) return json(res, 501, { error: 'gateway_not_configured', message: 'Checkout indisponível: gateway não configurado (VITE_PLANS_GATEWAY_API_KEY).', trace_id: traceId })
 
   try {
     const body = await readRawBody(req)
@@ -470,17 +481,20 @@ export default async function handler(req, res) {
       }))
       const requestUrl = String(out?.requestUrl || '').trim()
       if (out?.exception) {
-        const err = gatewayErrorPayload(out.exception, requestUrl)
+        console.error('[simulado-checkout] exception', { trace_id: traceId, type, requestUrl, message: String(out?.exception?.message || out?.exception || '') })
+        const err = gatewayErrorPayload(out.exception, requestUrl, traceId)
         return json(res, err.status, err.body)
       }
       if (!out?.ok) {
         const meta = getGatewayMeta(requestUrl)
         const gatewayMessageRaw = redactGatewayText(pickGatewayErrorMessage(out?.payload, out?.lastText || ''))
         const gatewayResponseRaw = out?.lastText ? redactGatewayText(String(out.lastText).slice(0, 800)) : ''
+        console.error('[simulado-checkout] gateway_error', { trace_id: traceId, type, requestUrl, status: out?.lastStatus || 0, gateway_message: isHtmlLikeText(gatewayMessageRaw) ? '' : gatewayMessageRaw })
         return json(res, 502, {
           error: 'create_paymentlink_failed',
           message: gatewayFailureMessage(out?.lastStatus || 0),
           status: out?.lastStatus || 0,
+          trace_id: traceId,
           gateway_message: isHtmlLikeText(gatewayMessageRaw) ? '' : gatewayMessageRaw,
           gateway_response: isHtmlLikeText(gatewayResponseRaw) ? '' : gatewayResponseRaw,
           ...meta,
@@ -557,17 +571,20 @@ export default async function handler(req, res) {
       }))
       const requestUrl = String(out?.requestUrl || '').trim()
       if (out?.exception) {
-        const err = gatewayErrorPayload(out.exception, requestUrl)
+        console.error('[simulado-checkout] exception', { trace_id: traceId, type, requestUrl, message: String(out?.exception?.message || out?.exception || '') })
+        const err = gatewayErrorPayload(out.exception, requestUrl, traceId)
         return json(res, err.status, err.body)
       }
       if (!out?.ok) {
         const meta = getGatewayMeta(requestUrl)
         const gatewayMessageRaw = redactGatewayText(pickGatewayErrorMessage(out?.payload, out?.lastText || ''))
         const gatewayResponseRaw = out?.lastText ? redactGatewayText(String(out.lastText).slice(0, 800)) : ''
+        console.error('[simulado-checkout] gateway_error', { trace_id: traceId, type, requestUrl, status: out?.lastStatus || 0, gateway_message: isHtmlLikeText(gatewayMessageRaw) ? '' : gatewayMessageRaw })
         return json(res, 502, {
           error: 'create_paymentlink_failed',
           message: gatewayFailureMessage(out?.lastStatus || 0),
           status: out?.lastStatus || 0,
+          trace_id: traceId,
           gateway_message: isHtmlLikeText(gatewayMessageRaw) ? '' : gatewayMessageRaw,
           gateway_response: isHtmlLikeText(gatewayResponseRaw) ? '' : gatewayResponseRaw,
           ...meta,
@@ -650,17 +667,20 @@ export default async function handler(req, res) {
       }))
       const requestUrl = String(out?.requestUrl || '').trim()
       if (out?.exception) {
-        const err = gatewayErrorPayload(out.exception, requestUrl)
+        console.error('[simulado-checkout] exception', { trace_id: traceId, type, requestUrl, message: String(out?.exception?.message || out?.exception || '') })
+        const err = gatewayErrorPayload(out.exception, requestUrl, traceId)
         return json(res, err.status, err.body)
       }
       if (!out?.ok) {
         const meta = getGatewayMeta(requestUrl)
         const gatewayMessageRaw = redactGatewayText(pickGatewayErrorMessage(out?.payload, out?.lastText || ''))
         const gatewayResponseRaw = out?.lastText ? redactGatewayText(String(out.lastText).slice(0, 800)) : ''
+        console.error('[simulado-checkout] gateway_error', { trace_id: traceId, type, requestUrl, status: out?.lastStatus || 0, gateway_message: isHtmlLikeText(gatewayMessageRaw) ? '' : gatewayMessageRaw })
         return json(res, 502, {
           error: 'create_paymentlink_failed',
           message: gatewayFailureMessage(out?.lastStatus || 0),
           status: out?.lastStatus || 0,
+          trace_id: traceId,
           gateway_message: isHtmlLikeText(gatewayMessageRaw) ? '' : gatewayMessageRaw,
           gateway_response: isHtmlLikeText(gatewayResponseRaw) ? '' : gatewayResponseRaw,
           ...meta,
@@ -740,17 +760,20 @@ export default async function handler(req, res) {
     }))
     const requestUrl = String(out?.requestUrl || '').trim()
     if (out?.exception) {
-      const err = gatewayErrorPayload(out.exception, requestUrl)
+      console.error('[simulado-checkout] exception', { trace_id: traceId, type, requestUrl, message: String(out?.exception?.message || out?.exception || '') })
+      const err = gatewayErrorPayload(out.exception, requestUrl, traceId)
       return json(res, err.status, err.body)
     }
     if (!out?.ok) {
       const meta = getGatewayMeta(requestUrl)
       const gatewayMessageRaw = redactGatewayText(pickGatewayErrorMessage(out?.payload, out?.lastText || ''))
       const gatewayResponseRaw = out?.lastText ? redactGatewayText(String(out.lastText).slice(0, 800)) : ''
+      console.error('[simulado-checkout] gateway_error', { trace_id: traceId, type, requestUrl, status: out?.lastStatus || 0, gateway_message: isHtmlLikeText(gatewayMessageRaw) ? '' : gatewayMessageRaw })
       return json(res, 502, {
         error: 'create_paymentlink_failed',
         message: gatewayFailureMessage(out?.lastStatus || 0),
         status: out?.lastStatus || 0,
+        trace_id: traceId,
         gateway_message: isHtmlLikeText(gatewayMessageRaw) ? '' : gatewayMessageRaw,
         gateway_response: isHtmlLikeText(gatewayResponseRaw) ? '' : gatewayResponseRaw,
         ...meta,
@@ -771,7 +794,8 @@ export default async function handler(req, res) {
 
     return json(res, 200, { checkout_url: finalCheckoutUrl, link_id: String(linkId), simId })
   } catch (e) {
-    return json(res, 500, { error: 'internal_error', message: e?.message || String(e) })
+    console.error('[simulado-checkout] internal_error', { trace_id: traceId, message: String(e?.message || e || '') })
+    return json(res, 500, { error: 'internal_error', message: e?.message || String(e), trace_id: traceId })
   }
 }
 
