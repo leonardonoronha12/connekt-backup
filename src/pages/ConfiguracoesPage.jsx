@@ -1803,6 +1803,7 @@ const ConfiguracoesPage = () => {
                         const refused = status === 'failed' || status === 'recusado' || status === 'canceled' || status === 'cancelado';
                         const label = paid ? 'Pago' : (refused ? 'Recusado' : 'Pendente');
                         const statusColor = paid ? 'bg-green-100 text-green-700' : (refused ? 'bg-red-100 text-red-700' : 'bg-orange-100 text-orange-700');
+                        const canRetry = !paid && !refused
                         const planKey = String(p?.plan_slug || '');
                         const planName = plansCatalog[planKey]?.name || planKey || '—';
                         const billingCycle = String(p?.cycle || '').trim().toLowerCase() === 'anual' ? 'anual' : 'mensal'
@@ -1822,7 +1823,7 @@ const ConfiguracoesPage = () => {
                               </span>
                             </td>
                             <td className="px-6 py-4 text-right">
-                              {!paid ? (
+                              {canRetry ? (
                                 <button
                                   type="button"
                                   className="h-9 px-3 rounded-[10px] bg-[#0047BB] text-white text-[12px] font-semibold hover:bg-[#003da0]"
