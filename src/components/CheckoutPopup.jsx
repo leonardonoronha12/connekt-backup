@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 
 export default function CheckoutPopup({ open, url, title, onClose, footerText }) {
@@ -35,8 +36,10 @@ export default function CheckoutPopup({ open, url, title, onClose, footerText })
 
   if (!open) return null
 
-  return (
-    <div className="fixed inset-0 z-[220]">
+  if (typeof document === 'undefined') return null
+
+  return createPortal(
+    <div className="fixed inset-0 z-[9999]">
       <button type="button" className="absolute inset-0 bg-black/50" aria-label="Fechar" onClick={onClose} />
       <div
         role="dialog"
@@ -90,6 +93,7 @@ export default function CheckoutPopup({ open, url, title, onClose, footerText })
           ) : null}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

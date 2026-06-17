@@ -80,7 +80,6 @@ const MainLayout = ({ children }) => {
                   paddingRight: isFullWidthPage ? '0' : (isMobile ? '20px' : '52px'),
                   paddingLeft: isFullWidthPage ? '0' : (isMobile ? '20px' : '52px'),
                   opacity: 1,
-                  transform: 'rotate(0deg)',
                   boxSizing: 'border-box',
                   margin: '0 auto'
                 }}

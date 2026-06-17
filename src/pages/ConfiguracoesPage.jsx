@@ -7,6 +7,7 @@ import { planService } from '@/services/planService.js';
 import { canConnectVideoProvider, canUseWhitelabel, canUseNpsFeedback, resolvePlanKey } from '@/services/planEntitlements.js';
 import CancelSubscriptionModal from '@/components/CancelSubscriptionModal.jsx';
 import Skeleton from '@/components/ui/Skeleton.jsx'
+import CheckoutPopup from '@/components/CheckoutPopup.jsx'
 import { deviceSessionService } from '@/services/deviceSessionService.js';
 import { getPublicAppOrigin } from '@/services/publicUrl.js';
 import { ALUNO_NAV_SECTIONS } from '@/constants/alunoNavSections'
@@ -150,6 +151,10 @@ const ConfiguracoesPage = () => {
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
   const [cancelLoading, setCancelLoading] = useState(false);
   const [testEmailLoading, setTestEmailLoading] = useState(false);
+  const [checkoutPopupOpen, setCheckoutPopupOpen] = useState(false)
+  const [checkoutPopupUrl, setCheckoutPopupUrl] = useState('')
+  const [checkoutPopupTitle, setCheckoutPopupTitle] = useState('Pagamento')
+  const [checkoutPopupFooterText, setCheckoutPopupFooterText] = useState('Finalize o pagamento e volte para acompanhar a confirmação.')
 
   const [deviceAccess, setDeviceAccess] = useState({ registered: { desktop: null, mobile: null }, pending: null })
   const [devicesLoading, setDevicesLoading] = useState(false);
@@ -1828,34 +1833,23 @@ const ConfiguracoesPage = () => {
                                   type="button"
                                   className="h-9 px-3 rounded-[10px] bg-[#0047BB] text-white text-[12px] font-semibold hover:bg-[#003da0]"
                                   onClick={async () => {
-                                    const preOpened = (() => {
-                                      try { return window.open('about:blank', '_blank', 'noopener') } catch (_) { return null }
-                                    })()
                                     try {
                                       if (!user?.id) {
                                         toast({ title: 'Faça login', description: 'Você precisa estar logado para efetuar o pagamento.', duration: 6000 })
-                                        try { preOpened && preOpened.close && preOpened.close() } catch (_) {}
                                         return
                                       }
                                       const r = await planService.startCheckout(planKey, billingCycle, user, { redirect: false, forceNew: true })
                                       const url = String(r?.checkout_url || r?.checkoutUrl || '').trim()
                                       if (!r?.ok || !url) {
-                                        try { preOpened && preOpened.close && preOpened.close() } catch (_) {}
                                         toast({ title: 'Falha ao iniciar pagamento', description: String(r?.error || 'Tente novamente.'), duration: 6000 })
                                         return
                                       }
-                                      if (preOpened && typeof preOpened.location !== 'undefined') {
-                                        try { preOpened.location.href = url } catch (_) {}
-                                      } else {
-                                        let opened = null
-                                        try { opened = window.open(url, '_blank', 'noopener') } catch (_) { opened = null }
-                                        if (!opened) {
-                                          try { await navigator.clipboard.writeText(url) } catch (_) {}
-                                          toast({ title: 'Pop-up bloqueado', description: 'Link copiado. Permita pop-ups para abrir o pagamento em nova aba.', duration: 7000 })
-                                        }
-                                      }
+                                      const planLabel = plansCatalog[planKey]?.name || planKey || 'Pagamento'
+                                      setCheckoutPopupTitle(planLabel)
+                                      setCheckoutPopupFooterText('Finalize o pagamento e volte para acompanhar a confirmação.')
+                                      setCheckoutPopupUrl(url)
+                                      setCheckoutPopupOpen(true)
                                     } catch (e) {
-                                      try { preOpened && preOpened.close && preOpened.close() } catch (_) {}
                                       toast({ title: 'Falha ao iniciar pagamento', description: e?.message || 'Tente novamente.', duration: 6000 })
                                     }
                                   }}
@@ -2910,6 +2904,16 @@ Fazer upgrade
 </div>
 </div>
 )}
+      <CheckoutPopup
+        open={checkoutPopupOpen}
+        url={checkoutPopupUrl}
+        title={checkoutPopupTitle}
+        footerText={checkoutPopupFooterText}
+        onClose={() => {
+          setCheckoutPopupOpen(false)
+          setCheckoutPopupUrl('')
+        }}
+      />
       <CancelSubscriptionModal
         open={isCancelModalOpen}
         loading={cancelLoading}
