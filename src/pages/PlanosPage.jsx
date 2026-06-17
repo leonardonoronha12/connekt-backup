@@ -4,6 +4,8 @@ import { supabase } from '@/lib/supabaseClient.js';
 import { planService } from '@/services/planService.js';
 import { toast } from '@/hooks/use-toast.ts';
 import CancelSubscriptionModal from '@/components/CancelSubscriptionModal.jsx';
+import CheckoutPopup from '@/components/CheckoutPopup.jsx'
+import { Clock3, Sparkles, ShieldCheck, X } from 'lucide-react'
 
 const Feature = ({ children }) => (
   <li className="flex items-start gap-2">
@@ -125,10 +127,14 @@ const PlanosPage = () => {
   const [activePlanKey, setActivePlanKey] = useState(() => planService.getActivePlan());
   const [subscription, setSubscription] = useState(() => (typeof planService.getSubscription === 'function' ? planService.getSubscription() : null));
   const [pendingPayment, setPendingPayment] = useState(() => (typeof planService.getPendingCheckout === 'function' ? planService.getPendingCheckout() : null));
-  const checkoutWindowRef = useRef(null);
+  const [checkoutPopupOpen, setCheckoutPopupOpen] = useState(false)
+  const [checkoutPopupUrl, setCheckoutPopupUrl] = useState('')
+  const [checkoutPopupTitle, setCheckoutPopupTitle] = useState('Pagamento')
+  const [checkoutPopupFooterText, setCheckoutPopupFooterText] = useState('Finalize o pagamento e aguarde a confirmação automática.')
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
   const [cancelLoading, setCancelLoading] = useState(false);
   const [actionLoadingPlanKey, setActionLoadingPlanKey] = useState(null);
+  const pendingBannerVisibleRef = useRef(false)
 
   const subscriptionStatus = String(subscription?.status || '').toLowerCase()
   const subscriptionPlanKey = subscription?.planKey ? String(subscription.planKey) : null
@@ -144,6 +150,71 @@ const PlanosPage = () => {
   const subscriptionNotExpired = subscriptionExpiresAtMs === null ? true : subscriptionExpiresAtMs > Date.now()
   const currentPlanKey = subscriptionPlanKey && subscriptionNotExpired ? subscriptionPlanKey : null
   const canCancelSubscription = currentPlanKey && subscriptionNotExpired && subscriptionStatus === 'active'
+
+  const closedKeyFor = (linkId) => `connekt_pending_checkout_closed_${String(linkId || '').trim()}`
+  const hasClosedMarker = (linkId) => {
+    const k = String(linkId || '').trim()
+    if (!k) return false
+    try { return !!localStorage.getItem(closedKeyFor(k)) } catch (_) { return false }
+  }
+  const setClosedMarker = (linkId) => {
+    const k = String(linkId || '').trim()
+    if (!k) return
+    try { localStorage.setItem(closedKeyFor(k), String(Date.now())) } catch (_) {}
+    pendingBannerVisibleRef.current = true
+  }
+  const clearClosedMarker = (linkId) => {
+    const k = String(linkId || '').trim()
+    if (!k) return
+    try { localStorage.removeItem(closedKeyFor(k)) } catch (_) {}
+    pendingBannerVisibleRef.current = false
+  }
+
+  const cancelPendingVerification = () => {
+    try { setCheckoutPopupOpen(false) } catch (_) {}
+    try { setCheckoutPopupUrl('') } catch (_) {}
+    clearClosedMarker(pendingPayment?.linkId)
+    planService.clearPendingCheckout?.()
+    setPendingPayment(null)
+    refreshSubscription()
+  }
+
+  const openCheckoutPopup = ({ url, planKey, billing }) => {
+    const planName = plansData?.[planKey]?.name || planKey || 'Pagamento'
+    setCheckoutPopupTitle(planName)
+    setCheckoutPopupFooterText('Finalize o pagamento e aguarde a confirmação automática.')
+    setCheckoutPopupUrl(String(url || '').trim())
+    setCheckoutPopupOpen(true)
+    clearClosedMarker(pendingPayment?.linkId)
+  }
+
+  const startCheckoutInPopup = async (planKey) => {
+    if (!user?.id) {
+      try { toast({ title: 'Faça login', description: 'Você precisa estar logado para contratar um plano.', duration: 6000 }) } catch (_) {}
+      return
+    }
+    try {
+      setActionLoadingPlanKey(planKey)
+      const r = await planService.startCheckout(planKey, billingCycle, user, { redirect: false })
+      const url = r?.checkout_url || r?.checkoutUrl || null
+      const linkId = r?.linkId || null
+      const paymentId = r?.paymentId || null
+      if (linkId) {
+        clearClosedMarker(linkId)
+        setPendingPayment({ planKey, billingCycle, linkId, paymentId })
+      }
+      if (url) {
+        openCheckoutPopup({ url, planKey, billing: billingCycle })
+      } else {
+        try { toast({ title: 'Checkout indisponível', description: 'Não foi possível obter o link de pagamento. Tente novamente.', duration: 6000 }) } catch (_) {}
+      }
+    } catch (e) {
+      const msg = e?.message || String(e)
+      try { toast({ title: 'Falha ao iniciar checkout', description: msg, duration: 6000 }) } catch (_) {}
+    } finally {
+      setActionLoadingPlanKey(null)
+    }
+  }
 
   const formatDateBR = (iso) => {
     try {
@@ -371,8 +442,9 @@ const PlanosPage = () => {
         if (syncStatus === 'failed' || syncStatus === 'canceled') {
           refreshSubscription();
           try { toast({ title: 'Pagamento não aprovado', description: 'O gateway marcou a cobrança como falha. Tente novamente.', duration: 7000 }) } catch (_) {}
-          try { checkoutWindowRef.current?.close?.() } catch (_) {}
-          checkoutWindowRef.current = null;
+          try { setCheckoutPopupOpen(false) } catch (_) {}
+          try { setCheckoutPopupUrl('') } catch (_) {}
+          clearClosedMarker(pendingPayment.linkId)
           planService.clearPendingCheckout?.();
           setPendingPayment(null);
           return;
@@ -389,12 +461,9 @@ const PlanosPage = () => {
         if (activated?.ok) {
           try { toast({ title: 'Pagamento confirmado', description: 'Plano ativado com sucesso.', duration: 5000 }) } catch (_) {}
         }
-        try {
-          if (checkoutWindowRef.current && typeof checkoutWindowRef.current.close === 'function') {
-            checkoutWindowRef.current.close();
-          }
-        } catch (_) {}
-        checkoutWindowRef.current = null;
+        try { setCheckoutPopupOpen(false) } catch (_) {}
+        try { setCheckoutPopupUrl('') } catch (_) {}
+        clearClosedMarker(pendingPayment.linkId)
         if (typeof planService.clearPendingCheckout === 'function') planService.clearPendingCheckout();
         setPendingPayment(null);
       } catch (_) {}
@@ -458,69 +527,87 @@ const PlanosPage = () => {
           </div>
         )}
 
-        {pendingPayment?.linkId && (
+        {pendingPayment?.linkId && hasClosedMarker(pendingPayment.linkId) && !checkoutPopupOpen && (
           <div className="mb-6 px-4">
-            <div className="bg-[#FFFBDC] border border-[#FDED72] rounded-[10px] p-4 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-              <div className="min-w-0">
-                <div className="text-[14px] text-[#1E1B39] font-semibold">Aguardando confirmação do pagamento…</div>
-                <div className="text-[12px] text-[#404040] mt-1 break-words">
-                  Plano: <span className="font-medium">{plansData[pendingPayment.planKey]?.name || pendingPayment.planKey}</span> •
-                  Ciclo: <span className="font-medium">{pendingPayment.billingCycle === 'anual' ? 'Anual' : 'Mensal'}</span>
+            <div className="relative overflow-hidden rounded-[14px] border border-[#FFE08A] bg-gradient-to-r from-[#FFF7D1] via-[#FFF2B8] to-[#FFF7D1] p-4 shadow-sm connekt-fade-in">
+              <div className="absolute inset-0 opacity-50">
+                <div className="absolute -left-1/2 top-0 h-full w-[60%] bg-white/40 blur-xl animate-[connektPendingSweep_1400ms_ease-in-out_infinite]" />
+              </div>
+
+              <div className="relative flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                <div className="min-w-0 flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-[12px] bg-white/70 border border-white/70 flex items-center justify-center flex-shrink-0">
+                    <Clock3 className="w-5 h-5 text-[#8A6A00]" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <div className="text-[14px] font-semibold text-[#1E1B39]">Aguardando confirmação do pagamento</div>
+                      <Sparkles className="w-4 h-4 text-[#8A6A00] animate-pulse" />
+                    </div>
+                    <div className="text-[12px] text-[#3A3A3A] mt-1 break-words">
+                      Plano: <span className="font-medium">{plansData[pendingPayment.planKey]?.name || pendingPayment.planKey}</span> •{' '}
+                      Ciclo: <span className="font-medium">{pendingPayment.billingCycle === 'anual' ? 'Anual' : 'Mensal'}</span>
+                    </div>
+                    <div className="mt-2 inline-flex items-center gap-2 text-[12px] text-[#5B5B5B]">
+                      <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-white/70 border border-white/80">
+                        <div className="w-2 h-2 rounded-full bg-[#8A6A00] animate-pulse" />
+                      </span>
+                      Verificação automática a cada alguns segundos.
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <button
+                    type="button"
+                    className="h-9 px-4 rounded-[10px] bg-[#0047BB] text-white text-[12px] font-semibold hover:bg-[#003da0] transition-colors inline-flex items-center gap-2"
+                    onClick={async () => {
+                      try {
+                        const sync = await planService.syncPaymentStatus(pendingPayment.linkId);
+                        const status = String(sync?.data?.status || '').toLowerCase();
+                        if (status === 'failed' || status === 'canceled') {
+                          refreshSubscription();
+                          try { toast({ title: 'Pagamento não aprovado', description: 'O gateway marcou a cobrança como falha. Tente novamente.', duration: 7000 }) } catch (_) {}
+                          clearClosedMarker(pendingPayment.linkId)
+                          planService.clearPendingCheckout?.();
+                          setPendingPayment(null);
+                          return;
+                        }
+                        const paid = !!(sync?.ok && (sync?.data?.paid === true || status === 'paid'));
+                        if (paid) {
+                          await planService.handleCheckoutCallback(
+                            { status: 'success', plan: pendingPayment.planKey, billing: pendingPayment.billingCycle, link_id: pendingPayment.linkId, session_id: null },
+                            user,
+                            {}
+                          );
+                          refreshSubscription();
+                          try { toast({ title: 'Pagamento confirmado', description: 'Plano ativado com sucesso.', duration: 5000 }) } catch (_) {}
+                          clearClosedMarker(pendingPayment.linkId)
+                          planService.clearPendingCheckout?.();
+                          setPendingPayment(null);
+                        } else {
+                          try { toast({ title: 'Ainda não confirmado', description: 'O pagamento ainda não apareceu como pago. Tente novamente em alguns segundos.', duration: 5000 }) } catch (_) {}
+                        }
+                      } catch (e) {
+                        try { toast({ title: 'Falha ao verificar', description: e?.message || String(e), duration: 6000 }) } catch (_) {}
+                      }
+                    }}
+                  >
+                    <ShieldCheck className="w-4 h-4" />
+                    Já paguei (verificar)
+                  </button>
+                  <button
+                    type="button"
+                    className="h-9 px-4 rounded-[10px] bg-white/70 border border-[#D92D20]/30 text-[#B42318] text-[12px] font-semibold hover:bg-white transition-colors inline-flex items-center gap-2"
+                    onClick={cancelPendingVerification}
+                  >
+                    <X className="w-4 h-4" />
+                    Cancelar
+                  </button>
                 </div>
               </div>
-              <div className="flex flex-col sm:flex-row gap-2">
-                <button
-                  type="button"
-                  className="text-xs text-white bg-[#0047BB] rounded px-4 py-2"
-                  onClick={async () => {
-                    try {
-                      const sync = await planService.syncPaymentStatus(pendingPayment.linkId);
-                      const status = String(sync?.data?.status || '').toLowerCase();
-                      if (status === 'failed' || status === 'canceled') {
-                        refreshSubscription();
-                        try { toast({ title: 'Pagamento não aprovado', description: 'O gateway marcou a cobrança como falha. Tente novamente.', duration: 7000 }) } catch (_) {}
-                        try { checkoutWindowRef.current?.close?.() } catch (_) {}
-                        checkoutWindowRef.current = null;
-                        planService.clearPendingCheckout?.();
-                        setPendingPayment(null);
-                        return;
-                      }
-                      const paid = !!(sync?.ok && (sync?.data?.paid === true || status === 'paid'));
-                      if (paid) {
-                        await planService.handleCheckoutCallback(
-                          { status: 'success', plan: pendingPayment.planKey, billing: pendingPayment.billingCycle, link_id: pendingPayment.linkId, session_id: null },
-                          user,
-                          {}
-                        );
-                        refreshSubscription();
-                        try { toast({ title: 'Pagamento confirmado', description: 'Plano ativado com sucesso.', duration: 5000 }) } catch (_) {}
-                        try { checkoutWindowRef.current?.close?.() } catch (_) {}
-                        checkoutWindowRef.current = null;
-                        planService.clearPendingCheckout?.();
-                        setPendingPayment(null);
-                      } else {
-                        try { toast({ title: 'Ainda não confirmado', description: 'O pagamento ainda não apareceu como pago. Tente novamente em alguns segundos.', duration: 5000 }) } catch (_) {}
-                      }
-                    } catch (e) {
-                      try { toast({ title: 'Falha ao verificar', description: e?.message || String(e), duration: 6000 }) } catch (_) {}
-                    }
-                  }}
-                >
-                  Já paguei (verificar)
-                </button>
-                <button
-                  type="button"
-                  className="text-xs text-[#D92D20] border border-[#D92D20] rounded px-4 py-2"
-                  onClick={() => {
-                    try { checkoutWindowRef.current?.close?.() } catch (_) {}
-                    checkoutWindowRef.current = null;
-                    planService.clearPendingCheckout?.();
-                    setPendingPayment(null);
-                    refreshSubscription();
-                  }}
-                >
-                  Cancelar verificação
-                </button>
+              <div className="mt-3 h-1 w-full bg-white/50 overflow-hidden rounded-full">
+                <div className="h-full w-[45%] bg-[#8A6A00]/60 rounded-full animate-[connektPendingSweep_1400ms_ease-in-out_infinite]" />
               </div>
             </div>
           </div>
@@ -600,34 +687,7 @@ const PlanosPage = () => {
               }}
               features={plansData.qa.features}
               onCancel={cancelCurrentSubscription}
-              onAction={async () => {
-                if (!user?.id) {
-                  try { toast({ title: 'Faça login', description: 'Você precisa estar logado para contratar um plano.', duration: 6000 }) } catch (_) {}
-                  return;
-                }
-                try {
-                  setActionLoadingPlanKey(plansData.qa.key)
-                  const r = await planService.startCheckout(plansData.qa.key, billingCycle, user, { redirect: false });
-                  const url = r?.checkout_url || r?.checkoutUrl || null;
-                  const linkId = r?.linkId || null;
-                  const paymentId = r?.paymentId || null;
-                  if (url) {
-                    const w = window.open(String(url), '_blank', 'noopener');
-                    checkoutWindowRef.current = w || null;
-                    if (!w) {
-                      try { toast({ title: 'Pop-up bloqueado', description: 'Permita pop-ups para abrir o checkout em nova aba.', duration: 6000 }) } catch (_) {}
-                    }
-                  }
-                  if (linkId) {
-                    setPendingPayment({ planKey: plansData.qa.key, billingCycle, linkId, paymentId });
-                  }
-                } catch (e) {
-                  const msg = e?.message || String(e)
-                  try { toast({ title: 'Falha ao iniciar checkout', description: msg, duration: 6000 }) } catch (_) {}
-                } finally {
-                  setActionLoadingPlanKey(null)
-                }
-              }}
+              onAction={() => startCheckoutInPopup(plansData.qa.key)}
             />
           )}
           <PlanCard
@@ -646,34 +706,7 @@ const PlanosPage = () => {
             }}
             features={plansData.teste.features}
             onCancel={cancelCurrentSubscription}
-            onAction={async () => {
-              if (!user?.id) {
-                try { toast({ title: 'Faça login', description: 'Você precisa estar logado para contratar um plano.', duration: 6000 }) } catch (_) {}
-                return;
-              }
-              try {
-                setActionLoadingPlanKey(plansData.teste.key)
-                const r = await planService.startCheckout(plansData.teste.key, billingCycle, user, { redirect: false });
-                const url = r?.checkout_url || r?.checkoutUrl || null;
-                const linkId = r?.linkId || null;
-                const paymentId = r?.paymentId || null;
-                if (url) {
-                  const w = window.open(String(url), '_blank', 'noopener');
-                  checkoutWindowRef.current = w || null;
-                  if (!w) {
-                    try { toast({ title: 'Pop-up bloqueado', description: 'Permita pop-ups para abrir o checkout em nova aba.', duration: 6000 }) } catch (_) {}
-                  }
-                }
-                if (linkId) {
-                  setPendingPayment({ planKey: plansData.teste.key, billingCycle, linkId, paymentId });
-                }
-              } catch (e) {
-                const msg = e?.message || String(e)
-                try { toast({ title: 'Falha ao iniciar checkout', description: msg, duration: 6000 }) } catch (_) {}
-              } finally {
-                setActionLoadingPlanKey(null)
-              }
-            }}
+            onAction={() => startCheckoutInPopup(plansData.teste.key)}
           />
           <PlanCard
             key={`start-${billingCycle}`}
@@ -691,34 +724,7 @@ const PlanosPage = () => {
             }}
             features={plansData.start.features}
             onCancel={cancelCurrentSubscription}
-            onAction={async () => {
-              if (!user?.id) {
-                try { toast({ title: 'Faça login', description: 'Você precisa estar logado para contratar um plano.', duration: 6000 }) } catch (_) {}
-                return;
-              }
-              try {
-                setActionLoadingPlanKey(plansData.start.key)
-                const r = await planService.startCheckout(plansData.start.key, billingCycle, user, { redirect: false });
-                  const url = r?.checkout_url || r?.checkoutUrl || null;
-                  const linkId = r?.linkId || null;
-                  const paymentId = r?.paymentId || null;
-                  if (url) {
-                    const w = window.open(String(url), '_blank', 'noopener');
-                    checkoutWindowRef.current = w || null;
-                    if (!w) {
-                      try { toast({ title: 'Pop-up bloqueado', description: 'Permita pop-ups para abrir o checkout em nova aba.', duration: 6000 }) } catch (_) {}
-                    }
-                  }
-                  if (linkId) {
-                    setPendingPayment({ planKey: plansData.start.key, billingCycle, linkId, paymentId });
-                  }
-              } catch (e) {
-                const msg = e?.message || String(e)
-                try { toast({ title: 'Falha ao iniciar checkout', description: msg, duration: 6000 }) } catch (_) {}
-              } finally {
-                setActionLoadingPlanKey(null)
-              }
-            }}
+            onAction={() => startCheckoutInPopup(plansData.start.key)}
           />
 
           <div className="relative">
@@ -738,34 +744,7 @@ const PlanosPage = () => {
             }}
             features={plansData.pro.features}
             onCancel={cancelCurrentSubscription}
-            onAction={async () => {
-              if (!user?.id) {
-                try { toast({ title: 'Faça login', description: 'Você precisa estar logado para contratar um plano.', duration: 6000 }) } catch (_) {}
-                return;
-              }
-              try {
-                setActionLoadingPlanKey(plansData.pro.key)
-                const r = await planService.startCheckout(plansData.pro.key, billingCycle, user, { redirect: false });
-                  const url = r?.checkout_url || r?.checkoutUrl || null;
-                  const linkId = r?.linkId || null;
-                  const paymentId = r?.paymentId || null;
-                  if (url) {
-                    const w = window.open(String(url), '_blank', 'noopener');
-                    checkoutWindowRef.current = w || null;
-                    if (!w) {
-                      try { toast({ title: 'Pop-up bloqueado', description: 'Permita pop-ups para abrir o checkout em nova aba.', duration: 6000 }) } catch (_) {}
-                    }
-                  }
-                  if (linkId) {
-                    setPendingPayment({ planKey: plansData.pro.key, billingCycle, linkId, paymentId });
-                  }
-              } catch (e) {
-                const msg = e?.message || String(e)
-                try { toast({ title: 'Falha ao iniciar checkout', description: msg, duration: 6000 }) } catch (_) {}
-              } finally {
-                setActionLoadingPlanKey(null)
-              }
-            }}
+            onAction={() => startCheckoutInPopup(plansData.pro.key)}
           />
           </div>
 
@@ -785,37 +764,20 @@ const PlanosPage = () => {
             }}
             features={plansData.premium.features}
             onCancel={cancelCurrentSubscription}
-            onAction={async () => {
-              if (!user?.id) {
-                try { toast({ title: 'Faça login', description: 'Você precisa estar logado para contratar um plano.', duration: 6000 }) } catch (_) {}
-                return;
-              }
-              try {
-                setActionLoadingPlanKey(plansData.premium.key)
-                const r = await planService.startCheckout(plansData.premium.key, billingCycle, user, { redirect: false });
-                const url = r?.checkout_url || r?.checkoutUrl || null;
-                const linkId = r?.linkId || null;
-                const paymentId = r?.paymentId || null;
-                if (url) {
-                  const w = window.open(String(url), '_blank', 'noopener');
-                  checkoutWindowRef.current = w || null;
-                  if (!w) {
-                    try { toast({ title: 'Pop-up bloqueado', description: 'Permita pop-ups para abrir o checkout em nova aba.', duration: 6000 }) } catch (_) {}
-                  }
-                }
-                if (linkId) {
-                  setPendingPayment({ planKey: plansData.premium.key, billingCycle, linkId, paymentId });
-                }
-              } catch (e) {
-                const msg = e?.message || String(e)
-                try { toast({ title: 'Falha ao iniciar checkout', description: msg, duration: 6000 }) } catch (_) {}
-              } finally {
-                setActionLoadingPlanKey(null)
-              }
-            }}
+            onAction={() => startCheckoutInPopup(plansData.premium.key)}
           />
         </div>
       </div>
+      <CheckoutPopup
+        open={checkoutPopupOpen}
+        url={checkoutPopupUrl}
+        title={checkoutPopupTitle}
+        footerText={checkoutPopupFooterText}
+        onClose={() => {
+          setCheckoutPopupOpen(false)
+          if (pendingPayment?.linkId) setClosedMarker(pendingPayment.linkId)
+        }}
+      />
       <CancelSubscriptionModal
         open={isCancelModalOpen}
         loading={cancelLoading}
