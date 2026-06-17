@@ -6,11 +6,115 @@ import { toast } from '@/hooks/use-toast.ts';
 import { planService } from '@/services/planService.js';
 import { canConnectVideoProvider, canUseWhitelabel, canUseNpsFeedback, resolvePlanKey } from '@/services/planEntitlements.js';
 import CancelSubscriptionModal from '@/components/CancelSubscriptionModal.jsx';
+import Skeleton from '@/components/ui/Skeleton.jsx'
 import { deviceSessionService } from '@/services/deviceSessionService.js';
 import { getPublicAppOrigin } from '@/services/publicUrl.js';
 import { ALUNO_NAV_SECTIONS } from '@/constants/alunoNavSections'
 import { VDOCIPHER_LOGO_DATA_URI } from '@/assets/vdocipherLogoDataUri.js'
 import { getStaticLogoPublicUrl } from '@/services/logoAssets.js'
+
+function PlanTabLoadingSkeleton() {
+  return (
+    <div className="connekt-fade-in">
+      <div className="rounded-[8px] border border-[#E3E4E5] bg-white p-6 mb-6 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6 overflow-hidden">
+        <div className="flex-1 min-w-0">
+          <div className="flex flex-wrap items-center gap-3">
+            <Skeleton className="h-[28px] w-[260px] rounded-[10px]" />
+            <Skeleton className="h-[26px] w-[120px] rounded-full" />
+          </div>
+          <div className="mt-3 space-y-2">
+            <Skeleton className="h-[12px] w-[520px] max-w-full rounded" />
+            <Skeleton className="h-[12px] w-[420px] max-w-full rounded" />
+          </div>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Skeleton className="h-[22px] w-[170px] rounded-full" />
+            <Skeleton className="h-[22px] w-[170px] rounded-full" />
+            <Skeleton className="h-[22px] w-[170px] rounded-full" />
+            <Skeleton className="h-[22px] w-[170px] rounded-full" />
+          </div>
+        </div>
+        <div className="w-full lg:w-[320px] rounded-[14px] border border-[#E3E4E5] bg-[#F8FAFC] p-4">
+          <Skeleton className="h-[44px] w-[170px] rounded-[12px] mx-auto" />
+          <div className="mt-3 flex justify-center">
+            <Skeleton className="h-[12px] w-[80px] rounded" />
+          </div>
+          <div className="mt-4 flex justify-center">
+            <Skeleton className="h-9 w-[140px] rounded-[10px]" />
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        <div className="bg-white rounded-[8px] border border-[#E3E4E5] p-6">
+          <Skeleton className="h-[14px] w-[160px] rounded" />
+          <div className="mt-4 space-y-3">
+            {Array.from({ length: 6 }).map((_, idx) => (
+              <div key={`plan-details-skel-${idx}`} className="flex items-start gap-2">
+                <Skeleton className="mt-1 h-4 w-4 rounded-full" />
+                <div className="flex-1 min-w-0">
+                  <Skeleton className="h-[10px] w-[92%] rounded" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="bg-white rounded-[8px] border border-[#E3E4E5] p-6">
+          <Skeleton className="h-[14px] w-[180px] rounded" />
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {Array.from({ length: 4 }).map((_, idx) => (
+              <div key={`plan-limits-skel-${idx}`} className={`rounded-[8px] border border-[#E3E4E5] bg-[#F8FAFC] p-3 ${idx === 3 ? 'sm:col-span-2' : ''}`}>
+                <Skeleton className="h-[10px] w-[120px] rounded" />
+                <div className="mt-2">
+                  <Skeleton className="h-[14px] w-[90px] rounded" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-[8px] border border-[#E3E4E5] p-6 mb-8">
+        <div className="flex items-center justify-between gap-4 mb-4">
+          <div>
+            <Skeleton className="h-[14px] w-[120px] rounded" />
+            <div className="mt-2">
+              <Skeleton className="h-[10px] w-[260px] rounded" />
+            </div>
+          </div>
+          <Skeleton className="h-[12px] w-[110px] rounded" />
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {Array.from({ length: 6 }).map((_, idx) => (
+            <div key={`plan-usage-skel-${idx}`} className="rounded-[8px] border border-[#E3E4E5] bg-[#F8FAFC] p-3">
+              <Skeleton className="h-[10px] w-[140px] rounded" />
+              <div className="mt-2 flex items-end justify-between gap-2">
+                <Skeleton className="h-[18px] w-[110px] rounded" />
+                <Skeleton className="h-[10px] w-[54px] rounded" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="border border-[#E3E4E5] rounded-[8px] overflow-hidden bg-white">
+        <div className="px-6 py-4 border-b border-[#E3E4E5]">
+          <Skeleton className="h-[12px] w-[140px] rounded" />
+        </div>
+        <div className="divide-y divide-[#EDEEF0]">
+          {Array.from({ length: 6 }).map((_, idx) => (
+            <div key={`payments-skel-${idx}`} className="px-6 py-4 grid grid-cols-12 gap-3 items-center">
+              <div className="col-span-4"><Skeleton className="h-[10px] w-[180px] rounded" /></div>
+              <div className="col-span-2"><Skeleton className="h-[10px] w-[90px] rounded" /></div>
+              <div className="col-span-2"><Skeleton className="h-[10px] w-[90px] rounded" /></div>
+              <div className="col-span-2"><Skeleton className="h-[22px] w-[90px] rounded-full" /></div>
+              <div className="col-span-2 flex justify-end"><Skeleton className="h-9 w-[180px] rounded-[10px]" /></div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
 
 function parseHostFromUrl(value) {
   const raw = String(value || '').trim();
@@ -124,6 +228,7 @@ const ConfiguracoesPage = () => {
   const [planUsage, setPlanUsage] = useState({ loading: false, courses: null, modules: null, lessons: null, questionBanks: null, questions: null, storageBytes: null, storageText: null, truncated: false, error: null });
   const [payments, setPayments] = useState([]);
   const [paymentsLoading, setPaymentsLoading] = useState(false);
+  const planTabLoadedRef = useRef(false)
 
   const normalizeMemberAreaUrl = (raw) => {
     const input = String(raw || '').trim();
@@ -404,6 +509,13 @@ const ConfiguracoesPage = () => {
       if (typeof planService.getActivePlan === 'function') setActivePlanKey(planService.getActivePlan());
     } catch (_) {}
   }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab !== 'Meu plano') return
+    if (!planUsage.loading && !paymentsLoading) {
+      planTabLoadedRef.current = true
+    }
+  }, [activeTab, planUsage.loading, paymentsLoading])
 
   useEffect(() => {
     if (activeTab !== 'Meu plano') return;
@@ -1456,6 +1568,10 @@ const ConfiguracoesPage = () => {
                 <div className="h-[1px] bg-[#E3E4E5] mt-4" />
               </div>
 
+              {!planTabLoadedRef.current && (planUsage.loading || paymentsLoading) ? (
+                <PlanTabLoadingSkeleton />
+              ) : (
+                <>
               {/* Current Plan Card */}
               {(() => {
                 const key = String(planSnapshot?.planKey || activePlanKey || '').trim().toLowerCase();
@@ -1760,6 +1876,8 @@ const ConfiguracoesPage = () => {
                 </tbody>
               </table>
               </div>
+                </>
+              )}
             </>
           )}
 
