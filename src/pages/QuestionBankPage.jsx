@@ -5,6 +5,7 @@ import { useAuth } from '@/contexts/SupabaseAuthContext';
 import { Plus, Search, ChevronDown, Award, CalendarDays, ListFilter, X, Hash, Tag, Hourglass, Pencil, Trash, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
+import Skeleton from '@/components/ui/Skeleton.jsx'
 import { useTaxonomy } from '@/contexts/TaxonomyContext';
 import {
   DropdownMenu,
@@ -928,11 +929,55 @@ const QuestionBankPage = () => {
           <title>Banco de Questões – Connekt</title>
           <meta name="description" content="Gerencie seu banco de questões para simulados." />
         </Helmet>
-        <div className="flex flex-col min-h-screen bg-[#F8F9FB] items-center justify-center">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-[#0B57D0] mx-auto mb-4"></div>
-            <p className="text-gray-600">Carregando bancos de questões...</p>
+        <div className="flex flex-col bg-[#F5F6FA]">
+          <div className="max-w-[1076px] mx-auto w-full mt-2 sm:mt-4 lg:mt-8 px-4 sm:px-6 relative flex-shrink-0 compact-layout ultra-compact-layout">
+            <header className="relative px-4 sm:px-8 pt-4 sm:pt-6 lg:pt-8 pb-4 sm:pb-5 lg:pb-7 bg-[#0B57D0] text-white rounded-[10px] shadow-lg overflow-hidden compact-header ultra-compact-header">
+              <div className="relative z-10 space-y-3 animate-pulse">
+                <div className="h-[18px] w-[190px] rounded bg-white/25" />
+                <div className="h-[14px] w-[420px] max-w-full rounded bg-white/20" />
+                <div className="h-[30px] w-[210px] rounded-[4px] bg-white/25" />
+              </div>
+            </header>
+            <DecorativeIcons />
           </div>
+
+          <main className="flex-1 py-2 sm:py-3 lg:py-6 w-full pb-3 sm:pb-4 lg:pb-8 compact-main ultra-compact-main" style={{ minHeight: 0 }}>
+            <div className="max-w-[1076px] mx-auto px-4 sm:px-6">
+              <div className="mb-3 sm:mb-4 lg:mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 compact-spacing ultra-compact-spacing">
+                <Skeleton className="w-full sm:w-[328px] h-[40px] rounded-lg" />
+                <Skeleton className="w-[240px] h-[40px] rounded-lg" />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {Array.from({ length: 8 }).map((_, idx) => (
+                  <div
+                    key={`bank-skel-${idx}`}
+                    className="p-3 sm:p-4 lg:p-6 rounded border shadow-sm flex flex-col min-h-[220px] sm:min-h-[250px] lg:min-h-[295px] w-full overflow-hidden bg-white connekt-fade-in"
+                    style={{ borderColor: '#E3E4E5' }}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <Skeleton className="w-12 h-12 rounded-[10px]" />
+                      <Skeleton className="w-8 h-8 rounded-[8px]" />
+                    </div>
+                    <div className="mt-4 space-y-2">
+                      <Skeleton className="h-[14px] w-[86%] rounded" />
+                      <Skeleton className="h-[12px] w-[64%] rounded" />
+                      <Skeleton className="h-[12px] w-[72%] rounded" />
+                    </div>
+                    <div className="mt-4 flex items-center gap-2">
+                      <Skeleton className="h-[22px] w-[74px] rounded-full" />
+                      <Skeleton className="h-[22px] w-[56px] rounded-full" />
+                      <Skeleton className="h-[22px] w-[64px] rounded-full" />
+                    </div>
+                    <div className="mt-auto pt-5 flex items-center justify-between gap-3">
+                      <Skeleton className="h-[12px] w-[110px] rounded" />
+                      <Skeleton className="h-[28px] w-[90px] rounded-[10px]" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </main>
         </div>
       </>
     );

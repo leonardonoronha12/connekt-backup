@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from '@/contexts/SupabaseAuthContext';
 import { TaxonomyProvider } from '@/contexts/TaxonomyContext';
 import MainLayout from '@/components/MainLayout';
 import ErrorBoundary from '@/components/ErrorBoundary';
+import AppLoadingScreen from '@/components/AppLoadingScreen.jsx'
 import { Toaster } from '@/components/ui/toaster';
 import PlanExpiredOverlay from '@/components/PlanExpiredOverlay.jsx'
 import DeviceAccessRequestModal from '@/components/DeviceAccessRequestModal.jsx'
@@ -964,7 +965,7 @@ function AppContent() {
     }
 
     return (
-      <Suspense fallback={<div>Carregando...</div>}>
+      <Suspense fallback={<AppLoadingScreen />}>
         <ErrorBoundary key={locationKey}>
           {node}
         </ErrorBoundary>
