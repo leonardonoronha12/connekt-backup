@@ -1,5 +1,6 @@
 import { json } from '../../src/server/supabaseAdmin.js'
 import { readEnv, requireAdmin } from './_util.js'
+import crypto from 'node:crypto'
 
 function normalizeGatewayBaseUrl(raw) {
   const v = String(raw || '').trim()
@@ -78,6 +79,14 @@ async function safeReadText(res) {
 
 export default async function handler(req, res) {
   const startedAt = Date.now()
+  const traceId = (() => {
+    try {
+      if (crypto?.randomUUID) return crypto.randomUUID()
+      return crypto.randomBytes(16).toString('hex')
+    } catch (_) {
+      return String(Date.now())
+    }
+  })()
   let step = ''
   let baseUrl = ''
   let authUrl = ''
@@ -98,8 +107,8 @@ export default async function handler(req, res) {
     const apiKey = readEnv('PLANS_GATEWAY_API_KEY', readEnv('MYG_API_KEY', readEnv('VITE_PLANS_GATEWAY_API_KEY', '')))
     const authData = readEnv('PLANS_GATEWAY_AUTHDATA', readEnv('MYG_AUTHDATA', readEnv('VITE_PLANS_GATEWAY_AUTHDATA', '')))
 
-    if (!baseUrl) return json(res, 500, { ok: false, error: 'missing_gateway_base' })
-    if (!apiKey || !authData) return json(res, 500, { ok: false, error: 'missing_gateway_env' })
+    if (!baseUrl) return json(res, 500, { ok: false, error: 'missing_gateway_base', trace_id: traceId })
+    if (!apiKey || !authData) return json(res, 500, { ok: false, error: 'missing_gateway_env', trace_id: traceId })
 
     const envMeta = { has_api_key: !!apiKey, has_authdata: !!authData }
     const attempts = []
@@ -197,6 +206,7 @@ export default async function handler(req, res) {
       attempted_bases: attempts.map((a) => a?.base_url).filter(Boolean),
       attempts,
       took_ms: Date.now() - startedAt,
+      trace_id: traceId,
     }
     return json(res, 200, out)
   } catch (e) {
@@ -210,6 +220,7 @@ export default async function handler(req, res) {
         base_url: baseUrl || '',
         endpoints: { auth: authUrl || '', paymentlink: paymentUrl || '' },
         took_ms: tookMs,
+        trace_id: traceId,
       })
     }
     return json(res, 502, {
@@ -221,6 +232,7 @@ export default async function handler(req, res) {
       base_url: baseUrl || '',
       endpoints: { auth: authUrl || '', paymentlink: paymentUrl || '' },
       took_ms: tookMs,
+      trace_id: traceId,
     })
   }
 }
