@@ -214,6 +214,7 @@ function shouldRetryGatewayStatus(status) {
 function gatewayFailureMessage(status) {
   const s = Number(status || 0)
   if (s === 401 || s === 403) return 'Checkout indisponível: autenticação no gateway falhou.'
+  if (s === 500) return 'Checkout indisponível: o gateway retornou erro interno (500).'
   if (s >= 520 && s <= 529) return `Checkout indisponível: o gateway está fora do ar (Cloudflare ${s}).`
   if (s === 504) return 'Checkout indisponível: o gateway demorou para responder.'
   return 'Falha ao criar o checkout no gateway.'
