@@ -1,12 +1,54 @@
 import { getSupabaseAdmin, getAuthedUser, json, isUuid } from '../src/server/supabaseAdmin.js'
 import crypto from 'node:crypto'
 
-const GATEWAY_URL = process.env.VITE_PLANS_GATEWAY_URL || process.env.PLANS_GATEWAY_URL || ''
+const RAW_GATEWAY_URL = process.env.VITE_PLANS_GATEWAY_URL || process.env.PLANS_GATEWAY_URL || ''
+const RAW_GATEWAY_URL_FALLBACK = process.env.VITE_PLANS_GATEWAY_URL_FALLBACK || process.env.PLANS_GATEWAY_URL_FALLBACK || ''
 const GATEWAY_API_KEY = process.env.VITE_PLANS_GATEWAY_API_KEY || process.env.PLANS_GATEWAY_API_KEY || ''
 const GATEWAY_AUTH = process.env.VITE_PLANS_GATEWAY_AUTH || process.env.PLANS_GATEWAY_AUTH || ''
 const GATEWAY_AUTHDATA = process.env.VITE_PLANS_GATEWAY_AUTHDATA || process.env.PLANS_GATEWAY_AUTHDATA || ''
 
 let cachedAuth = null
+
+function normalizeGatewayBaseUrl(raw) {
+  const v = String(raw || '').trim()
+  if (!v) return ''
+  try {
+    const u = new URL(v)
+    const host = String(u.hostname || '').toLowerCase()
+    if (!host.endsWith('mygateway.com.br')) return ''
+    const p = String(u.pathname || '')
+    if (p === '/' || p === '') u.pathname = '/connekt'
+    if (!String(u.pathname || '').startsWith('/connekt')) u.pathname = `/connekt${String(u.pathname || '')}`
+    u.hash = ''
+    return u.toString().replace(/\/+$/, '')
+  } catch (_) {
+    return ''
+  }
+}
+
+function expandGatewayBaseVariants(raw) {
+  const base = normalizeGatewayBaseUrl(raw)
+  if (!base) return []
+  const out = [base]
+  try {
+    const u = new URL(base)
+    const host = String(u.hostname || '').toLowerCase()
+    if (host === 'api.mygateway.com.br') {
+      u.hostname = 'api.whitelabel.mygateway.com.br'
+      out.push(u.toString().replace(/\/+$/, ''))
+    } else if (host === 'api.whitelabel.mygateway.com.br') {
+      u.hostname = 'api.mygateway.com.br'
+      out.push(u.toString().replace(/\/+$/, ''))
+    }
+  } catch (_) {}
+  return Array.from(new Set(out)).filter(Boolean)
+}
+
+const GATEWAY_BASE_URLS = Array.from(new Set([
+  ...expandGatewayBaseVariants(RAW_GATEWAY_URL),
+  ...expandGatewayBaseVariants(RAW_GATEWAY_URL_FALLBACK),
+  ...expandGatewayBaseVariants(process.env.MYG_BASE_URL || ''),
+])).filter(Boolean)
 
 function readEnv(name, fallback = '') {
   const v = process.env[name]
@@ -314,17 +356,20 @@ async function getGatewayAuthToken() {
     if (cachedAuth && cachedAuth.ts > Date.now() - 55 * 60_000) return cachedAuth.token
   } catch (_) {}
 
-  if (!GATEWAY_URL || !GATEWAY_API_KEY || !GATEWAY_AUTHDATA) return null
+  if (!GATEWAY_BASE_URLS.length || !GATEWAY_API_KEY || !GATEWAY_AUTHDATA) return null
   try {
-    const url = `${String(GATEWAY_URL).replace(/\/$/, '')}/authentication/v2/auth`
-    const headers = { 'x-api-key': GATEWAY_API_KEY, 'Content-Type': 'application/json', Accept: 'application/json' }
-    const body = { authData: GATEWAY_AUTHDATA }
-    const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) })
-    if (!res.ok) return null
-    const data = await res.json().catch(() => ({}))
-    const token = data?.auth_token || data?.token || data?.access_token || null
-    if (token) cachedAuth = { token, ts: Date.now() }
-    return token
+    for (const base of GATEWAY_BASE_URLS) {
+      const url = `${String(base).replace(/\/$/, '')}/authentication/v2/auth`
+      const headers = { 'x-api-key': GATEWAY_API_KEY, 'Content-Type': 'application/json', Accept: 'application/json' }
+      const body = { authData: GATEWAY_AUTHDATA }
+      const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) })
+      if (!res.ok) continue
+      const data = await res.json().catch(() => ({}))
+      const token = data?.auth_token || data?.token || data?.access_token || null
+      if (token) cachedAuth = { token, ts: Date.now() }
+      if (token) return token
+    }
+    return null
   } catch (_) {
     return null
   }
@@ -339,7 +384,7 @@ export default async function handler(req, res) {
   const auth = await getAuthedUser(admin, req)
   if (!auth.user) return json(res, 401, { error: auth.error || 'unauthorized' })
 
-  if (!GATEWAY_URL || !GATEWAY_API_KEY) return json(res, 501, { error: 'gateway_not_configured' })
+  if (!GATEWAY_BASE_URLS.length || !GATEWAY_API_KEY) return json(res, 501, { error: 'gateway_not_configured' })
 
   try {
     const u = new URL(req.url, 'http://localhost')
@@ -374,19 +419,22 @@ export default async function handler(req, res) {
     if (basicFromEnv) authModes.push({ value: basicFromEnv })
     if (envAuthFallback) authModes.push({ value: envAuthFallback })
 
-    const url = `${String(GATEWAY_URL).replace(/\/$/, '')}/payments/v1/paymentlink/charges/${encodeURIComponent(linkId)}`
     let r = null
     let payload = null
-    for (let i = 0; i < Math.max(1, authModes.length); i++) {
-      const selected = authModes[i] || { value: undefined }
-      const headers = {
-        Accept: 'application/json',
-        'x-api-key': GATEWAY_API_KEY,
-        ...(selected.value ? { Authorization: selected.value } : {}),
+    for (const base of GATEWAY_BASE_URLS) {
+      const url = `${String(base).replace(/\/$/, '')}/payments/v1/paymentlink/charges/${encodeURIComponent(linkId)}`
+      for (let i = 0; i < Math.max(1, authModes.length); i++) {
+        const selected = authModes[i] || { value: undefined }
+        const headers = {
+          Accept: 'application/json',
+          'x-api-key': GATEWAY_API_KEY,
+          ...(selected.value ? { Authorization: selected.value } : {}),
+        }
+        r = await fetch(url, { method: 'GET', headers })
+        payload = await r.json().catch(() => ({}))
+        if (r.ok) break
       }
-      r = await fetch(url, { method: 'GET', headers })
-      payload = await r.json().catch(() => ({}))
-      if (r.ok) break
+      if (r && r.ok) break
     }
 
     if (!r || !r.ok) return json(res, 502, { error: 'verify_failed', status: r?.status || 0, payload })

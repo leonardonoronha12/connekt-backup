@@ -8,7 +8,6 @@ function normalizeGatewayBaseUrl(raw) {
     const u = new URL(v)
     const host = String(u.hostname || '').toLowerCase()
     if (!host.endsWith('mygateway.com.br')) return ''
-    if (host === 'api.mygateway.com.br') u.hostname = 'api.whitelabel.mygateway.com.br'
     const p = String(u.pathname || '')
     if (p === '/' || p === '') u.pathname = '/connekt'
     if (!String(u.pathname || '').startsWith('/connekt')) u.pathname = `/connekt${String(u.pathname || '')}`
@@ -17,6 +16,24 @@ function normalizeGatewayBaseUrl(raw) {
   } catch (_) {
     return ''
   }
+}
+
+function expandGatewayBaseVariants(raw) {
+  const base = normalizeGatewayBaseUrl(raw)
+  if (!base) return []
+  const out = [base]
+  try {
+    const u = new URL(base)
+    const host = String(u.hostname || '').toLowerCase()
+    if (host === 'api.mygateway.com.br') {
+      u.hostname = 'api.whitelabel.mygateway.com.br'
+      out.push(u.toString().replace(/\/+$/, ''))
+    } else if (host === 'api.whitelabel.mygateway.com.br') {
+      u.hostname = 'api.mygateway.com.br'
+      out.push(u.toString().replace(/\/+$/, ''))
+    }
+  } catch (_) {}
+  return Array.from(new Set(out)).filter(Boolean)
 }
 
 function redactText(input) {
@@ -76,28 +93,17 @@ export default async function handler(req, res) {
       readEnv('VITE_PLANS_GATEWAY_URL', '') ||
       ''
     )
-    baseUrl = normalizeGatewayBaseUrl(rawBase)
+    const bases = expandGatewayBaseVariants(rawBase)
+    baseUrl = bases[0] || ''
     const apiKey = readEnv('PLANS_GATEWAY_API_KEY', readEnv('MYG_API_KEY', readEnv('VITE_PLANS_GATEWAY_API_KEY', '')))
     const authData = readEnv('PLANS_GATEWAY_AUTHDATA', readEnv('MYG_AUTHDATA', readEnv('VITE_PLANS_GATEWAY_AUTHDATA', '')))
 
     if (!baseUrl) return json(res, 500, { ok: false, error: 'missing_gateway_base' })
     if (!apiKey || !authData) return json(res, 500, { ok: false, error: 'missing_gateway_env' })
 
-    authUrl = `${baseUrl.replace(/\/$/, '')}/authentication/v2/auth`
-    paymentUrl = `${baseUrl.replace(/\/$/, '')}/payments/v1/paymentlink`
-
-    const out = {
-      ok: false,
-      now: new Date().toISOString(),
-      base_url: baseUrl,
-      endpoints: { auth: authUrl, paymentlink: paymentUrl },
-      env: {
-        has_api_key: !!apiKey,
-        has_authdata: !!authData,
-      },
-      steps: {},
-      took_ms: 0,
-    }
+    const envMeta = { has_api_key: !!apiKey, has_authdata: !!authData }
+    const attempts = []
+    let chosen = null
 
     const headersBase = {
       'Content-Type': 'application/json',
@@ -105,71 +111,93 @@ export default async function handler(req, res) {
       'x-api-key': apiKey,
     }
 
-    const authStart = Date.now()
-    step = 'auth'
-    const authRes = await fetchWithTimeout(authUrl, {
-      method: 'POST',
-      headers: headersBase,
-      body: JSON.stringify({ authData }),
-    }, 9_000)
-    const authText = await safeReadText(authRes)
-    const authMs = Date.now() - authStart
-    let token = ''
-    try {
-      const parsed = JSON.parse(authText || '{}')
-      token = String(parsed?.auth_token || parsed?.token || parsed?.access_token || '').trim()
-    } catch (_) {
-      token = ''
-    }
-    out.steps.auth = {
-      ok: authRes.ok && !!token,
-      status: authRes.status,
-      took_ms: authMs,
-      token_present: !!token,
-      response_snippet: redactText(String(authText || '').slice(0, 600)),
+    for (const b of (bases.length ? bases : [baseUrl])) {
+      const attempt = { base_url: b, endpoints: { auth: '', paymentlink: '' }, steps: {} }
+      try {
+        authUrl = `${String(b).replace(/\/$/, '')}/authentication/v2/auth`
+        paymentUrl = `${String(b).replace(/\/$/, '')}/payments/v1/paymentlink`
+        attempt.endpoints = { auth: authUrl, paymentlink: paymentUrl }
+
+        const authStart = Date.now()
+        step = 'auth'
+        const authRes = await fetchWithTimeout(authUrl, {
+          method: 'POST',
+          headers: headersBase,
+          body: JSON.stringify({ authData }),
+        }, 9_000)
+        const authText = await safeReadText(authRes)
+        const authMs = Date.now() - authStart
+        let token = ''
+        try {
+          const parsed = JSON.parse(authText || '{}')
+          token = String(parsed?.auth_token || parsed?.token || parsed?.access_token || '').trim()
+        } catch (_) {
+          token = ''
+        }
+        attempt.steps.auth = {
+          ok: authRes.ok && !!token,
+          status: authRes.status,
+          took_ms: authMs,
+          token_present: !!token,
+          response_snippet: redactText(String(authText || '').slice(0, 600)),
+        }
+
+        if (token) {
+          const validity = new Date(Date.now() + 60 * 60_000).toISOString().slice(0, 16).replace('T', ' ')
+          const requestBody = {
+            value: '100',
+            title: 'Healthcheck',
+            description: 'healthcheck',
+            validity,
+            minimumNumberOfInstallments: 1,
+            maximumQuantityOfInstallments: 1,
+            numberOfAllowedSales: 1,
+            showFormAddress: 0,
+            customerInterest: 0,
+            acceptedPaymentsType: ['PIX'],
+            external_order_number: `hc:${Date.now()}`,
+          }
+
+          const payStart = Date.now()
+          step = 'paymentlink'
+          const payRes = await fetchWithTimeout(paymentUrl, {
+            method: 'POST',
+            headers: { ...headersBase, Authorization: `Bearer ${token}` },
+            body: JSON.stringify(requestBody),
+          }, 12_000)
+          const payText = await safeReadText(payRes)
+          const payMs = Date.now() - payStart
+          attempt.steps.paymentlink = {
+            ok: payRes.ok,
+            status: payRes.status,
+            took_ms: payMs,
+            content_type: String(payRes.headers?.get?.('content-type') || ''),
+            response_snippet: redactText(String(payText || '').slice(0, 800)),
+          }
+        }
+      } catch (e) {
+        attempt.steps.error = { message: redactText(String(e?.message || e || '')).slice(0, 300) }
+      }
+
+      attempts.push(attempt)
+      if (attempt?.steps?.paymentlink?.ok) {
+        chosen = attempt
+        break
+      }
+      if (!chosen) chosen = attempt
     }
 
-    if (!token) {
-      out.ok = false
-      out.took_ms = Date.now() - startedAt
-      return json(res, 200, out)
+    const out = {
+      ok: !!chosen?.steps?.paymentlink?.ok,
+      now: new Date().toISOString(),
+      base_url: String(chosen?.base_url || baseUrl || ''),
+      endpoints: chosen?.endpoints || { auth: authUrl, paymentlink: paymentUrl },
+      env: envMeta,
+      steps: chosen?.steps || {},
+      attempted_bases: attempts.map((a) => a?.base_url).filter(Boolean),
+      attempts,
+      took_ms: Date.now() - startedAt,
     }
-
-    const validity = new Date(Date.now() + 60 * 60_000).toISOString().slice(0, 16).replace('T', ' ')
-    const requestBody = {
-      value: '100',
-      title: 'Healthcheck',
-      description: 'healthcheck',
-      validity,
-      minimumNumberOfInstallments: 1,
-      maximumQuantityOfInstallments: 1,
-      numberOfAllowedSales: 1,
-      showFormAddress: 0,
-      customerInterest: 0,
-      acceptedPaymentsType: ['PIX'],
-      external_order_number: `hc:${Date.now()}`,
-    }
-
-    const payStart = Date.now()
-    step = 'paymentlink'
-    const payRes = await fetchWithTimeout(paymentUrl, {
-      method: 'POST',
-      headers: { ...headersBase, Authorization: `Bearer ${token}` },
-      body: JSON.stringify(requestBody),
-    }, 12_000)
-    const payText = await safeReadText(payRes)
-    const payMs = Date.now() - payStart
-
-    out.steps.paymentlink = {
-      ok: payRes.ok,
-      status: payRes.status,
-      took_ms: payMs,
-      content_type: String(payRes.headers?.get?.('content-type') || ''),
-      response_snippet: redactText(String(payText || '').slice(0, 800)),
-    }
-
-    out.ok = !!out.steps.paymentlink.ok
-    out.took_ms = Date.now() - startedAt
     return json(res, 200, out)
   } catch (e) {
     const tookMs = Date.now() - startedAt

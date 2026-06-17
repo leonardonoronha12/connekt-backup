@@ -15,9 +15,6 @@ const normalizeGatewayBaseUrl = (raw) => {
   try {
     const u = new URL(v)
     const host = String(u.hostname || '').toLowerCase()
-    if (host === 'api.mygateway.com.br') {
-      u.hostname = 'api.whitelabel.mygateway.com.br'
-    }
     const p = String(u.pathname || '')
     if (host.endsWith('mygateway.com.br') && (p === '/' || p === '')) {
       u.pathname = '/connekt'
@@ -31,7 +28,19 @@ const normalizeGatewayBaseUrl = (raw) => {
 const expandGatewayBaseVariants = (raw) => {
   const base = normalizeGatewayBaseUrl(raw)
   if (!base) return []
-  return [base]
+  const out = [base]
+  try {
+    const u = new URL(base)
+    const host = String(u.hostname || '').toLowerCase()
+    if (host === 'api.mygateway.com.br') {
+      u.hostname = 'api.whitelabel.mygateway.com.br'
+      out.push(u.toString().replace(/\/+$/, ''))
+    } else if (host === 'api.whitelabel.mygateway.com.br') {
+      u.hostname = 'api.mygateway.com.br'
+      out.push(u.toString().replace(/\/+$/, ''))
+    }
+  } catch (_) {}
+  return Array.from(new Set(out)).filter(Boolean)
 }
 
 const GATEWAY_BASE_URLS = Array.from(new Set([
