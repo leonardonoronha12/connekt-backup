@@ -7,6 +7,7 @@ import UnreadAvatarsBar from '@/components/UnreadAvatarsBar';
 import EmptyInbox from '@/components/EmptyInbox';
 import { supabase } from '@/lib/supabaseClient';
 import { Button } from '@/components/ui/button';
+import Skeleton from '@/components/ui/Skeleton.jsx'
 
 // Função para obter parâmetros da URL
 function getUrlParam(name) {
@@ -802,8 +803,77 @@ function InboxPage() {
         )}
         <div className="flex flex-col col-span-full lg:col-span-1 h-full bg-[#f6f5fa]">
           {loading ? (
-            <div className="flex items-center justify-center h-full">
-              <div className="text-xl font-semibold">Carregando conversas...</div>
+            <div className="h-full w-full flex items-center justify-center p-5">
+              <div className="w-full max-w-[1040px] grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-4 connekt-fade-in">
+                <div className="rounded-[14px] border border-[#E3E4E5] bg-white p-4 shadow-sm">
+                  <div className="flex items-center gap-3">
+                    <div className="w-11 h-11 rounded-[14px] bg-[#EEF2FF] flex items-center justify-center">
+                      <img src="/logo-expanded.svg" alt="" className="w-[74px] h-auto" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[13px] font-semibold text-[#1E1B39]">Inbox</div>
+                      <div className="text-[12px] text-[#737780] flex items-center gap-2">
+                        <span>Carregando conversas</span>
+                        <span className="inline-flex gap-1">
+                          <span className="w-1 h-1 rounded-full bg-[#0047BB] animate-pulse" />
+                          <span className="w-1 h-1 rounded-full bg-[#0047BB] animate-pulse" style={{ animationDelay: '120ms' }} />
+                          <span className="w-1 h-1 rounded-full bg-[#0047BB] animate-pulse" style={{ animationDelay: '240ms' }} />
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 space-y-3">
+                    {Array.from({ length: 7 }).map((_, idx) => (
+                      <div key={`inbox-skel-${idx}`} className="flex items-center gap-3">
+                        <Skeleton className="w-10 h-10 rounded-full" />
+                        <div className="flex-1 min-w-0">
+                          <Skeleton className="h-[10px] w-[78%] rounded" />
+                          <div className="mt-2 flex items-center justify-between gap-2">
+                            <Skeleton className="h-[8px] w-[52%] rounded" />
+                            <Skeleton className="h-[8px] w-10 rounded" />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-[14px] border border-[#E3E4E5] bg-white shadow-sm overflow-hidden">
+                  <div className="px-5 py-4 border-b border-[#E3E4E5] flex items-center justify-between">
+                    <div className="min-w-0">
+                      <Skeleton className="h-[12px] w-[220px] rounded" />
+                      <div className="mt-2">
+                        <Skeleton className="h-[10px] w-[140px] rounded" />
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Skeleton className="h-9 w-9 rounded-full" />
+                      <Skeleton className="h-9 w-9 rounded-full" />
+                    </div>
+                  </div>
+
+                  <div className="p-5 space-y-4">
+                    {Array.from({ length: 6 }).map((_, idx) => (
+                      <div key={`msg-skel-${idx}`} className={`flex ${idx % 2 === 0 ? 'justify-start' : 'justify-end'}`}>
+                        <div className={`max-w-[80%] rounded-[14px] p-3 border border-[#E3E4E5] ${idx % 2 === 0 ? 'bg-[#F8FAFC]' : 'bg-[#EEF2FF]'}`}>
+                          <Skeleton className="h-[10px] w-[240px] rounded" />
+                          <div className="mt-2">
+                            <Skeleton className="h-[10px] w-[180px] rounded" />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="px-5 py-4 border-t border-[#E3E4E5]">
+                    <Skeleton className="h-[44px] w-full rounded-[12px]" />
+                    <div className="mt-3 flex justify-end">
+                      <Skeleton className="h-10 w-[140px] rounded-[12px]" />
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           ) : error ? (
             <div className="flex flex-col items-center justify-center h-full text-center">
