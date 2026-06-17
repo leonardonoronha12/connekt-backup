@@ -262,7 +262,7 @@ export default function AlunosPage() {
     } finally {
       producerMetaRef.current.loading = false
     }
-  }, [authHeaders, ensureProducerMetaLoaded, user?.id])
+  }, [authHeaders, user?.id])
 
   useEffect(() => {
     if (createOpen) ensureProducerMetaLoaded()
