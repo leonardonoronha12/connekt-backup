@@ -119,6 +119,17 @@ function redactGatewayText(input) {
   }
 }
 
+function isHtmlLikeText(input) {
+  const s = String(input || '').trim().toLowerCase()
+  if (!s) return false
+  if (s.startsWith('<!doctype')) return true
+  if (s.startsWith('<html')) return true
+  if (s.includes('<head')) return true
+  if (s.includes('<script')) return true
+  if (s.includes('<body')) return true
+  return false
+}
+
 function gatewayErrorPayload(e, requestUrl) {
   const name = String(e?.name || '').toLowerCase()
   const msg = redactGatewayText(e?.message || e || '')
@@ -463,12 +474,14 @@ export default async function handler(req, res) {
       }
       if (!out?.ok) {
         const meta = getGatewayMeta(requestUrl)
+        const gatewayMessageRaw = redactGatewayText(pickGatewayErrorMessage(out?.payload, out?.lastText || ''))
+        const gatewayResponseRaw = out?.lastText ? redactGatewayText(String(out.lastText).slice(0, 800)) : ''
         return json(res, 502, {
           error: 'create_paymentlink_failed',
           message: gatewayFailureMessage(out?.lastStatus || 0),
           status: out?.lastStatus || 0,
-          gateway_message: redactGatewayText(pickGatewayErrorMessage(out?.payload, out?.lastText || '')),
-          gateway_response: out?.lastText ? redactGatewayText(String(out.lastText).slice(0, 800)) : '',
+          gateway_message: isHtmlLikeText(gatewayMessageRaw) ? '' : gatewayMessageRaw,
+          gateway_response: isHtmlLikeText(gatewayResponseRaw) ? '' : gatewayResponseRaw,
           ...meta,
         })
       }
@@ -548,12 +561,14 @@ export default async function handler(req, res) {
       }
       if (!out?.ok) {
         const meta = getGatewayMeta(requestUrl)
+        const gatewayMessageRaw = redactGatewayText(pickGatewayErrorMessage(out?.payload, out?.lastText || ''))
+        const gatewayResponseRaw = out?.lastText ? redactGatewayText(String(out.lastText).slice(0, 800)) : ''
         return json(res, 502, {
           error: 'create_paymentlink_failed',
           message: gatewayFailureMessage(out?.lastStatus || 0),
           status: out?.lastStatus || 0,
-          gateway_message: redactGatewayText(pickGatewayErrorMessage(out?.payload, out?.lastText || '')),
-          gateway_response: out?.lastText ? redactGatewayText(String(out.lastText).slice(0, 800)) : '',
+          gateway_message: isHtmlLikeText(gatewayMessageRaw) ? '' : gatewayMessageRaw,
+          gateway_response: isHtmlLikeText(gatewayResponseRaw) ? '' : gatewayResponseRaw,
           ...meta,
         })
       }
@@ -639,12 +654,14 @@ export default async function handler(req, res) {
       }
       if (!out?.ok) {
         const meta = getGatewayMeta(requestUrl)
+        const gatewayMessageRaw = redactGatewayText(pickGatewayErrorMessage(out?.payload, out?.lastText || ''))
+        const gatewayResponseRaw = out?.lastText ? redactGatewayText(String(out.lastText).slice(0, 800)) : ''
         return json(res, 502, {
           error: 'create_paymentlink_failed',
           message: gatewayFailureMessage(out?.lastStatus || 0),
           status: out?.lastStatus || 0,
-          gateway_message: redactGatewayText(pickGatewayErrorMessage(out?.payload, out?.lastText || '')),
-          gateway_response: out?.lastText ? redactGatewayText(String(out.lastText).slice(0, 800)) : '',
+          gateway_message: isHtmlLikeText(gatewayMessageRaw) ? '' : gatewayMessageRaw,
+          gateway_response: isHtmlLikeText(gatewayResponseRaw) ? '' : gatewayResponseRaw,
           ...meta,
         })
       }
@@ -727,12 +744,14 @@ export default async function handler(req, res) {
     }
     if (!out?.ok) {
       const meta = getGatewayMeta(requestUrl)
+      const gatewayMessageRaw = redactGatewayText(pickGatewayErrorMessage(out?.payload, out?.lastText || ''))
+      const gatewayResponseRaw = out?.lastText ? redactGatewayText(String(out.lastText).slice(0, 800)) : ''
       return json(res, 502, {
         error: 'create_paymentlink_failed',
         message: gatewayFailureMessage(out?.lastStatus || 0),
         status: out?.lastStatus || 0,
-        gateway_message: redactGatewayText(pickGatewayErrorMessage(out?.payload, out?.lastText || '')),
-        gateway_response: out?.lastText ? redactGatewayText(String(out.lastText).slice(0, 800)) : '',
+        gateway_message: isHtmlLikeText(gatewayMessageRaw) ? '' : gatewayMessageRaw,
+        gateway_response: isHtmlLikeText(gatewayResponseRaw) ? '' : gatewayResponseRaw,
         ...meta,
       })
     }

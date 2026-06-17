@@ -546,7 +546,7 @@ export default function CursoPreviewAlunoPage() {
       }, 70000)
       const body = await r.json().catch(() => ({}))
       if (!r.ok) {
-        const msg = String(stringifyMaybe(body?.message) || stringifyMaybe(body?.error) || (body && typeof body === 'object' ? JSON.stringify(body) : '') || '').trim()
+        const msg = String(stringifyMaybe(body?.message) || stringifyMaybe(body?.error) || '').trim()
         const host = String(body?.gateway_host || '').trim()
         const detail = String(body?.details || '').trim()
         const suffix = host ? ` (${host})` : ''
@@ -555,7 +555,13 @@ export default function CursoPreviewAlunoPage() {
           try { return new URL(String(b || '')).host } catch (_) { return String(b || '') }
         }).map((s) => String(s || '').trim()).filter(Boolean)
         const attemptedSuffix = attemptedHosts.length ? ` (tentou: ${attemptedHosts.join(', ')})` : ''
-        const gatewayMsg = String(body?.gateway_message || '').trim()
+        const gatewayMsgRaw = String(body?.gateway_message || '').trim()
+        const gatewayMsgLower = gatewayMsgRaw.toLowerCase()
+        const gatewayMsg =
+          !gatewayMsgRaw ? '' :
+          (gatewayMsgLower.includes('<!doctype') || gatewayMsgLower.includes('<html') || gatewayMsgLower.includes('<script') || gatewayMsgLower.includes('<head'))
+            ? ''
+            : gatewayMsgRaw.slice(0, 140)
         const status = String(body?.status || '').trim()
         const extra = [
           status ? `status=${status}` : '',
