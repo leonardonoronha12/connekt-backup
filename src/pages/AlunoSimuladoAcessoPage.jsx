@@ -57,7 +57,7 @@ function SimuladoCard({ title, subtitle, categories, status, approval, isPaid, p
   })()
   const pills = Array.isArray(categories) ? categories.filter(Boolean).slice(0, 2) : []
   return (
-    <div className="bg-white border border-[#E3E4E5] rounded-[8px] w-full h-[200px] px-4 py-3 flex flex-col">
+    <div className="bg-white border border-[#E3E4E5] rounded-[8px] w-full h-[200px] px-4 py-3 flex flex-col transition-transform duration-200 ease-out hover:-translate-y-1 hover:shadow-lg">
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
           <img src={imageUrl || '/icone img simulado.png'} alt="" className="w-[54px] h-[54px] rounded-[8px] object-cover" />

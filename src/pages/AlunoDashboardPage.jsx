@@ -344,7 +344,7 @@ function CourseCard({ cover, title, progress, locked, onClick }) {
         disabled={!onClick}
         onClick={onClick}
         className={`relative w-[252px] h-[326px] rounded-[12px] overflow-hidden border border-[#E3E4E5] bg-[#F8FAFC] text-left ${
-          !onClick ? 'cursor-not-allowed' : 'cursor-pointer'
+          !onClick ? 'cursor-not-allowed' : 'cursor-pointer transition-transform duration-200 ease-out hover:-translate-y-1 hover:shadow-xl'
         }`}
       >
         <img
@@ -384,7 +384,7 @@ function ContinueCard({ cover, category, title, progress, lessonsDone, lessonsTo
       onClick={onClick}
       disabled={!onClick}
       className={`w-[300px] flex-shrink-0 rounded-[12px] border border-[#E3E4E5] bg-white overflow-hidden shadow-sm text-left ${
-        onClick ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'
+        onClick ? 'cursor-pointer transition-transform duration-200 ease-out hover:-translate-y-1 hover:shadow-lg' : 'cursor-not-allowed opacity-60'
       }`}
     >
       <div className="relative h-[170px] bg-[#F8FAFC]">
@@ -434,7 +434,7 @@ function SimuladoCard({ title, progress, isPaid, price, onClick }) {
       onClick={onClick}
       disabled={!onClick}
       className={`bg-white border border-[#E3E4E5] rounded-[4px] p-4 w-[252px] h-[230px] flex flex-col flex-shrink-0 text-left ${
-        onClick ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'
+        onClick ? 'cursor-pointer transition-transform duration-200 ease-out hover:-translate-y-1 hover:shadow-lg' : 'cursor-not-allowed opacity-60'
       }`}
     >
       <div className="flex items-start justify-between">

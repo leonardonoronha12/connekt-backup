@@ -139,7 +139,7 @@ export default function AreaAlunoPage() {
                     const name = c?.course_name || c?.name || `Curso ${idx + 1}`
                     const progress = Math.max(0, Math.min(100, Number(c?.progress || 0)))
                     return (
-                      <div key={`${name}-${idx}`} className="rounded-[12px] border border-[#E3E4E5] bg-white p-5">
+                      <div key={`${name}-${idx}`} className="rounded-[12px] border border-[#E3E4E5] bg-white p-5 transition-transform duration-200 ease-out hover:-translate-y-1 hover:shadow-md">
                         <div className="text-[14px] font-semibold text-[#1E1B39]">{name}</div>
                         <div className="mt-3">
                           <div className="h-2 w-full rounded-full bg-[#EEF2FF] overflow-hidden">
