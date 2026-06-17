@@ -541,9 +541,13 @@ export default function AlunoSimuladoAcessoPage() {
       return
     }
     setCheckoutLoading(true)
+    const preOpened = (() => {
+      try { return window.open('about:blank', '_blank', 'noopener') } catch (_) { return null }
+    })()
     try {
       const token = (await supabase.auth.getSession().catch(() => ({ data: null })))?.data?.session?.access_token || ''
       if (!token) {
+        try { preOpened && preOpened.close && preOpened.close() } catch (_) {}
         setCheckoutError('Faça login para comprar.')
         return
       }
@@ -554,6 +558,7 @@ export default function AlunoSimuladoAcessoPage() {
       })
       const body = await r.json().catch(() => ({}))
       if (!r.ok) {
+        try { preOpened && preOpened.close && preOpened.close() } catch (_) {}
         const msg = String(body?.message || body?.error || '').trim()
         const hint = String(body?.hint || '').trim()
         setCheckoutError(msg ? (hint ? `${msg} ${hint}` : msg) : 'Não foi possível abrir o checkout.')
@@ -563,14 +568,22 @@ export default function AlunoSimuladoAcessoPage() {
       const linkId = String(body?.link_id || '').trim()
       if (linkId) safeLsSet(`connekt_simulado_pending_link:${currentSimId}`, linkId)
       if (!checkoutUrl) {
+        try { preOpened && preOpened.close && preOpened.close() } catch (_) {}
         setCheckoutError('Checkout indisponível.')
         return
       }
-      const w = window.open(checkoutUrl, '_blank', 'noopener')
+      if (preOpened && typeof preOpened.location !== 'undefined') {
+        try { preOpened.location.href = checkoutUrl } catch (_) {}
+        return
+      }
+      let w = null
+      try { w = window.open(checkoutUrl, '_blank', 'noopener') } catch (_) { w = null }
       if (!w) {
+        try { await navigator.clipboard.writeText(checkoutUrl) } catch (_) {}
         setCheckoutError('Seu navegador bloqueou a abertura do checkout. Permita pop-ups e tente novamente.')
       }
     } catch (_) {
+      try { preOpened && preOpened.close && preOpened.close() } catch (_) {}
       setCheckoutError('Erro ao abrir checkout.')
     } finally {
       setCheckoutLoading(false)

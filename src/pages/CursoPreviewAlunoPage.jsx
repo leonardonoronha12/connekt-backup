@@ -234,11 +234,7 @@ export default function CursoPreviewAlunoPage() {
     if (!u) return false
     try {
       const w = window.open(u, '_blank', 'noopener')
-      if (!w) {
-        setCheckoutError('Seu navegador bloqueou a abertura do checkout. Permita pop-ups e tente novamente.')
-        return false
-      }
-      return true
+      return !!w
     } catch (_) {
       return false
     }
@@ -527,16 +523,27 @@ export default function CursoPreviewAlunoPage() {
     if (!courseId) return
     setCheckoutError('')
     setCheckoutLoading(true)
+    const preOpened = (() => {
+      try { return window.open('about:blank', '_blank', 'noopener') } catch (_) { return null }
+    })()
     try {
       const token = await getAccessToken()
       if (!token) {
+        try { preOpened && preOpened.close && preOpened.close() } catch (_) {}
         setCheckoutError('Faça login para comprar.')
         return
       }
       const overrideUrl = resolveCheckoutOverrideUrl(meta)
       if (overrideUrl) {
+        if (preOpened && typeof preOpened.location !== 'undefined') {
+          try { preOpened.location.href = String(overrideUrl) } catch (_) {}
+          return
+        }
         const ok = openCheckoutUrl(overrideUrl)
-        if (!ok) setCheckoutError('Não foi possível abrir o checkout.')
+        if (!ok) {
+          try { await navigator.clipboard.writeText(String(overrideUrl)) } catch (_) {}
+          setCheckoutError('Seu navegador bloqueou a abertura do checkout. Permita pop-ups e tente novamente.')
+        }
         return
       }
       const r = await fetchWithTimeout('/api/simulado-checkout', {
@@ -546,6 +553,7 @@ export default function CursoPreviewAlunoPage() {
       }, 70000)
       const body = await r.json().catch(() => ({}))
       if (!r.ok) {
+        try { preOpened && preOpened.close && preOpened.close() } catch (_) {}
         const msg = String(stringifyMaybe(body?.message) || stringifyMaybe(body?.error) || '').trim()
         const host = String(body?.gateway_host || '').trim()
         const detail = String(body?.details || '').trim()
@@ -579,12 +587,22 @@ export default function CursoPreviewAlunoPage() {
         startVerifyPolling({ type: 'course', courseId: String(courseId), linkId, ownedStorageKey: ownedKey })
       }
       if (!checkoutUrl) {
+        try { preOpened && preOpened.close && preOpened.close() } catch (_) {}
         setCheckoutError('Checkout indisponível.')
         return
       }
       if (checkoutCacheKeyCourse) safeLsSetJson(checkoutCacheKeyCourse, { url: checkoutUrl, linkId, ts: Date.now() })
-      openCheckoutUrl(checkoutUrl)
+      if (preOpened && typeof preOpened.location !== 'undefined') {
+        try { preOpened.location.href = checkoutUrl } catch (_) {}
+        return
+      }
+      const ok = openCheckoutUrl(checkoutUrl)
+      if (!ok) {
+        try { await navigator.clipboard.writeText(checkoutUrl) } catch (_) {}
+        setCheckoutError('Seu navegador bloqueou a abertura do checkout. Permita pop-ups e tente novamente.')
+      }
     } catch (e) {
+      try { preOpened && preOpened.close && preOpened.close() } catch (_) {}
       const name = String(e?.name || '').toLowerCase()
       const msg = String(e?.message || e || '').toLowerCase()
       if (name.includes('abort') || msg.includes('aborted') || msg.includes('aborterror') || msg === 'timeout') {
