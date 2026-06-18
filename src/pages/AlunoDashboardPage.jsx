@@ -45,6 +45,73 @@ function safeSsJsonGet(key) {
   try { return JSON.parse(raw) } catch (_) { return null }
 }
 
+function EmptyProducerSection({ Icon, title, description, actionLabel = 'Atualizar', onAction, className = '' }) {
+  return (
+    <div className={`mt-3 rounded-[14px] border border-[#E3E4E5] bg-white p-5 shadow-sm overflow-hidden connekt-fade-in ${className}`.trim()}>
+      <div className="flex items-start gap-4">
+        <div className="h-11 w-11 rounded-[12px] bg-[#EEF2FF] flex items-center justify-center flex-shrink-0">
+          <Icon className="w-5 h-5 text-[#0047BB]" />
+        </div>
+        <div className="flex-1">
+          <div className="text-[13px] font-semibold text-[#22252B]">{title}</div>
+          <div className="mt-1 text-[12px] text-[#737780]">{description}</div>
+          {onAction ? (
+            <button
+              type="button"
+              onClick={onAction}
+              className="mt-4 h-9 px-4 rounded-[10px] bg-[#0047BB] text-white text-[12px] font-semibold hover:bg-[#003a99] transition-colors"
+            >
+              {actionLabel}
+            </button>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ProducerDashboardEmpty({ onReload }) {
+  return (
+    <div className="mt-8 rounded-[18px] border border-[#E3E4E5] bg-white p-6 shadow-sm overflow-hidden relative connekt-fade-in">
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(0,71,187,0.10),_rgba(255,255,255,0)_55%)]" />
+      <div className="relative flex flex-col md:flex-row items-center gap-6">
+        <div className="relative">
+          <div className="absolute -inset-6 rounded-full bg-[#0047BB]/10 blur-xl animate-pulse" />
+          <BrandLogo
+            variant="compact"
+            className="relative h-14 w-auto select-none pointer-events-none animate-[connektLogoFloat_1400ms_ease-in-out_infinite]"
+            alt="Connekt"
+          />
+        </div>
+        <div className="flex-1 text-center md:text-left">
+          <div className="text-[16px] font-semibold text-[#22252B]">Ainda não há conteúdos deste produtor</div>
+          <div className="mt-1 text-[12px] text-[#737780]">
+            Assim que o produtor publicar cursos e simulados, eles aparecem aqui automaticamente.
+          </div>
+          <div className="mt-5 flex items-center justify-center md:justify-start gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={onReload}
+              className="h-10 px-5 rounded-[12px] bg-[#0047BB] text-white text-[13px] font-semibold hover:bg-[#003a99] transition-colors"
+            >
+              Atualizar
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                try { navigateTo('/aluno') } catch (_) { window.location.href = '/aluno' }
+              }}
+              className="h-10 px-5 rounded-[12px] border border-[#E3E4E5] bg-white text-[#22252B] text-[13px] font-semibold hover:bg-[#F8FAFC] transition-colors"
+            >
+              Voltar
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function getCourseMeta(row) {
   const fromData = parseJsonMaybe(row?.data) || null
   const parsedModules = parseJsonMaybe(row?.modules) || null
@@ -1820,6 +1887,7 @@ export default function AlunoDashboardPage() {
 
   const currentPath = typeof window !== 'undefined' ? window.location.pathname : '/aluno'
   const coursesLoading = activeProducerUserId ? producerCoursesLoading : loading
+  const producerDashboardEmpty = !!activeProducerUserId && !coursesLoading && !producerSimuladosLoading && continueItems.length === 0 && myCourses.length === 0 && featuredCourses.length === 0 && simulados.length === 0
 
   useEffect(() => {
     if (!mobileNavOpen && !simuladosModalOpen && !myCoursesModalOpen && !featuredModalOpen) return
@@ -1999,6 +2067,10 @@ export default function AlunoDashboardPage() {
 
             <div className="px-6">
               <div className="max-w-[1180px] mx-auto">
+                {producerDashboardEmpty ? (
+                  <ProducerDashboardEmpty onReload={() => window.location.reload()} />
+                ) : (
+                <>
                 <div className="mt-6">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
@@ -2012,6 +2084,7 @@ export default function AlunoDashboardPage() {
                         type="button"
                         className="w-9 h-9 rounded-full border border-[#22252B] bg-transparent flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
                         onClick={() => scrollContinueBy(-1)}
+                        disabled={!canScrollContinueLeft}
                         aria-label="Anterior"
                       >
                         <ChevronLeft className="w-4 h-4 text-[#22252B]" />
@@ -2020,6 +2093,7 @@ export default function AlunoDashboardPage() {
                         type="button"
                         className="w-9 h-9 rounded-full border border-[#22252B] bg-transparent flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
                         onClick={() => scrollContinueBy(1)}
+                        disabled={!canScrollContinueRight}
                         aria-label="Próximo"
                       >
                         <ChevronRight className="w-4 h-4 text-[#22252B]" />
@@ -2037,6 +2111,15 @@ export default function AlunoDashboardPage() {
                           <Skeleton className="w-[332px] h-[204px] rounded-[14px]" />
                         </div>
                       ))
+                    ) : activeProducerUserId && continueItems.length === 0 ? (
+                      <div className="w-[332px] flex-shrink-0">
+                        <EmptyProducerSection
+                          Icon={PlayCircle}
+                          title="Sem aulas para continuar"
+                          description="Este produtor ainda não publicou cursos com aulas disponíveis."
+                          className="mt-0 h-[204px]"
+                        />
+                      </div>
                     ) : (
                       continueItems.map((it) => (
                         <ContinueCard
@@ -2062,9 +2145,6 @@ export default function AlunoDashboardPage() {
                       ))
                     )}
                   </div>
-                  {activeProducerUserId && !coursesLoading && continueItems.length === 0 ? (
-                    <div className="mt-3 text-[12px] text-[#737780]">Nenhum curso encontrado para este produtor.</div>
-                  ) : null}
                 </div>
 
                 <div className="mt-8">
@@ -2090,6 +2170,7 @@ export default function AlunoDashboardPage() {
                         type="button"
                         className="w-9 h-9 rounded-full border border-[#22252B] bg-transparent flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
                         onClick={() => scrollMyCoursesBy(-1)}
+                        disabled={!canScrollMyCoursesLeft}
                         aria-label="Anterior"
                       >
                         <ChevronLeft className="w-4 h-4 text-[#22252B]" />
@@ -2098,6 +2179,7 @@ export default function AlunoDashboardPage() {
                         type="button"
                         className="w-9 h-9 rounded-full border border-[#22252B] bg-transparent flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
                         onClick={() => scrollMyCoursesBy(1)}
+                        disabled={!canScrollMyCoursesRight}
                         aria-label="Próximo"
                       >
                         <ChevronRight className="w-4 h-4 text-[#22252B]" />
@@ -2118,6 +2200,15 @@ export default function AlunoDashboardPage() {
                           </div>
                         </div>
                       ))
+                    ) : activeProducerUserId && myCourses.length === 0 ? (
+                      <div className="w-[252px] flex-shrink-0">
+                        <EmptyProducerSection
+                          Icon={BookOpen}
+                          title="Nenhum curso disponível"
+                          description="Quando o produtor publicar cursos, eles aparecem aqui."
+                          className="mt-0 h-[326px]"
+                        />
+                      </div>
                     ) : (
                       myCourses.map((c) => (
                         <CourseCard
@@ -2136,9 +2227,6 @@ export default function AlunoDashboardPage() {
                       ))
                     )}
                   </div>
-                  {activeProducerUserId && !coursesLoading && myCourses.length === 0 ? (
-                    <div className="mt-3 text-[12px] text-[#737780]">Nenhum curso encontrado para este produtor.</div>
-                  ) : null}
                 </div>
 
                 <div className="mt-8">
@@ -2162,6 +2250,7 @@ export default function AlunoDashboardPage() {
                         type="button"
                         className="w-9 h-9 rounded-full border border-[#22252B] bg-transparent flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
                         onClick={() => scrollFeaturedBy(-1)}
+                        disabled={!canScrollFeaturedLeft}
                         aria-label="Anterior"
                       >
                         <ChevronLeft className="w-4 h-4 text-[#22252B]" />
@@ -2170,6 +2259,7 @@ export default function AlunoDashboardPage() {
                         type="button"
                         className="w-9 h-9 rounded-full border border-[#22252B] bg-transparent flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
                         onClick={() => scrollFeaturedBy(1)}
+                        disabled={!canScrollFeaturedRight}
                         aria-label="Próximo"
                       >
                         <ChevronRight className="w-4 h-4 text-[#22252B]" />
@@ -2187,6 +2277,15 @@ export default function AlunoDashboardPage() {
                           <Skeleton className="w-[252px] h-[326px] rounded-[12px]" />
                         </div>
                       ))
+                    ) : activeProducerUserId && featuredCourses.length === 0 ? (
+                      <div className="w-[252px] flex-shrink-0">
+                        <EmptyProducerSection
+                          Icon={Star}
+                          title="Sem destaques por enquanto"
+                          description="Este produtor ainda não marcou cursos como destaque."
+                          className="mt-0 h-[326px]"
+                        />
+                      </div>
                     ) : (
                       featuredCourses.map((c) => (
                         <CourseCard
@@ -2231,6 +2330,7 @@ export default function AlunoDashboardPage() {
                         type="button"
                         className="w-9 h-9 rounded-full border border-[#22252B] bg-transparent flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
                         onClick={() => scrollSimuladosBy(-1)}
+                        disabled={!canScrollSimuladosLeft}
                         aria-label="Anterior"
                       >
                         <ChevronLeft className="w-4 h-4 text-[#22252B]" />
@@ -2239,6 +2339,7 @@ export default function AlunoDashboardPage() {
                         type="button"
                         className="w-9 h-9 rounded-full border border-[#22252B] bg-transparent flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
                         onClick={() => scrollSimuladosBy(1)}
+                        disabled={!canScrollSimuladosRight}
                         aria-label="Próximo"
                       >
                         <ChevronRight className="w-4 h-4 text-[#22252B]" />
@@ -2270,6 +2371,15 @@ export default function AlunoDashboardPage() {
                           </div>
                         </div>
                       ))
+                    ) : activeProducerUserId && simulados.length === 0 ? (
+                      <div className="w-[252px] flex-shrink-0">
+                        <EmptyProducerSection
+                          Icon={FileText}
+                          title="Nenhum simulado disponível"
+                          description="Quando o produtor publicar simulados, eles aparecem aqui."
+                          className="mt-0 h-[230px]"
+                        />
+                      </div>
                     ) : (
                       simulados.map((s) => (
                         <SimuladoCard
@@ -2286,16 +2396,13 @@ export default function AlunoDashboardPage() {
                       ))
                     )}
                   </div>
-                  {activeProducerUserId && simulados.length === 0 ? (
-                    <div className="mt-3 text-[12px] text-[#737780]">
-                      {producerSimuladosLoading ? '' : 'Nenhum simulado encontrado para este produtor.'}
-                    </div>
-                  ) : null}
                 </div>
 
                 {loading ? (
                   <div className="pb-6 text-[12px] text-[#737780]">Carregando...</div>
                 ) : null}
+                </>
+                )}
               </div>
             </div>
           </div>
