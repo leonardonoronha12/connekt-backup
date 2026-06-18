@@ -204,6 +204,7 @@ export default function AlunosPage() {
   const [loading, setLoading] = useState(true)
   const [rows, setRows] = useState([])
   const [error, setError] = useState('')
+  const [errorCode, setErrorCode] = useState('')
   const [meta, setMeta] = useState(null)
 
   const [producerCourses, setProducerCourses] = useState([])
@@ -525,6 +526,7 @@ export default function AlunosPage() {
     const run = async () => {
       setLoading(true)
       setError('')
+      setErrorCode('')
       try {
         const body = await fetchStudents()
         if (!active) return
@@ -533,11 +535,20 @@ export default function AlunosPage() {
         if (!active) return
       } catch (e) {
         if (!active) return
-        const msg = String(e?.message || 'Erro ao carregar alunos')
+        const raw = String(e?.message || 'Erro ao carregar alunos')
+        const code = raw.trim().toLowerCase()
+        const msg = code === 'plan_expired'
+          ? 'Seu plano expirou. Faça upgrade para continuar usando o Gerenciar alunos.'
+          : raw
         setRows([])
         setError(msg)
+        setErrorCode(code)
         setMeta(null)
-        toast({ title: 'Erro', description: msg, variant: 'destructive' })
+        if (code === 'plan_expired') {
+          toast({ title: 'Plano expirado', description: 'Faça upgrade para liberar o acesso ao Gerenciar alunos.', duration: 7000 })
+        } else {
+          toast({ title: 'Erro', description: msg, variant: 'destructive' })
+        }
       } finally {
         if (active) setLoading(false)
       }
@@ -951,7 +962,27 @@ export default function AlunosPage() {
                   ))
                 ) : error ? (
                   <tr>
-                    <td colSpan={5} className="px-6 py-8 text-center text-[14px] text-[#737780]">{error}</td>
+                    <td colSpan={5} className="px-6 py-8 text-center text-[14px] text-[#737780]">
+                      <div className="flex flex-col items-center gap-3">
+                        <div>{error}</div>
+                        {errorCode === 'plan_expired' ? (
+                          <button
+                            type="button"
+                            className="h-9 px-4 rounded-[10px] bg-[#0047BB] text-white text-[12px] font-semibold hover:bg-[#003da0]"
+                            onClick={() => {
+                              try {
+                                window.history.pushState({}, '', '/configuracoes?tab=plano')
+                                window.dispatchEvent(new PopStateEvent('popstate'))
+                              } catch (_) {
+                                try { window.location.assign('/configuracoes?tab=plano') } catch (_) {}
+                              }
+                            }}
+                          >
+                            Ver planos
+                          </button>
+                        ) : null}
+                      </div>
+                    </td>
                   </tr>
                 ) : rows.length === 0 ? (
                   <tr>

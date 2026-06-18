@@ -147,6 +147,23 @@ async function fetchJsonWithTimeout(url, timeoutMs) {
   }
 }
 
+async function fetchTextWithTimeout(url, timeoutMs) {
+  const controller = new AbortController()
+  const t = setTimeout(() => controller.abort(), Math.max(250, Number(timeoutMs) || 4500))
+  try {
+    const r = await fetch(url, {
+      method: 'GET',
+      redirect: 'follow',
+      headers: { Accept: 'text/html,*/*;q=0.8', 'User-Agent': 'connekt-domain-check/1.0' },
+      signal: controller.signal,
+    })
+    const text = await r.text().catch(() => '')
+    return { ok: r.ok, status: r.status, headers: Object.fromEntries(r.headers.entries()), text }
+  } finally {
+    clearTimeout(t)
+  }
+}
+
 function getErrCode(e) {
   return String(e?.code || e?.cause?.code || e?.cause?.errno || '').trim()
 }
@@ -2319,6 +2336,14 @@ export default async function handler(req, res) {
         if (r.ok && r.status === 200) {
           return json(res, 200, { active: true, state: 'active', reason: 'ok', host: hostParam })
         }
+        try {
+          const r2 = await fetchTextWithTimeout(`https://${hostParam}/?ts=${Date.now()}`, 4500)
+          const html = String(r2?.text || '').toLowerCase()
+          const looksLikeApp = html.includes('connekt') || html.includes('id="root"') || html.includes("id='root'")
+          if (r2.ok && r2.status >= 200 && r2.status < 400 && looksLikeApp) {
+            return json(res, 200, { active: true, state: 'active', reason: 'ok_html', host: hostParam })
+          }
+        } catch (_) {}
         return json(res, 200, {
           active: false,
           state: 'error',

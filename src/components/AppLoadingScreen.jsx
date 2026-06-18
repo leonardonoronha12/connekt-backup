@@ -6,7 +6,14 @@ export default function AppLoadingScreen({ title = 'Carregando…', subtitle = '
       <div className="relative w-full max-w-[520px] overflow-hidden rounded-[16px] border border-[#E3E4E5] bg-white p-6 shadow-sm connekt-fade-in">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(0,71,187,0.10),_rgba(255,255,255,0)_55%)]" />
         <div className="relative flex flex-col items-center text-center">
-          <div className="h-12 w-12 rounded-full border-2 border-[#E2E8F0] border-t-[#0047BB] animate-spin" />
+          <div className="relative">
+            <div className="absolute -inset-6 rounded-full bg-[#0047BB]/10 blur-xl animate-pulse" />
+            <img
+              src="/logo-expanded.svg"
+              alt="Connekt"
+              className="relative h-12 w-auto select-none pointer-events-none animate-[connektLogoFloat_1400ms_ease-in-out_infinite]"
+            />
+          </div>
           <div className="mt-4 text-[14px] font-semibold text-[#1E1B39]">{String(title || '').trim() || 'Carregando…'}</div>
           <div className="mt-1 text-[12px] text-[#64748B]">{String(subtitle || '').trim() || 'Preparando sua área'}</div>
 
@@ -26,4 +33,3 @@ export default function AppLoadingScreen({ title = 'Carregando…', subtitle = '
     </div>
   )
 }
-

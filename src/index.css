@@ -175,6 +175,12 @@
   100% { transform: translateX(160%); }
 }
 
+@keyframes connektLogoFloat {
+  0% { transform: translate3d(0, 0, 0); }
+  50% { transform: translate3d(0, -6px, 0); }
+  100% { transform: translate3d(0, 0, 0); }
+}
+
 @keyframes connektLoginBgPan {
   0% { transform: scale(1.02) translate3d(0, 0, 0); filter: saturate(1.05) contrast(1.02); }
   50% { transform: scale(1.06) translate3d(-10px, 8px, 0); filter: saturate(1.12) contrast(1.04); }

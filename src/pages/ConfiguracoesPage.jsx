@@ -737,6 +737,12 @@ const ConfiguracoesPage = () => {
       if (reason === 'invalid_host') {
         return { state: 'error', title: 'Inválido', description: 'Subdomínio/domínio inválido.' }
       }
+      if (reason === 'dns_error') {
+        return { state: 'error', title: 'Erro no DNS', description: 'Não foi possível resolver o domínio agora.' }
+      }
+      if (reason === 'fetch_error') {
+        return { state: 'pending', title: 'Ativando', description: 'Ainda estamos verificando o domínio. Tente novamente em instantes.' }
+      }
       return { state: 'error', title: 'Erro', description: 'Não foi possível validar o domínio agora.' }
     }
     return { state: 'checking', title: 'Verificando', description: 'Checando disponibilidade do domínio.' }
