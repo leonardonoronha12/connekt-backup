@@ -61,17 +61,17 @@ export default function CheckoutPopup({ open, url, title, onClose, footerText })
           </div>
         ) : null}
 
-        <div className="relative w-full bg-white h-[82vh] overflow-auto [scrollbar-width:thin] [scrollbar-color:rgba(148,163,184,0.75)_transparent] [&::-webkit-scrollbar]:w-[10px] [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-slate-300/70 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:border-[3px] [&::-webkit-scrollbar-thumb]:border-transparent [&::-webkit-scrollbar-thumb]:bg-clip-padding hover:[&::-webkit-scrollbar-thumb]:bg-slate-400/80">
+        <div className="relative w-full bg-white h-[82vh] overflow-hidden">
           {hasUrl ? (
             <iframe
               key={frameKey}
               ref={iframeRef}
               title={resolvedTitle}
               src={resolvedUrl}
-              className="w-full h-[2400px] bg-white"
+              className="w-full h-full bg-white"
               allow="payment *; clipboard-write; fullscreen"
               sandbox="allow-forms allow-scripts allow-same-origin allow-popups allow-top-navigation-by-user-activation"
-              scrolling="no"
+              scrolling="yes"
               onLoad={() => {
                 try { window.setTimeout(() => setLoaded(true), 250) } catch (_) { setLoaded(true) }
               }}
