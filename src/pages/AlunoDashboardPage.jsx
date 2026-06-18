@@ -47,29 +47,26 @@ function safeSsJsonGet(key) {
 
 function EmptyProducerSection({ Icon, title, description, actionLabel = 'Atualizar', onAction, className = '' }) {
   return (
-    <div className={`mt-3 rounded-[14px] border border-[#E3E4E5] bg-white p-5 shadow-sm overflow-hidden relative connekt-fade-in ${className}`.trim()}>
+    <div className={`rounded-[14px] border border-[#E3E4E5] bg-white p-5 shadow-sm overflow-hidden relative connekt-fade-in ${className}`.trim()}>
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(0,71,187,0.08),_rgba(255,255,255,0)_55%)]" />
-      <div className="flex items-start gap-4">
-        <div className="relative h-11 w-11 rounded-[12px] bg-[#EEF2FF] flex items-center justify-center flex-shrink-0">
-          <Icon className="w-5 h-5 text-[#0047BB]" />
-        </div>
-        <div className="relative flex-1">
-          <div className="text-[13px] font-semibold text-[#22252B]">{title}</div>
-          <div className="mt-1 text-[12px] text-[#737780]">{description}</div>
-          {onAction ? (
-            <button
-              type="button"
-              onClick={onAction}
-              className="mt-4 h-9 px-4 rounded-[10px] bg-[#0047BB] text-white text-[12px] font-semibold hover:bg-[#003a99] transition-colors"
-            >
-              {actionLabel}
-            </button>
-          ) : (
-            <div className="mt-4 inline-flex items-center gap-2 rounded-full border border-[#E3E4E5] bg-white/70 px-3 py-2 text-[12px] text-[#475569]">
-              <span className="h-1.5 w-1.5 rounded-full bg-[#94A3B8]" />
-              Atualiza automaticamente quando tiver conteúdo
-            </div>
-          )}
+      <div className="relative h-full flex items-center">
+        <div className="w-full flex items-start gap-4">
+          <div className="h-11 w-11 rounded-[12px] bg-[#EEF2FF] flex items-center justify-center flex-shrink-0">
+            <Icon className="w-5 h-5 text-[#0047BB]" />
+          </div>
+          <div className="flex-1">
+            <div className="text-[13px] font-semibold text-[#22252B]">{title}</div>
+            <div className="mt-1 text-[12px] text-[#737780]">{description}</div>
+            {onAction ? (
+              <button
+                type="button"
+                onClick={onAction}
+                className="mt-4 h-9 px-4 rounded-[10px] bg-[#0047BB] text-white text-[12px] font-semibold hover:bg-[#003a99] transition-colors"
+              >
+                {actionLabel}
+              </button>
+            ) : null}
+          </div>
         </div>
       </div>
     </div>
@@ -78,11 +75,11 @@ function EmptyProducerSection({ Icon, title, description, actionLabel = 'Atualiz
 
 function ProducerDashboardEmpty({ onReload }) {
   return (
-    <div className="mt-8 rounded-[18px] border border-[#E3E4E5] bg-white p-7 shadow-sm overflow-hidden relative connekt-fade-in">
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(0,71,187,0.10),_rgba(255,255,255,0)_55%)]" />
-      <div className="relative grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-6 items-start">
-        <div className="flex flex-col">
-          <div className="flex flex-col sm:flex-row items-center sm:items-start gap-5">
+    <div className="mt-8">
+      <div className="max-w-[860px] mx-auto">
+        <div className="rounded-[18px] border border-[#E3E4E5] bg-white p-8 shadow-sm overflow-hidden relative connekt-fade-in">
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(0,71,187,0.10),_rgba(255,255,255,0)_60%)]" />
+          <div className="relative flex flex-col items-center text-center">
             <div className="relative">
               <div className="absolute -inset-6 rounded-full bg-[#0047BB]/10 blur-xl animate-pulse" />
               <BrandLogo
@@ -91,118 +88,64 @@ function ProducerDashboardEmpty({ onReload }) {
                 alt="Connekt"
               />
             </div>
-            <div className="flex-1 text-center sm:text-left">
-              <div className="inline-flex items-center gap-2 rounded-full border border-[#E3E4E5] bg-white/70 px-3 py-1.5 text-[11px] font-semibold text-[#334155]">
-                <span className="h-2 w-2 rounded-full bg-[#0047BB]" />
-                Catálogo do produtor
-              </div>
-              <div className="mt-3 text-[18px] font-semibold text-[#0F172A]">Nada por aqui ainda</div>
-              <div className="mt-1 text-[12px] text-[#64748B] max-w-[520px] mx-auto sm:mx-0">
-                Quando o produtor publicar cursos e simulados, eles vão aparecer aqui automaticamente. Enquanto isso, você pode trocar o produtor ou atualizar.
-              </div>
-              <div className="mt-5 flex items-center justify-center sm:justify-start gap-2 flex-wrap">
-                <button
-                  type="button"
-                  onClick={onReload}
-                  className="h-10 px-5 rounded-[12px] bg-[#0047BB] text-white text-[13px] font-semibold hover:bg-[#003a99] transition-colors"
-                >
-                  Atualizar
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    try {
-                      clearActiveProducerUserId()
-                      navigateTo('/aluno')
-                    } catch (_) {
-                      try { window.location.href = '/aluno' } catch (_) {}
-                    }
-                  }}
-                  className="h-10 px-5 rounded-[12px] border border-[#E3E4E5] bg-white text-[#0F172A] text-[13px] font-semibold hover:bg-[#F8FAFC] transition-colors inline-flex items-center gap-2"
-                >
-                  <Search className="w-4 h-4 text-[#0047BB]" />
-                  Trocar produtor
-                </button>
-              </div>
-            </div>
-          </div>
 
-          <div className="mt-6 grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="rounded-[14px] border border-[#E3E4E5] bg-white/70 backdrop-blur-sm p-4">
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-[12px] bg-[#EEF2FF] flex items-center justify-center">
-                  <BookOpen className="w-5 h-5 text-[#0047BB]" />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-[12px] font-semibold text-[#0F172A]">Cursos</div>
-                  <div className="text-[11px] text-[#64748B] truncate">Sem cursos publicados</div>
-                </div>
-              </div>
-              <div className="mt-3 h-2 w-full rounded-full bg-[#EEF2FF] overflow-hidden">
-                <div className="h-full w-[28%] bg-[#0047BB]/20 rounded-full" />
-              </div>
+            <div className="mt-5 text-[18px] font-semibold text-[#0F172A]">Este produtor ainda não publicou conteúdo</div>
+            <div className="mt-1 text-[12px] text-[#64748B] max-w-[560px]">
+              Assim que houver cursos ou simulados disponíveis, eles vão aparecer aqui automaticamente.
             </div>
 
-            <div className="rounded-[14px] border border-[#E3E4E5] bg-white/70 backdrop-blur-sm p-4">
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-[12px] bg-[#EEF2FF] flex items-center justify-center">
-                  <FileText className="w-5 h-5 text-[#0047BB]" />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-[12px] font-semibold text-[#0F172A]">Simulados</div>
-                  <div className="text-[11px] text-[#64748B] truncate">Sem simulados publicados</div>
-                </div>
-              </div>
-              <div className="mt-3 h-2 w-full rounded-full bg-[#EEF2FF] overflow-hidden">
-                <div className="h-full w-[22%] bg-[#0047BB]/20 rounded-full" />
-              </div>
-            </div>
-
-            <div className="rounded-[14px] border border-[#E3E4E5] bg-white/70 backdrop-blur-sm p-4">
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-[12px] bg-[#EEF2FF] flex items-center justify-center">
-                  <PlayCircle className="w-5 h-5 text-[#0047BB]" />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-[12px] font-semibold text-[#0F172A]">Aulas</div>
-                  <div className="text-[11px] text-[#64748B] truncate">Nada para continuar</div>
-                </div>
-              </div>
-              <div className="mt-3 h-2 w-full rounded-full bg-[#EEF2FF] overflow-hidden">
-                <div className="h-full w-[18%] bg-[#0047BB]/20 rounded-full" />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-[16px] border border-[#E3E4E5] bg-[#F8FAFC] p-5">
-          <div className="text-[13px] font-semibold text-[#0F172A]">O que fazer agora</div>
-          <div className="mt-3 space-y-2">
-            <div className="flex items-start gap-3 rounded-[12px] bg-white border border-[#E3E4E5] p-3">
-              <div className="mt-0.5 h-7 w-7 rounded-[10px] bg-[#EEF2FF] flex items-center justify-center">
+            <div className="mt-6 flex items-center justify-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={onReload}
+                className="h-10 px-5 rounded-[12px] bg-[#0047BB] text-white text-[13px] font-semibold hover:bg-[#003a99] transition-colors"
+              >
+                Atualizar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  try {
+                    clearActiveProducerUserId()
+                    navigateTo('/aluno')
+                  } catch (_) {
+                    try { window.location.href = '/aluno' } catch (_) {}
+                  }
+                }}
+                className="h-10 px-5 rounded-[12px] border border-[#E3E4E5] bg-white text-[#0F172A] text-[13px] font-semibold hover:bg-[#F8FAFC] transition-colors inline-flex items-center gap-2"
+              >
                 <Search className="w-4 h-4 text-[#0047BB]" />
-              </div>
-              <div className="flex-1">
-                <div className="text-[12px] font-semibold text-[#0F172A]">Trocar de produtor</div>
-                <div className="mt-0.5 text-[11px] text-[#64748B]">Escolha um produtor com conteúdos disponíveis.</div>
-              </div>
+                Trocar produtor
+              </button>
             </div>
-            <div className="flex items-start gap-3 rounded-[12px] bg-white border border-[#E3E4E5] p-3">
-              <div className="mt-0.5 h-7 w-7 rounded-[10px] bg-[#EEF2FF] flex items-center justify-center">
-                <Star className="w-4 h-4 text-[#0047BB]" />
+
+            <div className="mt-7 w-full max-w-[640px] space-y-2 text-left">
+              <div className="rounded-[12px] border border-[#E3E4E5] bg-white/70 px-4 py-3 flex items-center gap-3">
+                <div className="h-9 w-9 rounded-[12px] bg-[#EEF2FF] flex items-center justify-center">
+                  <BookOpen className="w-4 h-4 text-[#0047BB]" />
+                </div>
+                <div className="flex-1">
+                  <div className="text-[12px] font-semibold text-[#0F172A]">Cursos</div>
+                  <div className="text-[11px] text-[#64748B]">Nenhum curso disponível no momento</div>
+                </div>
               </div>
-              <div className="flex-1">
-                <div className="text-[12px] font-semibold text-[#0F172A]">Ver destaques</div>
-                <div className="mt-0.5 text-[11px] text-[#64748B]">Quando houver, eles aparecem na seção de destaques.</div>
+              <div className="rounded-[12px] border border-[#E3E4E5] bg-white/70 px-4 py-3 flex items-center gap-3">
+                <div className="h-9 w-9 rounded-[12px] bg-[#EEF2FF] flex items-center justify-center">
+                  <FileText className="w-4 h-4 text-[#0047BB]" />
+                </div>
+                <div className="flex-1">
+                  <div className="text-[12px] font-semibold text-[#0F172A]">Simulados</div>
+                  <div className="text-[11px] text-[#64748B]">Nenhum simulado disponível no momento</div>
+                </div>
               </div>
-            </div>
-            <div className="flex items-start gap-3 rounded-[12px] bg-white border border-[#E3E4E5] p-3">
-              <div className="mt-0.5 h-7 w-7 rounded-[10px] bg-[#EEF2FF] flex items-center justify-center">
-                <BookOpen className="w-4 h-4 text-[#0047BB]" />
-              </div>
-              <div className="flex-1">
-                <div className="text-[12px] font-semibold text-[#0F172A]">Aguardar publicação</div>
-                <div className="mt-0.5 text-[11px] text-[#64748B]">O sistema atualiza automaticamente quando tiver conteúdo.</div>
+              <div className="rounded-[12px] border border-[#E3E4E5] bg-white/70 px-4 py-3 flex items-center gap-3">
+                <div className="h-9 w-9 rounded-[12px] bg-[#EEF2FF] flex items-center justify-center">
+                  <PlayCircle className="w-4 h-4 text-[#0047BB]" />
+                </div>
+                <div className="flex-1">
+                  <div className="text-[12px] font-semibold text-[#0F172A]">Continue assistindo</div>
+                  <div className="text-[11px] text-[#64748B]">Sem aulas para continuar</div>
+                </div>
               </div>
             </div>
           </div>
@@ -2217,7 +2160,7 @@ export default function AlunoDashboardPage() {
                           Icon={PlayCircle}
                           title="Sem aulas para continuar"
                           description="Este produtor ainda não publicou cursos com aulas disponíveis."
-                          className="mt-0 h-[204px]"
+                          className="h-[204px]"
                         />
                       </div>
                     ) : (
@@ -2306,7 +2249,7 @@ export default function AlunoDashboardPage() {
                           Icon={BookOpen}
                           title="Nenhum curso disponível"
                           description="Quando o produtor publicar cursos, eles aparecem aqui."
-                          className="mt-0 h-[326px]"
+                          className="h-[326px]"
                         />
                       </div>
                     ) : (
@@ -2383,7 +2326,7 @@ export default function AlunoDashboardPage() {
                           Icon={Star}
                           title="Sem destaques por enquanto"
                           description="Este produtor ainda não marcou cursos como destaque."
-                          className="mt-0 h-[326px]"
+                          className="h-[326px]"
                         />
                       </div>
                     ) : (
@@ -2477,7 +2420,7 @@ export default function AlunoDashboardPage() {
                           Icon={FileText}
                           title="Nenhum simulado disponível"
                           description="Quando o produtor publicar simulados, eles aparecem aqui."
-                          className="mt-0 h-[230px]"
+                          className="h-[230px]"
                         />
                       </div>
                     ) : (
