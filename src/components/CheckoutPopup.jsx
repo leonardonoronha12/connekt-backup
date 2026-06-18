@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { X } from 'lucide-react'
+import { ArrowUp, X } from 'lucide-react'
 
 export default function CheckoutPopup({ open, url, title, onClose, footerText }) {
   const iframeRef = useRef(null)
@@ -33,6 +33,52 @@ export default function CheckoutPopup({ open, url, title, onClose, footerText })
     if (!open) return
     setLoaded(false)
   }, [open, frameKey])
+
+  const scrollToTop = (behavior = 'smooth') => {
+    try {
+      const w = iframeRef.current?.contentWindow
+      if (w && typeof w.scrollTo === 'function') {
+        w.scrollTo({ top: 0, left: 0, behavior })
+        return true
+      }
+    } catch (_) {}
+    return false
+  }
+
+  useEffect(() => {
+    if (!open) return
+    if (!resolvedUrl) return
+    const origin = (() => {
+      try { return new URL(resolvedUrl).origin } catch (_) { return '' }
+    })()
+    if (!origin) return
+    const onMsg = (e) => {
+      try {
+        if (String(e?.origin || '') !== origin) return
+        const data = e?.data
+        const text = typeof data === 'string' ? data : JSON.stringify(data || {})
+        const lower = String(text || '').toLowerCase()
+        if (!lower) return
+        const hit =
+          lower.includes('approved') ||
+          lower.includes('aprovado') ||
+          lower.includes('confirmado') ||
+          lower.includes('paid') ||
+          lower.includes('recusado') ||
+          lower.includes('failed') ||
+          lower.includes('canceled') ||
+          lower.includes('cancelled') ||
+          lower.includes('invalid') ||
+          lower.includes('erro') ||
+          lower.includes('error') ||
+          lower.includes('ok')
+        if (!hit) return
+        scrollToTop('smooth')
+      } catch (_) {}
+    }
+    window.addEventListener('message', onMsg)
+    return () => window.removeEventListener('message', onMsg)
+  }, [open, resolvedUrl])
 
   if (!open) return null
 
@@ -74,6 +120,7 @@ export default function CheckoutPopup({ open, url, title, onClose, footerText })
               scrolling="yes"
               onLoad={() => {
                 try { window.setTimeout(() => setLoaded(true), 250) } catch (_) { setLoaded(true) }
+                try { window.setTimeout(() => scrollToTop('auto'), 60) } catch (_) {}
               }}
             />
           ) : (
@@ -92,6 +139,15 @@ export default function CheckoutPopup({ open, url, title, onClose, footerText })
             </div>
           ) : null}
         </div>
+
+        <button
+          type="button"
+          className="absolute bottom-4 right-4 z-10 h-10 w-10 rounded-full bg-white/70 border border-[#E3E4E5] shadow-lg backdrop-blur-md hover:bg-white transition-colors flex items-center justify-center"
+          aria-label="Voltar para o topo"
+          onClick={() => scrollToTop('smooth')}
+        >
+          <ArrowUp className="w-4 h-4 text-[#0F172A]" />
+        </button>
       </div>
     </div>,
     document.body,
