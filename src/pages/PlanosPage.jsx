@@ -170,10 +170,53 @@ const PlanosPage = () => {
     pendingBannerVisibleRef.current = false
   }
 
+  const paidKeyFor = (linkId) => `connekt_pending_checkout_paid_${String(linkId || '').trim()}`
+  const hasPaidMarker = (linkId) => {
+    const k = String(linkId || '').trim()
+    if (!k) return false
+    try { return !!localStorage.getItem(paidKeyFor(k)) } catch (_) { return false }
+  }
+  const setPaidMarker = (linkId) => {
+    const k = String(linkId || '').trim()
+    if (!k) return
+    try { localStorage.setItem(paidKeyFor(k), String(Date.now())) } catch (_) {}
+  }
+  const clearPaidMarker = (linkId) => {
+    const k = String(linkId || '').trim()
+    if (!k) return
+    try { localStorage.removeItem(paidKeyFor(k)) } catch (_) {}
+  }
+
+  const isPaidLikeStatus = (statusRaw) => {
+    const s = String(statusRaw || '').trim().toLowerCase()
+    return (
+      s === 'paid' ||
+      s === 'success' ||
+      s === 'succeeded' ||
+      s === 'captured' ||
+      s === 'approved' ||
+      s === 'confirmado' ||
+      s === 'aprovado' ||
+      s === 'pago'
+    )
+  }
+
+  const isFailedLikeStatus = (statusRaw) => {
+    const s = String(statusRaw || '').trim().toLowerCase()
+    return (
+      s === 'failed' ||
+      s === 'canceled' ||
+      s === 'cancelled' ||
+      s === 'recusado' ||
+      s === 'refused'
+    )
+  }
+
   const cancelPendingVerification = () => {
     try { setCheckoutPopupOpen(false) } catch (_) {}
     try { setCheckoutPopupUrl('') } catch (_) {}
     clearClosedMarker(pendingPayment?.linkId)
+    clearPaidMarker(pendingPayment?.linkId)
     planService.clearPendingCheckout?.()
     setPendingPayment(null)
     refreshSubscription()
@@ -186,6 +229,7 @@ const PlanosPage = () => {
     setCheckoutPopupUrl(String(url || '').trim())
     setCheckoutPopupOpen(true)
     clearClosedMarker(pendingPayment?.linkId)
+    clearPaidMarker(pendingPayment?.linkId)
   }
 
   const startCheckoutInPopup = async (planKey) => {
@@ -437,19 +481,54 @@ const PlanosPage = () => {
       if (!pendingPayment?.linkId || stopped) return;
       try {
         const sync = await planService.syncPaymentStatus(pendingPayment.linkId);
-        const syncPaid = !!(sync?.ok && (sync?.data?.paid === true || String(sync?.data?.status || '').toLowerCase() === 'paid'));
-        const syncStatus = String(sync?.data?.status || '').toLowerCase();
-        if (syncStatus === 'failed' || syncStatus === 'canceled') {
+        const syncStatusRaw = String(sync?.data?.status || '').trim()
+        const syncPaidFlag = sync?.data?.paid === true
+        const syncPaidLike = !!(sync?.ok && (syncPaidFlag || isPaidLikeStatus(syncStatusRaw)))
+        const syncFailedLike = !!(sync?.ok && isFailedLikeStatus(syncStatusRaw))
+
+        if (syncFailedLike) {
           refreshSubscription();
           try { toast({ title: 'Pagamento não aprovado', description: 'O gateway marcou a cobrança como falha. Tente novamente.', duration: 7000 }) } catch (_) {}
           try { setCheckoutPopupOpen(false) } catch (_) {}
           try { setCheckoutPopupUrl('') } catch (_) {}
           clearClosedMarker(pendingPayment.linkId)
+          clearPaidMarker(pendingPayment.linkId)
           planService.clearPendingCheckout?.();
           setPendingPayment(null);
           return;
         }
-        if (!syncPaid) return;
+
+        if (syncPaidLike) {
+          setPaidMarker(pendingPayment.linkId)
+          try {
+            setCheckoutPopupOpen(false)
+            setCheckoutPopupUrl('')
+            setClosedMarker(pendingPayment.linkId)
+          } catch (_) {}
+        }
+
+        const paymentConfirmedInSupabase = async () => {
+          try {
+            const g = await planService.getPaymentByGatewayPaymentId?.(pendingPayment.linkId)
+            const p = g?.ok ? (g.payment || null) : null
+            if (p?.paid_at) return true
+            const st = String(p?.status || '').trim().toLowerCase()
+            if (isPaidLikeStatus(st)) return true
+          } catch (_) {}
+          try {
+            if (pendingPayment?.paymentId) {
+              const r = await planService.getPaymentById?.(pendingPayment.paymentId)
+              const p = r?.ok ? (r.payment || null) : null
+              if (p?.paid_at) return true
+              const st = String(p?.status || '').trim().toLowerCase()
+              if (isPaidLikeStatus(st)) return true
+            }
+          } catch (_) {}
+          return false
+        }
+
+        const confirmed = await paymentConfirmedInSupabase()
+        if (!confirmed) return
 
         const activated = await planService.handleCheckoutCallback(
           { status: 'success', plan: pendingPayment.planKey, billing: pendingPayment.billingCycle, link_id: pendingPayment.linkId, session_id: null },
@@ -464,6 +543,7 @@ const PlanosPage = () => {
         try { setCheckoutPopupOpen(false) } catch (_) {}
         try { setCheckoutPopupUrl('') } catch (_) {}
         clearClosedMarker(pendingPayment.linkId)
+        clearPaidMarker(pendingPayment.linkId)
         if (typeof planService.clearPendingCheckout === 'function') planService.clearPendingCheckout();
         setPendingPayment(null);
       } catch (_) {}
@@ -471,14 +551,15 @@ const PlanosPage = () => {
 
     if (pendingPayment?.linkId) {
       runOnce();
-      intervalId = window.setInterval(runOnce, 4000);
+      const ms = checkoutPopupOpen ? 2500 : 5000
+      intervalId = window.setInterval(runOnce, ms);
     }
 
     return () => {
       stopped = true;
       if (intervalId) window.clearInterval(intervalId);
     };
-  }, [pendingPayment?.linkId, pendingPayment?.planKey, pendingPayment?.billingCycle, user?.id]);
+  }, [pendingPayment?.linkId, pendingPayment?.paymentId, pendingPayment?.planKey, pendingPayment?.billingCycle, user?.id, checkoutPopupOpen]);
 
   const activePlanName = (() => {
     const key = subscription?.planKey || activePlanKey;
@@ -527,7 +608,7 @@ const PlanosPage = () => {
           </div>
         )}
 
-        {pendingPayment?.linkId && hasClosedMarker(pendingPayment.linkId) && !checkoutPopupOpen && (
+        {pendingPayment?.linkId && hasClosedMarker(pendingPayment.linkId) && hasPaidMarker(pendingPayment.linkId) && !checkoutPopupOpen && (
           <div className="mb-6 px-4">
             <div className="relative overflow-hidden rounded-[14px] border border-[#FFE08A] bg-gradient-to-r from-[#FFF7D1] via-[#FFF2B8] to-[#FFF7D1] p-4 shadow-sm connekt-fade-in">
               <div className="absolute inset-0 opacity-50">
@@ -564,17 +645,42 @@ const PlanosPage = () => {
                     onClick={async () => {
                       try {
                         const sync = await planService.syncPaymentStatus(pendingPayment.linkId);
-                        const status = String(sync?.data?.status || '').toLowerCase();
-                        if (status === 'failed' || status === 'canceled') {
+                        const statusRaw = String(sync?.data?.status || '').trim()
+                        const paidLike = !!(sync?.ok && (sync?.data?.paid === true || isPaidLikeStatus(statusRaw)))
+                        const failedLike = !!(sync?.ok && isFailedLikeStatus(statusRaw))
+                        if (failedLike) {
                           refreshSubscription();
                           try { toast({ title: 'Pagamento não aprovado', description: 'O gateway marcou a cobrança como falha. Tente novamente.', duration: 7000 }) } catch (_) {}
                           clearClosedMarker(pendingPayment.linkId)
+                          clearPaidMarker(pendingPayment.linkId)
                           planService.clearPendingCheckout?.();
                           setPendingPayment(null);
                           return;
                         }
-                        const paid = !!(sync?.ok && (sync?.data?.paid === true || status === 'paid'));
-                        if (paid) {
+
+                        if (paidLike) setPaidMarker(pendingPayment.linkId)
+
+                        const confirmed = await (async () => {
+                          try {
+                            const g = await planService.getPaymentByGatewayPaymentId?.(pendingPayment.linkId)
+                            const p = g?.ok ? (g.payment || null) : null
+                            if (p?.paid_at) return true
+                            const st = String(p?.status || '').trim().toLowerCase()
+                            if (isPaidLikeStatus(st)) return true
+                          } catch (_) {}
+                          try {
+                            if (pendingPayment?.paymentId) {
+                              const r = await planService.getPaymentById?.(pendingPayment.paymentId)
+                              const p = r?.ok ? (r.payment || null) : null
+                              if (p?.paid_at) return true
+                              const st = String(p?.status || '').trim().toLowerCase()
+                              if (isPaidLikeStatus(st)) return true
+                            }
+                          } catch (_) {}
+                          return false
+                        })()
+
+                        if (confirmed) {
                           await planService.handleCheckoutCallback(
                             { status: 'success', plan: pendingPayment.planKey, billing: pendingPayment.billingCycle, link_id: pendingPayment.linkId, session_id: null },
                             user,
@@ -583,10 +689,11 @@ const PlanosPage = () => {
                           refreshSubscription();
                           try { toast({ title: 'Pagamento confirmado', description: 'Plano ativado com sucesso.', duration: 5000 }) } catch (_) {}
                           clearClosedMarker(pendingPayment.linkId)
+                          clearPaidMarker(pendingPayment.linkId)
                           planService.clearPendingCheckout?.();
                           setPendingPayment(null);
                         } else {
-                          try { toast({ title: 'Ainda não confirmado', description: 'O pagamento ainda não apareceu como pago. Tente novamente em alguns segundos.', duration: 5000 }) } catch (_) {}
+                          try { toast({ title: 'Ainda não confirmado', description: 'Recebemos o pagamento, mas ainda estamos confirmando. Tente novamente em instantes.', duration: 6000 }) } catch (_) {}
                         }
                       } catch (e) {
                         try { toast({ title: 'Falha ao verificar', description: e?.message || String(e), duration: 6000 }) } catch (_) {}
