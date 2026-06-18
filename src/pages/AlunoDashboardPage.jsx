@@ -89,9 +89,9 @@ function ProducerDashboardEmpty({ onReload }) {
               />
             </div>
 
-            <div className="mt-5 text-[18px] font-semibold text-[#0F172A]">Este produtor ainda não publicou conteúdo</div>
+            <div className="mt-5 text-[18px] font-semibold text-[#0F172A]">Nenhum conteúdo adquirido</div>
             <div className="mt-1 text-[12px] text-[#64748B] max-w-[560px]">
-              Assim que houver cursos ou simulados disponíveis, eles vão aparecer aqui automaticamente.
+              Quando você adquirir cursos ou simulados deste produtor, eles vão aparecer aqui automaticamente.
             </div>
 
             <div className="mt-6 flex items-center justify-center gap-2 flex-wrap">
@@ -126,7 +126,7 @@ function ProducerDashboardEmpty({ onReload }) {
                 </div>
                 <div className="flex-1">
                   <div className="text-[12px] font-semibold text-[#0F172A]">Cursos</div>
-                  <div className="text-[11px] text-[#64748B]">Nenhum curso disponível no momento</div>
+                  <div className="text-[11px] text-[#64748B]">Nenhum curso adquirido</div>
                 </div>
               </div>
               <div className="rounded-[12px] border border-[#E3E4E5] bg-white/70 px-4 py-3 flex items-center gap-3">
@@ -135,7 +135,7 @@ function ProducerDashboardEmpty({ onReload }) {
                 </div>
                 <div className="flex-1">
                   <div className="text-[12px] font-semibold text-[#0F172A]">Simulados</div>
-                  <div className="text-[11px] text-[#64748B]">Nenhum simulado disponível no momento</div>
+                  <div className="text-[11px] text-[#64748B]">Nenhum simulado adquirido</div>
                 </div>
               </div>
               <div className="rounded-[12px] border border-[#E3E4E5] bg-white/70 px-4 py-3 flex items-center gap-3">
@@ -144,7 +144,7 @@ function ProducerDashboardEmpty({ onReload }) {
                 </div>
                 <div className="flex-1">
                   <div className="text-[12px] font-semibold text-[#0F172A]">Continue assistindo</div>
-                  <div className="text-[11px] text-[#64748B]">Sem aulas para continuar</div>
+                  <div className="text-[11px] text-[#64748B]">Nenhuma aula em andamento</div>
                 </div>
               </div>
             </div>
@@ -2159,7 +2159,7 @@ export default function AlunoDashboardPage() {
                         <EmptyProducerSection
                           Icon={PlayCircle}
                           title="Sem aulas para continuar"
-                          description="Este produtor ainda não publicou cursos com aulas disponíveis."
+                          description="Você ainda não começou nenhum curso deste produtor."
                           className="h-[204px]"
                         />
                       </div>
@@ -2247,8 +2247,8 @@ export default function AlunoDashboardPage() {
                       <div className="w-[252px] flex-shrink-0">
                         <EmptyProducerSection
                           Icon={BookOpen}
-                          title="Nenhum curso disponível"
-                          description="Quando o produtor publicar cursos, eles aparecem aqui."
+                          title="Nenhum curso adquirido"
+                          description="Quando você adquirir um curso deste produtor, ele vai aparecer aqui."
                           className="h-[326px]"
                         />
                       </div>
